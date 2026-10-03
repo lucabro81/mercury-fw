@@ -125,7 +125,7 @@ describe("createTerminalProvider", () => {
       multiUser: false,
       text: "hello mercury",
       sessionKey: "terminal",
-      wikiUserId: "terminal",
+      principal: { id: "terminal", provider: "none" },
       logPrefix: "",
     });
   });
