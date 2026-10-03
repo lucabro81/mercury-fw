@@ -12,7 +12,7 @@
     },
     "apps/cli": {
       "name": "@mercury-fw/cli",
-      "version": "0.33.0",
+      "version": "0.34.0",
       "bin": {
         "mfw": "./src/bin.ts",
       },
@@ -36,7 +36,7 @@
     },
     "apps/create-mercury-agent": {
       "name": "create-mercury-agent",
-      "version": "0.33.0",
+      "version": "0.34.0",
       "bin": {
         "create-mercury-agent": "./index.ts",
       },
@@ -61,7 +61,7 @@
     },
     "packages/channels/channel-google-chat": {
       "name": "@mercury-fw/channel-google-chat",
-      "version": "0.1.3",
+      "version": "0.2.0",
       "dependencies": {
         "@google-cloud/pubsub": "^5.3.1",
       },
@@ -77,7 +77,7 @@
     },
     "packages/channels/channel-http": {
       "name": "@mercury-fw/channel-http",
-      "version": "0.1.1",
+      "version": "0.2.0",
       "devDependencies": {
         "@mercury-fw/channel-types": "workspace:*",
         "@mercury-fw/plugin-types": "workspace:*",
@@ -95,7 +95,7 @@
     },
     "packages/formatters/formatter": {
       "name": "@mercury-fw/formatter",
-      "version": "0.33.0",
+      "version": "0.34.0",
       "dependencies": {
         "@mercury-fw/plugin-types": "workspace:*",
       },
@@ -107,7 +107,7 @@
     },
     "packages/libs/cli-engine": {
       "name": "@mercury-fw/cli-engine",
-      "version": "0.33.0",
+      "version": "0.34.0",
       "dependencies": {
         "@mercury-fw/plugin-types": "workspace:*",
         "ai": "^7.0.126",
@@ -122,7 +122,7 @@
     },
     "packages/libs/confirm-engine": {
       "name": "@mercury-fw/confirm-engine",
-      "version": "0.33.0",
+      "version": "0.34.0",
       "dependencies": {
         "@mercury-fw/channel-types": "workspace:*",
         "@mercury-fw/plugin-types": "workspace:*",
@@ -135,7 +135,7 @@
     },
     "packages/libs/core": {
       "name": "@mercury-fw/core",
-      "version": "0.33.0",
+      "version": "0.34.0",
       "dependencies": {
         "@mercury-fw/channel-types": "workspace:*",
         "@mercury-fw/cli-engine": "workspace:*",
@@ -156,7 +156,7 @@
     },
     "packages/libs/kit": {
       "name": "@mercury-fw/kit",
-      "version": "0.33.0",
+      "version": "0.34.0",
       "dependencies": {
         "@mercury-fw/channel-types": "workspace:*",
         "@mercury-fw/plugin-types": "workspace:*",
@@ -169,7 +169,7 @@
     },
     "packages/libs/utils": {
       "name": "@mercury-fw/utils",
-      "version": "0.33.0",
+      "version": "0.34.0",
       "devDependencies": {
         "@mercury-fw/typescript-config": "*",
         "@types/bun": "^1.4.2",
@@ -233,7 +233,7 @@
     },
     "packages/types/channel-types": {
       "name": "@mercury-fw/channel-types",
-      "version": "0.33.0",
+      "version": "0.34.0",
       "dependencies": {
         "@mercury-fw/plugin-types": "workspace:*",
       },
@@ -245,7 +245,7 @@
     },
     "packages/types/plugin-types": {
       "name": "@mercury-fw/plugin-types",
-      "version": "0.33.0",
+      "version": "0.34.0",
       "dependencies": {
         "ai": "^7.0.126",
       },
