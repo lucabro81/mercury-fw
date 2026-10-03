@@ -212,11 +212,25 @@ describe("createGoogleChatProvider — StreamingPull", () => {
       multiUser: true,
       text: "[Da: Luca]\nhello",
       sessionKey: "spaces/X:users/42",
-      userId: "users/42",
-      wikiUserId: encodeURIComponent("users/42"),
+      principal: { id: "users/42", provider: "google-chat", displayName: "Luca" },
     });
     expect(capturedSink!.onTextChunk).toBeUndefined();
     expect(acked).toEqual(["a1"]);
+  });
+
+  test("a sender without a display name gets a principal without one", async () => {
+    let capturedTurn: InboundTurn | undefined;
+    const sub = fakeSubscription();
+    const provider = createGoogleChatProvider(baseDeps({ subscriptionFn: () => sub as any }));
+
+    await provider.start(async (turn, sink) => {
+      capturedTurn = turn;
+      await sink.finalize("risposta");
+    });
+    sub.emit("message", fakeMessage(messageEvent({ senderDisplayName: "" }), []));
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect(capturedTurn?.principal).toEqual({ id: "users/42", provider: "google-chat" });
   });
 
   // Regression guard: a DM is always 1:1 with Mercury, so the multi-user
