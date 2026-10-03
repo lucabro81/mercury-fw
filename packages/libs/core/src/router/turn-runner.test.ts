@@ -528,6 +528,33 @@ describe("createTurnRunner", () => {
     expect(wikiIds).toEqual(["a%20b%2Fc", "..%2Fx"]);
   });
 
+  // encodeURIComponent throws on a lone surrogate; a channel that doesn't
+  // validate its ids must not be able to make the turn reject before it runs.
+  test("an id with a lone surrogate still runs the turn, with a well-formed wiki id", async () => {
+    const wikiIds: string[] = [];
+    const runner = createTurnRunner({
+      model: {} as any,
+      systemPrompts: { singleUser: "s", multiUser: "m" },
+      buildTools: (_sessionKey, wikiUserId) => {
+        wikiIds.push(wikiUserId);
+        return {};
+      },
+      getOrCreateHistory: () => fakeHistory(),
+      trackSession: () => {},
+      registerCaptureCallback: () => {},
+      maybeCapture: async () => {},
+      processToolCorrections: async () => {},
+      logStep: () => {},
+      runTurnFn: async () => "reply",
+    });
+    const sink = baseSink();
+
+    await runner(baseTurn({ principal: anonymous("a\ud800") }), sink);
+
+    expect(wikiIds).toEqual(["a%EF%BF%BD"]);
+    expect(sink.finalized).toEqual(["reply"]);
+  });
+
   test("when the principal is verified: trackSession, registerCaptureCallback, and maybeCapture all run, and getOrCreateHistory is asked to track for capture", async () => {
     const tracked: Array<[string, string]> = [];
     const registered: string[] = [];

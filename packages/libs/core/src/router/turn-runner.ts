@@ -98,12 +98,15 @@ export type TurnRunnerDeps = {
  * The per-person ids the core derives from a turn's principal. `captureUserId`
  * is the raw id, set only when a provider vouched for the person, so a turn
  * nobody vouched for is never tracked for Layer-3 capture. `wikiUserId` is the
- * same id made path-safe for `inferred/users/<id>` and the verbatim archive.
+ * same id encoded for `inferred/users/<id>` and the verbatim archive, so a "/"
+ * can't add a segment; `.` and `..` survive encoding and are refused by the
+ * wiki's own guards. `toWellFormed` keeps a lone surrogate from making the
+ * encoding throw.
  */
 function principalIds(principal: Principal): { captureUserId?: string; wikiUserId: string } {
   return {
     captureUserId: principal.provider === "none" ? undefined : principal.id,
-    wikiUserId: encodeURIComponent(principal.id),
+    wikiUserId: encodeURIComponent(principal.id.toWellFormed()),
   };
 }
 
