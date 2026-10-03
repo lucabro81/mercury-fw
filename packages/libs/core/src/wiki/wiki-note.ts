@@ -50,7 +50,8 @@ function resolveWithinRoot(root: string, ...segments: string[]): string {
   return target;
 }
 
-function assertNoPathSeparator(label: string, value: string): void {
+/** Throws unless `value` is exactly one non-empty path segment (no separator, not `.` or `..`). Shared by the read side's per-user root. */
+export function assertNoPathSeparator(label: string, value: string): void {
   if (value === "" || value.includes("/") || value.includes("\\") || value === "." || value === "..") {
     throw new Error(`invalid ${label}: ${JSON.stringify(value)}`);
   }

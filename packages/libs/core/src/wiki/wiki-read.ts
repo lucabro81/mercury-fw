@@ -10,6 +10,7 @@
  */
 import { readFile, stat } from "node:fs/promises";
 import { join, relative, resolve, sep } from "node:path";
+import { assertNoPathSeparator } from "./wiki-note.ts";
 
 async function pathExists(path: string): Promise<boolean> {
   try {
@@ -21,6 +22,7 @@ async function pathExists(path: string): Promise<boolean> {
 }
 
 function allowedRoots(vaultPath: string, userId: string): string[] {
+  assertNoPathSeparator("userId", userId);
   const vaultRoot = resolve(vaultPath);
   return [resolve(vaultRoot, "curated"), resolve(vaultRoot, "inferred", "users", userId)];
 }
