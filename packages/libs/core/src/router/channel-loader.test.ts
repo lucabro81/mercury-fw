@@ -61,6 +61,16 @@ describe("loadChannels", () => {
     expect(logs.some((l) => l.includes("google-chat") && l.includes("apiVersion"))).toBe(true);
   });
 
+  // Guards against a channel written for apiVersion 1 (opaque userId/wikiUserId,
+  // no principal) being loaded by a core that reads the turn's principal.
+  it("refuses a channel written for the previous contract, before the principal", () => {
+    const logs: string[] = [];
+    const build = mock(() => fakeProvider());
+    const loaded = loadChannels([channel("google-chat", build, 1)], { runtime: runtimeWith(logs) });
+    expect(loaded).toEqual([]);
+    expect(build).not.toHaveBeenCalled();
+  });
+
   it("isolates a build that throws and keeps the other channels", () => {
     const logs: string[] = [];
     const good = fakeProvider();
