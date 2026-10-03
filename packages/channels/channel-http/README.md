@@ -36,7 +36,7 @@ Runs one conversational turn; the reply streams back as Server-Sent Events.
 | field | type | required | description |
 |---|---|---|---|
 | `text` | string | yes | The user message. A bare confirmation token here confirms a staged action (see the `pending` event) without invoking the model. |
-| `conversationId` | string | no | Opaque, client-owned id that continues a conversation. Omitted ⇒ a fresh one-off session. |
+| `conversationId` | string | no | Opaque, client-owned id that continues a conversation: letters, digits, `-` and `_`, up to 128 characters (a UUID fits), `400` otherwise. Omitted ⇒ a fresh one-off session. |
 
 **Responses**: `200 text/event-stream` (the events below); `400` if `text` is missing or the body isn't JSON.
 
@@ -63,7 +63,7 @@ curl -N -X POST http://localhost:4100/turn \
 
 ## `POST /confirm`
 
-Explicit alternative to re-sending a token as `/turn` `text`. Body `{ token, conversationId }`; returns `{ ok: true, resolved: true, text }` when the token was a pending confirmation, `{ ok: true, resolved: false }` otherwise. `400` if `token` or `conversationId` is missing. Never invokes the model.
+Explicit alternative to re-sending a token as `/turn` `text`. Body `{ token, conversationId }`; returns `{ ok: true, resolved: true, text }` when the token was a pending confirmation, `{ ok: true, resolved: false }` otherwise. `400` if `token` or `conversationId` is missing, or the id has other characters than `/turn` accepts. Never invokes the model.
 
 ## Read-only introspection
 
@@ -71,7 +71,7 @@ All `GET`, all JSON, all reporting state already held in-process.
 
 | endpoint | `data` on success |
 |---|---|
-| `GET /conversation?id=<conversationId>&limit=<n>&offset=<cursor>` | `{ messages: [{ role, content, timestamp }], nextOffset }` — a conversation's durable transcript in order; `400` if `id` is missing |
+| `GET /conversation?id=<conversationId>&limit=<n>&offset=<cursor>` | `{ messages: [{ role, content, timestamp }], nextOffset }` — a conversation's durable transcript in order; `400` if `id` is missing or has other characters than `/turn` accepts |
 | `GET /conversations?limit=<n>` | `{ conversations: [{ sessionKey, lastTimestamp, preview }] }` — known conversations, most-recently-active first |
 | `GET /manifest` | `{ manifest: { coreApiVersion, plugins: [{ name, apiVersion, active, skills, hasBuild, customStatus }], activeClis, skills } }` |
 | `GET /confirmations` | `{ pending: [{ sessionKey, binary, args, expiresAt }] }` — tokens are deliberately never included |

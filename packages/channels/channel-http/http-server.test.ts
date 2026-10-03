@@ -1,6 +1,6 @@
 import { describe, it, expect } from "bun:test";
 import { handleTurnRequest, handleConfirmRequest, openApiResponse, readRoutes } from "./http-server.ts";
-import type { HandleTurn, InboundTurn, ChannelHostReads } from "@mercury-fw/channel-types";
+import type { HandleTurn, InboundTurn, TurnSink, ChannelHostReads } from "@mercury-fw/channel-types";
 import type { StepInfo } from "@mercury-fw/plugin-types";
 
 /**
@@ -169,6 +169,41 @@ describe("handleTurnRequest", () => {
     expect(seen).not.toContain("event: error");
   });
 
+  // The conversation id is client input that becomes the session key, a log
+  // prefix and (until #37) the wiki id: ".." used to reach every user's notes,
+  // a newline could forge log lines, a lone surrogate made encoding throw.
+  it("returns 400 for a conversationId outside letters, digits, '-' and '_', without running a turn", async () => {
+    let ran = false;
+    const deps = {
+      handleTurn: async () => {
+        ran = true;
+      },
+      confirm: async () => null,
+    };
+    for (const conversationId of ["..", ".", "a/b", "a b", "a\nb", "\ud800", "x".repeat(129)]) {
+      const res = await handleTurnRequest(turnReq({ text: "hi", conversationId }), deps);
+      expect(res.status).toBe(400);
+    }
+    expect(ran).toBe(false);
+  });
+
+  it("accepts a UUID and a 128-character conversationId", async () => {
+    const seen: string[] = [];
+    const deps = {
+      handleTurn: async (turn: InboundTurn, sink: TurnSink) => {
+        seen.push(turn.sessionKey);
+        await sink.finalize("ok");
+      },
+      confirm: async () => null,
+    };
+    const uuid = "0b6f3c1e-8f2a-4c5d-9e7b-1a2b3c4d5e6f";
+    for (const conversationId of [uuid, "x".repeat(128)]) {
+      const res = await handleTurnRequest(turnReq({ text: "hi", conversationId }), deps);
+      await res.text();
+    }
+    expect(seen).toEqual([uuid, "x".repeat(128)]);
+  });
+
   it("returns 400 for a body with no text", async () => {
     const res = await handleTurnRequest(turnReq({ conversationId: "c" }), {
       handleTurn: async () => {},
@@ -220,6 +255,19 @@ describe("handleConfirmRequest", () => {
       },
     });
     expect(seenKey).toBe("conv-9");
+  });
+
+  it("returns 400 for a conversationId outside the allowed characters, without resolving", async () => {
+    let resolved = false;
+    const stub = {
+      resolveConfirmation: async () => {
+        resolved = true;
+        return { status: "not-found" as const };
+      },
+    };
+    const res = await handleConfirmRequest(confirmReq({ token: "TOK", conversationId: ".." }), stub);
+    expect(res.status).toBe(400);
+    expect(resolved).toBe(false);
   });
 
   it("returns 400 when token or conversationId is missing", async () => {
@@ -311,6 +359,11 @@ describe("GET /conversation", () => {
     toolLog: () => [],
     health: async () => ({}),
   };
+
+  it("returns 400 for an ?id outside the allowed characters", async () => {
+    const res = await readRoutes(baseReads)["/conversation"]!.GET(new Request("http://x/conversation?id=..%2Fx"));
+    expect(res.status).toBe(400);
+  });
 
   it("returns 400 when ?id is missing", async () => {
     const res = await readRoutes(baseReads)["/conversation"]!.GET(new Request("http://x/conversation"));

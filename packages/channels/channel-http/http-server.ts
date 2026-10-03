@@ -26,6 +26,13 @@ import {
   type ConfirmOutcome,
 } from "@mercury-fw/channel-types";
 
+/**
+ * A client's conversation id becomes the session key, a log prefix and (until
+ * the channel authenticates) the per-person wiki id, so only letters, digits,
+ * `-` and `_` get in: no path segments, no line breaks, nothing to encode.
+ */
+const CONVERSATION_ID = /^[A-Za-z0-9_-]{1,128}$/;
+
 /** Resolves a bare confirmation token to a reply string, or `null` if the input isn't a token. Injected by the core (`ctx.confirm`). */
 export type ConfirmFn = (token: string, sessionKey: string, userId: string) => Promise<string | null>;
 /** The structured sibling of {@link ConfirmFn}, for the `/confirm` `resolved` flag. Injected by the core (`ctx.resolveConfirmation`). */
@@ -105,6 +112,9 @@ export async function handleTurnRequest(req: Request, deps: TurnRequestDeps): Pr
     typeof body.conversationId === "string" && body.conversationId.trim().length > 0
       ? body.conversationId.trim()
       : (deps.newSessionKey ?? (() => crypto.randomUUID()))();
+  if (!CONVERSATION_ID.test(sessionKey)) {
+    return Response.json({ ok: false, error: "invalid conversationId" }, { status: 400, headers: cors });
+  }
 
   // Aborted when the client disconnects (see the stream's `cancel` below) so
   // the in-flight turn stops instead of running to completion — the "stop"
@@ -220,6 +230,9 @@ export async function handleConfirmRequest(req: Request, deps: ConfirmRequestDep
   if (token.length === 0 || sessionKey.length === 0) {
     return Response.json({ ok: false, error: "missing token or conversationId" }, { status: 400, headers: cors });
   }
+  if (!CONVERSATION_ID.test(sessionKey)) {
+    return Response.json({ ok: false, error: "invalid conversationId" }, { status: 400, headers: cors });
+  }
   const outcome = await deps.resolveConfirmation(token, sessionKey, sessionKey);
   switch (outcome.status) {
     case "not-a-token":
@@ -259,6 +272,7 @@ export function readRoutes(reads: ChannelHostReads, corsOrigin = "*"): Record<st
       const url = new URL(req.url);
       const id = url.searchParams.get("id");
       if (!id) return badRequest("missing ?id");
+      if (!CONVERSATION_ID.test(id)) return badRequest("invalid ?id");
       const limit = Number(url.searchParams.get("limit") ?? "200");
       const offset = url.searchParams.get("offset") ?? undefined;
       return json({ ok: true, ...(await reads.conversation(id, limit, offset) as object) });
