@@ -37,7 +37,8 @@ describe("handleTurnRequest", () => {
     expect(seen?.sessionKey).toBe("conv-1");
     expect(seen?.channel).toBe("http");
     expect(seen?.multiUser).toBe(false);
-    expect(seen?.wikiUserId).toBe("conv-1");
+    // Nobody vouches for an HTTP caller until the channel authenticates (#37).
+    expect(seen?.principal).toEqual({ id: "conv-1", provider: "none" });
   });
 
   it("streams multiple text/reasoning deltas incrementally, all before the final event (never one block)", async () => {

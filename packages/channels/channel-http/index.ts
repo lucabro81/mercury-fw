@@ -11,13 +11,15 @@
  * inversion). Those two are optional on the contract but required here, so a
  * context missing them throws — the loader isolates it fail-soft.
  */
-import { CHANNEL_API_VERSION, type ChannelPlugin } from "@mercury-fw/channel-types";
+import type { ChannelPlugin } from "@mercury-fw/channel-types";
 import { createHttpProvider } from "./http-provider.ts";
 
 export { createHttpProvider, type HttpProviderDeps } from "./http-provider.ts";
 
 export const httpChannel: ChannelPlugin = {
-  apiVersion: CHANNEL_API_VERSION,
+  // The contract this channel is written for, as a literal: importing
+  // CHANNEL_API_VERSION would report whichever contract is installed.
+  apiVersion: 2,
   name: "http",
   build: (ctx) => {
     if (!ctx.resolveConfirmation || !ctx.reads) {

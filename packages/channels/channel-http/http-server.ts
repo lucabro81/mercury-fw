@@ -164,7 +164,9 @@ export async function handleTurnRequest(req: Request, deps: TurnRequestDeps): Pr
             multiUser: false,
             text,
             sessionKey,
-            wikiUserId: sessionKey,
+            // Unauthenticated: the conversation id stands in for the caller,
+            // and nobody vouches for it.
+            principal: { id: sessionKey, provider: "none" },
             logPrefix: `[http:${sessionKey}] `,
             abortSignal: abort.signal,
           },
