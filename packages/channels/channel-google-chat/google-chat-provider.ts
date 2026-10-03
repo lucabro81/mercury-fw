@@ -505,8 +505,11 @@ export function createGoogleChatProvider(deps: GoogleChatProviderDeps): GoogleCh
           multiUser: !event.isDirectMessage,
           text: markedInput,
           sessionKey,
-          userId: event.sender,
-          wikiUserId: encodeURIComponent(event.sender),
+          principal: {
+            id: event.sender,
+            provider: "google-chat",
+            ...(event.senderDisplayName ? { displayName: event.senderDisplayName } : {}),
+          },
           logPrefix: `[chat:${event.space}:${event.sender}] `,
         },
         sink,

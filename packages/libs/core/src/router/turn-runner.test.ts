@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { createTurnRunner, type PostTurnGuard } from "./turn-runner.ts";
 import type { InboundTurn, TurnSink } from "./provider.ts";
+import type { Principal } from "@mercury-fw/channel-types";
 import type { SessionHistory } from "../session/history.ts";
 import type { StepInfo } from "../session/step-info.ts";
 
@@ -15,13 +16,23 @@ function fakeHistory(overrides: Partial<SessionHistory> = {}): SessionHistory {
   };
 }
 
+/** A principal a provider vouched for: the turn is tracked for capture. */
+function verified(id: string): Principal {
+  return { id, provider: "google-chat" };
+}
+
+/** A principal nobody vouched for (terminal, unauthenticated HTTP): the turn is never tracked. */
+function anonymous(id: string): Principal {
+  return { id, provider: "none" };
+}
+
 function baseTurn(overrides: Partial<InboundTurn> = {}): InboundTurn {
   return {
     channel: "test-channel",
     multiUser: false,
     text: "hello",
     sessionKey: "session-1",
-    wikiUserId: "wiki-1",
+    principal: anonymous("wiki-1"),
     logPrefix: "",
     ...overrides,
   };
@@ -177,7 +188,7 @@ describe("createTurnRunner", () => {
     expect(systems).toEqual(["SINGLE", "MULTI"]);
   });
 
-  test("calls buildTools with the turn's sessionKey, wikiUserId, and the sink's onToolStart/onToolFinish", async () => {
+  test("calls buildTools with the turn's sessionKey, the principal's path-safe id, and the sink's onToolStart/onToolFinish", async () => {
     const calls: Array<[string, string, unknown, unknown]> = [];
     const onToolStart = () => {};
     const onToolFinish = () => {};
@@ -197,9 +208,10 @@ describe("createTurnRunner", () => {
       runTurnFn: async () => "reply",
     });
 
-    await runner(baseTurn({ sessionKey: "sk", wikiUserId: "wu" }), baseSink({ onToolStart, onToolFinish }));
+    await runner(baseTurn({ sessionKey: "sk", principal: verified("users/42") }), baseSink({ onToolStart, onToolFinish }));
 
-    expect(calls).toEqual([["sk", "wu", onToolStart, onToolFinish]]);
+    // Encoded so a "/" in the id can't add a path segment under inferred/users/.
+    expect(calls).toEqual([["sk", "users%2F42", onToolStart, onToolFinish]]);
   });
 
   test("onStepFinish fans out to logStep, recordStepFn, and sink.onStep", async () => {
@@ -466,7 +478,84 @@ describe("createTurnRunner", () => {
     expect(received).toEqual([stepA, stepB]);
   });
 
-  test("when turn.userId is present: trackSession, registerCaptureCallback, and maybeCapture all run, and getOrCreateHistory is asked to track for capture", async () => {
+  test("an id with no characters to encode reaches buildTools unchanged (the terminal's \"terminal\" keeps its notes)", async () => {
+    const wikiIds: string[] = [];
+    const runner = createTurnRunner({
+      model: {} as any,
+      systemPrompts: { singleUser: "s", multiUser: "m" },
+      buildTools: (_sessionKey, wikiUserId) => {
+        wikiIds.push(wikiUserId);
+        return {};
+      },
+      getOrCreateHistory: () => fakeHistory(),
+      trackSession: () => {},
+      registerCaptureCallback: () => {},
+      maybeCapture: async () => {},
+      processToolCorrections: async () => {},
+      logStep: () => {},
+      runTurnFn: async () => "reply",
+    });
+
+    await runner(baseTurn({ principal: anonymous("terminal") }), baseSink());
+
+    expect(wikiIds).toEqual(["terminal"]);
+  });
+
+  // A client-chosen HTTP conversation id used to reach the wiki raw, so "a/b"
+  // added a path segment under inferred/users/ (and "../x" left it). Encoded,
+  // it stays one segment.
+  test("an id with spaces or slashes reaches buildTools as a single path-safe segment", async () => {
+    const wikiIds: string[] = [];
+    const runner = createTurnRunner({
+      model: {} as any,
+      systemPrompts: { singleUser: "s", multiUser: "m" },
+      buildTools: (_sessionKey, wikiUserId) => {
+        wikiIds.push(wikiUserId);
+        return {};
+      },
+      getOrCreateHistory: () => fakeHistory(),
+      trackSession: () => {},
+      registerCaptureCallback: () => {},
+      maybeCapture: async () => {},
+      processToolCorrections: async () => {},
+      logStep: () => {},
+      runTurnFn: async () => "reply",
+    });
+
+    await runner(baseTurn({ principal: anonymous("a b/c") }), baseSink());
+    await runner(baseTurn({ principal: anonymous("../x") }), baseSink());
+
+    expect(wikiIds).toEqual(["a%20b%2Fc", "..%2Fx"]);
+  });
+
+  // encodeURIComponent throws on a lone surrogate; a channel that doesn't
+  // validate its ids must not be able to make the turn reject before it runs.
+  test("an id with a lone surrogate still runs the turn, with a well-formed wiki id", async () => {
+    const wikiIds: string[] = [];
+    const runner = createTurnRunner({
+      model: {} as any,
+      systemPrompts: { singleUser: "s", multiUser: "m" },
+      buildTools: (_sessionKey, wikiUserId) => {
+        wikiIds.push(wikiUserId);
+        return {};
+      },
+      getOrCreateHistory: () => fakeHistory(),
+      trackSession: () => {},
+      registerCaptureCallback: () => {},
+      maybeCapture: async () => {},
+      processToolCorrections: async () => {},
+      logStep: () => {},
+      runTurnFn: async () => "reply",
+    });
+    const sink = baseSink();
+
+    await runner(baseTurn({ principal: anonymous("a\ud800") }), sink);
+
+    expect(wikiIds).toEqual(["a%EF%BF%BD"]);
+    expect(sink.finalized).toEqual(["reply"]);
+  });
+
+  test("when the principal is verified: trackSession, registerCaptureCallback, and maybeCapture all run, and getOrCreateHistory is asked to track for capture", async () => {
     const tracked: Array<[string, string]> = [];
     const registered: string[] = [];
     const captured: string[] = [];
@@ -491,9 +580,10 @@ describe("createTurnRunner", () => {
       runTurnFn: async () => "reply",
     });
 
-    await runner(baseTurn({ sessionKey: "sk", userId: "u1" }), baseSink());
+    await runner(baseTurn({ sessionKey: "sk", principal: verified("users/42") }), baseSink());
 
-    expect(tracked).toEqual([["sk", "u1"]]);
+    // The raw id, not the encoded one: it's what Qdrant already stores per person.
+    expect(tracked).toEqual([["sk", "users/42"]]);
     expect(registered).toEqual(["sk"]);
     expect(captured).toEqual(["sk"]);
     expect(historyTrackForCapture).toBe(true);
@@ -517,7 +607,7 @@ describe("createTurnRunner", () => {
       runTurnFn: async () => "reply",
     });
 
-    await runner(baseTurn({ sessionKey: "sk", userId: "u1" }), baseSink({ onToolStart, onToolFinish }));
+    await runner(baseTurn({ sessionKey: "sk", principal: verified("u1") }), baseSink({ onToolStart, onToolFinish }));
 
     expect(registered).toEqual([["sk", onToolStart, onToolFinish]]);
   });
@@ -547,7 +637,7 @@ describe("createTurnRunner", () => {
     expect(received).toEqual([[onToolStart, onToolFinish]]);
   });
 
-  test("getOrCreateHistory receives turn.userId as its third argument (present or undefined), so a provider can decide whether to seed a context primer", async () => {
+  test("getOrCreateHistory receives the verified principal's id as its third argument (undefined when nobody vouched for it), so a provider can decide whether to seed a context primer", async () => {
     const seenUserIds: Array<string | undefined> = [];
     const runner = createTurnRunner({
       model: {} as any,
@@ -565,13 +655,13 @@ describe("createTurnRunner", () => {
       runTurnFn: async () => "reply",
     });
 
-    await runner(baseTurn({ userId: "u1" }), baseSink());
-    await runner(baseTurn({ userId: undefined }), baseSink());
+    await runner(baseTurn({ principal: verified("u1") }), baseSink());
+    await runner(baseTurn({ principal: anonymous("u2") }), baseSink());
 
     expect(seenUserIds).toEqual(["u1", undefined]);
   });
 
-  test("when turn.userId is absent: trackSession, registerCaptureCallback, and maybeCapture are all skipped, and getOrCreateHistory is not asked to track for capture", async () => {
+  test("when nobody vouched for the principal: trackSession, registerCaptureCallback, and maybeCapture are all skipped, and getOrCreateHistory is not asked to track for capture", async () => {
     const tracked: unknown[] = [];
     const registered: unknown[] = [];
     const captured: unknown[] = [];
@@ -596,7 +686,7 @@ describe("createTurnRunner", () => {
       runTurnFn: async () => "reply",
     });
 
-    await runner(baseTurn({ sessionKey: "sk", userId: undefined }), baseSink());
+    await runner(baseTurn({ sessionKey: "sk", principal: anonymous("terminal") }), baseSink());
 
     expect(tracked).toEqual([]);
     expect(registered).toEqual([]);
@@ -859,16 +949,16 @@ describe("createTurnRunner", () => {
         runTurnFn: async () => "the answer",
       });
 
-      await runner(baseTurn({ sessionKey: "sk", userId: "u1", wikiUserId: "wu1", text: "the question" }), baseSink());
+      await runner(baseTurn({ sessionKey: "sk", principal: verified("users/42"), text: "the question" }), baseSink());
 
-      // Keyed on the space-independent wikiUserId, not the raw userId.
+      // Keyed on the same path-safe per-person id the wiki notes use, not the raw one.
       expect(captured).toEqual([
-        { sessionKey: "sk", userId: "wu1", role: "user", content: "the question" },
-        { sessionKey: "sk", userId: "wu1", role: "assistant", content: "the answer" },
+        { sessionKey: "sk", userId: "users%2F42", role: "user", content: "the question" },
+        { sessionKey: "sk", userId: "users%2F42", role: "assistant", content: "the answer" },
       ]);
     });
 
-    test("does not capture anything when the turn carries no userId", async () => {
+    test("does not capture anything when nobody vouched for the principal", async () => {
       let called = false;
       const runner = createTurnRunner({
         model: {} as any,
@@ -886,7 +976,7 @@ describe("createTurnRunner", () => {
         runTurnFn: async () => "reply",
       });
 
-      await runner(baseTurn({ userId: undefined }), baseSink());
+      await runner(baseTurn({ principal: anonymous("conv-1") }), baseSink());
 
       expect(called).toBe(false);
     });
@@ -917,7 +1007,7 @@ describe("createTurnRunner", () => {
         runTurnFn: async () => "original",
       });
 
-      await runner(baseTurn({ userId: "u1" }), baseSink());
+      await runner(baseTurn({ principal: verified("u1") }), baseSink());
 
       expect(captured.find((m) => m.role === "assistant")?.content).toBe("rewritten");
     });
@@ -946,7 +1036,7 @@ describe("createTurnRunner", () => {
         runTurnFn: async () => "Here you go.",
       });
 
-      await runner(baseTurn({ userId: "u1" }), sink);
+      await runner(baseTurn({ principal: verified("u1") }), sink);
 
       // what the user saw includes the display...
       expect(sink.finalized).toEqual(["Here you go.\n\nMER-1\nhttps://x"]);
@@ -979,7 +1069,7 @@ describe("createTurnRunner", () => {
         runTurnFn: async () => "delivered anyway",
       });
 
-      await expect(runner(baseTurn({ userId: "u1" }), sink)).resolves.toBeUndefined();
+      await expect(runner(baseTurn({ principal: verified("u1") }), sink)).resolves.toBeUndefined();
       expect(sink.finalized).toEqual(["delivered anyway"]);
       expect(correctionsRan).toBe(true);
     });
@@ -999,7 +1089,7 @@ describe("createTurnRunner", () => {
         runTurnFn: async () => "reply",
       });
 
-      await expect(runner(baseTurn({ userId: "u1" }), sink)).resolves.toBeUndefined();
+      await expect(runner(baseTurn({ principal: verified("u1") }), sink)).resolves.toBeUndefined();
       expect(sink.finalized).toEqual(["reply"]);
     });
   });

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "bun:test";
 import { httpChannel } from "./index.ts";
-import { CHANNEL_API_VERSION, type ChannelRuntimeContext, type ChannelHostReads } from "@mercury-fw/channel-types";
+import type { ChannelRuntimeContext, ChannelHostReads } from "@mercury-fw/channel-types";
 
 const reads: ChannelHostReads = {
   manifest: () => ({}),
@@ -25,9 +25,12 @@ const fullCtx = (over: Partial<ChannelRuntimeContext> = {}): ChannelRuntimeConte
 });
 
 describe("httpChannel", () => {
-  it("declares the http name at the current api version", () => {
+  // A literal, not CHANNEL_API_VERSION: the import reports whatever contract
+  // is installed, so an old channel next to a newer core would claim the new
+  // version and be loaded. The literal is the contract this code was written for.
+  it("declares the http name at channel api version 2", () => {
     expect(httpChannel.name).toBe("http");
-    expect(httpChannel.apiVersion).toBe(CHANNEL_API_VERSION);
+    expect(httpChannel.apiVersion).toBe(2);
   });
 
   it("builds a provider when confirm, resolveConfirmation and reads are all present", () => {

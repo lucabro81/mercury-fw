@@ -24,6 +24,7 @@ export type { PostTurnGuard };
 import type { SessionHistory } from "../session/history.ts";
 import { recordStep } from "../session/tool-log-buffer.ts";
 import type { HandleTurn, InboundTurn, TurnSink } from "./provider.ts";
+import type { Principal } from "@mercury-fw/channel-types";
 
 export type TurnRunnerDeps = {
   model: LanguageModel;
@@ -93,15 +94,32 @@ export type TurnRunnerDeps = {
   takeSurfacedDisplays?: (sessionKey: string) => string[];
 };
 
+/**
+ * The per-person ids the core derives from a turn's principal. `captureUserId`
+ * is the raw id, set only when a provider vouched for the person, so a turn
+ * nobody vouched for is never tracked for Layer-3 capture. `wikiUserId` is the
+ * same id encoded for `inferred/users/<id>` and the verbatim archive, so a "/"
+ * can't add a segment; `.` and `..` survive encoding and are refused by the
+ * wiki's own guards. `toWellFormed` keeps a lone surrogate from making the
+ * encoding throw.
+ */
+function principalIds(principal: Principal): { captureUserId?: string; wikiUserId: string } {
+  return {
+    captureUserId: principal.provider === "none" ? undefined : principal.id,
+    wikiUserId: encodeURIComponent(principal.id.toWellFormed()),
+  };
+}
+
 /** Builds the shared `HandleTurn` every provider's driver calls once it has a real message to run through the model. */
 export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
   const postTurnGuards = deps.postTurnGuards ?? [];
   const logPostTurnGuard = deps.logPostTurnGuardFn ?? ((message: string) => console.log(message));
 
   return async (turn: InboundTurn, sink: TurnSink): Promise<void> => {
-    const tracked = turn.userId !== undefined;
+    const { captureUserId, wikiUserId } = principalIds(turn.principal);
+    const tracked = captureUserId !== undefined;
     if (tracked) {
-      deps.trackSession(turn.sessionKey, turn.userId as string, (deps.now ?? Date.now)());
+      deps.trackSession(turn.sessionKey, captureUserId, (deps.now ?? Date.now)());
       deps.registerCaptureCallback(turn.sessionKey, sink.onToolStart, sink.onToolFinish);
     }
 
@@ -119,10 +137,10 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
       // already scheduled when the sink was constructed keeps running
       // otherwise, firing on its own 60s schedule regardless of whether
       // the turn itself already failed and was reported.
-      history = await deps.getOrCreateHistory(turn.sessionKey, tracked, turn.userId);
+      history = await deps.getOrCreateHistory(turn.sessionKey, tracked, captureUserId);
       const text = await (deps.runTurnFn ?? runTurn)(history, turn.text, {
         model: deps.model,
-        tools: deps.buildTools(turn.sessionKey, turn.wikiUserId, sink.onToolStart, sink.onToolFinish),
+        tools: deps.buildTools(turn.sessionKey, wikiUserId, sink.onToolStart, sink.onToolFinish),
         system: turn.multiUser ? deps.systemPrompts.multiUser : deps.systemPrompts.singleUser,
         onTextChunk: sink.onTextChunk,
         onReasoningChunk: sink.onReasoningChunk,
@@ -187,12 +205,16 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
       // propagate out of this awaited handler and take the process down.
       if (deps.captureVerbatim) {
         // The archive is per-person and space-independent, so it keys on
-        // wikiUserId — Mercury's canonical per-user id, the same identity the
-        // wiki notes use — not the space-scoped session.
-        const userId = turn.wikiUserId;
+        // wikiUserId (the same identity the wiki notes use), not the
+        // space-scoped session.
         try {
-          await deps.captureVerbatim({ sessionKey: turn.sessionKey, userId, role: "user", content: turn.text });
-          await deps.captureVerbatim({ sessionKey: turn.sessionKey, userId, role: "assistant", content: assistantText });
+          await deps.captureVerbatim({ sessionKey: turn.sessionKey, userId: wikiUserId, role: "user", content: turn.text });
+          await deps.captureVerbatim({
+            sessionKey: turn.sessionKey,
+            userId: wikiUserId,
+            role: "assistant",
+            content: assistantText,
+          });
         } catch (err) {
           console.log(
             `[verbatim-archive] capture failed, turn unaffected: ${String(err instanceof Error ? err.message : err)}`,

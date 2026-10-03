@@ -383,7 +383,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
 
   // `wikiUserId` is separate from `sessionKey`: inferred/users/<userId> notes
   // are scoped per-person, not per-(space,person) pair, so it must not include
-  // the space. An identity-less channel (the terminal) uses a fixed id.
+  // the space. The turn runner derives it from the turn's principal.
   function buildTools(
     sessionKey: string,
     wikiUserId: string,

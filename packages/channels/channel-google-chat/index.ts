@@ -7,7 +7,7 @@
  * missing is a misconfiguration: `build()` throws and the loader skips this
  * channel fail-soft, leaving the rest of Mercury up.
  */
-import { CHANNEL_API_VERSION, type ChannelPlugin, type ChannelRuntimeContext } from "@mercury-fw/channel-types";
+import type { ChannelPlugin, ChannelRuntimeContext } from "@mercury-fw/channel-types";
 import { createGoogleChatProvider } from "./google-chat-provider.ts";
 
 /** Reads a required env var, failing loudly (caught by the channel loader) instead of silently degrading. */
@@ -20,7 +20,9 @@ function require(env: ChannelRuntimeContext["env"], name: string): string {
 }
 
 export const googleChatChannel: ChannelPlugin = {
-  apiVersion: CHANNEL_API_VERSION,
+  // The contract this channel is written for, as a literal: importing
+  // CHANNEL_API_VERSION would report whichever contract is installed.
+  apiVersion: 2,
   name: "google-chat",
   build: (ctx) => {
     // No subscription configured ⇒ this instance simply doesn't run Google Chat.

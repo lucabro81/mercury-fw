@@ -193,3 +193,17 @@ describe("selfReviewRoots-scoped reads", () => {
     expect(rawMatches[0]!.path).toBe("raw/notes/pasted-readme.md");
   });
 });
+
+// The per-user root is inferred/users/<userId>: "." or ".." resolved it to
+// inferred/users/ or inferred/ itself, so a channel handing such an id over
+// let the model's read tools see every user's notes. Writes already refused it.
+describe("per-user reads refuse a userId that isn't one path segment", () => {
+  for (const userId of ["", ".", "..", "a/b", "a\\b"]) {
+    it(`refuses ${JSON.stringify(userId)}`, async () => {
+      const vault = await makeTempVault();
+      await expect(listWikiFiles(vault, userId)).rejects.toThrow("invalid userId");
+      await expect(readWikiFile(vault, userId, "curated/glossary.md")).rejects.toThrow("invalid userId");
+      await expect(grepWiki(vault, userId, "x")).rejects.toThrow("invalid userId");
+    });
+  }
+});

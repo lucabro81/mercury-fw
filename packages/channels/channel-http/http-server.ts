@@ -26,6 +26,13 @@ import {
   type ConfirmOutcome,
 } from "@mercury-fw/channel-types";
 
+/**
+ * A client's conversation id becomes the session key, a log prefix and (until
+ * the channel authenticates) the per-person wiki id, so only letters, digits,
+ * `-` and `_` get in: no path segments, no line breaks, nothing to encode.
+ */
+const CONVERSATION_ID = /^[A-Za-z0-9_-]{1,128}$/;
+
 /** Resolves a bare confirmation token to a reply string, or `null` if the input isn't a token. Injected by the core (`ctx.confirm`). */
 export type ConfirmFn = (token: string, sessionKey: string, userId: string) => Promise<string | null>;
 /** The structured sibling of {@link ConfirmFn}, for the `/confirm` `resolved` flag. Injected by the core (`ctx.resolveConfirmation`). */
@@ -105,6 +112,9 @@ export async function handleTurnRequest(req: Request, deps: TurnRequestDeps): Pr
     typeof body.conversationId === "string" && body.conversationId.trim().length > 0
       ? body.conversationId.trim()
       : (deps.newSessionKey ?? (() => crypto.randomUUID()))();
+  if (!CONVERSATION_ID.test(sessionKey)) {
+    return Response.json({ ok: false, error: "invalid conversationId" }, { status: 400, headers: cors });
+  }
 
   // Aborted when the client disconnects (see the stream's `cancel` below) so
   // the in-flight turn stops instead of running to completion — the "stop"
@@ -164,7 +174,9 @@ export async function handleTurnRequest(req: Request, deps: TurnRequestDeps): Pr
             multiUser: false,
             text,
             sessionKey,
-            wikiUserId: sessionKey,
+            // Unauthenticated: the conversation id stands in for the caller,
+            // and nobody vouches for it.
+            principal: { id: sessionKey, provider: "none" },
             logPrefix: `[http:${sessionKey}] `,
             abortSignal: abort.signal,
           },
@@ -217,6 +229,9 @@ export async function handleConfirmRequest(req: Request, deps: ConfirmRequestDep
   const sessionKey = typeof body.conversationId === "string" ? body.conversationId.trim() : "";
   if (token.length === 0 || sessionKey.length === 0) {
     return Response.json({ ok: false, error: "missing token or conversationId" }, { status: 400, headers: cors });
+  }
+  if (!CONVERSATION_ID.test(sessionKey)) {
+    return Response.json({ ok: false, error: "invalid conversationId" }, { status: 400, headers: cors });
   }
   const outcome = await deps.resolveConfirmation(token, sessionKey, sessionKey);
   switch (outcome.status) {

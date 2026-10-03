@@ -17,10 +17,13 @@ import { getLoadedContextLength } from "../model/context-size.ts";
 import { detectPendingConfirmation } from "../session/pending-confirmation.ts";
 import { PENDING_CONFIRMATION_NOTE } from "../session/agent-turn.ts";
 import type { Provider, HandleTurn, TurnSink } from "./provider.ts";
+import type { Principal } from "@mercury-fw/channel-types";
 import type { StepInfo } from "../session/step-info.ts";
 import type { writeConfirmationNote } from "../wiki/wiki-note.ts";
 
 const TERMINAL_SESSION_KEY = "terminal";
+/** The terminal is a single-user debug console: one fixed principal nobody vouched for, so its sessions stay out of episodic memory. */
+const TERMINAL_PRINCIPAL: Principal = { id: "terminal", provider: "none" };
 
 export type TerminalProviderDeps = {
   confirmDeps: {
@@ -134,7 +137,7 @@ export function createTerminalProvider(deps: TerminalProviderDeps): Provider {
               multiUser: false,
               text: input,
               sessionKey: TERMINAL_SESSION_KEY,
-              wikiUserId: TERMINAL_SESSION_KEY,
+              principal: TERMINAL_PRINCIPAL,
               logPrefix: "",
             },
             sink,

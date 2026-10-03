@@ -69,7 +69,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/TurnEvent"
         "400":
-          description: Missing/invalid body.
+          description: Missing/invalid body, or a conversationId with characters outside the allowed ones.
           content:
             application/json:
               schema:
@@ -98,7 +98,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ConfirmResult"
         "400":
-          description: Missing token or conversationId.
+          description: Missing token or conversationId, or a conversationId with characters outside the allowed ones.
           content:
             application/json:
               schema:
@@ -110,7 +110,7 @@ paths:
         - name: id
           in: query
           required: true
-          description: The conversationId (session key) whose messages to return.
+          description: The session key whose messages to return, as `/conversations` lists it (any channel's).
           schema:
             type: string
         - name: limit
@@ -304,7 +304,8 @@ components:
           description: The user's message, or a bare confirmation token.
         conversationId:
           type: string
-          description: Opaque, client-owned. Omit to start a fresh ephemeral conversation.
+          pattern: "^[A-Za-z0-9_-]{1,128}$"
+          description: Opaque, client-owned; letters, digits, `-` and `_` (a UUID fits). Omit to start a fresh ephemeral conversation.
     TurnEvent:
       type: object
       description: The shape carried by each SSE `data:` line, per event type.
@@ -350,6 +351,7 @@ components:
           type: string
         conversationId:
           type: string
+          pattern: "^[A-Za-z0-9_-]{1,128}$"
     ConfirmResult:
       type: object
       required: [ok, resolved]
