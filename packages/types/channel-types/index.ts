@@ -38,6 +38,21 @@ export const PENDING_CONFIRMATION_NOTE = "Azione in sospeso, in attesa di confer
 /** Sentinel the model returns for "not addressed to me" in a multi-person space (see `buildSystemPrompt`'s multiUser block). A multi-user channel suppresses it in `finalize`. */
 export const NO_REPLY = "NO_REPLY";
 
+/** Who vouched for a principal's identity. `none` = nobody did (the terminal, the HTTP channel without authentication): nothing identity-dependent treats it as a real person. */
+export type PrincipalProvider = "google-chat" | "none";
+
+/** The person behind a turn. The channel builds it; the core derives every per-person id from it. */
+export type Principal = {
+  /** Stable id for this person within `provider` (Google Chat: `users/<id>`). */
+  id: string;
+  provider: PrincipalProvider;
+  displayName?: string;
+  /** Roles the provider granted, when it has any. */
+  roles?: string[];
+  /** Raw claims the provider vouched for, when it has any. */
+  claims?: Record<string, unknown>;
+};
+
 /** One inbound message, already resolved by its provider into the shape the shared layer needs. */
 export type InboundTurn = {
   /** Stable provider id for the tool log — a free string, each provider supplies its own. */
@@ -48,10 +63,8 @@ export type InboundTurn = {
   text: string;
   /** Opaque session key. Derived by the provider, never parsed above it. */
   sessionKey: string;
-  /** Opaque per-person id for Layer-3 capture. `undefined` = provider with no real per-user identity (terminal today), session not tracked. */
-  userId?: string;
-  /** Opaque, already path-safe per-person id for `inferred/users/<id>` scoping. */
-  wikiUserId: string;
+  /** Who is talking, as the channel knows them. Read only by the core, never handed to tools. */
+  principal: Principal;
   /** stderr log prefix, e.g. `[chat:spaces/x:users/y] ` — empty for the terminal. */
   logPrefix: string;
   /** When set, aborting it cancels the in-flight turn. Only the HTTP surface supplies one today (client disconnect); other channels leave it undefined. */
@@ -108,7 +121,7 @@ export type Provider = Notifier & {
 };
 
 /** Channel-plugin contract version: the loader refuses a channel with a different `apiVersion` fail-soft, like the tool-plugin loader with `PLUGIN_API_VERSION`. Bumped only on a breaking change to this file's shapes. */
-export const CHANNEL_API_VERSION = 1;
+export const CHANNEL_API_VERSION = 2;
 
 /**
  * Structured outcome of resolving a confirmation token, distinguishing cases the
