@@ -94,7 +94,6 @@ export type TurnRunnerDeps = {
   takeSurfacedDisplays?: (sessionKey: string) => string[];
 };
 
-/** Builds the shared `HandleTurn` every provider's driver calls once it has a real message to run through the model. */
 /**
  * The per-person ids the core derives from a turn's principal. `captureUserId`
  * is the raw id, set only when a provider vouched for the person, so a turn
@@ -108,6 +107,7 @@ function principalIds(principal: Principal): { captureUserId?: string; wikiUserI
   };
 }
 
+/** Builds the shared `HandleTurn` every provider's driver calls once it has a real message to run through the model. */
 export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
   const postTurnGuards = deps.postTurnGuards ?? [];
   const logPostTurnGuard = deps.logPostTurnGuardFn ?? ((message: string) => console.log(message));

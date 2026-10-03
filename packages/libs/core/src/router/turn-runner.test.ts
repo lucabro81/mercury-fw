@@ -478,6 +478,56 @@ describe("createTurnRunner", () => {
     expect(received).toEqual([stepA, stepB]);
   });
 
+  test("an id with no characters to encode reaches buildTools unchanged (the terminal's \"terminal\" keeps its notes)", async () => {
+    const wikiIds: string[] = [];
+    const runner = createTurnRunner({
+      model: {} as any,
+      systemPrompts: { singleUser: "s", multiUser: "m" },
+      buildTools: (_sessionKey, wikiUserId) => {
+        wikiIds.push(wikiUserId);
+        return {};
+      },
+      getOrCreateHistory: () => fakeHistory(),
+      trackSession: () => {},
+      registerCaptureCallback: () => {},
+      maybeCapture: async () => {},
+      processToolCorrections: async () => {},
+      logStep: () => {},
+      runTurnFn: async () => "reply",
+    });
+
+    await runner(baseTurn({ principal: anonymous("terminal") }), baseSink());
+
+    expect(wikiIds).toEqual(["terminal"]);
+  });
+
+  // A client-chosen HTTP conversation id used to reach the wiki raw, so "a/b"
+  // added a path segment under inferred/users/ (and "../x" left it). Encoded,
+  // it stays one segment.
+  test("an id with spaces or slashes reaches buildTools as a single path-safe segment", async () => {
+    const wikiIds: string[] = [];
+    const runner = createTurnRunner({
+      model: {} as any,
+      systemPrompts: { singleUser: "s", multiUser: "m" },
+      buildTools: (_sessionKey, wikiUserId) => {
+        wikiIds.push(wikiUserId);
+        return {};
+      },
+      getOrCreateHistory: () => fakeHistory(),
+      trackSession: () => {},
+      registerCaptureCallback: () => {},
+      maybeCapture: async () => {},
+      processToolCorrections: async () => {},
+      logStep: () => {},
+      runTurnFn: async () => "reply",
+    });
+
+    await runner(baseTurn({ principal: anonymous("a b/c") }), baseSink());
+    await runner(baseTurn({ principal: anonymous("../x") }), baseSink());
+
+    expect(wikiIds).toEqual(["a%20b%2Fc", "..%2Fx"]);
+  });
+
   test("when the principal is verified: trackSession, registerCaptureCallback, and maybeCapture all run, and getOrCreateHistory is asked to track for capture", async () => {
     const tracked: Array<[string, string]> = [];
     const registered: string[] = [];

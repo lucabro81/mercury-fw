@@ -69,6 +69,7 @@ describe("loadChannels", () => {
     const loaded = loadChannels([channel("google-chat", build, 1)], { runtime: runtimeWith(logs) });
     expect(loaded).toEqual([]);
     expect(build).not.toHaveBeenCalled();
+    expect(logs.some((l) => l.includes("google-chat") && l.includes("apiVersion 1"))).toBe(true);
   });
 
   it("isolates a build that throws and keeps the other channels", () => {
