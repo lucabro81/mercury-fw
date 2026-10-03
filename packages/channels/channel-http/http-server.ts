@@ -272,7 +272,6 @@ export function readRoutes(reads: ChannelHostReads, corsOrigin = "*"): Record<st
       const url = new URL(req.url);
       const id = url.searchParams.get("id");
       if (!id) return badRequest("missing ?id");
-      if (!CONVERSATION_ID.test(id)) return badRequest("invalid ?id");
       const limit = Number(url.searchParams.get("limit") ?? "200");
       const offset = url.searchParams.get("offset") ?? undefined;
       return json({ ok: true, ...(await reads.conversation(id, limit, offset) as object) });

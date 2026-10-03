@@ -187,6 +187,20 @@ describe("handleTurnRequest", () => {
     expect(ran).toBe(false);
   });
 
+  it("trims surrounding whitespace before checking the conversationId", async () => {
+    const seen: string[] = [];
+    const deps = {
+      handleTurn: async (turn: InboundTurn, sink: TurnSink) => {
+        seen.push(turn.sessionKey);
+        await sink.finalize("ok");
+      },
+      confirm: async () => null,
+    };
+    const res = await handleTurnRequest(turnReq({ text: "hi", conversationId: "  abc\n" }), deps);
+    await res.text();
+    expect(seen).toEqual(["abc"]);
+  });
+
   it("accepts a UUID and a 128-character conversationId", async () => {
     const seen: string[] = [];
     const deps = {
@@ -360,9 +374,28 @@ describe("GET /conversation", () => {
     health: async () => ({}),
   };
 
-  it("returns 400 for an ?id outside the allowed characters", async () => {
-    const res = await readRoutes(baseReads)["/conversation"]!.GET(new Request("http://x/conversation?id=..%2Fx"));
-    expect(res.status).toBe(400);
+  // /conversations lists every channel's archived session keys (Google Chat's
+  // "spaces/X:users/42", the terminal's "terminal"): the read route must open
+  // each of them. The /turn id rule doesn't apply here; the id is only a filter.
+  it("opens a session key /conversations lists, whatever channel it came from", async () => {
+    const seen: string[] = [];
+    const reads: ChannelHostReads = {
+      ...baseReads,
+      conversations: async () => ({ conversations: [{ id: "spaces/X:users/42" }, { id: "terminal" }] }),
+      conversation: async (id) => {
+        seen.push(id);
+        return { messages: [], nextOffset: null };
+      },
+    };
+    const routes = readRoutes(reads);
+    const listed = (await (await routes["/conversations"]!.GET(new Request("http://x/conversations"))).json()) as {
+      conversations: Array<{ id: string }>;
+    };
+    for (const { id } of listed.conversations) {
+      const res = await routes["/conversation"]!.GET(new Request(`http://x/conversation?id=${encodeURIComponent(id)}`));
+      expect(res.status).toBe(200);
+    }
+    expect(seen).toEqual(["spaces/X:users/42", "terminal"]);
   });
 
   it("returns 400 when ?id is missing", async () => {

@@ -110,10 +110,9 @@ paths:
         - name: id
           in: query
           required: true
-          description: The conversationId (session key) whose messages to return.
+          description: The session key whose messages to return, as `/conversations` lists it (any channel's).
           schema:
             type: string
-            pattern: "^[A-Za-z0-9_-]{1,128}$"
         - name: limit
           in: query
           required: false
