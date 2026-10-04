@@ -12,26 +12,37 @@ import {
 } from "./semantic-consolidation.ts";
 import type { SemanticFactEntry } from "../memory/semantic-facts-store.ts";
 import type { ToolCorrectionEntry } from "../memory/tool-corrections-store.ts";
-import { readWikiFileInRoots } from "../wiki/wiki-read.ts";
-import { readInferredNote, readVisible } from "../identity/vault-access.ts";
-import { writeInferredNote, writeToolCorrectionNote } from "../wiki/wiki-note.ts";
+import { readVisible } from "../identity/vault-access.ts";
+import { writeInferredNote, writeToolCorrectionNote, type WriteCondition } from "../wiki/wiki-note.ts";
 import { initVault } from "../wiki/vault-init.ts";
-import { resolve } from "node:path";
 
 const VAULT = "/vault";
-const NO_INCUMBENT = async () => {
-  throw new Error("ENOENT");
-};
+type FakeWriter = (vaultPath: string, subject: string, topic: string, fields: unknown, body: string) => void | Promise<void>;
 
-function baseDeps(overrides: Partial<ConsolidationDeps>): ConsolidationDeps {
+/**
+ * Stands in for a vault writer: evaluates the consolidation's `when` against
+ * `incumbent` (the note's current text, `null` for none) the way the real
+ * writer does inside the commit chain, and calls `write` only if it passes.
+ */
+function fakeWriter(write: FakeWriter = () => {}, incumbent: string | null = null) {
+  return async (vaultPath: string, subject: string, topic: string, fields: unknown, body: string, condition?: WriteCondition) => {
+    if (condition?.when && !condition.when(incumbent)) return false;
+    await write(vaultPath, subject, topic, fields, body);
+    return true;
+  };
+}
+
+function baseDeps(
+  overrides: Partial<Omit<ConsolidationDeps, "writeInferredNoteFn">> & { write?: FakeWriter; incumbent?: string | null },
+): ConsolidationDeps {
+  const { write, incumbent, ...rest } = overrides;
   return {
     vaultPath: VAULT,
     clusterFn: async () => [],
-    readInferredNoteFn: NO_INCUMBENT,
-    writeInferredNoteFn: async () => {},
+    writeInferredNoteFn: fakeWriter(write, incumbent) as ConsolidationDeps["writeInferredNoteFn"],
     k: 5,
     confidenceForCount: () => "medium",
-    ...overrides,
+    ...rest,
   };
 }
 
@@ -44,7 +55,7 @@ describe("consolidateSemanticFact", () => {
     let written: unknown;
     const deps = baseDeps({
       clusterFn: async () => [entry("italiano", "2026-07-20T09:00:00.000Z")],
-      writeInferredNoteFn: async (vaultPath, userId, topic, fields, body) => {
+      write: (vaultPath, userId, topic, fields, body) => {
         written = { vaultPath, userId, topic, fields, body };
       },
     });
@@ -66,7 +77,7 @@ describe("consolidateSemanticFact", () => {
     let writeCalls = 0;
     const deps = baseDeps({
       clusterFn: async () => [entry("italiano", "2026-07-20T09:00:00.000Z")],
-      readInferredNoteFn: async () =>
+      incumbent:
         [
           "---",
           "type: inferred",
@@ -78,7 +89,7 @@ describe("consolidateSemanticFact", () => {
           "---",
           "italiano",
         ].join("\n"),
-      writeInferredNoteFn: async () => {
+      write: () => {
         writeCalls++;
       },
     });
@@ -95,7 +106,7 @@ describe("consolidateSemanticFact", () => {
         entry("inglese", "2026-07-18T09:00:00.000Z"),
         entry("inglese", "2026-07-19T09:00:00.000Z"),
       ],
-      readInferredNoteFn: async () =>
+      incumbent:
         [
           "---",
           "type: inferred",
@@ -107,7 +118,7 @@ describe("consolidateSemanticFact", () => {
           "---",
           "italiano",
         ].join("\n"),
-      writeInferredNoteFn: async (vaultPath, userId, topic, fields, body) => {
+      write: (vaultPath, userId, topic, fields, body) => {
         written = { vaultPath, userId, topic, fields, body };
       },
     });
@@ -131,7 +142,7 @@ describe("consolidateSemanticFact", () => {
     let writeCalls = 0;
     const deps = baseDeps({
       clusterFn: async () => [],
-      writeInferredNoteFn: async () => {
+      write: () => {
         writeCalls++;
       },
     });
@@ -148,7 +159,7 @@ describe("consolidateSemanticFact", () => {
         entry("italiano", "2026-07-18T09:00:00.000Z"),
         entry("inglese", "2026-07-19T09:00:00.000Z"),
       ],
-      writeInferredNoteFn: async () => {
+      write: () => {
         writeCalls++;
       },
     });
@@ -169,7 +180,7 @@ describe("consolidateSemanticFact", () => {
         entry("italiano", "2026-07-20T09:00:00.000Z", "preferred-language"),
         entry("platform", "2026-07-20T09:00:00.000Z", "current-team"),
       ],
-      writeInferredNoteFn: async (vaultPath, userId, topic, fields, body) => {
+      write: (vaultPath, userId, topic, fields, body) => {
         written = { vaultPath, userId, topic, fields, body };
       },
     });
@@ -203,7 +214,7 @@ describe("consolidateSemanticFact", () => {
     const deps = baseDeps({
       k: 10,
       clusterFn: async () => [entry("italiano", "2026-07-20T09:00:00.000Z")],
-      writeInferredNoteFn: async (vaultPath, userId, topic, fields, body) => {
+      write: (vaultPath, userId, topic, fields, body) => {
         written = { vaultPath, userId, topic, fields, body };
       },
     });
@@ -247,7 +258,7 @@ describe("consolidateSemanticFact", () => {
     let written: unknown;
     const deps = baseDeps({
       clusterFn: async () => [entry("italiano", "2026-07-20T09:00:00.000Z")],
-      writeInferredNoteFn: async (vaultPath, userId, topic, fields, body) => {
+      write: (vaultPath, userId, topic, fields, body) => {
         written = { fields, body };
       },
       confidenceForCount: undefined as unknown as ConsolidationDeps["confidenceForCount"],
@@ -279,7 +290,7 @@ describe("consolidateSemanticFact — real wiki read/write (regression: userId e
   // rejects any userId containing "/", but every real Google Chat userId
   // has that shape ("users/<id>") — so consolidation against a real user
   // always threw, silently swallowed by idle-session-cron.ts's own
-  // try/catch. Exercising the REAL writeInferredNote/readInferredNote (not
+  // try/catch. Exercising the REAL writeInferredNote (not
   // fakes, unlike every test above) is what catches this: a fake never
   // enforces the path-separator guard, so this exact mismatch was never
   // intercepted by the suite before this test existed.
@@ -290,7 +301,6 @@ describe("consolidateSemanticFact — real wiki read/write (regression: userId e
     await consolidateSemanticFact(key, "team", {
       vaultPath,
       clusterFn: async () => [{ userId: key, topic: "team", value: "platform", timestamp: "2026-07-20T09:00:00.000Z" }],
-      readInferredNoteFn: readInferredNote,
       writeInferredNoteFn: writeInferredNote,
     });
 
@@ -306,7 +316,6 @@ describe("consolidateSemanticFact — real wiki read/write (regression: userId e
     const deps: ConsolidationDeps = {
       vaultPath,
       clusterFn: async () => [{ userId: key, topic: "team", value: "platform", timestamp: "2026-07-20T09:00:00.000Z" }],
-      readInferredNoteFn: readInferredNote,
       writeInferredNoteFn: writeInferredNote,
     };
 
@@ -323,15 +332,17 @@ describe("consolidateSemanticFact — real wiki read/write (regression: userId e
   });
 });
 
-function baseToolDeps(overrides: Partial<ToolCorrectionConsolidationDeps>): ToolCorrectionConsolidationDeps {
+function baseToolDeps(
+  overrides: Partial<Omit<ToolCorrectionConsolidationDeps, "writeNoteFn">> & { write?: FakeWriter; incumbent?: string | null },
+): ToolCorrectionConsolidationDeps {
+  const { write, incumbent, ...rest } = overrides;
   return {
     vaultPath: VAULT,
     clusterFn: async () => [],
-    readNoteFn: NO_INCUMBENT,
-    writeNoteFn: async () => {},
+    writeNoteFn: fakeWriter(write, incumbent) as ToolCorrectionConsolidationDeps["writeNoteFn"],
     k: 5,
     confidenceForCount: () => "medium",
-    ...overrides,
+    ...rest,
   };
 }
 
@@ -344,7 +355,7 @@ describe("consolidateToolCorrection", () => {
     let written: unknown;
     const deps = baseToolDeps({
       clusterFn: async () => [toolEntry("ogni --select deve iniziare per issues.", "2026-07-20T09:00:00.000Z")],
-      writeNoteFn: async (vaultPath, tool, topic, fields, body) => {
+      write: (vaultPath, tool, topic, fields, body) => {
         written = { vaultPath, tool, topic, fields, body };
       },
     });
@@ -364,9 +375,9 @@ describe("consolidateToolCorrection", () => {
     let writeCalls = 0;
     const deps = baseToolDeps({
       clusterFn: async () => [toolEntry("v", "2026-07-20T09:00:00.000Z")],
-      readNoteFn: async () =>
+      incumbent:
         ["---", "type: inferred", "source: agent", "confidence: medium", "derived_from:", "  - 2026-07-10T09:00:00.000Z", "last_reviewed: 2026-07-10T09:00:00.000Z", "---", "v"].join("\n"),
-      writeNoteFn: async () => {
+      write: () => {
         writeCalls++;
       },
     });
@@ -379,7 +390,7 @@ describe("consolidateToolCorrection", () => {
   it("does nothing when the cluster is empty", async () => {
     let writeCalls = 0;
     const deps = baseToolDeps({
-      writeNoteFn: async () => {
+      write: () => {
         writeCalls++;
       },
     });
@@ -396,7 +407,7 @@ describe("consolidateToolCorrection", () => {
         toolEntry("v1", "2026-07-20T09:00:00.000Z", "select-prefix"),
         toolEntry("v2", "2026-07-20T09:00:00.000Z", "assignee-operator"),
       ],
-      writeNoteFn: async (vaultPath, tool, topic, fields, body) => {
+      write: (vaultPath, tool, topic, fields, body) => {
         written = { body };
       },
     });
@@ -446,7 +457,6 @@ describe("consolidateToolCorrection — real wiki read/write", () => {
     await consolidateToolCorrection("jira", "select-prefix", {
       vaultPath,
       clusterFn: async () => [toolEntry("ogni --select deve iniziare per issues.", "2026-07-20T09:00:00.000Z")],
-      readNoteFn: (vp, relativePath) => readWikiFileInRoots(vp, [resolve(vp, "curated")], relativePath),
       writeNoteFn: writeToolCorrectionNote,
     });
 
@@ -454,22 +464,16 @@ describe("consolidateToolCorrection — real wiki read/write", () => {
     expect(content).toContain("ogni --select deve iniziare per issues.");
   });
 
-  // Regression guard: readToolCorrectionIncumbentCount originally passed
-  // readNoteFn a relativePath without the "curated/" prefix
-  // (`standards/<tool>-<topic>.md`), which readWikiFileInRoots resolves
-  // against the vault ROOT, not against whichever root in the allowed list
-  // happens to match — so it always threw "path not accessible", silently
-  // caught as "no incumbent" every time. Caught live: manually forging a
-  // StepInfo pair and running the real pipeline end-to-end showed the
-  // write succeeding but every re-consolidation still behaving like a
-  // first promotion. A fake readNoteFn (as in the tie test above) can't
-  // catch this — only exercising the real path resolution can.
+  // Regression guard: the incumbent's count used to be read through a path
+  // missing the "curated/" prefix, which always failed and was silently
+  // treated as "no incumbent", so every re-consolidation behaved like a first
+  // promotion (caught live). The count is now read from the note's real
+  // current content, inside the writer; only the real writer can show it.
   it("does not re-promote on a second consolidation of the same single occurrence (tie against the real incumbent it just wrote)", async () => {
     const vaultPath = await makeTempVault();
     const deps = {
       vaultPath,
       clusterFn: async () => [toolEntry("ogni --select deve iniziare per issues.", "2026-07-20T09:00:00.000Z")],
-      readNoteFn: (vp: string, relativePath: string) => readWikiFileInRoots(vp, [resolve(vp, "curated")], relativePath),
       writeNoteFn: writeToolCorrectionNote,
       k: 1,
     };
@@ -484,6 +488,25 @@ describe("consolidateToolCorrection — real wiki read/write", () => {
     const secondRead = await readVisible({ vaultPath, key: "static:anyone" }, "curated/standards/jira-select-prefix.md");
 
     expect(secondRead).toBe(firstWrite);
+  });
+
+  // Regression for #154: the incumbent's count was read before the write,
+  // outside the commit chain, so two people's turns consolidating the same
+  // correction both read the same incumbent and the last write won, even
+  // when it had less support.
+  it("of two concurrent consolidations, the better-supported one stays", async () => {
+    const vaultPath = await makeTempVault();
+    const strong = ["2026-07-20T09:00:00.000Z", "2026-07-21T09:00:00.000Z"].map((t) => toolEntry("strong", t));
+    const weak = [toolEntry("weak", "2026-07-22T09:00:00.000Z")];
+    const slowly = <T,>(value: T) => new Promise<T>((r) => setTimeout(() => r(value), 30));
+
+    await Promise.all([
+      consolidateToolCorrection("jira", "select-prefix", { vaultPath, clusterFn: async () => strong, writeNoteFn: writeToolCorrectionNote }),
+      consolidateToolCorrection("jira", "select-prefix", { vaultPath, clusterFn: () => slowly(weak), writeNoteFn: writeToolCorrectionNote }),
+    ]);
+
+    const content = await readVisible({ vaultPath, key: "static:anyone" }, "curated/standards/jira-select-prefix.md");
+    expect(content).toContain("strong");
   });
 });
 

@@ -38,6 +38,12 @@ The wiki has a common area, `curated/`, that everyone reads, and an area per per
 
 An instance that ran an earlier version gets its data moved at startup: Google Chat and terminal notes into their areas, the memory's ids onto the new keys. An id that doesn't say which provider it came from stays where it is, with a line in the log.
 
+## Several people at once
+
+Different people, and different conversations of one person, run in parallel. Turns of one conversation run one after the other: a second message sent while the first is still being answered (two tabs on one chat, a double submit) waits for it, and the idle capture waits too before it closes a conversation. A vault write that depends on what's there (a consolidation, an `index.md` update, a promotion) decides inside the same queue the write goes through, so a concurrent update is never lost. The nightly review rewrites or deletes only the version of a document it read, and rereads it when someone changed it meanwhile.
+
+The core doesn't limit how many requests reach the model at once, so the model server decides how they share it (on Ollama, `OLLAMA_NUM_PARALLEL`). The summaries and extractions that run after a turn use the same model too. Measure it on your own hardware before counting on it: on one setup, a follow-up that took 5 seconds for one person took about two minutes with two people talking at once.
+
 ## Requirements
 
 Bun: the package ships its TypeScript source, which Bun runs as is, plus type declarations for your editor and `tsc`.

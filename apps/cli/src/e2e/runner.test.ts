@@ -358,3 +358,154 @@ describe("runE2e over HTTP", () => {
     expect(opened).toEqual(["repl"]);
   });
 });
+
+/** Deps for lanes: every HTTP session gets an id, each turn records when it
+ * starts and ends around a short wait (so overlapping turns interleave), and
+ * answers `<line> (session <id>)`. */
+function fakeLanes() {
+  const events: string[] = [];
+  const sent: Array<[number, string, string | undefined]> = [];
+  const closed: number[] = [];
+  const printed: string[] = [];
+  let sessions = 0;
+  const deps: RunnerDeps = {
+    openSession: async () => {
+      const id = ++sessions;
+      return {
+        turn: async (line, token) => {
+          sent.push([id, line, token]);
+          events.push(`start:${line}`);
+          await new Promise((r) => setTimeout(r, 10));
+          events.push(`end:${line}`);
+          return { turn: { calls: [], answer: `${line} (session ${id})` }, status: 200 };
+        },
+        close: async () => void closed.push(id),
+      };
+    },
+    cli: async () => ({ code: 0, output: "" }),
+    appPackages: { "@mercury-fw/channel-http": "^0.4.0" },
+    print: (line) => void printed.push(line),
+    now: () => 0,
+    writeReport: async () => {},
+  };
+  return { deps, events, sent, closed, printed, sessions: () => sessions };
+}
+
+// #154: concurrent users, and concurrent turns on one conversation.
+describe("runE2e with lanes", () => {
+  const USERS = { alice: "alice-token", bob: "bob-token" };
+
+  test("lanes run at the same time, each in its own conversation, as its own user", async () => {
+    const f = fakeLanes();
+    let lanes: string[][] = [];
+    const test: E2eTest = {
+      users: USERS,
+      cases: [
+        {
+          name: "alice and bob at once",
+          channel: "http",
+          lanes: [
+            { as: "alice", turns: ["alice asks"] },
+            { as: "bob", turns: ["bob asks"] },
+          ],
+          check: (run, expect) => {
+            lanes = run.lanes!.map((lane) => lane.turns.map((t) => t.answer));
+            expect.that("both answered", run.turns.length === 2);
+          },
+        },
+      ],
+    };
+
+    expect(await runE2e([{ file: "t.e2e.ts", test }], {}, f.deps)).toBe(0);
+    expect(f.events).toEqual(["start:alice asks", "start:bob asks", "end:alice asks", "end:bob asks"]);
+    expect(f.sent).toEqual([
+      [1, "alice asks", "alice-token"],
+      [2, "bob asks", "bob-token"],
+    ]);
+    expect(lanes).toEqual([["alice asks (session 1)"], ["bob asks (session 2)"]]);
+    expect(f.closed.sort()).toEqual([1, 2]);
+  });
+
+  test("lanes naming the same conversation send their turns at once on one session", async () => {
+    const f = fakeLanes();
+    const test: E2eTest = {
+      users: USERS,
+      cases: [
+        {
+          name: "two tabs",
+          channel: "http",
+          as: "alice",
+          lanes: [
+            { conversation: "tabs", turns: ["first tab"] },
+            { conversation: "tabs", turns: ["second tab"] },
+          ],
+          check: (run, expect) => expect.that("two turns", run.turns.length === 2),
+        },
+      ],
+    };
+
+    expect(await runE2e([{ file: "t.e2e.ts", test }], {}, f.deps)).toBe(0);
+    expect(f.sessions()).toBe(1);
+    expect(f.events.slice(0, 2)).toEqual(["start:first tab", "start:second tab"]);
+    expect(f.sent.map(([id, , token]) => [id, token])).toEqual([
+      [1, "alice-token"],
+      [1, "alice-token"],
+    ]);
+    expect(f.closed).toEqual([1]);
+  });
+
+  test("a lane's turns run in order, a function turn sees the lane's own previous turn, and run.turns lists the lanes in order", async () => {
+    const f = fakeLanes();
+    let all: string[] = [];
+    let last = "";
+    const test: E2eTest = {
+      users: USERS,
+      cases: [
+        {
+          name: "follow-ups",
+          channel: "http",
+          lanes: [
+            { as: "alice", turns: ["a1", (previous) => `after ${previous.answer}`] },
+            { as: "bob", turns: ["b1"] },
+          ],
+          check: (run, expect) => {
+            all = run.turns.map((t) => t.answer);
+            last = run.last.answer;
+            expect.that("ran", true);
+          },
+        },
+      ],
+    };
+
+    expect(await runE2e([{ file: "t.e2e.ts", test }], {}, f.deps)).toBe(0);
+    expect(all).toEqual(["a1 (session 1)", "after a1 (session 1) (session 1)", "b1 (session 2)"]);
+    expect(last).toBe("b1 (session 2)");
+  });
+
+  test("lanes go with channel http", async () => {
+    const f = fakeLanes();
+    const test: E2eTest = {
+      cases: [{ name: "repl lanes", lanes: [{ turns: ["a"] }, { turns: ["b"] }], check: (run, e) => e.that("x", true) }],
+    };
+    expect(await runE2e([{ file: "t.e2e.ts", test }], {}, f.deps)).toBe(1);
+    expect(f.printed).toContain('    ✗ run failed: "lanes" go with channel "http"');
+    expect(f.sessions()).toBe(0);
+  });
+
+  test("a case has turns or lanes, not both and not neither", async () => {
+    const f = fakeLanes();
+    const both: E2eTest = {
+      users: USERS,
+      cases: [{ name: "both", channel: "http", as: "alice", turns: ["a"], lanes: [{ turns: ["b"] }], check: (run, e) => e.that("x", true) }],
+    };
+    const neither: E2eTest = {
+      users: USERS,
+      cases: [{ name: "neither", channel: "http", as: "alice", check: (run, e) => e.that("x", true) }],
+    };
+    expect(await runE2e([{ file: "t.e2e.ts", test: both }, { file: "u.e2e.ts", test: neither }], {}, f.deps)).toBe(1);
+    expect(f.printed.filter((l) => l.includes("run failed"))).toEqual([
+      '    ✗ run failed: a case has either "turns" or "lanes"',
+      '    ✗ run failed: a case has either "turns" or "lanes"',
+    ]);
+  });
+});

@@ -4,7 +4,8 @@
  * app must have, and cases of turns sent to the app's real model, each with
  * checks on the calls it made and the answer it gave. A case talks to the
  * app's REPL, or to its HTTP surface as one of the test's users (each a token
- * the app's auth provider knows). `mfw e2e` runs them (`runner.ts`).
+ * the app's auth provider knows), possibly in lanes that run at the same time.
+ * `mfw e2e` runs them (`runner.ts`).
  */
 import type { Call, TurnData } from "./dump.ts";
 
@@ -18,8 +19,10 @@ export type { Call } from "./dump.ts";
  * no tool results. */
 export type Turn = TurnData & { seconds: number; status?: number };
 
-/** A case's run: every turn in order, and the last one. */
-export type Run = { turns: Turn[]; last: Turn };
+/** A case's run: every turn in order, and the last one. A case in lanes
+ * also has each lane's own run; its `turns` are the lanes' turns, lane by
+ * lane, and `last` the last lane's last turn. */
+export type Run = { turns: Turn[]; last: Turn; lanes?: Run[] };
 
 /** Runs `command` in the app's container (`sh -c`), outside the model:
  * preparing data, reading what a turn changed, cleaning up. */
@@ -51,8 +54,22 @@ export type Expect = {
 /** A turn's text: a message, or a function of the turn before (a follow-up, a confirmation token). */
 export type TurnText = string | ((previous: Turn) => string);
 
+/** A case's turns, each as text or as text with its own user. */
+export type Turns = Array<TurnText | { text: TurnText; as: string }>;
+
+/** One of a case's lanes: turns sent in order, while the other lanes send
+ * theirs at the same time. */
+export type Lane = {
+  /** The user the lane's turns are sent as; the case's when absent. */
+  as?: string;
+  /** Lanes naming the same conversation send their turns on one HTTP
+   * conversation (two tabs on one chat); a lane without one gets its own. */
+  conversation?: string;
+  turns: Turns;
+};
+
 /** One case: the turns sent, in one session (one REPL, or one HTTP
- * conversation), and the checks on them. */
+ * conversation), or lanes of turns at the same time, and the checks on them. */
 export type E2eCase = {
   name: string;
   /** Where the turns go: the REPL (the default) or the HTTP surface, which
@@ -63,7 +80,10 @@ export type E2eCase = {
   /** The turns; on HTTP one can name its own user, so a case can stage an
    * action as one person and try to confirm it as another, in the same
    * conversation id. */
-  turns: Array<TurnText | { text: TurnText; as: string }>;
+  turns?: Turns;
+  /** On HTTP, instead of `turns`: lanes that run at the same time, to see
+   * what several users, or one user twice, get when they talk at once. */
+  lanes?: Lane[];
   /** How many times to run it (the model isn't deterministic); default 1. */
   repeat?: number;
   /** How many runs must pass; default every one. */

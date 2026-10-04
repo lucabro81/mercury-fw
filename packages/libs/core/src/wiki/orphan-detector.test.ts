@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { writeCuratedNote, writeIndexFile } from "./wiki-note.ts";
+import { writeCuratedNote, updateIndexFile } from "./wiki-note.ts";
 import { initVault } from "./vault-init.ts";
 import { findOrphanCuratedDocs } from "./orphan-detector.ts";
 
@@ -39,7 +39,7 @@ describe("findOrphanCuratedDocs", () => {
   it("does not flag a doc mentioned in index.md", async () => {
     const vaultPath = await makeTempVault();
     await writeCuratedNote(vaultPath, "standards/jira-fields.md", {}, "body");
-    await writeIndexFile(vaultPath, "- [[standards/jira-fields]] — custom field conventions");
+    await updateIndexFile(vaultPath, () => "- [[standards/jira-fields]] — custom field conventions");
 
     const orphans = await findOrphanCuratedDocs(vaultPath);
     expect(orphans).toEqual([]);
@@ -75,7 +75,7 @@ describe("findOrphanCuratedDocs", () => {
     const vaultPath = await makeTempVault();
     await writeCuratedNote(vaultPath, "standards/jira-fields.md", {}, "body");
     await writeCuratedNote(vaultPath, "glossary.md", {}, "unrelated content");
-    await writeIndexFile(vaultPath, "- [[standards/jira-fields]] — custom field conventions");
+    await updateIndexFile(vaultPath, () => "- [[standards/jira-fields]] — custom field conventions");
 
     const orphans = await findOrphanCuratedDocs(vaultPath);
     expect(orphans).toEqual(["curated/glossary.md"]);

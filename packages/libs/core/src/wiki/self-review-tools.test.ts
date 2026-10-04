@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from "bun:test";
 import { mkdtemp, rm, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { writeCuratedNote, writeInferredNote, writeRawEntry } from "./wiki-note.ts";
+import { writeCuratedNote, writeInferredNote, writeRawEntry, writeToolCorrectionNote } from "./wiki-note.ts";
 import { createSelfReviewTools } from "./self-review-tools.ts";
 import { initVault } from "./vault-init.ts";
 import { findOrphanCuratedDocs } from "./orphan-detector.ts";
@@ -167,6 +167,21 @@ describe("createSelfReviewTools", () => {
     await expect(readFile(join(vaultPath, "index.md"), "utf-8")).rejects.toThrow();
   });
 
+  // Regression for #154: index.md was read, then written in a separate step,
+  // so two updates in one step (the SDK runs a step's tool calls together)
+  // both started from the same index and one entry was lost.
+  it("concurrent update_index_entry calls keep every entry", async () => {
+    const vaultPath = await makeTempVault();
+    const docs = ["a", "b", "c", "d"];
+    for (const doc of docs) await writeCuratedNote(vaultPath, `${doc}.md`, {}, doc);
+    const { update_index_entry } = createSelfReviewTools({ vaultPath });
+
+    await Promise.all(docs.map((doc) => update_index_entry.execute({ path: doc, description: `about ${doc}` }, {} as never)));
+
+    const index = await readFile(join(vaultPath, "index.md"), "utf-8");
+    for (const doc of docs) expect(index).toContain(`[[${doc}]]`);
+  });
+
   it("remove_index_entry removes an existing entry", async () => {
     const vaultPath = await makeTempVault();
     await writeCuratedNote(vaultPath, "glossary.md", {}, "body");
@@ -241,7 +256,8 @@ describe("createSelfReviewTools", () => {
   it("delete_curated deletes an existing curated/ doc", async () => {
     const vaultPath = await makeTempVault();
     await writeCuratedNote(vaultPath, "standards/superseded.md", {}, "body");
-    const { delete_curated } = createSelfReviewTools({ vaultPath });
+    const { read_file, delete_curated } = createSelfReviewTools({ vaultPath });
+    await read_file.execute({ path: "curated/standards/superseded.md" }, {} as never);
 
     const result = (await delete_curated.execute({ path: "curated/standards/superseded.md" }, {} as never)) as
       | { ok: true }
@@ -264,4 +280,85 @@ describe("createSelfReviewTools", () => {
     const text = await readFile(join(vaultPath, "raw/notes/x.md"), "utf-8");
     expect(text).toContain("body");
   });
+
+  // #154: a pass reads a doc, reasons for several steps, and rewrites it
+  // whole; whatever landed in between (a tool correction from someone's
+  // turn, a promotion) was lost. The review now writes or deletes only the
+  // version it read.
+  describe("only over the version it read", () => {
+    type Result = { ok: true } | { ok: false; error: string };
+    const correction = { confidence: "low" as const, derived_from: ["t1"], last_reviewed: null };
+
+    it("refuses to write a doc that changed since it was read, then writes once it's read again", async () => {
+      const vaultPath = await makeTempVault();
+      await writeToolCorrectionNote(vaultPath, "jira", "select", correction, "old rule");
+      const { read_file, write_curated } = createSelfReviewTools({ vaultPath });
+
+      await read_file.execute({ path: "curated/standards/jira-select.md" }, {} as never);
+      await writeToolCorrectionNote(vaultPath, "jira", "select", { ...correction, derived_from: ["t1", "t2"] }, "new rule");
+      const refused = (await write_curated.execute(
+        { path: "curated/standards/jira-select.md", content: "merged from the old rule" },
+        {} as never,
+      )) as Result;
+
+      expect(refused).toEqual({
+        ok: false,
+        error: "curated/standards/jira-select.md changed since you read it: read it again and redo your edit on the current version",
+      });
+      expect(await readFile(join(vaultPath, "curated/standards/jira-select.md"), "utf-8")).toContain("new rule");
+
+      await read_file.execute({ path: "curated/standards/jira-select.md" }, {} as never);
+      const written = (await write_curated.execute(
+        { path: "standards/jira-select.md", content: "merged, new rule included" },
+        {} as never,
+      )) as Result;
+
+      expect(written).toEqual({ ok: true });
+      expect(await readFile(join(vaultPath, "curated/standards/jira-select.md"), "utf-8")).toContain("new rule included");
+    });
+
+    it("refuses to overwrite a doc it never read, and to write again without rereading what it wrote", async () => {
+      const vaultPath = await makeTempVault();
+      await writeCuratedNote(vaultPath, "glossary.md", {}, "team glossary");
+      const { write_curated } = createSelfReviewTools({ vaultPath });
+
+      const unread = (await write_curated.execute({ path: "glossary.md", content: "x" }, {} as never)) as Result;
+      expect(unread).toEqual({
+        ok: false,
+        error: "curated/glossary.md already exists: read it first, then write your edited version",
+      });
+      expect(await readFile(join(vaultPath, "curated/glossary.md"), "utf-8")).toContain("team glossary");
+
+      expect(((await write_curated.execute({ path: "new.md", content: "first" }, {} as never)) as Result).ok).toBe(true);
+      expect(((await write_curated.execute({ path: "new.md", content: "second" }, {} as never)) as Result).ok).toBe(false);
+    });
+
+    it("refuses to delete a doc that changed since it was read, or one it never read", async () => {
+      const vaultPath = await makeTempVault();
+      await writeCuratedNote(vaultPath, "a.md", {}, "a");
+      await writeCuratedNote(vaultPath, "b.md", {}, "b");
+      const { read_file, delete_curated } = createSelfReviewTools({ vaultPath });
+
+      await read_file.execute({ path: "curated/a.md" }, {} as never);
+      await writeCuratedNote(vaultPath, "a.md", {}, "a, edited meanwhile");
+
+      expect(await delete_curated.execute({ path: "curated/a.md" }, {} as never)).toEqual({
+        ok: false,
+        error: "curated/a.md changed since you read it: read it again and redo your edit on the current version",
+      });
+      expect(await delete_curated.execute({ path: "curated/b.md" }, {} as never)).toEqual({
+        ok: false,
+        error: "curated/b.md: read it first, then delete it",
+      });
+      expect(await readFile(join(vaultPath, "curated/a.md"), "utf-8")).toContain("edited meanwhile");
+      expect(await readFile(join(vaultPath, "curated/b.md"), "utf-8")).toContain("b");
+    });
+
+    it("deleting a doc that's already gone is still a no-op success", async () => {
+      const vaultPath = await makeTempVault();
+      const { delete_curated } = createSelfReviewTools({ vaultPath });
+      expect(await delete_curated.execute({ path: "curated/never.md" }, {} as never)).toEqual({ ok: true });
+    });
+  });
 });
+

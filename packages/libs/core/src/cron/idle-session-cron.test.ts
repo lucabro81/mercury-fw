@@ -318,6 +318,61 @@ describe("runIdleSessionSweep", () => {
   });
 });
 
+describe("runIdleSessionSweep under a session lock", () => {
+  it("captures and closes each session inside withSession", async () => {
+    const scanner = createIdleSessionScanner();
+    scanner.touch("s1", NOW - TIMEOUT);
+    const events: string[] = [];
+
+    await runIdleSessionSweep(scanner, NOW, TIMEOUT, {
+      withSession: async (key, fn) => {
+        events.push(`lock:${key}`);
+        await fn();
+        events.push(`unlock:${key}`);
+      },
+      getSession: (key) => ({ key, userId: "u1", messages: [{ role: "user", content: "hi" }] }),
+      summarize: async () => {
+        events.push("summarize");
+        return "s";
+      },
+      store: async () => {},
+      closeSession: () => events.push("close"),
+    });
+
+    expect(events).toEqual(["lock:s1", "summarize", "close", "unlock:s1"]);
+  });
+
+  // Regression for #154: the sweep captured a session and closed it after an
+  // await, so a turn that ran meanwhile lost its history. A session touched
+  // by the time the sweep holds it is no longer idle and stays open.
+  it("skips a session that was touched while the sweep waited for it", async () => {
+    const scanner = createIdleSessionScanner();
+    scanner.touch("s1", NOW - TIMEOUT);
+    let summarizeCalls = 0;
+    let closed = false;
+
+    await runIdleSessionSweep(scanner, NOW, TIMEOUT, {
+      withSession: async (_key, fn) => {
+        scanner.touch("s1", NOW + 1); // a turn ran before the sweep got the session
+        await fn();
+      },
+      getSession: (key) => ({ key, userId: "u1", messages: [] }),
+      summarize: async () => {
+        summarizeCalls++;
+        return "s";
+      },
+      store: async () => {},
+      closeSession: () => {
+        closed = true;
+      },
+    });
+
+    expect(summarizeCalls).toBe(0);
+    expect(closed).toBe(false);
+    expect(scanner.isIdle("s1", NOW + 1 + TIMEOUT, TIMEOUT)).toBe(true);
+  });
+});
+
 describe("startIdleSessionCron", () => {
   it("runs a sweep on each tick and stop() halts further ticks", async () => {
     const scanner = createIdleSessionScanner();
@@ -352,5 +407,37 @@ describe("startIdleSessionCron", () => {
 
     expect(sweepsAtStop).toBeGreaterThan(1);
     expect(sweeps).toBe(sweepsAtStop); // no further ticks after stop
+  });
+
+  // Regression for #154: a sweep slower than the check interval overlapped
+  // the next one, and both captured the same idle session.
+  it("never starts a sweep while the previous one is still running", async () => {
+    const scanner = createIdleSessionScanner();
+    scanner.touch("s1", 0);
+    let release!: () => void;
+    const hold = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let summarizeCalls = 0;
+
+    const cron = startIdleSessionCron(
+      scanner,
+      {
+        getSession: (key) => ({ key, userId: "u1", messages: [] }),
+        summarize: async () => {
+          summarizeCalls++;
+          await hold;
+          return "s";
+        },
+        store: async () => {},
+        closeSession: () => {},
+      },
+      { idleTimeoutMs: 0, checkIntervalMs: 5 },
+    );
+
+    await new Promise((r) => setTimeout(r, 40));
+    cron.stop();
+    release();
+    expect(summarizeCalls).toBe(1);
   });
 });

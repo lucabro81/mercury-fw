@@ -252,6 +252,27 @@ describe("createWikiTools", () => {
       });
       expect(await readFile(join(vaultPath, "curated/standards/release.md"), "utf-8")).toContain("Written meanwhile.");
     });
+
+    // Regression for #154: the existence check and the write were separate
+    // steps, so two people confirming a promotion to the same path at once
+    // both passed the check and the second overwrote the first.
+    it("of two promotions to the same path confirmed at once, exactly one lands", async () => {
+      const vaultPath = await makeTempVault();
+      await writePersonalNote(vaultPath, ALICE, "personal/notes/release.md", {}, "Alice's release.");
+      await writePersonalNote(vaultPath, BOB, "personal/notes/release.md", {}, "Bob's release.");
+      const alice = toolsFor(vaultPath, ALICE);
+      const bob = toolsFor(vaultPath, BOB);
+      await call(alice.tools.promote_note, { from: "personal/notes/release.md", to: "standards/release.md" });
+      await call(bob.tools.promote_note, { from: "personal/notes/release.md", to: "standards/release.md" });
+
+      const results = await Promise.all([alice.staged[0]!.run(), bob.staged[0]!.run()]);
+
+      expect(results).toEqual([
+        { ok: true, data: { promoted: "curated/standards/release.md" } },
+        { ok: false, error: "curated/standards/release.md already exists: promote the note under another name" },
+      ]);
+      expect(await readFile(join(vaultPath, "curated/standards/release.md"), "utf-8")).toContain("Alice's release.");
+    });
   });
 
   // list_files and grep only see .md files: anything else would be written

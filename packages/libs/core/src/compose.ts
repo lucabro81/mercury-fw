@@ -28,6 +28,8 @@ import { createEpisodicSummarizer } from "./session/episodic-summarizer.ts";
 import { createSemanticFactExtractor } from "./session/semantic-fact-extractor.ts";
 import { buildContextPrimer } from "./session/context-primer.ts";
 import { buildSystemPrompts } from "./session/system-prompt.ts";
+import { createSessionLock } from "./router/session-lock.ts";
+import { createSessionCapture } from "./session/session-capture.ts";
 import { createTurnRunner } from "./router/turn-runner.ts";
 import { loadAuth } from "./router/auth-loader.ts";
 import type { TurnSink } from "./router/provider.ts";
@@ -64,7 +66,6 @@ import { createEmbedder } from "./memory/embedder.ts";
 import { initVault } from "./wiki/vault-init.ts";
 import { findOrphanCuratedDocs } from "./wiki/orphan-detector.ts";
 import { listWikiFilesInRoots, readWikiFileInRoots, readIndexFile } from "./wiki/wiki-read.ts";
-import { readInferredNote } from "./identity/vault-access.ts";
 import { createHostReads } from "./identity/host-reads.ts";
 import { bindConfirm } from "./identity/confirm-binding.ts";
 import { migrateMemoryToUserKeys, migrateVaultToUserAreas } from "./identity/migrate-layout.ts";
@@ -176,10 +177,9 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   const histories = new Map<string, SessionHistory>();
   /**
    * `trackForCapture` wires `onBeforeCompress` so a Layer 1 compression also
-   * mirrors the compressed batch to Qdrant (see `captureIncrement`) — only
-   * meaningful for sessions tracked in `sessionUsers`/`sessionCaptureMarkers`
-   * (a real per-user identity, i.e. Google Chat); an identity-less channel
-   * omits it.
+   * mirrors the compressed batch to Qdrant (see `session-capture.ts`) — only
+   * meaningful for sessions it tracks (a real per-user identity); an
+   * identity-less channel omits it.
    */
   function getOrCreateHistory(key: string, trackForCapture = false, primer?: string): SessionHistory {
     let history = histories.get(key);
@@ -187,15 +187,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
       history = createSessionHistory(
         summarize,
         trackForCapture
-          ? (messages) => {
-              void captureIncrement(key, messages).finally(() => {
-                // The new getMessages() view after compression starts fresh
-                // (just the new synthetic summary message) — the old marker's
-                // index has no meaning against it regardless of whether the
-                // capture above succeeded.
-                sessionCaptureMarkers.set(key, 0);
-              });
-            }
+          ? (messages) => sessionCapture.onCompress(key, messages)
           : undefined,
         primer,
       );
@@ -208,19 +200,6 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   // SESSION_IDLE_TIMEOUT_MS is summarized and written to Qdrant as a dated
   // episodic record, then discarded. Identity-less sessions (the terminal) are
   // never tracked here — per-user isolation needs a real sender identity.
-  const sessionUsers = new Map<string, string>(); // session key -> sender (userId)
-  // How many of a session's current getMessages() entries have already been
-  // mirrored to Qdrant by captureIncrement — advanced only after a successful
-  // capture, so a failure retries the same (or a larger) slice next time.
-  // Reset to 0 whenever Layer 1 compresses the session. Discarded on
-  // idle-timeout close, same as sessionUsers.
-  const sessionCaptureMarkers = new Map<string, number>();
-  // The current turn's tool-status callbacks, refreshed each turn — looked up
-  // lazily by captureIncrement/onBeforeCompress rather than captured once.
-  const sessionOnCaptureCallbacks = new Map<
-    string,
-    { onToolStart: TurnSink["onToolStart"]; onToolFinish: TurnSink["onToolFinish"] }
-  >();
   const idleScanner = createIdleSessionScanner();
   const episodicSummarize = createEpisodicSummarizer(model);
   const embeddingModel = provider.textEmbeddingModel(process.env.OLLAMA_EMBEDDING_MODEL ?? "nomic-embed-text");
@@ -254,7 +233,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
     console.error(`[wiki-vault] layout migration failed, Mercury starts anyway: ${String(err)}`),
   );
 
-  // Shared by the idle sweep (final capture + close) and by captureIncrement
+  // Shared by the idle sweep (final capture + close) and by sessionCapture
   // (the two mid-conversation triggers, neither of which closes the session) —
   // one definition of "how to capture", reused everywhere.
   const captureDeps: CaptureDeps = {
@@ -266,15 +245,14 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
       consolidateSemanticFact(userId, topic, {
         vaultPath: wikiVaultPath,
         clusterFn: (u, t, limit) => searchSemanticFactsByTopic(qdrant, semanticFactsCollection, embed, { userId: u, topic: t, limit }),
-        readInferredNoteFn: readInferredNote,
         writeInferredNoteFn: writeInferredNote,
       }),
     log: (msg) => console.error(`[cron] ${msg}`),
   };
 
   // How many new messages (since the last capture) a live tracked session needs
-  // before captureIncrement mirrors them to Qdrant, instead of only ever
-  // capturing on idle-timeout.
+  // before it's mirrored to Qdrant, instead of only ever capturing on
+  // idle-timeout.
   const MESSAGE_COUNT_CAPTURE_THRESHOLD = Number(process.env.SESSION_CAPTURE_MESSAGE_THRESHOLD ?? "6");
 
   // How much of the pending messages' actual text shows up in a capture status
@@ -287,38 +265,14 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
     return joined.length <= maxChars ? joined : `${joined.slice(0, maxChars)}…`;
   }
 
-  /**
-   * Captures whatever's new in `messages` since the last capture for
-   * `sessionKey` — a no-op if nothing new. Shared by both mid-conversation
-   * triggers (message-count threshold, Layer 1 compression); the idle-timeout
-   * trigger uses `captureSessionToMemory` directly since it also closes the
-   * session. Drives the turn's tool-status callbacks like a real tool call so a
-   * live conversation shows this happening.
-   */
-  async function captureIncrement(sessionKey: string, messages: Message[]): Promise<void> {
-    const userId = sessionUsers.get(sessionKey);
-    if (!userId) return;
-
-    const alreadyCaptured = sessionCaptureMarkers.get(sessionKey) ?? 0;
-    const pending = messages.slice(alreadyCaptured);
-    if (pending.length === 0) return;
-
-    const callbacks = sessionOnCaptureCallbacks.get(sessionKey);
-    const captureId = crypto.randomUUID();
-    callbacks?.onToolStart(
-      "Mi sto segnando un'informazione importante…",
+  // Who each tracked session belongs to and how much of it is already in
+  // memory; mirrors the rest at the two mid-conversation triggers.
+  const sessionCapture = createSessionCapture({
+    capture: (userId, sessionKey, messages) => captureSessionToMemory(userId, sessionKey, messages, Date.now(), captureDeps),
+    threshold: MESSAGE_COUNT_CAPTURE_THRESHOLD,
+    describe: (pending) =>
       `Conversazione recente (${pending.length} messaggi: "${previewMessages(pending, MESSAGE_PREVIEW_CHARS)}"), collection "${episodicCollection}"`,
-      captureId,
-    );
-    try {
-      await captureSessionToMemory(userId, sessionKey, pending, Date.now(), captureDeps);
-      sessionCaptureMarkers.set(sessionKey, messages.length);
-      callbacks?.onToolFinish?.(captureId, "success");
-    } catch (err) {
-      console.error(`[capture] failed for ${sessionKey}, will retry next trigger: ${String(err)}`);
-      callbacks?.onToolFinish?.(captureId, "failed");
-    }
-  }
+  });
 
   // Procedural corrections (punto 2/Fase D): per-turn, not per-idle-session —
   // the tool-call trace only exists in memory for the duration of its turn.
@@ -348,7 +302,6 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
     vaultPath: wikiVaultPath,
     clusterFn: (tool, topic, limit) =>
       searchToolCorrectionsByTopic(qdrant, toolCorrectionsCollection, embed, { tool, topic, limit }),
-    readNoteFn: (vp, relativePath) => readWikiFileInRoots(vp, [resolvePath(vp, "curated")], relativePath),
     writeNoteFn: writeToolCorrectionNote,
     // A single confirmed correction is already a strong signal — unlike
     // identity/preference facts (DEFAULT_CONSOLIDATION_K = 3). k: 1 fires
@@ -431,7 +384,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
       sessionTools,
       createWikiTools({ vaultPath: wikiVaultPath, key, stageConfirmation: sessionToolContext.stageConfirmation }),
     );
-    Object.assign(sessionTools, createToolLogRecallTool({ sessionKey }));
+    Object.assign(sessionTools, createToolLogRecallTool({ sessionKey, owner: key }));
     // Verbatim archive recall, scoped to this person — lets the model resurface
     // what was actually said in earlier conversations, beyond the live window.
     Object.assign(sessionTools, verbatimProvider.sessionTools!({ sessionKey, userId: key }));
@@ -471,7 +424,11 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   // a given turn came from. getOrCreateHistory seeds a context primer only for
   // a genuinely new, tracked (real per-user identity) session; an identity-less
   // turn (userId undefined) never triggers it.
+  // One turn at a time per session, and the idle sweep waits its turn on the
+  // same lock before it captures and closes a session.
+  const sessionLock = createSessionLock();
   const handleTurn = createTurnRunner({
+    sessionLock,
     model,
     systemPrompts: { singleUser: system, multiUser: chatSystem },
     buildTools,
@@ -493,17 +450,11 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
       return getOrCreateHistory(key, trackForCapture);
     },
     trackSession: (key, userId, at) => {
-      sessionUsers.set(key, userId);
+      sessionCapture.track(key, userId);
       idleScanner.touch(key, at);
     },
-    registerCaptureCallback: (key, onToolStart, onToolFinish) => sessionOnCaptureCallbacks.set(key, { onToolStart, onToolFinish }),
-    maybeCapture: async (key, history) => {
-      const messages = history.getMessages();
-      const alreadyCaptured = sessionCaptureMarkers.get(key) ?? 0;
-      if (messages.length - alreadyCaptured >= MESSAGE_COUNT_CAPTURE_THRESHOLD) {
-        await captureIncrement(key, messages);
-      }
-    },
+    registerCaptureCallback: (key, onToolStart, onToolFinish) => sessionCapture.registerCallbacks(key, { onToolStart, onToolFinish }),
+    maybeCapture: (key, history) => sessionCapture.maybeCapture(key, history.getMessages()),
     captureVerbatim: verbatimProvider.captureExchange,
     processToolCorrections,
     logStep,
@@ -543,7 +494,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
       {
         getSession: (key) => {
           const history = histories.get(key);
-          const userId = sessionUsers.get(key);
+          const userId = sessionCapture.userOf(key);
           if (!history || !userId) {
             return undefined;
           }
@@ -551,9 +502,10 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
         },
         closeSession: (key) => {
           histories.delete(key);
-          sessionUsers.delete(key);
-          sessionCaptureMarkers.delete(key);
-          sessionOnCaptureCallbacks.delete(key);
+          sessionCapture.close(key);
+        },
+        withSession: async (key, fn) => {
+          await sessionLock.run(key, fn);
         },
         ...captureDeps,
       },

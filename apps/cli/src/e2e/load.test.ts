@@ -68,4 +68,27 @@ describe("loadTest", () => {
     writeFileSync(file, 'export default { cases: [{ name: "c", turns: [] , check: () => {} }, { name: "d", check: () => {} }] };\n');
     await expect(loadTest(file)).rejects.toThrow(`${file}: case 1 ("c") has no turns`);
   });
+
+  // #154: a case can send its turns in lanes that run at the same time.
+  test("a case in lanes loads; it can't also have turns, and every lane needs turns", async () => {
+    const lanes = join(dir, "lanes.e2e.ts");
+    writeFileSync(lanes, 'export default { cases: [{ name: "l", channel: "http", lanes: [{ turns: ["a"] }, { turns: ["b"] }], check: () => {} }] };\n');
+    expect((await loadTest(lanes)).cases[0]!.lanes).toHaveLength(2);
+
+    const replLanes = join(dir, "repl-lanes.e2e.ts");
+    writeFileSync(replLanes, 'export default { cases: [{ name: "r", lanes: [{ turns: ["a"] }], check: () => {} }] };\n');
+    await expect(loadTest(replLanes)).rejects.toThrow(`${replLanes}: case 1 ("r") has lanes, which go with channel "http"`);
+
+    const both = join(dir, "both.e2e.ts");
+    writeFileSync(both, 'export default { cases: [{ name: "b", channel: "http", turns: ["a"], lanes: [{ turns: ["b"] }], check: () => {} }] };\n');
+    await expect(loadTest(both)).rejects.toThrow(`${both}: case 1 ("b") has both turns and lanes`);
+
+    const emptyLane = join(dir, "empty-lane.e2e.ts");
+    writeFileSync(emptyLane, 'export default { cases: [{ name: "e", channel: "http", lanes: [{ turns: ["a"] }, { turns: [] }], check: () => {} }] };\n');
+    await expect(loadTest(emptyLane)).rejects.toThrow(`${emptyLane}: case 1 ("e") lane 2 has no turns`);
+
+    const noLanes = join(dir, "no-lanes.e2e.ts");
+    writeFileSync(noLanes, 'export default { cases: [{ name: "n", channel: "http", lanes: [], check: () => {} }] };\n');
+    await expect(loadTest(noLanes)).rejects.toThrow(`${noLanes}: case 1 ("n") has no turns`);
+  });
 });

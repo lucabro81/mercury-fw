@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from "bun:test";
-import { mkdtemp, rm, readFile, mkdir, writeFile, chmod } from "node:fs/promises";
+import { mkdtemp, rm, readFile, mkdir, writeFile, chmod, readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parse as parseYaml } from "yaml";
@@ -9,10 +9,10 @@ import {
   writePersonalNote,
   writeToolCorrectionNote,
   writeRawEntry,
-  writeIndexFile,
   deleteRawEntry,
   deleteCuratedEntry,
   writeConfirmationNote,
+  updateIndexFile,
 } from "./wiki-note.ts";
 import { initVault } from "./vault-init.ts";
 
@@ -330,10 +330,10 @@ describe("writeRawEntry", () => {
   });
 });
 
-describe("writeIndexFile", () => {
+describe("updateIndexFile", () => {
   it("writes verbatim content at the vault root as index.md, with no frontmatter", async () => {
     const vaultPath = await makeTempVault();
-    await writeIndexFile(vaultPath, "- [[standards/jira-fields]] — custom field conventions");
+    await updateIndexFile(vaultPath, () => "- [[standards/jira-fields]] — custom field conventions");
 
     const text = await readFile(join(vaultPath, "index.md"), "utf-8");
     expect(text).toBe("- [[standards/jira-fields]] — custom field conventions\n");
@@ -342,7 +342,7 @@ describe("writeIndexFile", () => {
 
   it("commits the write, leaving a clean working tree", async () => {
     const vaultPath = await makeTempVault();
-    await writeIndexFile(vaultPath, "index content");
+    await updateIndexFile(vaultPath, () => "index content");
 
     const log = await gitLog(vaultPath);
     expect(log[0]).toContain("index");
@@ -403,7 +403,7 @@ describe("deleteCuratedEntry", () => {
 
   it("succeeds as a no-op when the target doesn't exist", async () => {
     const vaultPath = await makeTempVault();
-    await expect(deleteCuratedEntry(vaultPath, "never-existed.md")).resolves.toBeUndefined();
+    await expect(deleteCuratedEntry(vaultPath, "never-existed.md")).resolves.toBe(true);
     expect(await gitStatusPorcelain(vaultPath)).toBe("");
   });
 });
@@ -581,3 +581,100 @@ describe("concurrent writes", () => {
     expect(await gitStatusPorcelain(vaultPath)).toBe("");
   });
 });
+
+// #154: a read-then-write done outside the commit chain lost updates under
+// concurrency (two consolidations, two index upserts, two promotions to one
+// path). `when` decides on the file's current content inside the chain.
+describe("writes guarded by the current content", () => {
+  const fields = { confidence: "low" as const, derived_from: ["ep_1"], last_reviewed: null };
+
+  it("hands `when` the current content, or null for a missing file, and skips the write when it says no", async () => {
+    const vaultPath = await makeTempVault();
+    const seen: Array<string | null> = [];
+
+    const first = await writeToolCorrectionNote(vaultPath, "jira", "select", fields, "first", {
+      when: (current) => {
+        seen.push(current);
+        return true;
+      },
+    });
+    const second = await writeToolCorrectionNote(vaultPath, "jira", "select", fields, "second", {
+      when: (current) => {
+        seen.push(current);
+        return false;
+      },
+    });
+
+    expect([first, second]).toEqual([true, false]);
+    expect(seen[0]).toBeNull();
+    expect(seen[1]).toContain("first");
+    const text = await readFile(join(vaultPath, "curated/standards/jira-select.md"), "utf-8");
+    expect(text).toContain("first");
+    expect(await gitLog(vaultPath)).toHaveLength(1);
+  });
+
+  it("decides inside the chain: of two concurrent create-only writes to one path, exactly one lands", async () => {
+    const vaultPath = await makeTempVault();
+    const onlyIfMissing = { when: (current: string | null) => current === null };
+
+    const results = await Promise.all([
+      writeCuratedNote(vaultPath, "standards/release.md", {}, "alice's", onlyIfMissing),
+      writeCuratedNote(vaultPath, "standards/release.md", {}, "bob's", onlyIfMissing),
+    ]);
+
+    expect(results).toEqual([true, false]);
+    const text = await readFile(join(vaultPath, "curated/standards/release.md"), "utf-8");
+    expect(text).toContain("alice's");
+  });
+
+  it("guards inferred notes the same way", async () => {
+    const vaultPath = await makeTempVault();
+    const written = await writeInferredNote(vaultPath, "static:alice", "editor", fields, "vim", { when: () => false });
+    expect(written).toBe(false);
+    expect(await gitLog(vaultPath)).toEqual([]);
+  });
+
+  it("deleteCuratedEntry keeps the doc when `when` says no", async () => {
+    const vaultPath = await makeTempVault();
+    await writeCuratedNote(vaultPath, "standards/keep.md", {}, "body");
+
+    const deleted = await deleteCuratedEntry(vaultPath, "standards/keep.md", { when: (current) => current === "other" });
+
+    expect(deleted).toBe(false);
+    expect(await readFile(join(vaultPath, "curated/standards/keep.md"), "utf-8")).toContain("body");
+  });
+
+  it("updateIndexFile never loses an entry to a concurrent update", async () => {
+    const vaultPath = await makeTempVault();
+    const lines = Array.from({ length: 8 }, (_, i) => `- [[doc-${i}]]`);
+
+    await Promise.all(lines.map((line) => updateIndexFile(vaultPath, (current) => `${current}${line}\n`)));
+
+    const text = await readFile(join(vaultPath, "index.md"), "utf-8");
+    for (const line of lines) expect(text).toContain(line);
+  });
+
+  // A file that exists but can't be read used to count as missing, so a
+  // create-only write went through and replaced it.
+  it("a file that can't be read fails the write instead of counting as missing", async () => {
+    const vaultPath = await makeTempVault();
+    await writeCuratedNote(vaultPath, "standards/locked.md", {}, "the team's");
+    const locked = join(vaultPath, "curated/standards/locked.md");
+    await chmod(locked, 0o000);
+    try {
+      await expect(
+        writeCuratedNote(vaultPath, "standards/locked.md", {}, "a promotion", { when: (current) => current === null }),
+      ).rejects.toThrow();
+    } finally {
+      await chmod(locked, 0o644);
+    }
+    expect(await readFile(locked, "utf-8")).toContain("the team's");
+  });
+
+  it("writes leave no temporary file behind", async () => {
+    const vaultPath = await makeTempVault();
+    await writeCuratedNote(vaultPath, "standards/clean.md", {}, "body");
+    expect(await readdir(join(vaultPath, "curated/standards"))).toEqual(["clean.md"]);
+  });
+});
+

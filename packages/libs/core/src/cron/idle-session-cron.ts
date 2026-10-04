@@ -88,6 +88,12 @@ export type IdleSessionSweepDeps = CaptureDeps & {
   getSession: (key: string) => IdleSession | undefined;
   /** Discards the session's raw transcript — called only after a successful summarize+store. */
   closeSession: (key: string) => void;
+  /**
+   * Runs one session's capture and close while nothing else touches that
+   * session (the core's session lock, shared with the turn runner). Absent,
+   * the work runs directly.
+   */
+  withSession?: (key: string, fn: () => Promise<void>) => Promise<void>;
 };
 
 /**
@@ -106,18 +112,24 @@ export async function runIdleSessionSweep(
 ): Promise<void> {
   const log = deps.log ?? ((msg: string) => console.error(msg));
 
+  const withSession = deps.withSession ?? ((_key: string, fn: () => Promise<void>) => fn());
+
   for (const key of scanner.scanIdle(now, idleTimeoutMs)) {
     try {
-      const session = deps.getSession(key);
-      if (!session) {
+      await withSession(key, async () => {
+        // A turn may have run while the sweep waited for the session.
+        if (!scanner.isIdle(key, now, idleTimeoutMs)) return;
+        const session = deps.getSession(key);
+        if (!session) {
+          scanner.clear(key);
+          return;
+        }
+
+        await captureSessionToMemory(session.userId, key, session.messages, now, deps);
+
+        deps.closeSession(key);
         scanner.clear(key);
-        continue;
-      }
-
-      await captureSessionToMemory(session.userId, key, session.messages, now, deps);
-
-      deps.closeSession(key);
-      scanner.clear(key);
+      });
     } catch (err) {
       log(`idle session sweep failed for ${key}: ${String(err)}`);
     }
@@ -132,10 +144,19 @@ export function startIdleSessionCron(
   deps: IdleSessionSweepDeps,
   opts: { idleTimeoutMs: number; checkIntervalMs: number },
 ): IdleSessionCron {
+  // A sweep slower than the interval would otherwise overlap the next one,
+  // and both would capture the same idle session.
+  let sweeping = false;
   const interval = setInterval(() => {
-    runIdleSessionSweep(scanner, Date.now(), opts.idleTimeoutMs, deps).catch((err) => {
-      (deps.log ?? ((msg: string) => console.error(msg)))(`idle session cron tick failed: ${String(err)}`);
-    });
+    if (sweeping) return;
+    sweeping = true;
+    runIdleSessionSweep(scanner, Date.now(), opts.idleTimeoutMs, deps)
+      .catch((err) => {
+        (deps.log ?? ((msg: string) => console.error(msg)))(`idle session cron tick failed: ${String(err)}`);
+      })
+      .finally(() => {
+        sweeping = false;
+      });
   }, opts.checkIntervalMs);
 
   return {

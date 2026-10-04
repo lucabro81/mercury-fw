@@ -41,4 +41,12 @@ describe("createIdleSessionScanner", () => {
     scanner.clear("a");
     expect(scanner.scanIdle(30 * 60_000, 30 * 60_000)).toEqual([]);
   });
+
+  it("isIdle tells whether one session is idle at a given moment", () => {
+    const scanner = createIdleSessionScanner();
+    scanner.touch("a", 0);
+    expect(scanner.isIdle("a", 30 * 60_000, 30 * 60_000)).toBe(true);
+    expect(scanner.isIdle("a", 29 * 60_000, 30 * 60_000)).toBe(false);
+    expect(scanner.isIdle("untracked", 30 * 60_000, 30 * 60_000)).toBe(false);
+  });
 });

@@ -21,7 +21,7 @@
  * topic string is LLM-produced free text, nothing upstream guarantees
  * it can't contain `..` or `/`.
  */
-import { mkdir, writeFile, stat } from "node:fs/promises";
+import { mkdir, writeFile, stat, readFile, rename, rm } from "node:fs/promises";
 import { resolve, sep, dirname, relative } from "node:path";
 import { stringify as stringifyYaml } from "yaml";
 import {
@@ -128,6 +128,69 @@ function serializeCommit<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 /**
+ * Decides on a file's current content (`null` when it doesn't exist) whether
+ * a write or delete goes ahead. It runs inside the commit chain, so nothing
+ * else touches the vault between the decision and the write: a
+ * read-compare-write can't lose a concurrent update.
+ */
+export type WriteCondition = { when?: (current: string | null) => boolean };
+
+/** The file's content, or `null` when there's no file; any other read error
+ * throws, since a file that's there but unreadable isn't a missing one. */
+async function readCurrent(fullPath: string): Promise<string | null> {
+  try {
+    return await readFile(fullPath, "utf-8");
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw err;
+  }
+}
+
+/**
+ * Replaces `fullPath` with `content` through a temporary file in the same
+ * folder and a rename, so a reader that doesn't wait for the chain (the wiki
+ * tools, the context primer) never sees a half-written file.
+ */
+async function replaceFile(fullPath: string, content: string): Promise<void> {
+  await mkdir(dirname(fullPath), { recursive: true });
+  const temporary = `${fullPath}.${crypto.randomUUID()}.tmp`;
+  try {
+    await writeFile(temporary, content, "utf-8");
+    await rename(temporary, fullPath);
+  } catch (err) {
+    await rm(temporary, { force: true });
+    throw err;
+  }
+}
+
+/** Stages `fullPath` and commits it as `commitMessage`, unless the content is what's already committed. */
+async function commitFile(vaultPath: string, fullPath: string, commitMessage: string): Promise<void> {
+  const relPath = relative(vaultPath, fullPath);
+  try {
+    await runGit(vaultPath, ["add", relPath]);
+    // Byte-identical content to what's already committed stages no diff —
+    // asking the vault to contain X when it already contains exactly X is
+    // a no-op, not a failure, so skip the commit instead of letting `git
+    // commit` fail with "nothing to commit".
+    if (!(await hasStagedChanges(vaultPath))) {
+      return;
+    }
+    await runGit(vaultPath, [
+      "-c",
+      `user.email=${MERCURY_GIT_AUTHOR.email}`,
+      "-c",
+      `user.name=${MERCURY_GIT_AUTHOR.name}`,
+      "commit",
+      "-m",
+      commitMessage,
+    ]);
+  } catch (err) {
+    console.error(`[wiki-vault] ${relPath} written to disk but not committed: ${String(err)}`);
+    throw err;
+  }
+}
+
+/**
  * Every vault write is a commit — audit trail + `git revert` as a
  * safety net. The file write itself goes through the same queue as the
  * commit (not just git add/commit) — two writers targeting the same path
@@ -135,42 +198,22 @@ function serializeCommit<T>(fn: () => Promise<T>): Promise<T> {
  * left that race open (found and fixed later). This makes "two
  * writers, one path" deterministic (whichever is processed second wins,
  * cleanly) rather than a data-loss race with confusing spurious errors —
- * it does not attempt any merge of old vs new content, by design: nothing
- * here promises the vault is edited "live" merge-safely, only that each
- * write, once it runs, is a clean, whole-file, versioned commit.
+ * it does not attempt any merge of old vs new content, by design. A caller
+ * whose write depends on what's there passes `when`, decided inside the
+ * queue. Resolves `false` when `when` skipped the write.
  */
 async function writeVerbatimFile(
   vaultPath: string,
   fullPath: string,
   content: string,
   commitMessage: string,
-): Promise<void> {
-  await serializeCommit(async () => {
-    await mkdir(dirname(fullPath), { recursive: true });
-    await writeFile(fullPath, content, "utf-8");
-    const relPath = relative(vaultPath, fullPath);
-    try {
-      await runGit(vaultPath, ["add", relPath]);
-      // Byte-identical content to what's already committed stages no diff —
-      // asking the vault to contain X when it already contains exactly X is
-      // a no-op, not a failure, so skip the commit instead of letting `git
-      // commit` fail with "nothing to commit".
-      if (!(await hasStagedChanges(vaultPath))) {
-        return;
-      }
-      await runGit(vaultPath, [
-        "-c",
-        `user.email=${MERCURY_GIT_AUTHOR.email}`,
-        "-c",
-        `user.name=${MERCURY_GIT_AUTHOR.name}`,
-        "commit",
-        "-m",
-        commitMessage,
-      ]);
-    } catch (err) {
-      console.error(`[wiki-vault] ${relPath} written to disk but not committed: ${String(err)}`);
-      throw err;
-    }
+  condition: WriteCondition = {},
+): Promise<boolean> {
+  return serializeCommit(async () => {
+    if (condition.when && !condition.when(await readCurrent(fullPath))) return false;
+    await replaceFile(fullPath, content);
+    await commitFile(vaultPath, fullPath, commitMessage);
+    return true;
   });
 }
 
@@ -180,9 +223,10 @@ async function writeNoteFile(
   frontmatter: CuratedFrontmatter | PersonalFrontmatter | InferredFrontmatter | ConfirmationFrontmatter,
   body: string,
   commitMessage: string,
-): Promise<void> {
+  condition: WriteCondition = {},
+): Promise<boolean> {
   const content = `---\n${stringifyYaml(frontmatter)}---\n\n${body}\n`;
-  await writeVerbatimFile(vaultPath, fullPath, content, commitMessage);
+  return writeVerbatimFile(vaultPath, fullPath, content, commitMessage, condition);
 }
 
 /**
@@ -211,10 +255,16 @@ export async function changeVaultAndCommit(vaultPath: string, message: string, c
 /** `git rm` + commit through the same queue as every writer above, so
  * the same `git revert` safety net covers deletions too. A target already gone
  * is a no-op success, not an error — same philosophy as the byte-identical
- * write no-op above. */
-async function deleteVaultFile(vaultPath: string, fullPath: string, commitMessage: string): Promise<void> {
-  await serializeCommit(async () => {
-    if (!(await pathExists(fullPath))) return;
+ * write no-op above. Resolves `false` when `when` kept the file. */
+async function deleteVaultFile(
+  vaultPath: string,
+  fullPath: string,
+  commitMessage: string,
+  condition: WriteCondition = {},
+): Promise<boolean> {
+  return serializeCommit(async () => {
+    if (condition.when && !condition.when(await readCurrent(fullPath))) return false;
+    if (!(await pathExists(fullPath))) return true;
     const relPath = relative(vaultPath, fullPath);
     await runGit(vaultPath, ["rm", "--quiet", relPath]);
     await runGit(vaultPath, [
@@ -226,6 +276,7 @@ async function deleteVaultFile(vaultPath: string, fullPath: string, commitMessag
       "-m",
       commitMessage,
     ]);
+    return true;
   });
 }
 
@@ -241,11 +292,12 @@ export async function writeCuratedNote(
   relativePath: string,
   fields: { author?: string; last_updated?: string },
   body: string,
-): Promise<void> {
+  condition: WriteCondition = {},
+): Promise<boolean> {
   const frontmatter = CuratedFrontmatterSchema.parse({ type: "curated", ...fields });
   const curatedRoot = resolve(vaultPath, "curated");
   const fullPath = resolveWithinRoot(curatedRoot, relativePath);
-  await writeNoteFile(vaultPath, fullPath, frontmatter, body, `curated: ${relativePath}`);
+  return writeNoteFile(vaultPath, fullPath, frontmatter, body, `curated: ${relativePath}`, condition);
 }
 
 /** Writes a note the model asked for on behalf of the person `key`, at `path` as the person names it: only below `personal/notes/` (see `personalNotePath`). */
@@ -269,12 +321,13 @@ export async function writeInferredNote(
   topic: string,
   fields: { confidence: "low" | "medium" | "high"; derived_from: string[]; last_reviewed: string | null },
   body: string,
-): Promise<void> {
+  condition: WriteCondition = {},
+): Promise<boolean> {
   assertNoPathSeparator("topic", topic);
   const frontmatter = InferredFrontmatterSchema.parse({ type: "inferred", source: "agent", ...fields });
   const inferredRoot = resolve(vaultPath, userArea(key), "inferred");
   const fullPath = resolveWithinRoot(inferredRoot, `${topic}.md`);
-  await writeNoteFile(vaultPath, fullPath, frontmatter, body, `inferred: ${key}/${topic}`);
+  return writeNoteFile(vaultPath, fullPath, frontmatter, body, `inferred: ${key}/${topic}`, condition);
 }
 
 /**
@@ -295,13 +348,14 @@ export async function writeToolCorrectionNote(
   topic: string,
   fields: { confidence: "low" | "medium" | "high"; derived_from: string[]; last_reviewed: string | null },
   body: string,
-): Promise<void> {
+  condition: WriteCondition = {},
+): Promise<boolean> {
   assertNoPathSeparator("tool", tool);
   assertNoPathSeparator("topic", topic);
   const frontmatter = InferredFrontmatterSchema.parse({ type: "inferred", source: "agent", ...fields });
   const standardsRoot = resolve(vaultPath, "curated", "standards");
   const fullPath = resolveWithinRoot(standardsRoot, `${tool}-${topic}.md`);
-  await writeNoteFile(vaultPath, fullPath, frontmatter, body, `inferred: standards/${tool}-${topic}`);
+  return writeNoteFile(vaultPath, fullPath, frontmatter, body, `inferred: standards/${tool}-${topic}`, condition);
 }
 
 /**
@@ -344,14 +398,16 @@ export async function writeRawEntry(vaultPath: string, relativePath: string, bod
   await writeVerbatimFile(vaultPath, fullPath, content, `raw: ${relativePath}`);
 }
 
-/** Overwrites `index.md` at the vault root with `content` verbatim — no
- * frontmatter, it's a generated Karpathy-pattern index, not a note.
- * Whole-file replace: the caller (self-review) computes the full new
- * text and passes the complete replacement, same as every writer here. */
-export async function writeIndexFile(vaultPath: string, content: string): Promise<void> {
+/** Rewrites `index.md` at the vault root as `change` turns its current text
+ * ("" when it doesn't exist) into, read and written in one unit of the queue.
+ * No frontmatter: it's a generated Karpathy-pattern index, not a note. */
+export async function updateIndexFile(vaultPath: string, change: (current: string) => string): Promise<void> {
   const fullPath = resolve(vaultPath, "index.md");
-  const normalized = content.endsWith("\n") ? content : `${content}\n`;
-  await writeVerbatimFile(vaultPath, fullPath, normalized, "index: update");
+  await serializeCommit(async () => {
+    const next = change((await readCurrent(fullPath)) ?? "");
+    await replaceFile(fullPath, next.endsWith("\n") ? next : `${next}\n`);
+    await commitFile(vaultPath, fullPath, "index: update");
+  });
 }
 
 /** Deletes a raw/ entry once self-review has resolved it (merged,
@@ -366,8 +422,12 @@ export async function deleteRawEntry(vaultPath: string, relativePath: string): P
  * redundant/superseded doc (never during a normal conversation). Callers
  * should also remove the doc's `index.md` line in the same pass, so a
  * deletion doesn't leave a dangling index reference. */
-export async function deleteCuratedEntry(vaultPath: string, relativePath: string): Promise<void> {
+export async function deleteCuratedEntry(
+  vaultPath: string,
+  relativePath: string,
+  condition: WriteCondition = {},
+): Promise<boolean> {
   const curatedRoot = resolve(vaultPath, "curated");
   const fullPath = resolveWithinRoot(curatedRoot, relativePath);
-  await deleteVaultFile(vaultPath, fullPath, `curated: delete ${relativePath}`);
+  return deleteVaultFile(vaultPath, fullPath, `curated: delete ${relativePath}`, condition);
 }

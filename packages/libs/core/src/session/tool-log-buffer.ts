@@ -1,9 +1,8 @@
 /**
- * Bounded, process-wide history of tool calls across both channels,
- * scoped by session so a recall of "what did you do" only ever surfaces
- * one conversation's own history, and by person (the user key) so the HTTP
- * surface shows each caller only their own calls. It backs the
- * `recall_tool_calls` model tool (`tool-log-recall-tool.ts`) and the HTTP
+ * Bounded history of tool calls, one log per person (the user key) so a busy
+ * person never evicts anyone else's calls, each entry tagged with its session
+ * so a recall of "what did you do" only surfaces that conversation. It backs
+ * the `recall_tool_calls` model tool (`tool-log-recall-tool.ts`) and the HTTP
  * `/tool-log` route: the record of what happened in a session. Nothing else keeps
  * this beyond the current turn (`src/index.ts`'s terminal-only `lastSteps`
  * resets every turn, Google Chat's `onStepFinish` only logs to stderr) —
@@ -33,10 +32,11 @@ export type ToolLogEntry = {
   output: string;
 };
 
+/** Per person. */
 const MAX_ENTRIES = 200;
 const MAX_CHARS = 2000;
 
-let buffer: ToolLogEntry[] = [];
+let logs = new Map<string, ToolLogEntry[]>();
 
 /** Records every tool call in `step`, made in `sessionKey` during a turn of the person `owner`. */
 export function recordStep(channel: ToolLogChannel, sessionKey: string, owner: string, step: StepInfo): void {
@@ -49,7 +49,9 @@ export function recordStep(channel: ToolLogChannel, sessionKey: string, owner: s
         ? `[error] ${truncateForDisplay(errorPart.error, MAX_CHARS)}`
         : "(none)";
 
-    buffer.push({
+    const log = logs.get(owner) ?? [];
+    logs.set(owner, log);
+    log.push({
       timestamp: new Date().toISOString(),
       channel,
       sessionKey,
@@ -58,23 +60,20 @@ export function recordStep(channel: ToolLogChannel, sessionKey: string, owner: s
       input: truncateForDisplay(call.input, MAX_CHARS),
       output,
     });
-    if (buffer.length > MAX_ENTRIES) {
-      buffer.shift();
+    if (log.length > MAX_ENTRIES) {
+      log.shift();
     }
   }
 }
 
-/** Most recent entries first, optionally restricted to one session and/or one person. */
-export function getToolLog(filter?: { sessionKey?: string; owner?: string }): ToolLogEntry[] {
-  const matching = buffer.filter(
-    (e) =>
-      (filter?.sessionKey === undefined || e.sessionKey === filter.sessionKey) &&
-      (filter?.owner === undefined || e.owner === filter.owner),
-  );
+/** The person `owner`'s entries, most recent first, optionally restricted to one session. */
+export function getToolLog(filter: { owner: string; sessionKey?: string }): ToolLogEntry[] {
+  const log = logs.get(filter.owner) ?? [];
+  const matching = filter.sessionKey === undefined ? log : log.filter((e) => e.sessionKey === filter.sessionKey);
   return [...matching].reverse();
 }
 
-/** Test-only: clears the module-level buffer so tests don't leak into each other. */
+/** Test-only: clears the module-level logs so tests don't leak into each other. */
 export function resetToolLogForTest(): void {
-  buffer = [];
+  logs = new Map();
 }
