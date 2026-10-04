@@ -6,14 +6,20 @@
  * folder: `bunx mfw e2e ../../tests/http-auth.e2e.ts`.
  *
  * The cases: a token the app doesn't know gets a 401 and no turn; a known
- * one gets an answer; and a conversation belongs to whoever opened it, so Bob
+ * one gets an answer; a conversation belongs to whoever opened it, so Bob
  * sending Alice's conversation id lands in a conversation of his own and
- * doesn't see what she said there, while Alice still does.
+ * doesn't see what she said there, while Alice still does; and a note the
+ * model writes for Alice lands in her own area of the wiki, where Bob's
+ * wiki tools can't find it.
  */
 import { e2e } from "@mercury-fw/cli/e2e";
 
 /** A word nobody would guess, for Alice to leave in her conversation. */
 const WORD = "pomegranate-77";
+/** Another one, for the note Alice has Mercury write. */
+const NOTE_WORD = "quince-31";
+/** Where Alice's note lands in the vault: her area, named after her user key. */
+const ALICE_NOTE = '"$WIKI_VAULT_PATH/users/static%3Aalice/notes/e2e-isolation.md"';
 
 export default e2e({
   users: { alice: "alice-test-token", bob: "bob-test-token", stranger: "not-a-token" },
@@ -50,6 +56,25 @@ export default e2e({
       check: (run, expect) => {
         expect.that("Bob doesn't get the word", !run.turns[1]!.answer.includes(WORD));
         expect.answer(WORD, "Alice still gets it");
+      },
+    },
+    {
+      name: "a note written for Alice stays in her area, out of Bob's reach",
+      channel: "http",
+      as: "alice",
+      before: ({ cli }) => cli(`rm -f ${ALICE_NOTE}`),
+      turns: [
+        `Write a note for me in the wiki at personal/notes/e2e-isolation.md whose content is exactly: ${NOTE_WORD}. Then reply OK.`,
+        {
+          text: `Search the wiki for ${NOTE_WORD} and tell me what you find. If you find nothing, reply exactly: NOTHING FOUND.`,
+          as: "bob",
+        },
+      ],
+      check: async (run, expect, { cli }) => {
+        expect.call("write_file", undefined, "Alice's turn writes the note");
+        const note = await cli(`cat ${ALICE_NOTE}`);
+        expect.that("the note is in Alice's area", note.code === 0 && note.output.includes(NOTE_WORD));
+        expect.answerNot(NOTE_WORD, "Bob doesn't find it");
       },
     },
   ],
