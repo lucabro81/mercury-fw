@@ -1,11 +1,10 @@
 # Lint config for the HTTP surface's OpenAPI spec. `minimal` errors only on
-# genuinely broken specs; the overrides below drop rules that don't fit an
-# internal, opt-in, no-auth surface (no security schemes, no license, the
-# example.com server rule) while keeping structural validation on.
+# genuinely broken specs; the overrides below drop rules that don't fit this
+# surface (no license, no operation ids, the example.com server rule) while
+# keeping structural validation on.
 extends:
   - minimal
 rules:
-  security-defined: off
   info-license: off
   operation-operationId: off
   operation-4xx-response: off

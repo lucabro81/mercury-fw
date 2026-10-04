@@ -12,24 +12,28 @@
  * is unit-tested without standing up a socket. The read-only routes (4b) mount
  * alongside `/turn` here, driven by the injected `reads` getters.
  *
- * No auth by design — this surface is opt-in (enabled by listing this channel in
- * `mercury.config.ts`) and must not be reachable from outside the container
- * network, the same posture as the admin panel. Confirm resolution is injected
- * (`confirm`/`resolveConfirmation`), so this package never imports the app.
+ * Every route but the OpenAPI document and the CORS preflights asks the
+ * injected `authenticate` (the auth provider the app declares) who is calling
+ * before anything runs, and answers 401 when nobody is. A conversation belongs
+ * to whoever opened it: the session key is `<principal.id>:<conversationId>`.
+ * Confirm resolution is injected too (`confirm`/`resolveConfirmation`), so this
+ * package never imports the app.
  */
 import {
   detectPendingConfirmation,
   PENDING_CONFIRMATION_NOTE,
   type HandleTurn,
   type TurnSink,
+  type Authenticate,
   type ChannelHostReads,
   type ConfirmOutcome,
 } from "@mercury-fw/channel-types";
 
 /**
- * A client's conversation id becomes the session key, a log prefix and (until
- * the channel authenticates) the per-person wiki id, so only letters, digits,
- * `-` and `_` get in: no path segments, no line breaks, nothing to encode.
+ * A client's conversation id becomes part of the session key and the log
+ * prefix, so only letters, digits, `-` and `_` get in: no path segments, no
+ * line breaks, nothing to encode, and no `:`, which separates it from the
+ * caller's id in the session key.
  */
 const CONVERSATION_ID = /^[A-Za-z0-9_-]{1,128}$/;
 
@@ -40,6 +44,8 @@ export type ResolveConfirmationFn = (token: string, sessionKey: string, userId: 
 
 export type TurnRequestDeps = {
   handleTurn: HandleTurn;
+  /** Who is calling, injected from the app's auth provider; `null` = refused. */
+  authenticate: Authenticate;
   /** Bare-token interception before the model, injected by the core. */
   confirm: ConfirmFn;
   /** Allowed CORS origin echoed back to a browser UI; defaults to `*`. */
@@ -57,15 +63,25 @@ const SSE_HEADERS = {
 /**
  * The CORS headers echoed on every response so a browser UI served from a
  * different origin (the separate custom-UI project) can call this surface.
- * No credentials are ever used here, so a wildcard origin is safe; a specific
- * origin can still be pinned via `HTTP_SURFACE_CORS_ORIGIN`.
+ * The caller's token travels in an explicit `Authorization` header, never in a
+ * cookie the browser would attach on its own, so a wildcard origin is safe: a
+ * page on another origin can't borrow anyone's credentials. A specific origin
+ * can still be pinned via `HTTP_SURFACE_CORS_ORIGIN`.
  */
 function corsHeaders(origin: string): Record<string, string> {
   return {
     "access-control-allow-origin": origin,
     "access-control-allow-methods": "GET, POST, OPTIONS",
-    "access-control-allow-headers": "content-type",
+    "access-control-allow-headers": "content-type, authorization",
   };
+}
+
+/** 401 for a caller the auth provider refused, with the Bearer challenge and CORS headers (so a browser UI can read it). */
+function unauthorized(origin: string): Response {
+  return Response.json(
+    { ok: false, error: "unauthorized" },
+    { status: 401, headers: { ...corsHeaders(origin), "www-authenticate": "Bearer" } },
+  );
 }
 
 /** 204 preflight response for an `OPTIONS` request, carrying only CORS headers. */
@@ -87,17 +103,21 @@ export function openApiResponse(corsOrigin = "*"): Response {
 }
 
 /**
- * Runs one `POST /turn` request and returns an SSE stream Response. The body is
- * `{ text, conversationId? }`; `conversationId` (opaque, client-owned) becomes
- * the session key so a client can continue a conversation — Mercury already
- * keys its histories by session, so many conversations run concurrently, each
+ * Runs one `POST /turn` request and returns an SSE stream Response. The caller
+ * is authenticated first. The body is `{ text, conversationId? }`;
+ * `conversationId` (opaque, client-owned) continues one of the caller's
+ * conversations: the session key is `<principal.id>:<conversationId>`, so the
+ * same id from someone else is a session of their own. Mercury keys its
+ * histories by session, so many conversations run concurrently, each
  * one-on-one (`multiUser: false`). No `conversationId` means a fresh ephemeral
- * session. Never throws: a bad body is a 400, a mid-turn failure is an `error`
- * event on the stream.
+ * session. Never throws: a refused caller is a 401, a bad body a 400, a
+ * mid-turn failure an `error` event on the stream.
  */
 export async function handleTurnRequest(req: Request, deps: TurnRequestDeps): Promise<Response> {
   const origin = deps.corsOrigin ?? "*";
   const cors = corsHeaders(origin);
+  const principal = await deps.authenticate(req);
+  if (principal === null) return unauthorized(origin);
   let body: { text?: unknown; conversationId?: unknown };
   try {
     body = (await req.json()) as typeof body;
@@ -108,13 +128,14 @@ export async function handleTurnRequest(req: Request, deps: TurnRequestDeps): Pr
     return Response.json({ ok: false, error: "missing text" }, { status: 400, headers: cors });
   }
   const text = body.text;
-  const sessionKey =
+  const conversationId =
     typeof body.conversationId === "string" && body.conversationId.trim().length > 0
       ? body.conversationId.trim()
       : (deps.newSessionKey ?? (() => crypto.randomUUID()))();
-  if (!CONVERSATION_ID.test(sessionKey)) {
+  if (!CONVERSATION_ID.test(conversationId)) {
     return Response.json({ ok: false, error: "invalid conversationId" }, { status: 400, headers: cors });
   }
+  const sessionKey = `${principal.id}:${conversationId}`;
 
   // Aborted when the client disconnects (see the stream's `cancel` below) so
   // the in-flight turn stops instead of running to completion — the "stop"
@@ -143,7 +164,7 @@ export async function handleTurnRequest(req: Request, deps: TurnRequestDeps): Pr
 
       // Same deterministic interception as every other channel — a
       // previously-approved mutation must never depend on the model.
-      const confirmReply = await deps.confirm(text, sessionKey, sessionKey);
+      const confirmReply = await deps.confirm(text, sessionKey, principal.id);
       if (confirmReply !== null) {
         send("final", { text: confirmReply });
         close();
@@ -174,9 +195,7 @@ export async function handleTurnRequest(req: Request, deps: TurnRequestDeps): Pr
             multiUser: false,
             text,
             sessionKey,
-            // Unauthenticated: the conversation id stands in for the caller,
-            // and nobody vouches for it.
-            principal: { id: sessionKey, provider: "none" },
+            principal,
             logPrefix: `[http:${sessionKey}] `,
             abortSignal: abort.signal,
           },
@@ -202,6 +221,7 @@ export async function handleTurnRequest(req: Request, deps: TurnRequestDeps): Pr
 }
 
 export type ConfirmRequestDeps = {
+  authenticate: Authenticate;
   resolveConfirmation: ResolveConfirmationFn;
   corsOrigin?: string;
 };
@@ -209,16 +229,20 @@ export type ConfirmRequestDeps = {
 /**
  * `POST /confirm { token, conversationId }` — the explicit confirmation
  * endpoint. A nicer contract for a UI than re-POSTing the bare token as `text`
- * to `/turn`, but the exact same mechanism underneath: it resolves the token
- * through the injected `resolveConfirmation`, keyed on
- * `conversationId` as the session. `resolved: true` means the token matched a
+ * to `/turn`, but the exact same mechanism underneath: it authenticates the
+ * caller and resolves the token through the injected `resolveConfirmation`,
+ * keyed on the caller's own session (`<principal.id>:<conversationId>`), so a
+ * token staged in someone else's conversation is never found. `resolved: true` means the token matched a
  * pending confirmation and its staged action was consumed and run; the `text`
  * then reports whether that execution succeeded. `resolved: false` means the
  * token was not a pending confirmation (unknown, expired, already used, or not
  * even token-shaped). Never touches the model.
  */
 export async function handleConfirmRequest(req: Request, deps: ConfirmRequestDeps): Promise<Response> {
-  const cors = corsHeaders(deps.corsOrigin ?? "*");
+  const origin = deps.corsOrigin ?? "*";
+  const cors = corsHeaders(origin);
+  const principal = await deps.authenticate(req);
+  if (principal === null) return unauthorized(origin);
   let body: { token?: unknown; conversationId?: unknown };
   try {
     body = (await req.json()) as typeof body;
@@ -226,14 +250,14 @@ export async function handleConfirmRequest(req: Request, deps: ConfirmRequestDep
     return Response.json({ ok: false, error: "body must be JSON" }, { status: 400, headers: cors });
   }
   const token = typeof body.token === "string" ? body.token.trim() : "";
-  const sessionKey = typeof body.conversationId === "string" ? body.conversationId.trim() : "";
-  if (token.length === 0 || sessionKey.length === 0) {
+  const conversationId = typeof body.conversationId === "string" ? body.conversationId.trim() : "";
+  if (token.length === 0 || conversationId.length === 0) {
     return Response.json({ ok: false, error: "missing token or conversationId" }, { status: 400, headers: cors });
   }
-  if (!CONVERSATION_ID.test(sessionKey)) {
+  if (!CONVERSATION_ID.test(conversationId)) {
     return Response.json({ ok: false, error: "invalid conversationId" }, { status: 400, headers: cors });
   }
-  const outcome = await deps.resolveConfirmation(token, sessionKey, sessionKey);
+  const outcome = await deps.resolveConfirmation(token, `${principal.id}:${conversationId}`, principal.id);
   switch (outcome.status) {
     case "not-a-token":
     case "not-found":
@@ -254,17 +278,22 @@ type ReadRoute = {
 /**
  * Builds the read-only routes, each carrying CORS headers on its `GET` and a
  * shared `OPTIONS` preflight so a browser UI on `corsOrigin` (default `*`) can
- * reach them. `jsonRoute` wraps a getter into a `GET` that always JSON-encodes
- * with the CORS headers merged in; `badRequest` does the same for a 400.
+ * reach them. Every `GET` asks `authenticate` first and answers 401 without
+ * calling its getter when nobody is calling; the preflight doesn't ask.
+ * `json` JSON-encodes with the CORS headers merged in; `badRequest` does the
+ * same for a 400.
  */
-export function readRoutes(reads: ChannelHostReads, corsOrigin = "*"): Record<string, ReadRoute> {
+export function readRoutes(reads: ChannelHostReads, authenticate: Authenticate, corsOrigin = "*"): Record<string, ReadRoute> {
   const cors = corsHeaders(corsOrigin);
   const json = (payload: object, status = 200): Response =>
     Response.json(payload, { status, headers: cors });
   const badRequest = (message: string): Response => json({ ok: false, error: message }, 400);
   const requireParam = (req: Request, name: string): string | null => new URL(req.url).searchParams.get(name);
   const options = () => preflight(corsOrigin);
-  const route = (GET: ReadRoute["GET"]): ReadRoute => ({ GET, OPTIONS: options });
+  const route = (GET: ReadRoute["GET"]): ReadRoute => ({
+    GET: async (req) => ((await authenticate(req)) === null ? unauthorized(corsOrigin) : GET(req)),
+    OPTIONS: options,
+  });
   return {
     "/manifest": route(() => json({ ok: true, manifest: reads.manifest() })),
     "/confirmations": route(() => json({ ok: true, pending: reads.pendingConfirmations() })),
@@ -329,11 +358,12 @@ export function startHttpServer(deps: HttpServerDeps): ReturnType<typeof Bun.ser
     routes: {
       "/turn": { POST: (req) => handleTurnRequest(req, deps), OPTIONS: () => preflight(origin) },
       "/confirm": {
-        POST: (req) => handleConfirmRequest(req, { resolveConfirmation: deps.resolveConfirmation, corsOrigin: origin }),
+        POST: (req) =>
+          handleConfirmRequest(req, { authenticate: deps.authenticate, resolveConfirmation: deps.resolveConfirmation, corsOrigin: origin }),
         OPTIONS: () => preflight(origin),
       },
       "/openapi.yaml": { GET: () => openApiResponse(origin), OPTIONS: () => preflight(origin) },
-      ...(deps.reads ? readRoutes(deps.reads, origin) : {}),
+      ...(deps.reads ? readRoutes(deps.reads, deps.authenticate, origin) : {}),
     },
     error: (err) =>
       Response.json(

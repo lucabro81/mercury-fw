@@ -8,9 +8,13 @@ bun add @mercury-fw/channel-http
 
 ```ts
 import { httpChannel } from "@mercury-fw/channel-http";
+import { oidcAuth } from "@mercury-fw/auth-oidc";
 
 channels: [httpChannel],
+auth: oidcAuth,
 ```
+
+It needs an auth provider next to it: [`@mercury-fw/auth-oidc`](../../auth/auth-oidc) for real users, [`@mercury-fw/auth-static`](../../auth/auth-static) for the test bed and e2e tests. Without one, or with one that fails to load, the channel doesn't start and the log says why.
 
 | Variable | |
 |---|---|
@@ -19,13 +23,17 @@ channels: [httpChannel],
 
 ## API
 
-It's active whenever it's declared in `mercury.config.ts`'s `channels`; remove it there to turn the surface off. It listens on `HTTP_SURFACE_PORT` (default `4100`). **No authentication** — do not publish the port outside the container network (same posture as the admin panel). Base URL `http://<host>:<port>`.
+It's active whenever it's declared in `mercury.config.ts`'s `channels` with an auth provider; remove it there to turn the surface off. It listens on `HTTP_SURFACE_PORT` (default `4100`). Base URL `http://<host>:<port>`.
 
-**CORS** is enabled on every response and every route answers an `OPTIONS` preflight, so a browser UI on another origin can call it. The allowed origin is `HTTP_SURFACE_CORS_ORIGIN` (default `*`; no credentials are used).
+**Authentication.** Every route except `GET /openapi.yaml` and the `OPTIONS` preflights needs `Authorization: Bearer <token>`, and the auth provider decides who the token belongs to. A missing or refused token gets `401` with `WWW-Authenticate: Bearer` before anything runs.
+
+**Conversations belong to whoever opened them.** The session key is `<caller id>:<conversationId>`, so the same `conversationId` sent by someone else is a conversation of their own, and a confirmation token staged in your conversation can't be confirmed from theirs. Each authenticated caller also gets their own episodic memory and wiki area, as on Google Chat.
+
+**CORS** is enabled on every response and every route answers an `OPTIONS` preflight, so a browser UI on another origin can call it. The allowed origin is `HTTP_SURFACE_CORS_ORIGIN` (default `*`: the token travels in a header, never in a cookie the browser would send on its own).
 
 The full contract is described by an **OpenAPI document**, served raw at `GET /openapi.yaml` and published as a rendered docs page on GitHub Pages (see `packages/channels/channel-http/openapi.yaml`, the single source of truth).
 
-All responses are JSON except `POST /turn`, which streams `text/event-stream`. Every JSON response is either `{ "ok": true, ... }` or, on error, `{ "ok": false, "error": "<message>" }` with HTTP `400`/`500`.
+All responses are JSON except `POST /turn`, which streams `text/event-stream`. Every JSON response is either `{ "ok": true, ... }` or, on error, `{ "ok": false, "error": "<message>" }` with HTTP `400`/`401`/`500`.
 
 ## `POST /turn`
 
@@ -36,7 +44,7 @@ Runs one conversational turn; the reply streams back as Server-Sent Events.
 | field | type | required | description |
 |---|---|---|---|
 | `text` | string | yes | The user message. A bare confirmation token here confirms a staged action (see the `pending` event) without invoking the model. |
-| `conversationId` | string | no | Opaque, client-owned id that continues a conversation: letters, digits, `-` and `_`, up to 128 characters (a UUID fits) once surrounding whitespace is trimmed, `400` otherwise. Omitted ⇒ a fresh one-off session. |
+| `conversationId` | string | no | Opaque, client-owned id that continues one of your conversations: letters, digits, `-` and `_`, up to 128 characters (a UUID fits) once surrounding whitespace is trimmed, `400` otherwise. Omitted ⇒ a fresh one-off session. |
 
 **Responses**: `200 text/event-stream` (the events below); `400` if `text` is missing, the body isn't JSON, or `conversationId` has other characters than the ones above.
 
@@ -58,6 +66,7 @@ Reasoning and answer text arrive as **incremental deltas** — never one finishe
 ```bash
 curl -N -X POST http://localhost:4100/turn \
   -H 'content-type: application/json' \
+  -H "authorization: Bearer $TOKEN" \
   -d '{"text":"Quante issue nel progetto KAN?","conversationId":"c1"}'
 ```
 
@@ -67,11 +76,11 @@ Explicit alternative to re-sending a token as `/turn` `text`. Body `{ token, con
 
 ## Read-only introspection
 
-All `GET`, all JSON, all reporting state already held in-process.
+All `GET`, all JSON, all reporting state already held in-process. They need an authenticated caller, but each one still shows every person's data: scoping them per person is the next step.
 
 | endpoint | `data` on success |
 |---|---|
-| `GET /conversation?id=<conversationId>&limit=<n>&offset=<cursor>` | `{ messages: [{ role, content, timestamp }], nextOffset }` — a conversation's durable transcript in order; `400` if `id` is missing. Any session key `/conversations` lists opens here, whatever channel it came from |
+| `GET /conversation?id=<sessionKey>&limit=<n>&offset=<cursor>` | `{ messages: [{ role, content, timestamp }], nextOffset }` — a conversation's durable transcript in order; `400` if `id` is missing. Any session key `/conversations` lists opens here, whatever channel it came from |
 | `GET /conversations?limit=<n>` | `{ conversations: [{ sessionKey, lastTimestamp, preview }] }` — known conversations, most-recently-active first |
 | `GET /manifest` | `{ manifest: { coreApiVersion, plugins: [{ name, apiVersion, active, skills, hasBuild, customStatus }], activeClis, skills } }` |
 | `GET /confirmations` | `{ pending: [{ sessionKey, binary, args, expiresAt }] }` — tokens are deliberately never included |

@@ -21,6 +21,7 @@ const fullCtx = (over: Partial<ChannelRuntimeContext> = {}): ChannelRuntimeConte
   confirm: async () => null,
   resolveConfirmation: async () => ({ status: "not-a-token" }),
   reads,
+  authenticate: async () => null,
   ...over,
 });
 
@@ -33,7 +34,7 @@ describe("httpChannel", () => {
     expect(httpChannel.apiVersion).toBe(2);
   });
 
-  it("builds a provider when confirm, resolveConfirmation and reads are all present", () => {
+  it("builds a provider when confirm, resolveConfirmation, reads and authenticate are all present", () => {
     const provider = httpChannel.build(fullCtx());
     expect(typeof provider?.start).toBe("function");
     expect(typeof provider?.notify).toBe("function");
@@ -46,5 +47,13 @@ describe("httpChannel", () => {
 
   it("throws (loader isolates it) when reads is missing", () => {
     expect(() => httpChannel.build(fullCtx({ reads: undefined }))).toThrow(/reads/);
+  });
+
+  // #37: without an auth provider the surface would be open to anyone who
+  // reaches the port, so it doesn't start at all.
+  it("throws (loader isolates it) when no auth provider is declared", () => {
+    expect(() => httpChannel.build(fullCtx({ authenticate: undefined }))).toThrow(
+      "http channel requires an auth provider (auth in mercury.config.ts)",
+    );
   });
 });

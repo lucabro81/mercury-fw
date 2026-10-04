@@ -11,7 +11,7 @@
  * injected (`confirm`/`resolveConfirmation`), so this package never imports the app.
  */
 import { startHttpServer, type ConfirmFn, type ResolveConfirmationFn } from "./http-server.ts";
-import type { Provider, HandleTurn, ChannelHostReads } from "@mercury-fw/channel-types";
+import type { Authenticate, Provider, HandleTurn, ChannelHostReads } from "@mercury-fw/channel-types";
 
 export type HttpProviderDeps = {
   port: number;
@@ -20,6 +20,8 @@ export type HttpProviderDeps = {
   /** Structured resolver for the `/confirm` endpoint's `resolved` flag. */
   resolveConfirmation: ResolveConfirmationFn;
   reads?: ChannelHostReads;
+  /** Who is calling, from the app's auth provider. */
+  authenticate: Authenticate;
   /** Allowed CORS origin echoed to a browser UI; defaults to `*` in the server. */
   corsOrigin?: string;
 };
@@ -34,6 +36,7 @@ export function createHttpProvider(deps: HttpProviderDeps): Provider & { stop():
         confirm: deps.confirm,
         resolveConfirmation: deps.resolveConfirmation,
         reads: deps.reads,
+        authenticate: deps.authenticate,
         corsOrigin: deps.corsOrigin,
       });
     },

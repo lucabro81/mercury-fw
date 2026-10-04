@@ -7,9 +7,10 @@
  * declared, it starts.
  *
  * `build` reads its port and CORS origin from `env` and takes the confirm
- * capabilities and in-process reads from the injected context (dependency
- * inversion). Those two are optional on the contract but required here, so a
- * context missing them throws — the loader isolates it fail-soft.
+ * capabilities, the in-process reads and the app's auth provider from the
+ * injected context (dependency inversion). Those are optional on the contract
+ * but required here, so a context missing them throws — the loader isolates it
+ * fail-soft, and without an auth provider the surface never opens.
  */
 import type { ChannelPlugin } from "@mercury-fw/channel-types";
 import { createHttpProvider } from "./http-provider.ts";
@@ -25,12 +26,16 @@ export const httpChannel: ChannelPlugin = {
     if (!ctx.resolveConfirmation || !ctx.reads) {
       throw new Error("http channel requires the resolveConfirmation and reads capabilities on the runtime context");
     }
+    if (!ctx.authenticate) {
+      throw new Error("http channel requires an auth provider (auth in mercury.config.ts)");
+    }
     return createHttpProvider({
       port: Number(ctx.env.HTTP_SURFACE_PORT ?? "4100"),
       corsOrigin: ctx.env.HTTP_SURFACE_CORS_ORIGIN ?? "*",
       confirm: ctx.confirm,
       resolveConfirmation: ctx.resolveConfirmation,
       reads: ctx.reads,
+      authenticate: ctx.authenticate,
     });
   },
 };
