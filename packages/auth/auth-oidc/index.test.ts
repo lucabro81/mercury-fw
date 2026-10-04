@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "bun:test";
 import { exportJWK, generateKeyPair, SignJWT, type CryptoKey, type JWTPayload } from "jose";
 import { AUTH_API_VERSION, type Authenticate } from "@mercury-fw/channel-types";
-import { oidcAuth } from "./index.ts";
+import { createOidcAuth, oidcAuth } from "./index.ts";
 
 const AUDIENCE = "mercury-ui";
 
@@ -13,6 +13,8 @@ let issuer: string;
 let advertisedIssuer: string | undefined;
 /** When true, the discovery endpoint answers 500. */
 let discoveryDown = false;
+/** When true, the discovery endpoint never answers. */
+let discoveryHangs = false;
 /** When true, the key set endpoint answers 500. */
 let keysDown = false;
 let discoveryHits = 0;
@@ -27,6 +29,7 @@ beforeAll(async () => {
     routes: {
       "/.well-known/openid-configuration": () => {
         discoveryHits++;
+        if (discoveryHangs) return new Promise<Response>(() => {});
         if (discoveryDown) return new Response("down", { status: 500 });
         return Response.json({ issuer: advertisedIssuer ?? issuer, jwks_uri: `${issuer}/keys` });
       },
@@ -41,6 +44,7 @@ afterAll(() => server.stop());
 beforeEach(() => {
   advertisedIssuer = undefined;
   discoveryDown = false;
+  discoveryHangs = false;
   keysDown = false;
   discoveryHits = 0;
 });
@@ -138,6 +142,23 @@ describe("oidcAuth", () => {
     expect(await authenticate(request(`Bearer ${await token()}`))).toBeNull();
     expect(logs.some((l) => l.startsWith(`oidc: discovery at ${issuer} failed`))).toBe(true);
     discoveryDown = false;
+    expect(await authenticate(request(`Bearer ${await token()}`))).toMatchObject({ id: "312345" });
+    expect(discoveryHits).toBe(2);
+  });
+
+  // Cold review of #37: discovery had no timeout, so an issuer that accepted
+  // the connection and never answered hung every request on the same promise,
+  // with no 401, no log, and no retry.
+  it("gives up on a discovery that doesn't answer in time: refuses, logs, and tries again next time", async () => {
+    const logs: string[] = [];
+    const authenticate = createOidcAuth({ discoveryTimeoutMs: 100 }).build({
+      env: { OIDC_ISSUER: issuer, OIDC_AUDIENCE: AUDIENCE },
+      log: (m) => logs.push(m),
+    });
+    discoveryHangs = true;
+    expect(await authenticate(request(`Bearer ${await token()}`))).toBeNull();
+    expect(logs.some((l) => l.startsWith(`oidc: discovery at ${issuer} failed`))).toBe(true);
+    discoveryHangs = false;
     expect(await authenticate(request(`Bearer ${await token()}`))).toMatchObject({ id: "312345" });
     expect(discoveryHits).toBe(2);
   });

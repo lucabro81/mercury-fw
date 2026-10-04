@@ -25,4 +25,4 @@ A caller sends `Authorization: Bearer <token>`. The provider finds the issuer's 
 
 Anything else is refused. Roles aren't read: which claim carries them depends on the issuer.
 
-When the issuer can't be reached, requests are refused and the reason is logged; discovery is tried again on the next request. A missing `OIDC_ISSUER` or `OIDC_AUDIENCE` stops the provider from loading, and the channels that need it (HTTP) don't start.
+When the issuer can't be reached, or its discovery doesn't answer within 5 s, requests are refused and the reason is logged; discovery is tried again on the next request. A missing `OIDC_ISSUER` or `OIDC_AUDIENCE` stops the provider from loading, and the channels that need it (HTTP) don't start.
