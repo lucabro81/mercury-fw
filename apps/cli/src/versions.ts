@@ -50,14 +50,22 @@ async function latestVersion(
 }
 
 /** Maps the framework packages to the CLI's version and each of `packages`
- * (plugins and channels) to the registry's `latest`. Rejects naming the
- * package the registry doesn't have, or saying the registry can't be reached. */
+ * (plugins, channels, auth providers) to the registry's `latest`. A package
+ * in `local` (packed tarballs, `--local-packages`) takes that version instead,
+ * a framework one included, and the registry isn't asked for it. Rejects
+ * naming the package the registry doesn't have, or saying the registry can't
+ * be reached. */
 export async function appVersions(
   packages: string[],
-  opts: { registry: string; fetchFn?: typeof fetch },
+  opts: { registry: string; fetchFn?: typeof fetch; local?: Record<string, string> },
 ): Promise<Record<string, string>> {
-  const versions: Record<string, string> = Object.fromEntries(FRAMEWORK_PACKAGES.map((p) => [p, cliVersion()]));
-  const latest = await Promise.all(packages.map(async (name) => [name, await latestVersion(name, opts)] as const));
+  const local = opts.local ?? {};
+  const versions: Record<string, string> = Object.fromEntries(FRAMEWORK_PACKAGES.map((p) => [p, local[p] ?? cliVersion()]));
+  for (const name of packages) {
+    if (local[name] !== undefined) versions[name] = local[name];
+  }
+  const remote = packages.filter((name) => local[name] === undefined);
+  const latest = await Promise.all(remote.map(async (name) => [name, await latestVersion(name, opts)] as const));
   for (const [name, version] of latest) {
     versions[name] = version;
   }
