@@ -122,11 +122,13 @@ async function create(args: CreateArgs, rawArgs: string[], relaunch: Relaunch, g
   const dir = join(dirname(typed), folder);
   // What the command line already settles is checked before any question, so
   // the wizard is never answered for nothing. The HTTP channel and its auth
-  // provider are paired here only with --yes: otherwise the wizard asks.
+  // provider are paired here with --yes, or when the flags give both;
+  // otherwise the wizard asks.
+  const pairedByFlags = args.yes || (args.channels !== undefined && args.auth !== undefined);
   const early =
     targetError(dir) ??
     selectionError(args.channels ?? [], args.plugins ?? [], args.auth) ??
-    (args.yes ? pairingError(args.channels ?? [], args.auth) : undefined) ??
+    (pairedByFlags ? pairingError(args.channels ?? [], args.auth) : undefined) ??
     remoteError(args);
   if (early !== undefined) {
     throw new Error(early);

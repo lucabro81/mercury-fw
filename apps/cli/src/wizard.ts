@@ -67,7 +67,9 @@ export async function askAnswers(args: CreateArgs, dir: string): Promise<Answers
     validate: (v) => (v === undefined || v === "" || v.trim() ? undefined : "The role can't be empty"),
   });
   if (p.isCancel(role)) return cancelled();
-  const channels = await pick("channel", "Channels (space to select, none is fine: the REPL always works)", args.channels ?? []);
+  // A --auth with no --channels starts from the HTTP channel it goes with.
+  const initialChannels = args.channels ?? (args.auth !== undefined ? ["http"] : []);
+  const channels = await pick("channel", "Channels (space to select, none is fine: the REPL always works)", initialChannels);
   if (channels === undefined) return cancelled();
   // The HTTP channel doesn't start without an auth provider, so choosing it
   // means choosing one; without it there's nothing to ask.
@@ -80,6 +82,8 @@ export async function askAnswers(args: CreateArgs, dir: string): Promise<Answers
     });
     if (p.isCancel(picked)) return cancelled();
     auth = picked;
+  } else if (args.auth !== undefined) {
+    p.log.warn(`--auth ${args.auth} ignored: it goes with the http channel, which isn't chosen`);
   }
   const plugins = await pick("tool", "Tool plugins (space to select)", args.plugins ?? []);
   if (plugins === undefined) return cancelled();

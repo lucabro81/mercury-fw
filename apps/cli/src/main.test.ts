@@ -280,6 +280,15 @@ describe("mfw create, checks before the wizard", () => {
     expect(readdirSync(base)).toEqual([]);
   });
 
+  // Cold review of #37: without --yes the wizard dropped a --auth that the
+  // channels given as flags have no use for, silently.
+  test("--auth with channels given as flags that don't include http, without --yes, exits 1 before the wizard", async () => {
+    const result = await run("create", join(base, "demo"), "--channels", "google-chat", "--auth", "static");
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain('The auth provider "static" goes with the http channel, which isn\'t chosen');
+    expect(readdirSync(base)).toEqual([]);
+  });
+
   test("a folder that isn't empty, without --yes, exits 1 and is left alone", async () => {
     const dir = join(base, "demo");
     mkdirSync(dir);
