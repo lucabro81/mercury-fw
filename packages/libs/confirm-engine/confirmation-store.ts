@@ -3,9 +3,9 @@
  * confirmation before it runs. Something stages it here, and the channel gets
  * the returned token confirmed back to it — a card button click on Google Chat,
  * a bare token typed on the terminal — before anything actually happens (see
- * `confirm-flow.ts`). Scoped by `sessionKey` so a token proposed to one session
- * (terminal, or a given Google Chat space+sender) can't be confirmed by
- * another.
+ * `confirm-flow.ts`). Scoped by `sessionKey` and by the person who staged it
+ * (`owner`, the core's user key), so a token proposed in one session can't be
+ * confirmed from another, nor by someone else in the same one.
  *
  * The action is opaque: a `run` thunk that performs it and a `describe` string
  * for the paper trail. The store — and the whole confirmation subsystem — knows
@@ -15,22 +15,22 @@ import type { ActionResult } from "@mercury-fw/plugin-types";
 export type StagedAction = { run: () => Promise<ActionResult>; describe: string; requestedAt?: string };
 
 /** A pending staging as seen from outside, deliberately WITHOUT its token or
- * its executable thunk: a token is a confirm capability, and the HTTP read
- * surface is unauthenticated, so listing pending confirmations must never hand
- * out the tokens (or a way to run the action) — only the human-readable
- * `summary` (the action's `describe`). */
+ * its executable thunk: a token is a confirm capability, so listing pending
+ * confirmations must never hand out the tokens (or a way to run the action),
+ * only the human-readable `summary` (the action's `describe`). */
 export type PendingConfirmation = { sessionKey: string; summary: string; expiresAt: number };
 
 export type ConfirmationStore = {
-  /** Stages `action` for `sessionKey` and returns a fresh token. */
-  stage(sessionKey: string, action: StagedAction): string;
-  /** Consumes and returns the staged action for `sessionKey`/`token`, or
-   * `null` if it doesn't exist, belongs to a different session, or has
-   * expired. Always one-shot: a successful take removes the entry. */
-  take(sessionKey: string, token: string): StagedAction | null;
-  /** The currently staged, non-expired actions, redacted of their tokens — for
+  /** Stages `action` for `owner` in `sessionKey` and returns a fresh token. */
+  stage(sessionKey: string, owner: string, action: StagedAction): string;
+  /** Consumes and returns the staged action for `sessionKey`/`owner`/`token`, or
+   * `null` if it doesn't exist, belongs to a different session or person, or has
+   * expired. Always one-shot: a successful take removes the entry, a refused one
+   * leaves it for its owner. */
+  take(sessionKey: string, owner: string, token: string): StagedAction | null;
+  /** `owner`'s staged, non-expired actions, redacted of their tokens, for
    * read-only introspection (see `PendingConfirmation`). */
-  pending(): PendingConfirmation[];
+  pending(owner: string): PendingConfirmation[];
 };
 
 // Full alphanumeric — a token is only ever copy-pasted, never read or
@@ -60,7 +60,7 @@ function defaultTokenFn(): string {
   return `${randomGroup()}-${randomGroup()}`;
 }
 
-type Entry = { action: StagedAction; sessionKey: string; expiresAt: number };
+type Entry = { action: StagedAction; sessionKey: string; owner: string; expiresAt: number };
 
 export function createConfirmationStore(
   opts: { now?: () => number; ttlMs?: number; tokenFn?: () => string } = {},
@@ -71,12 +71,12 @@ export function createConfirmationStore(
   const entries = new Map<string, Entry>();
 
   return {
-    stage(sessionKey, action) {
+    stage(sessionKey, owner, action) {
       const token = tokenFn();
-      entries.set(token, { sessionKey, action, expiresAt: now() + ttlMs });
+      entries.set(token, { sessionKey, owner, action, expiresAt: now() + ttlMs });
       return token;
     },
-    take(sessionKey, token) {
+    take(sessionKey, owner, token) {
       const entry = entries.get(token);
       if (!entry) {
         return null;
@@ -85,17 +85,17 @@ export function createConfirmationStore(
         entries.delete(token);
         return null;
       }
-      if (entry.sessionKey !== sessionKey) {
+      if (entry.sessionKey !== sessionKey || entry.owner !== owner) {
         return null;
       }
       entries.delete(token);
       return entry.action;
     },
-    pending() {
+    pending(owner) {
       const t = now();
       const out: PendingConfirmation[] = [];
       for (const entry of entries.values()) {
-        if (entry.expiresAt <= t) continue;
+        if (entry.expiresAt <= t || entry.owner !== owner) continue;
         out.push({
           sessionKey: entry.sessionKey,
           summary: entry.action.describe,

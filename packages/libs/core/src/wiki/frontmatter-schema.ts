@@ -16,6 +16,12 @@ export const CuratedFrontmatterSchema = z.object({
   last_updated: z.string().optional(),
 });
 
+/** A note the model wrote for one person, in their own area (`personal/notes/`). Same shape as a curated doc, kept apart by `type` so promoting it to the common area is a visible change of kind. */
+export const PersonalFrontmatterSchema = z.object({
+  type: z.literal("personal"),
+  last_updated: z.string().optional(),
+});
+
 export const InferredFrontmatterSchema = z.object({
   type: z.literal("inferred"),
   source: z.literal("agent"),
@@ -31,8 +37,8 @@ export const InferredFrontmatterSchema = z.object({
  * never an autonomous LLM judgment call. Tracks a specific CLI action's
  * own token, written once when staged (`status: "pending"`) and
  * overwritten in place once resolved (`"confirmed"`/`"failed"`). Lives
- * outside `inferred/users/<userId>/` (see `wiki-read.ts`'s
- * `allowedRoots`) so it's structurally invisible to the model's own
+ * in a person's `confirmations/` folder, outside what `identity/vault-access.ts`
+ * lets the model browse, so it's structurally invisible to the model's own
  * `list_files`/`grep` — reachable only via the narrow `resolve_reference`
  * tool given the exact token (see `wiki-tools.ts`), never by browsing.
  */
@@ -45,5 +51,6 @@ export const ConfirmationFrontmatterSchema = z.object({
 });
 
 export type CuratedFrontmatter = z.infer<typeof CuratedFrontmatterSchema>;
+export type PersonalFrontmatter = z.infer<typeof PersonalFrontmatterSchema>;
 export type InferredFrontmatter = z.infer<typeof InferredFrontmatterSchema>;
 export type ConfirmationFrontmatter = z.infer<typeof ConfirmationFrontmatterSchema>;
