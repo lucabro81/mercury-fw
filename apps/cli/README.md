@@ -316,6 +316,23 @@ export default e2e({
 
 Each run of an HTTP case is a conversation of its own. A turn also has the response's `status` (200, or 401 for a refused token). The event stream carries no tool results, so on HTTP a call's `input` is the line the surface shows for it (the command, for a CLI tool) and its `output` is there only for a call staged for confirmation, with the token, as on the REPL. A turn may span several lines.
 
+To see what happens when people talk at the same time, an HTTP case can have `lanes` instead of `turns`: every lane sends its own turns in order, as its own user (`as`, or the case's), while the other lanes send theirs. Each lane gets a conversation of its own, unless lanes name the same `conversation`, which sends their turns at once on one conversation id, like two tabs on one chat. In the check, `run.lanes` holds each lane's run, and `run.turns` every turn, lane by lane:
+
+```ts
+{
+  name: "Alice and Bob at once",
+  channel: "http",
+  lanes: [
+    { as: "alice", turns: ["Remember: tamarind. Reply OK.", "What word did I give you?"] },
+    { as: "bob", turns: ["Remember: persimmon. Reply OK.", "What word did I give you?"] },
+  ],
+  check: (run, expect) => {
+    expect.that("Alice gets hers", run.lanes![0]!.last.answer.includes("tamarind"));
+    expect.that("Bob gets his", run.lanes![1]!.last.answer.includes("persimmon"));
+  },
+}
+```
+
 `before`, `after` and `check` also get `cli(command)`, which runs `sh -c command` in the app's container, outside the model, and resolves to its exit code and output: to prepare data (an issue to work on, a note in the wiki with the vault CLI), to check what a turn changed (`jira issue get KEY --select fields.assignee.displayName` after an assignment), to clean up. `after` runs even when the run or the check failed. A test that changes an external system has to clean up after itself, so start from read-only ones.
 
 #### What it can and can't test

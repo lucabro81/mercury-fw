@@ -145,7 +145,8 @@ packages/libs/core/
     ├── tools/                 # CLI executor + command parser/allowlist (cli-tool.ts) + config schema/loader/version-check
     ├── plugins/               # generic fail-soft tool-plugin loader (plugin-loader.ts) + the formatter decorator
     ├── router/
-    │   ├── turn-runner.ts      # shared per-turn driver every provider funnels through
+    │   ├── turn-runner.ts      # shared per-turn driver every provider funnels through, one turn at a time per session
+    │   ├── session-lock.ts     # the per-session queue the turn runner and the idle sweep share
     │   ├── channel-loader.ts   # generic fail-soft channel-plugin loader — turns the hand-listed channel set into started providers
     │   ├── auth-loader.ts      # builds the declared auth provider into the `authenticate` channels get; fail-soft and closed (no provider ⇒ HTTP doesn't start)
     │   ├── terminal.ts         # the REPL loop (stdin/stdout), driven by the app's repl.ts — a dev console, not a channel
