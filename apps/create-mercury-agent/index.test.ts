@@ -62,7 +62,7 @@ describe("create-mercury-agent", () => {
   test("writes the same app as `mfw create` for the same arguments", async () => {
     // The written files only: install and git are tested in apps/cli, and here
     // they would differ between the two folders (#125).
-    const flags = ["--name", "demo", "--channels", "http", "--plugins", "jira", "--no-install", "--no-git", "--yes"];
+    const flags = ["--name", "demo", "--channels", "http", "--auth", "static", "--plugins", "jira", "--no-install", "--no-git", "--yes"];
     const viaCreate = await run(["bun", CREATE, join(base, "a"), ...flags]);
     const viaMfw = await run(["bun", MFW, "create", join(base, "b"), ...flags]);
     expect(viaCreate.code).toBe(0);
