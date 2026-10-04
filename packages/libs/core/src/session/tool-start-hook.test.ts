@@ -211,20 +211,20 @@ describe("withToolStartHook", () => {
     expect(calls).toEqual(["Sto leggendo il wiki…", "Sto scrivendo sul wiki…", "Sto consultando la memoria…"]);
   });
 
-  it("calls onToolStart with the label, detail, and toolCallId for a real tool call", async () => {
-    const calls: Array<[string, string | undefined, string | undefined]> = [];
+  it("calls onToolStart with the label, detail, toolCallId and tool name for a real tool call", async () => {
+    const calls: Array<[string, string | undefined, string | undefined, string | undefined]> = [];
     const tools: Record<string, Tool> = {
       runCommand: fakeTool(async () => ({ ok: true, data: {} })),
     };
 
     const wrapped = withToolStartHook(
       tools,
-      (label, detail, toolCallId) => calls.push([label, detail, toolCallId]),
+      (label, detail, toolCallId, toolName) => calls.push([label, detail, toolCallId, toolName]),
       statusMap,
     );
     await execOf(wrapped, "runCommand")({ command: "jira issue search --jql X" }, { toolCallId: "tc-1" });
 
-    expect(calls).toEqual([["esecuzione jira issue search", "jira issue search --jql X", "tc-1"]]);
+    expect(calls).toEqual([["esecuzione jira issue search", "jira issue search --jql X", "tc-1", "runCommand"]]);
   });
 
   it("calls onToolFinish with the classified outcome once execute resolves, after onToolStart", async () => {

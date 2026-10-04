@@ -129,7 +129,7 @@ export function classifyToolResult(result: unknown): ToolOutcome {
  */
 export function withToolStartHook(
   tools: Record<string, Tool>,
-  onToolStart: (label: string, detail?: string, toolCallId?: string) => void,
+  onToolStart: (label: string, detail?: string, toolCallId?: string, toolName?: string) => void,
   toolStatusDescribers: Record<string, (input: unknown) => string>,
   onToolFinish?: (toolCallId: string, outcome: ToolOutcome) => void,
 ): Record<string, Tool> {
@@ -142,7 +142,7 @@ export function withToolStartHook(
         const label = describeToolStart(name, input, toolStatusDescribers);
         const detail = describeToolDetail(name, input);
         const run = chain.then(async () => {
-          onToolStart(label, detail, options.toolCallId);
+          onToolStart(label, detail, options.toolCallId, name);
           try {
             const result = await (t.execute as (i: unknown, o: unknown) => unknown)(input, options);
             onToolFinish?.(options.toolCallId, classifyToolResult(result));

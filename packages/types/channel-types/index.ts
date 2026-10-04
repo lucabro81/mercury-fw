@@ -78,8 +78,8 @@ export type InboundTurn = {
  * `onReasoningChunk` (never `onTextChunk`), so *answer* streaming never starts there.
  */
 export type TurnSink = {
-  /** `onToolStart` for `buildTools`. `detail`/`toolCallId` present for a real tool call or a capture-ping with its own id; both undefined = a caller with no correlation id. */
-  onToolStart: (label: string, detail?: string, toolCallId?: string) => void;
+  /** `onToolStart` for `buildTools`. `detail`/`toolCallId` present for a real tool call or a capture-ping with its own id; both undefined = a caller with no correlation id. `toolName` only for a real tool call (the model's tool, e.g. `jiraCommand`), never for a capture-ping. */
+  onToolStart: (label: string, detail?: string, toolCallId?: string, toolName?: string) => void;
   /** Paired with `onToolStart` via `toolCallId` once the call settles. Optional — only Google Chat implements it (patches its status card). */
   onToolFinish?: (toolCallId: string, outcome: ToolOutcome) => void;
   /** Present ⇒ `runTurn` uses `streamText`. Must stay undefined for Google Chat's own *answer* delivery. */

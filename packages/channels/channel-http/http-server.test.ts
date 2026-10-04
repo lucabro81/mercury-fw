@@ -88,6 +88,23 @@ describe("handleTurnRequest", () => {
     expect(body).toContain("Confermato ed eseguito");
   });
 
+  it("streams a tool event with the label, detail, call id and the tool's name", async () => {
+    const res = await handleTurnRequest(turnReq({ text: "hi", conversationId: "c" }), {
+      handleTurn: async (_turn, sink) => {
+        sink.onToolStart("Sto leggendo Jira…", "jira issue list", "tc-1", "jiraCommand");
+        sink.onToolFinish?.("tc-1", "success");
+        await sink.finalize("done");
+      },
+      confirm: async () => null,
+      authenticate: asAlice,
+    });
+    const body = await res.text();
+    expect(body).toContain(
+      `event: tool\ndata: ${JSON.stringify({ label: "Sto leggendo Jira…", detail: "jira issue list", toolCallId: "tc-1", name: "jiraCommand" })}\n\n`,
+    );
+    expect(body).toContain(`event: tool_finish\ndata: ${JSON.stringify({ toolCallId: "tc-1", outcome: "success" })}\n\n`);
+  });
+
   it("surfaces a staged confirm-required action as a pending event with its command and token", async () => {
     const pendingStep: StepInfo = {
       toolCalls: [{ toolCallId: "1", toolName: "runCommand", input: { command: "jira issue delete KAN-1" } }],

@@ -172,7 +172,7 @@ export async function handleTurnRequest(req: Request, deps: TurnRequestDeps): Pr
       }
 
       const sink: TurnSink = {
-        onToolStart: (label, detail, toolCallId) => send("tool", { label, detail, toolCallId }),
+        onToolStart: (label, detail, toolCallId, toolName) => send("tool", { label, detail, toolCallId, name: toolName }),
         onToolFinish: (toolCallId, outcome) => send("tool_finish", { toolCallId, outcome }),
         onTextChunk: (chunk) => {
           if (chunk !== PENDING_CONFIRMATION_NOTE) send("text", { chunk });

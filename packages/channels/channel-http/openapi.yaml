@@ -382,6 +382,9 @@ components:
         detail:
           type: string
           description: On `tool` — optional detail.
+        name:
+          type: string
+          description: On `tool` — the tool the model called (e.g. `jiraCommand`); absent for Mercury's own memory notes.
         toolCallId:
           type: string
           description: On `tool`/`tool_finish`.

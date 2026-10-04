@@ -56,7 +56,7 @@ Reasoning and answer text arrive as **incremental deltas** — never one finishe
 |---|---|---|
 | `reasoning` | `{ chunk, id }` | a model reasoning delta |
 | `reasoning_end` | `{ id, failed }` | a reasoning block ends |
-| `tool` | `{ label, detail, toolCallId }` | a tool call starts |
+| `tool` | `{ label, detail, toolCallId, name }` | a tool call starts; `name` is the tool the model called, absent when Mercury is saving something to memory |
 | `tool_finish` | `{ toolCallId, outcome }` | a tool call settles (`outcome`: `success` \| `failed` \| `pending`) |
 | `text` | `{ chunk }` | an answer-text delta |
 | `pending` | `{ command, token }` | a confirm-required action was staged; send `token` back to confirm it — as a later `/turn` `text`, or via `POST /confirm` |
