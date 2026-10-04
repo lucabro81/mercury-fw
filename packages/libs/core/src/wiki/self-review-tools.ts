@@ -14,6 +14,13 @@
  * All three nightly sub-passes (`self-review-runner.ts`) share this
  * exact tool set — they differ only in system prompt and pre-computed
  * input data, not in which tools they can call.
+ *
+ * A pass runs for minutes while people keep talking, and a tool correction
+ * or a promotion can land in curated/ meanwhile. So `write_curated` and
+ * `delete_curated` act only on the version of a doc this tool set last read
+ * (`read_file`), checked inside the vault's commit chain: on a doc that
+ * changed since, they refuse, and the model rereads and redoes its edit. A
+ * review edit can be skipped that way, never a concurrent update lost.
  */
 import type { ExecutableTool } from "@mercury-fw/plugin-types";
 import { tool } from "ai";
@@ -39,6 +46,10 @@ export function createSelfReviewTools(
 > {
   const { vaultPath } = deps;
   const roots = selfReviewRoots(vaultPath);
+  // What read_file last returned for each curated doc, by its path under curated/.
+  const readVersions = new Map<string, string>();
+  const changedSinceRead = (path: string) =>
+    `curated/${path} changed since you read it: read it again and redo your edit on the current version`;
 
   const list_files = tool({
     description: "List every file under curated/ and raw/ (never inferred/). Returns paths relative to the vault root.",
@@ -55,6 +66,7 @@ export function createSelfReviewTools(
     execute: async ({ path }) => {
       try {
         const content = await readWikiFileInRoots(vaultPath, roots, path);
+        if (path.startsWith("curated/")) readVersions.set(relativeToCurated(path), content);
         return { ok: true as const, content };
       } catch (err) {
         return { ok: false as const, error: String(err) };
@@ -77,11 +89,26 @@ export function createSelfReviewTools(
 
   const write_curated = tool({
     description:
-      'Create or overwrite a curated doc. "path" is relative to curated/, e.g. "standards/jira-fields.md"; the path list_files and grep give ("curated/standards/jira-fields.md") works too.',
+      'Create or overwrite a curated doc. "path" is relative to curated/, e.g. "standards/jira-fields.md"; the path list_files and grep give ("curated/standards/jira-fields.md") works too. ' +
+      "To overwrite an existing doc, read it first: the write goes through only over the version you read.",
     inputSchema: z.object({ path: z.string().min(1), content: z.string() }),
     execute: async ({ path, content }) => {
+      const target = relativeToCurated(path);
+      const read = readVersions.get(target);
       try {
-        await writeCuratedNote(vaultPath, relativeToCurated(path), {}, content);
+        const written = await writeCuratedNote(vaultPath, target, {}, content, {
+          when: (current) => current === (read ?? null),
+        });
+        if (!written) {
+          const error =
+            read === undefined
+              ? `curated/${target} already exists: read it first, then write your edited version`
+              : changedSinceRead(target);
+          return { ok: false as const, error };
+        }
+        // What's there now is this write, not something read: another write
+        // needs a fresh read first.
+        readVersions.delete(target);
         return { ok: true as const };
       } catch (err) {
         return { ok: false as const, error: String(err) };
@@ -142,14 +169,26 @@ export function createSelfReviewTools(
   });
 
   const delete_curated = tool({
-    description: 'Delete a curated doc that is redundant or superseded. "path" must start with "curated/". Remove its index.md line too, if it has one.',
+    description:
+      'Delete a curated doc that is redundant or superseded. "path" must start with "curated/". Read it first: the ' +
+      "delete goes through only over the version you read. Remove its index.md line too, if it has one.",
     inputSchema: z.object({ path: z.string().min(1) }),
     execute: async ({ path }) => {
       if (!path.startsWith("curated/")) {
         return { ok: false as const, error: `path must start with "curated/" (got "${path}")` };
       }
+      const target = path.slice("curated/".length);
+      const read = readVersions.get(target);
       try {
-        await deleteCuratedEntry(vaultPath, path.slice("curated/".length));
+        // A doc that's already gone needs no read: deleting it is a no-op.
+        const deleted = await deleteCuratedEntry(vaultPath, target, {
+          when: (current) => current === null || current === read,
+        });
+        if (!deleted) {
+          const error = read === undefined ? `curated/${target}: read it first, then delete it` : changedSinceRead(target);
+          return { ok: false as const, error };
+        }
+        readVersions.delete(target);
         return { ok: true as const };
       } catch (err) {
         return { ok: false as const, error: String(err) };

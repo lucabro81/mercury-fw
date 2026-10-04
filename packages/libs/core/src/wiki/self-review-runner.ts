@@ -53,7 +53,9 @@ const SHARED_BOUNDARIES =
   "doc's index.md entry (update_index_entry/remove_index_entry — never hand-write index.md's " +
   "content yourself, those tools own its exact format), and delete resolved raw/ entries. You have " +
   "no access to inferred/ — it is written exclusively by a separate deterministic process, never by " +
-  "judgment calls like this one.";
+  "judgment calls like this one. Read a curated doc before you rewrite or delete it: write_curated and " +
+  "delete_curated act only on the version you last read, because other writes can land while you work. " +
+  "If one says the doc changed since you read it, read it again and redo your edit on the current version.";
 
 const RAW_TRIAGE_SYSTEM =
   "You are performing Mercury's periodic wiki self-review — the raw/ triage pass. For each entry " +

@@ -90,3 +90,24 @@ describe("runContradictionCheckPass", () => {
     expect(received!.instructions.toLowerCase()).toContain("cross-link");
   });
 });
+
+// #154: write_curated and delete_curated refuse a doc that changed since it
+// was read; every pass is told so up front, instead of meeting it as an error.
+describe("every pass", () => {
+  it("is told to write and delete only the version of a doc it last read", async () => {
+    const instructions: string[] = [];
+    const generateTextFn = async (params: ReceivedParams) => {
+      instructions.push(params.instructions);
+      return { text: "ok" };
+    };
+
+    await runRawTriagePass({ vaultPath: VAULT_PATH, model: MODEL, rawEntries: [], generateTextFn });
+    await runIndexAndOrphanPass({ vaultPath: VAULT_PATH, model: MODEL, orphans: [], generateTextFn });
+    await runContradictionCheckPass({ vaultPath: VAULT_PATH, model: MODEL, generateTextFn });
+
+    for (const text of instructions) {
+      expect(text).toContain("Read a curated doc before you rewrite or delete it");
+      expect(text).toContain("read it again and redo your edit");
+    }
+  });
+});
