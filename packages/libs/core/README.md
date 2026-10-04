@@ -42,7 +42,7 @@ An instance that ran an earlier version gets its data moved at startup: Google C
 
 Different people, and different conversations of one person, run in parallel. Turns of one conversation run one after the other: a second message sent while the first is still being answered (two tabs on one chat, a double submit) waits for it, and the idle capture waits too before it closes a conversation. A vault write that depends on what's there (a consolidation, an `index.md` update, a promotion) decides inside the same queue the write goes through, so a concurrent update is never lost. The nightly review rewrites or deletes only the version of a document it read, and rereads it when someone changed it meanwhile.
 
-The core doesn't limit how many requests reach the model at once: that's the Ollama server's call, through `OLLAMA_NUM_PARALLEL` (how many requests one loaded model serves together, the rest queue). With more people than that talking at the same time, someone waits for a free slot. The summaries and extractions that run after a turn use the same model, so they take slots too.
+The core doesn't limit how many requests reach the model at once, so the model server decides how they share it (on Ollama, `OLLAMA_NUM_PARALLEL`). The summaries and extractions that run after a turn use the same model too. Measure it on your own hardware before counting on it: on one setup, a follow-up that took 5 seconds for one person took about two minutes with two people talking at once.
 
 ## Requirements
 
