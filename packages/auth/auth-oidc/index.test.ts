@@ -99,6 +99,13 @@ describe("oidcAuth", () => {
     expect(await build()(request(`Bearer ${await token({ iat: past - 300, exp: past })}`))).toBeNull();
   });
 
+  // Cold review of #37: jose checks exp only when it's there, so a signed
+  // token without one (a misconfigured issuer, a non-expiring service token)
+  // authenticated forever.
+  it("refuses a token without an expiry", async () => {
+    expect(await build()(request(`Bearer ${await token({ exp: undefined })}`))).toBeNull();
+  });
+
   it("refuses a token without a subject", async () => {
     expect(await build()(request(`Bearer ${await token({ sub: undefined })}`))).toBeNull();
   });

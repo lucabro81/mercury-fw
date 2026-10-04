@@ -17,7 +17,7 @@ auth: oidcAuth,
 | `OIDC_ISSUER` | Required. The issuer's URL, exactly as tokens carry it in `iss` (`https://<instance>.zitadel.cloud`, `https://accounts.google.com`). |
 | `OIDC_AUDIENCE` | Required. The client id the UI calling Mercury is registered with on the issuer, which tokens carry in `aud`. A token the same issuer minted for another application is refused. |
 
-A caller sends `Authorization: Bearer <token>`. The provider finds the issuer's keys through its discovery document (`<issuer>/.well-known/openid-configuration`, fetched on the first request and kept), then checks the signature, `iss`, `aud` and expiry. A valid token becomes the principal:
+A caller sends `Authorization: Bearer <token>`. The provider finds the issuer's keys through its discovery document (`<issuer>/.well-known/openid-configuration`, fetched on the first request and kept), then checks the signature, `iss`, `aud` and expiry (a token without `exp` is refused). A valid token becomes the principal:
 
 ```ts
 { id: sub, provider: "oidc", displayName: name ?? preferred_username ?? email, claims }

@@ -12,7 +12,7 @@
  * once it succeeds; a failed discovery refuses that request, is logged, and is
  * tried again on the next one. `jose` verifies the signature against the
  * issuer's JWKS (caching it and following key rotation), plus `iss`, `aud` and
- * expiry. Roles aren't read here: which claim carries them depends on the
+ * expiry, which a token must carry: one without `exp` would never expire. Roles aren't read here: which claim carries them depends on the
  * issuer, and that's the user directory's job.
  */
 import { createRemoteJWKSet, errors, jwtVerify, type JWTVerifyGetKey } from "jose";
@@ -79,7 +79,7 @@ export const oidcAuth: AuthPlugin = {
       }
 
       try {
-        const { payload } = await jwtVerify(token, jwks, { issuer, audience });
+        const { payload } = await jwtVerify(token, jwks, { issuer, audience, requiredClaims: ["exp"] });
         if (typeof payload.sub !== "string" || payload.sub === "") return null;
         const principal: Principal = { id: payload.sub, provider: "oidc", claims: { ...payload } };
         const displayName = displayNameOf(payload);
