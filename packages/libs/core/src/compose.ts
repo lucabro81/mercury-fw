@@ -17,7 +17,7 @@
 import { QdrantClient } from "@qdrant/js-client-rest";
 import { getOllamaProvider } from "./model/client.ts";
 import { runCli } from "@mercury-fw/cli-engine";
-import { createConfirmationStore, createStageConfirmation, tryConfirm, resolveConfirmation, type ConfirmationStore } from "@mercury-fw/confirm-engine";
+import { createConfirmationStore, createStageConfirmation, type ConfirmationStore } from "@mercury-fw/confirm-engine";
 import { createDisplayStore } from "./tools/display-store.ts";
 import { createPresentTool } from "./tools/present-tool.ts";
 import { loadPlugins } from "./plugins/plugin-loader.ts";
@@ -66,8 +66,8 @@ import { initVault } from "./wiki/vault-init.ts";
 import { findOrphanCuratedDocs } from "./wiki/orphan-detector.ts";
 import { listWikiFilesInRoots, readWikiFileInRoots, readIndexFile } from "./wiki/wiki-read.ts";
 import { readInferredNote } from "./identity/vault-access.ts";
-import { userKey } from "./identity/user-key.ts";
 import { createHostReads } from "./identity/host-reads.ts";
+import { bindConfirm } from "./identity/confirm-binding.ts";
 import { migrateMemoryToUserKeys, migrateVaultToUserAreas } from "./identity/migrate-layout.ts";
 import { runRawTriagePass, runIndexAndOrphanPass, runContradictionCheckPass } from "./wiki/self-review-runner.ts";
 import { startSelfReviewCron } from "./cron/self-review-cron.ts";
@@ -531,9 +531,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   const channelRuntime: ChannelRuntimeContext = {
     env: process.env,
     log: (msg) => console.error(msg),
-    confirm: (token, sessionKey, principal) => tryConfirm(token, sessionKey, { ...confirmDeps, owner: userKey(principal) }),
-    resolveConfirmation: (token, sessionKey, principal) =>
-      resolveConfirmation(token, sessionKey, { ...confirmDeps, owner: userKey(principal) }),
+    ...bindConfirm(confirmDeps),
     authenticate: loadAuth(config.auth, { env: process.env, log: (msg) => console.error(msg) }),
     // Every read but the manifest and health is scoped to the caller (see
     // identity/host-reads.ts).
