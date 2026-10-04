@@ -36,8 +36,8 @@ The app lands in `apps/prova`, which git ignores and which isn't a workspace of 
 What it runs, in order, so you can also run the steps yourself:
 
 1. `bun run pack`: the type declarations of every package, then `bun pm pack` of each public workspace into `apps/testbed/.packs/`, the same way publishing packs them (`bun run pack --no-types` skips the declarations when only the runtime matters: an app's typecheck is what needs them);
-2. this repo's `mfw create apps/prova … --no-install --yes`: the git repository is skipped on its own, since the folder is inside this one;
-3. `mfw local-packages ../../.packs`, from the app's folder: the tarballs copied into the app's `.packs/`, an `overrides` per package in its `package.json` (transitive dependencies included), `bun install`.
+2. this repo's `mfw create apps/prova … --local-packages .packs --yes`: the versions come from the tarballs (so a package that was never published works too), the tarballs are copied into the app's `.packs/`, its `package.json` gets an `overrides` per package (transitive dependencies included), and `bun install` runs; the git repository is skipped on its own, since the folder is inside this one;
+3. on an app that already exists, `mfw local-packages ../../.packs` from its folder instead: the same copy, overrides and install, keeping everything else.
 
 ## Its env file and credentials
 

@@ -1,8 +1,9 @@
 /**
  * The steps `bun run create` takes, worked out from its command line before
- * anything runs: pack this repo's workspaces, create the app with this repo's
- * `mfw create` when it doesn't exist yet (or anew with `--fresh`), then make
- * it install the tarballs with `mfw local-packages`.
+ * anything runs: pack this repo's workspaces, then create the app with this
+ * repo's `mfw create` on the tarballs (`--local-packages`) when it doesn't
+ * exist yet (or anew with `--fresh`), or make an existing one install them
+ * again with `mfw local-packages`.
  */
 import { parseArgs } from "node:util";
 import { join } from "node:path";
@@ -15,7 +16,8 @@ export type Step =
   | { step: "remove"; dir: string }
   | { step: "run"; argv: string[]; cwd: string };
 
-/** Where the tarballs are, from an app's folder (`apps/<name>`). */
+/** Where the tarballs are, from the test bed's folder and from an app's (`apps/<name>`). */
+const PACKS = ".packs";
 const PACKS_FROM_APP = "../../.packs";
 
 /** A comma-separated list, trimmed, empty items dropped. */
@@ -85,12 +87,14 @@ export function planCreate(args: CreateArgs, { root, exists }: { root: string; e
         "--channels",
         (args.channels ?? []).join(","),
         ...auth,
-        "--no-install",
+        "--local-packages",
+        PACKS,
         "--yes",
       ],
       cwd: root,
     });
+  } else {
+    steps.push({ step: "run", argv: ["mfw", "local-packages", PACKS_FROM_APP], cwd: app });
   }
-  steps.push({ step: "run", argv: ["mfw", "local-packages", PACKS_FROM_APP], cwd: app });
   return steps;
 }

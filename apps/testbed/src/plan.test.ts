@@ -43,11 +43,16 @@ describe("parseCreateArgs", () => {
 });
 
 describe("planCreate", () => {
-  test("a new app: pack, create it with the CLI of this repo, then install the tarballs", () => {
+  // #37: the app is created on the tarballs, so a package the registry
+  // doesn't have yet (a new auth provider) doesn't stop it.
+  test("a new app: pack, then create it with the CLI of this repo on the tarballs, which installs them", () => {
     expect(planCreate({ name: "prova", plugins: ["jira"], channels: ["http"], fresh: false }, { root: ROOT, exists: false })).toEqual([
       { step: "pack" },
-      { step: "run", argv: ["mfw", "create", "apps/prova", "--plugins", "jira", "--channels", "http", "--auth", "static", "--no-install", "--yes"], cwd: ROOT },
-      { step: "run", argv: ["mfw", "local-packages", "../../.packs"], cwd: `${ROOT}/apps/prova` },
+      {
+        step: "run",
+        argv: ["mfw", "create", "apps/prova", "--plugins", "jira", "--channels", "http", "--auth", "static", "--local-packages", ".packs", "--yes"],
+        cwd: ROOT,
+      },
     ]);
   });
 
@@ -57,14 +62,14 @@ describe("planCreate", () => {
     const create = (args: { channels?: string[]; auth?: string }) =>
       (planCreate({ name: "prova", fresh: false, ...args }, { root: ROOT, exists: false })[1] as { argv: string[] }).argv;
     expect(create({ channels: ["http"] })).toContain("--auth");
-    expect(create({ channels: ["http"] }).slice(-4)).toEqual(["--auth", "static", "--no-install", "--yes"]);
-    expect(create({ channels: ["http"], auth: "oidc" }).slice(-4)).toEqual(["--auth", "oidc", "--no-install", "--yes"]);
+    expect(create({ channels: ["http"] }).slice(-5)).toEqual(["--auth", "static", "--local-packages", ".packs", "--yes"]);
+    expect(create({ channels: ["http"], auth: "oidc" }).slice(-5)).toEqual(["--auth", "oidc", "--local-packages", ".packs", "--yes"]);
     expect(create({ channels: ["google-chat"] })).not.toContain("--auth");
   });
 
   test("nothing chosen: an app with neither, as mfw create makes it", () => {
     const plan = planCreate({ name: "prova", fresh: false }, { root: ROOT, exists: false });
-    expect(plan[1]).toEqual({ step: "run", argv: ["mfw", "create", "apps/prova", "--plugins", "", "--channels", "", "--no-install", "--yes"], cwd: ROOT });
+    expect(plan[1]).toEqual({ step: "run", argv: ["mfw", "create", "apps/prova", "--plugins", "", "--channels", "", "--local-packages", ".packs", "--yes"], cwd: ROOT });
   });
 
   test("an app that exists: only pack and install again, keeping its config, persona and .env", () => {
@@ -88,12 +93,12 @@ describe("planCreate", () => {
   });
 
   test("--fresh on an app that doesn't exist: nothing to remove", () => {
-    expect(planCreate({ name: "prova", plugins: ["jira"], fresh: true }, { root: ROOT, exists: false }).map((s) => s.step)).toEqual(["pack", "run", "run"]);
+    expect(planCreate({ name: "prova", plugins: ["jira"], fresh: true }, { root: ROOT, exists: false }).map((s) => s.step)).toEqual(["pack", "run"]);
   });
 
   test("--fresh on an app that exists: removed first, then made anew", () => {
     const plan = planCreate({ name: "prova", plugins: ["jira"], fresh: true }, { root: ROOT, exists: true });
-    expect(plan.map((s) => (s.step === "run" ? s.argv.slice(0, 2).join(" ") : s.step))).toEqual(["remove", "pack", "mfw create", "mfw local-packages"]);
+    expect(plan.map((s) => (s.step === "run" ? s.argv.slice(0, 2).join(" ") : s.step))).toEqual(["remove", "pack", "mfw create"]);
     expect(plan[0]).toEqual({ step: "remove", dir: `${ROOT}/apps/prova` });
   });
 });
