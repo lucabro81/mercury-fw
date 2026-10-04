@@ -7,8 +7,11 @@
  *
  * The cases: Alice and Bob talk at the same time, each in a conversation of
  * their own, and neither gets the other's word back; and Alice sends two turns
- * at once on one conversation (two tabs on one chat), which the core runs one
- * after the other, so each gets its own answer.
+ * at once on one conversation (two tabs on one chat), and each gets its own
+ * answer. That the core runs those two one after the other can't be told from
+ * outside (the archive stores each turn's question and answer together once it
+ * ends, and the model server may queue them anyway): the turn runner's own
+ * tests guard it.
  */
 import { e2e } from "@mercury-fw/cli/e2e";
 
