@@ -16,7 +16,12 @@ type ScrollOffset = string | number | Record<string, unknown> | null;
 export type ScrollableQdrantClient = {
   scroll(
     collection: string,
-    params: { limit: number; offset?: ScrollOffset; with_payload: boolean },
+    params: {
+      limit: number;
+      offset?: ScrollOffset;
+      with_payload: boolean;
+      filter?: { must: Array<{ key: string; match: { value: string } }> };
+    },
   ): Promise<{
     points: Array<{ id: string | number; payload?: Record<string, unknown> | null }>;
     next_page_offset?: ScrollOffset;
@@ -28,15 +33,17 @@ export type ScrollPage = {
   nextOffset: ScrollOffset;
 };
 
+/** One page of `collectionName`'s points; only the person `opts.userId`'s, when given (the per-person collections carry it as `userId`). */
 export async function scrollCollection(
   client: ScrollableQdrantClient,
   collectionName: string,
-  opts: { limit: number; offset?: ScrollOffset },
+  opts: { limit: number; offset?: ScrollOffset; userId?: string },
 ): Promise<ScrollPage> {
   const result = await client.scroll(collectionName, {
     limit: opts.limit,
     offset: opts.offset,
     with_payload: true,
+    ...(opts.userId === undefined ? {} : { filter: { must: [{ key: "userId", match: { value: opts.userId } }] } }),
   });
   return {
     points: result.points.map((p) => ({ id: p.id, payload: p.payload ?? null })),

@@ -17,12 +17,12 @@
  * schema field. The nightly self-review job (`self-review-tools.ts`) is
  * the only thing that reads raw/ back to triage it into curated/.
  *
- * `list`/`read`/`grep` intentionally bypass `wiki-read.ts`'s per-user
- * scoping (`allowedRoots`) — that scoping exists to isolate what the
- * MODEL can see per caller; a maintainer running this CLI is already a
- * trusted admin context with no such boundary, so these just walk the
- * whole vault directly.
+ * `list`/`read`/`grep` intentionally bypass the per-person scoping in
+ * `identity/vault-access.ts`: that scoping exists to isolate what each
+ * person (and the model on their behalf) can see; a maintainer running this
+ * CLI is the operator, so these walk the whole vault, and only the vault.
  */
+import { resolve, sep } from "node:path";
 import { initVault } from "./vault-init.ts";
 import { writeCuratedNote, writeRawEntry } from "./wiki-note.ts";
 
@@ -107,7 +107,13 @@ async function main(): Promise<void> {
     case "read": {
       const relativePath = args[0];
       if (!relativePath) usage();
-      const note = Bun.file(`${vaultPath}/${relativePath}`);
+      const vaultRoot = resolve(vaultPath);
+      const target = resolve(vaultRoot, relativePath);
+      if (!target.startsWith(vaultRoot + sep)) {
+        console.error(`not a path in the vault: ${relativePath}`);
+        process.exit(1);
+      }
+      const note = Bun.file(target);
       if (!(await note.exists())) {
         console.error(`no note at ${relativePath} (mfw vault list shows them)`);
         process.exit(1);

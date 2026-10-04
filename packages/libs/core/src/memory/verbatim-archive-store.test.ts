@@ -299,7 +299,7 @@ describe("listVerbatimBySession", () => {
     timestamp,
   });
 
-  it("scrolls the session's messages filtered by sessionKey, ordered by timestamp ascending", async () => {
+  it("scrolls the session's messages filtered by the person and the sessionKey, ordered by timestamp ascending", async () => {
     let received: { collection: string; params: Record<string, unknown> } | undefined;
     const client: QdrantClientLike = {
       getCollections: async () => ({ collections: [] }),
@@ -318,11 +318,16 @@ describe("listVerbatimBySession", () => {
       },
     };
 
-    const result = await listVerbatimBySession(client, "verbatim_archive", { sessionKey: "conv-1", limit: 50 });
+    const result = await listVerbatimBySession(client, "verbatim_archive", { userId: "static:alice", sessionKey: "conv-1", limit: 50 });
 
     expect(received?.collection).toBe("verbatim_archive");
     expect(received?.params).toEqual({
-      filter: { must: [{ key: "sessionKey", match: { value: "conv-1" } }] },
+      filter: {
+        must: [
+          { key: "userId", match: { value: "static:alice" } },
+          { key: "sessionKey", match: { value: "conv-1" } },
+        ],
+      },
       order_by: { key: "timestamp", direction: "asc" },
       limit: 50,
       offset: undefined,
@@ -350,7 +355,7 @@ describe("listVerbatimBySession", () => {
       },
     };
 
-    const result = await listVerbatimBySession(client, "verbatim_archive", {
+    const result = await listVerbatimBySession(client, "verbatim_archive", { userId: "static:alice",
       sessionKey: "conv-1",
       limit: 10,
       offset: "cursor-1",
@@ -375,7 +380,7 @@ describe("listVerbatimBySession", () => {
       }),
     };
 
-    const result = await listVerbatimBySession(client, "verbatim_archive", { sessionKey: "conv-1", limit: 50 });
+    const result = await listVerbatimBySession(client, "verbatim_archive", { userId: "static:alice", sessionKey: "conv-1", limit: 50 });
 
     expect(result.messages).toEqual([msg("conv-1", "assistant", "valid", "2026-09-22T12:00:02.000Z")]);
   });
@@ -388,7 +393,7 @@ describe("listVerbatimBySession", () => {
       query: async () => ({ points: [] }),
     };
 
-    expect(await listVerbatimBySession(client, "verbatim_archive", { sessionKey: "conv-1", limit: 50 })).toEqual({
+    expect(await listVerbatimBySession(client, "verbatim_archive", { userId: "static:alice", sessionKey: "conv-1", limit: 50 })).toEqual({
       messages: [],
       nextOffset: null,
     });
@@ -404,7 +409,7 @@ describe("listVerbatimSessions", () => {
     timestamp,
   });
 
-  it("scrolls newest-first and dedups by sessionKey, keeping each conversation's most recent message", async () => {
+  it("scrolls the person's messages newest-first and dedups by sessionKey, keeping each conversation's most recent message", async () => {
     let received: { params: Record<string, unknown> } | undefined;
     const client: QdrantClientLike = {
       getCollections: async () => ({ collections: [] }),
@@ -424,9 +429,14 @@ describe("listVerbatimSessions", () => {
       },
     };
 
-    const result = await listVerbatimSessions(client, "verbatim_archive", { limit: 10 });
+    const result = await listVerbatimSessions(client, "verbatim_archive", { userId: "static:alice", limit: 10 });
 
-    expect((received?.params as { order_by: unknown }).order_by).toEqual({ key: "timestamp", direction: "desc" });
+    expect(received?.params).toEqual({
+      filter: { must: [{ key: "userId", match: { value: "static:alice" } }] },
+      order_by: { key: "timestamp", direction: "desc" },
+      limit: 500,
+      with_payload: true,
+    });
     expect(result).toEqual({
       conversations: [
         { sessionKey: "conv-b", lastTimestamp: "2026-09-24T12:00:03.000Z", preview: "latest in b" },
@@ -450,7 +460,7 @@ describe("listVerbatimSessions", () => {
       }),
     };
 
-    const result = await listVerbatimSessions(client, "verbatim_archive", { limit: 2 });
+    const result = await listVerbatimSessions(client, "verbatim_archive", { userId: "static:alice", limit: 2 });
 
     expect(result.conversations.map((c) => c.sessionKey)).toEqual(["conv-a", "conv-b"]);
   });
@@ -463,6 +473,6 @@ describe("listVerbatimSessions", () => {
       query: async () => ({ points: [] }),
     };
 
-    expect(await listVerbatimSessions(client, "verbatim_archive", { limit: 10 })).toEqual({ conversations: [] });
+    expect(await listVerbatimSessions(client, "verbatim_archive", { userId: "static:alice", limit: 10 })).toEqual({ conversations: [] });
   });
 });

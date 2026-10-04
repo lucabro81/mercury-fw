@@ -26,19 +26,23 @@ import { resolve, sep, dirname, relative } from "node:path";
 import { stringify as stringifyYaml } from "yaml";
 import {
   CuratedFrontmatterSchema,
+  PersonalFrontmatterSchema,
   InferredFrontmatterSchema,
   ConfirmationFrontmatterSchema,
   type CuratedFrontmatter,
+  type PersonalFrontmatter,
   type InferredFrontmatter,
   type ConfirmationFrontmatter,
 } from "./frontmatter-schema.ts";
+import { userArea } from "../identity/user-key.ts";
+import { personalNotePath } from "../identity/vault-access.ts";
 
 /**
  * Resolves `segments` against `root` and checks the result stays inside
  * `root` — not just inside the vault as a whole. `root` must already be
  * the *specific* subtree a given write is scoped to (`curated/`, or one
- * user's `inferred/users/<userId>/`): checking only against the vault
- * root would let a relativePath like `"../inferred/users/x/y.md"` escape
+ * person's `users/<key>/inferred/`): checking only against the vault
+ * root would let a relativePath like `"../users/x/notes/y.md"` escape
  * `curated/` while still landing somewhere else inside the vault.
  */
 function resolveWithinRoot(root: string, ...segments: string[]): string {
@@ -50,7 +54,7 @@ function resolveWithinRoot(root: string, ...segments: string[]): string {
   return target;
 }
 
-/** Throws unless `value` is exactly one non-empty path segment (no separator, not `.` or `..`). Shared by the read side's per-user root. */
+/** Throws unless `value` is exactly one non-empty path segment (no separator, not `.` or `..`). */
 export function assertNoPathSeparator(label: string, value: string): void {
   if (value === "" || value.includes("/") || value.includes("\\") || value === "." || value === "..") {
     throw new Error(`invalid ${label}: ${JSON.stringify(value)}`);
@@ -173,12 +177,35 @@ async function writeVerbatimFile(
 async function writeNoteFile(
   vaultPath: string,
   fullPath: string,
-  frontmatter: CuratedFrontmatter | InferredFrontmatter | ConfirmationFrontmatter,
+  frontmatter: CuratedFrontmatter | PersonalFrontmatter | InferredFrontmatter | ConfirmationFrontmatter,
   body: string,
   commitMessage: string,
 ): Promise<void> {
   const content = `---\n${stringifyYaml(frontmatter)}---\n\n${body}\n`;
   await writeVerbatimFile(vaultPath, fullPath, content, commitMessage);
+}
+
+/**
+ * Runs `change` (any rearrangement of the vault's files) on the same queue as
+ * every writer, then stages everything and commits it as one `message` when
+ * it changed something. For maintenance that moves files around in bulk, such
+ * as a layout migration, so it lands as one revertable commit.
+ */
+export async function changeVaultAndCommit(vaultPath: string, message: string, change: () => Promise<void>): Promise<void> {
+  await serializeCommit(async () => {
+    await change();
+    await runGit(vaultPath, ["add", "-A"]);
+    if (!(await hasStagedChanges(vaultPath))) return;
+    await runGit(vaultPath, [
+      "-c",
+      `user.email=${MERCURY_GIT_AUTHOR.email}`,
+      "-c",
+      `user.name=${MERCURY_GIT_AUTHOR.name}`,
+      "commit",
+      "-m",
+      message,
+    ]);
+  });
 }
 
 /** `git rm` + commit through the same queue as every writer above, so
@@ -221,20 +248,33 @@ export async function writeCuratedNote(
   await writeNoteFile(vaultPath, fullPath, frontmatter, body, `curated: ${relativePath}`);
 }
 
-/** Writes a semantic note at `inferred/users/<userId>/<topic>.md`. */
+/** Writes a note the model asked for on behalf of the person `key`, at `path` as the person names it: only below `personal/notes/` (see `personalNotePath`). */
+export async function writePersonalNote(
+  vaultPath: string,
+  key: string,
+  path: string,
+  fields: { last_updated?: string },
+  body: string,
+): Promise<void> {
+  const fullPath = personalNotePath(vaultPath, key, path);
+  const frontmatter = PersonalFrontmatterSchema.parse({ type: "personal", ...fields });
+  const notesRelative = relative(resolve(vaultPath, userArea(key), "notes"), fullPath);
+  await writeNoteFile(vaultPath, fullPath, frontmatter, body, `personal: ${key}/${notesRelative}`);
+}
+
+/** Writes a semantic note for the person `key` at `<userArea(key)>/inferred/<topic>.md`. */
 export async function writeInferredNote(
   vaultPath: string,
-  userId: string,
+  key: string,
   topic: string,
   fields: { confidence: "low" | "medium" | "high"; derived_from: string[]; last_reviewed: string | null },
   body: string,
 ): Promise<void> {
-  assertNoPathSeparator("userId", userId);
   assertNoPathSeparator("topic", topic);
   const frontmatter = InferredFrontmatterSchema.parse({ type: "inferred", source: "agent", ...fields });
-  const inferredUserRoot = resolve(vaultPath, "inferred", "users", userId);
-  const fullPath = resolveWithinRoot(inferredUserRoot, `${topic}.md`);
-  await writeNoteFile(vaultPath, fullPath, frontmatter, body, `inferred: ${userId}/${topic}`);
+  const inferredRoot = resolve(vaultPath, userArea(key), "inferred");
+  const fullPath = resolveWithinRoot(inferredRoot, `${topic}.md`);
+  await writeNoteFile(vaultPath, fullPath, frontmatter, body, `inferred: ${key}/${topic}`);
 }
 
 /**
@@ -246,8 +286,8 @@ export async function writeInferredNote(
  * Frontmatter is still `type: inferred, source: agent` (same provenance
  * shape as `writeInferredNote` — probabilistic, consolidation-derived, not
  * human-authored) even though the file lives under `curated/`: the path
- * controls read visibility (every user's wiki tools expose `curated/`,
- * only their own `inferred/users/<userId>/`), not authorship.
+ * controls read visibility (everyone sees `curated/`, only the person their
+ * own area), not authorship.
  */
 export async function writeToolCorrectionNote(
   vaultPath: string,
@@ -266,16 +306,16 @@ export async function writeToolCorrectionNote(
 
 /**
  * Writes (or overwrites) the deterministic lifecycle record for one
- * confirm-required action at `inferred/confirmations/<encoded userId>/<token>.md`
- * — see `ConfirmationFrontmatterSchema`'s own doc comment for why this
- * subtree, not `inferred/users/<userId>/`. Called twice per action: once
+ * confirm-required action at `<userArea(key)>/confirmations/<token>.md`, the
+ * area of the person who staged it (see `ConfirmationFrontmatterSchema`'s own
+ * doc comment for why the model can't browse it). Called twice per action: once
  * at staging (`status: "pending"`, `resolvedAt: null`), once at resolution
  * (`"confirmed"`/`"failed"`, `resolvedAt` set) — the whole-file replace
  * every writer here already does, not a partial update.
  */
 export async function writeConfirmationNote(
   vaultPath: string,
-  userId: string,
+  key: string,
   token: string,
   fields: { status: "pending" | "confirmed" | "failed"; requestedAt: string; resolvedAt: string | null; command: string },
 ): Promise<void> {
@@ -287,9 +327,9 @@ export async function writeConfirmationNote(
     resolved_at: fields.resolvedAt,
     command: fields.command,
   });
-  const userRoot = resolve(vaultPath, "inferred", "confirmations", encodeURIComponent(userId));
-  const fullPath = resolveWithinRoot(userRoot, `${token}.md`);
-  await writeNoteFile(vaultPath, fullPath, frontmatter, "", `confirmation: ${userId}/${token} (${fields.status})`);
+  const confirmationsRoot = resolve(vaultPath, userArea(key), "confirmations");
+  const fullPath = resolveWithinRoot(confirmationsRoot, `${token}.md`);
+  await writeNoteFile(vaultPath, fullPath, frontmatter, "", `confirmation: ${key}/${token} (${fields.status})`);
 }
 
 /** Writes a raw/ inbox entry verbatim at `raw/<relativePath>` — no

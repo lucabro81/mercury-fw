@@ -21,6 +21,15 @@ info:
     anything runs.
 
 
+    ## What a caller sees
+
+    Every read is scoped to the caller: their own conversations, pending
+    confirmations, tool calls and memory, and the wiki as they see it, the
+    team's common area (`curated/`) plus their own notes (`personal/`).
+    Someone else's data doesn't exist as far as a caller can tell. Only
+    `/manifest` and `/health` are the same for everyone.
+
+
     ## Conversations
 
     A conversation is identified by an opaque, client-owned `conversationId`
@@ -28,10 +37,11 @@ info:
     `<caller id>:<conversationId>`, so the same id sent by someone else is a
     conversation of their own, and a confirmation token staged in one person's
     conversation is never found from another's. Omitting `conversationId` on
-    `POST /turn` starts a fresh ephemeral conversation. The durable transcript of a conversation is
-    readable via `GET /conversation`, and the list of known conversations via
-    `GET /conversations` (both backed by the verbatim archive; they degrade to
-    empty when the vector store is unreachable).
+    `POST /turn` starts a fresh ephemeral conversation. The durable transcript
+    of one of the caller's conversations is readable via `GET /conversation`,
+    and the list of their conversations via `GET /conversations` (both backed
+    by the verbatim archive; they degrade to empty when the vector store is
+    unreachable).
 
 
     ## Streaming and cancellation
@@ -127,9 +137,10 @@ paths:
         - name: id
           in: query
           required: true
-          description: The session key whose messages to return, as `/conversations` lists it (any channel's; an HTTP one is `<caller id>:<conversationId>`).
+          description: The caller's `conversationId`, as `/conversations` lists it.
           schema:
             type: string
+            pattern: "^[A-Za-z0-9_-]{1,128}$"
         - name: limit
           in: query
           required: false
@@ -146,20 +157,20 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
         "200":
-          description: The conversation's messages in chronological order.
+          description: The conversation's messages in chronological order; none when it isn't one of the caller's.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ConversationPage"
         "400":
-          description: Missing `?id`.
+          description: Missing or malformed `?id`.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
   /conversations:
     get:
-      summary: List known conversations (most-recently-active first)
+      summary: List the caller's conversations (most-recently-active first)
       parameters:
         - name: limit
           in: query
@@ -202,7 +213,7 @@ paths:
                 type: object
   /confirmations:
     get:
-      summary: Currently pending confirmations (tokens redacted)
+      summary: The caller's pending confirmations (tokens redacted)
       responses:
         "401":
           $ref: "#/components/responses/Unauthorized"
@@ -214,7 +225,7 @@ paths:
                 type: object
   /tool-log:
     get:
-      summary: Recent tool-call log entries
+      summary: The tool calls made in the caller's recent turns
       responses:
         "401":
           $ref: "#/components/responses/Unauthorized"
@@ -226,7 +237,7 @@ paths:
                 type: object
   /wiki/list:
     get:
-      summary: List the wiki vault's files
+      summary: List the wiki files the caller can see (`curated/` and `personal/`)
       responses:
         "401":
           $ref: "#/components/responses/Unauthorized"
@@ -238,11 +249,12 @@ paths:
                 type: object
   /wiki/read:
     get:
-      summary: Read one wiki vault file
+      summary: Read one wiki file the caller can see
       parameters:
         - name: path
           in: query
           required: true
+          description: A path as `/wiki/list` gives it, e.g. `curated/team.md` or `personal/notes/plan.md`.
           schema:
             type: string
       responses:
@@ -260,9 +272,15 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "404":
+          description: No such file among those the caller can see.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /wiki/grep:
     get:
-      summary: Grep the wiki vault
+      summary: Grep the wiki files the caller can see
       parameters:
         - name: pattern
           in: query
@@ -287,11 +305,12 @@ paths:
                 $ref: "#/components/schemas/Error"
   /memory/scroll:
     get:
-      summary: Scroll a Qdrant memory collection
+      summary: Scroll the caller's points in a memory collection
       parameters:
         - name: collection
           in: query
           required: true
+          description: One of the collections kept per person (the verbatim archive, episodic memory, semantic facts), by its configured name.
           schema:
             type: string
         - name: limit
@@ -315,7 +334,7 @@ paths:
               schema:
                 type: object
         "400":
-          description: Missing `?collection`.
+          description: Missing `?collection`, or one that isn't kept per person.
           content:
             application/json:
               schema:
@@ -452,9 +471,9 @@ components:
             - type: "null"
     ConversationSummary:
       type: object
-      required: [sessionKey, lastTimestamp, preview]
+      required: [conversationId, lastTimestamp, preview]
       properties:
-        sessionKey:
+        conversationId:
           type: string
         lastTimestamp:
           type: string

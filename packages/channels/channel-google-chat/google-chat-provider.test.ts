@@ -279,8 +279,8 @@ describe("createGoogleChatProvider — StreamingPull", () => {
     const sub = fakeSubscription();
 
     const deps = baseDeps({
-      confirm: async (t, sessionKey, userId) => {
-        confirmArgs.push([t, sessionKey, userId]);
+      confirm: async (t, sessionKey, principal) => {
+        confirmArgs.push([t, sessionKey, principal]);
         return t === token ? 'Confermato ed eseguito: {"deleted":true}' : null;
       },
       subscriptionFn: () => sub as any,
@@ -299,7 +299,8 @@ describe("createGoogleChatProvider — StreamingPull", () => {
 
     expect(handleTurnCalled).toBe(false);
     expect(sent).toEqual(['Confermato ed eseguito: {"deleted":true}']);
-    expect(confirmArgs).toEqual([[token, "spaces/X:users/42", "users/42"]]);
+    // The sender as the core keys people: only they can confirm what they staged.
+    expect(confirmArgs).toEqual([[token, "spaces/X:users/42", { id: "users/42", provider: "google-chat", displayName: "Luca" }]]);
   });
 
   test("an event whose messageName was already sent by this provider is skipped (loop prevention)", async () => {
@@ -364,8 +365,8 @@ describe("createGoogleChatProvider — StreamingPull", () => {
     const sub = fakeSubscription();
 
     const deps = baseDeps({
-      confirm: async (t, sessionKey, userId) => {
-        confirmArgs.push([t, sessionKey, userId]);
+      confirm: async (t, sessionKey, principal) => {
+        confirmArgs.push([t, sessionKey, principal]);
         return t === token ? 'Confermato ed eseguito: {"deleted":true}' : null;
       },
       subscriptionFn: () => sub as any,
@@ -387,7 +388,8 @@ describe("createGoogleChatProvider — StreamingPull", () => {
     await new Promise((r) => setTimeout(r, 20));
 
     expect(sent).toEqual(['Confermato ed eseguito: {"deleted":true}']);
-    expect(confirmArgs).toEqual([[token, "spaces/X:users/42", "users/42"]]);
+    // The sender as the core keys people: only they can confirm what they staged.
+    expect(confirmArgs).toEqual([[token, "spaces/X:users/42", { id: "users/42", provider: "google-chat" }]]);
   });
 
   test("clicking the confirm button forwards deps.confirm's canned error for an unknown/expired token", async () => {

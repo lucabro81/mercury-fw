@@ -76,20 +76,20 @@ Explicit alternative to re-sending a token as `/turn` `text`. Body `{ token, con
 
 ## Read-only introspection
 
-All `GET`, all JSON, all reporting state already held in-process. They need an authenticated caller, but each one still shows every person's data: scoping them per person is the next step.
+All `GET`, all JSON, all reporting state already held in-process. They need an authenticated caller and show only what belongs to them: their conversations, confirmations, tool calls and memory, and the wiki as they see it (the team's `curated/` plus their own notes as `personal/`). Someone else's data doesn't exist as far as a caller can tell; only `/manifest` and `/health` are the same for everyone.
 
 | endpoint | `data` on success |
 |---|---|
-| `GET /conversation?id=<sessionKey>&limit=<n>&offset=<cursor>` | `{ messages: [{ role, content, timestamp }], nextOffset }` — a conversation's durable transcript in order; `400` if `id` is missing. Any session key `/conversations` lists opens here, whatever channel it came from |
-| `GET /conversations?limit=<n>` | `{ conversations: [{ sessionKey, lastTimestamp, preview }] }` — known conversations, most-recently-active first |
+| `GET /conversation?id=<conversationId>&limit=<n>&offset=<cursor>` | `{ messages: [{ role, content, timestamp }], nextOffset }` — one of your conversations, its durable transcript in order (empty for an id that isn't yours); `400` if `id` is missing or has other characters than `/turn` accepts |
+| `GET /conversations?limit=<n>` | `{ conversations: [{ conversationId, lastTimestamp, preview }] }` — your conversations, most-recently-active first |
 | `GET /manifest` | `{ manifest: { coreApiVersion, plugins: [{ name, apiVersion, active, skills, hasBuild, customStatus }], activeClis, skills } }` |
-| `GET /confirmations` | `{ pending: [{ sessionKey, binary, args, expiresAt }] }` — tokens are deliberately never included |
-| `GET /tool-log` | `{ entries: [...] }` |
+| `GET /confirmations` | `{ pending: [{ sessionKey, summary, expiresAt }] }` — your pending confirmations; tokens are deliberately never included |
+| `GET /tool-log` | `{ entries: [...] }` — the tool calls of your recent turns |
 | `GET /health` | `{ uptimeSeconds, memory, qdrantReachable, ollamaReachable }` |
-| `GET /wiki/list` | `{ files: [...] }` |
-| `GET /wiki/read?path=<vault-path>` | `{ content }` — `400` if `path` is missing |
+| `GET /wiki/list` | `{ files: [...] }` — `curated/...` and `personal/...` paths |
+| `GET /wiki/read?path=<path>` | `{ content }` — a path as `/wiki/list` gives it; `400` if `path` is missing, `404` if it isn't among yours |
 | `GET /wiki/grep?pattern=<regex>` | `{ matches: [...] }` — `400` if `pattern` is missing |
-| `GET /memory/scroll?collection=<name>&limit=<n>&offset=<cursor>` | one page of the named episodic/semantic collection |
+| `GET /memory/scroll?collection=<name>&limit=<n>&offset=<cursor>` | one page of your points in a collection kept per person (verbatim archive, episodic memory, semantic facts); `400` for any other collection |
 | `GET /openapi.yaml` | the OpenAPI document for this surface (`text/yaml`) |
 
 Conversation history and the conversation list are backed by the durable verbatim archive; they degrade to empty when the vector store is unreachable.

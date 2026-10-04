@@ -140,7 +140,7 @@ export type AuthPlugin = {
 };
 
 /** Channel-plugin contract version: the loader refuses a channel with a different `apiVersion` fail-soft, like the tool-plugin loader with `PLUGIN_API_VERSION`. Bumped only on a breaking change to this file's shapes. */
-export const CHANNEL_API_VERSION = 2;
+export const CHANNEL_API_VERSION = 3;
 
 /**
  * Structured outcome of resolving a confirmation token, distinguishing cases the
@@ -163,19 +163,25 @@ export type ConfirmOutcome =
  * in-process — nothing computes anything new — so these can't come from `env`.
  * Returns are `unknown`/primitive by design, to keep this contract free of any
  * domain types. Tokens are never exposed.
+ *
+ * Every getter but `manifest` and `health` takes the caller's `Principal` and
+ * returns only what belongs to that person (the common wiki area included);
+ * the channel authenticates, the core decides what the person can see.
  */
 export type ChannelHostReads = {
   manifest: () => unknown;
-  pendingConfirmations: () => unknown;
-  /** A conversation's durable verbatim transcript, chronological, paginated. */
-  conversation: (sessionKey: string, limit: number, offset?: string) => Promise<unknown>;
-  /** The known conversations, most-recently-active first. */
-  conversations: (limit: number) => Promise<unknown>;
-  wikiList: () => Promise<unknown>;
-  wikiRead: (path: string) => Promise<unknown>;
-  wikiGrep: (pattern: string) => Promise<unknown>;
-  memoryScroll: (collection: string, limit: number, offset?: string) => Promise<unknown>;
-  toolLog: () => unknown;
+  pendingConfirmations: (principal: Principal) => unknown;
+  /** A conversation's durable verbatim transcript, chronological, paginated; empty unless `sessionKey` is one of the person's own. */
+  conversation: (principal: Principal, sessionKey: string, limit: number, offset?: string) => Promise<unknown>;
+  /** The person's conversations, most-recently-active first. */
+  conversations: (principal: Principal, limit: number) => Promise<unknown>;
+  wikiList: (principal: Principal) => Promise<unknown>;
+  /** The file at `path` as the person names it (`curated/...`, `personal/...`), or `null` when it isn't among what they can see. */
+  wikiRead: (principal: Principal, path: string) => Promise<unknown>;
+  wikiGrep: (principal: Principal, pattern: string) => Promise<unknown>;
+  /** A page of the person's points in `collection`, or `null` when it isn't a collection kept per person. */
+  memoryScroll: (principal: Principal, collection: string, limit: number, offset?: string) => Promise<unknown>;
+  toolLog: (principal: Principal) => unknown;
   health: () => Promise<unknown>;
 };
 
@@ -199,13 +205,14 @@ export type ChannelRuntimeContext = {
   /**
    * Resolves a confirmation token against the core's single `ConfirmationStore`,
    * already bound to this instance's store/vault/writer. The channel calls it
-   * and holds no state: staging and the store stay the core's. Returns the reply
-   * text to send back, or `null` when the input wasn't token-shaped (see
-   * `resolveConfirmation`).
+   * and holds no state: staging and the store stay the core's. The token
+   * resolves only for the `principal` who staged it, in the same session.
+   * Returns the reply text to send back, or `null` when the input wasn't
+   * token-shaped (see `resolveConfirmation`).
    */
-  confirm: (token: string, sessionKey: string, userId: string) => Promise<string | null>;
+  confirm: (token: string, sessionKey: string, principal: Principal) => Promise<string | null>;
   /** The structured sibling of `confirm` (see `ConfirmOutcome`), for a channel that branches on whether the token was accepted. */
-  resolveConfirmation?: (token: string, sessionKey: string, userId: string) => Promise<ConfirmOutcome>;
+  resolveConfirmation?: (token: string, sessionKey: string, principal: Principal) => Promise<ConfirmOutcome>;
   /** In-process introspection getters for a channel that exposes an API/UI. */
   reads?: ChannelHostReads;
   /** The configured auth provider, built; absent when the app declares none or it failed to build. */

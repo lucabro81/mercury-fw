@@ -30,11 +30,11 @@ describe("initVault", () => {
     }
   });
 
-  it("creates the inferred/users directory", async () => {
+  it("creates the users directory, where each person gets an area", async () => {
     const vaultPath = await makeTempVaultPath();
     await initVault(vaultPath);
 
-    const s = await stat(join(vaultPath, "inferred/users"));
+    const s = await stat(join(vaultPath, "users"));
     expect(s.isDirectory()).toBe(true);
   });
 

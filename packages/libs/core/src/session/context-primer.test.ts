@@ -31,7 +31,7 @@ function fakeDeps(overrides: Partial<ContextPrimerDeps> = {}): ContextPrimerDeps
 }
 
 const lastSessionEntry: EpisodicSummary = {
-  userId: "users/42",
+  userId: "google-chat:users/42",
   sessionKey: "spaces/X:users/42:session-1",
   summary: "Discussed KAN-1 rollout",
   timestamp: "2026-07-25T18:00:00.000Z",
@@ -40,7 +40,7 @@ const lastSessionEntry: EpisodicSummary = {
 describe("buildContextPrimer", () => {
   it("returns an empty string when there's no prior session for the user", async () => {
     const deps = fakeDeps({ getLastSessionEntries: async () => [] });
-    expect(await buildContextPrimer("users/42", deps)).toBe("");
+    expect(await buildContextPrimer("google-chat:users/42", deps)).toBe("");
   });
 
   it("includes only wiki facts whose derived_from contains one of the last session's entry timestamps, excluding non-matching and provenance-less notes", async () => {
@@ -52,9 +52,9 @@ describe("buildContextPrimer", () => {
         listCallArgs = { vaultPath, roots };
         // A real listWikiFilesInRoots scopes strictly by root — this fake
         // must too, now that buildContextPrimer also queries a second,
-        // unrelated root (inferred/confirmations/) for pending references.
+        // unrelated root (the person's confirmations/) for pending references.
         if (roots.some((r) => r.includes("confirmations"))) return [];
-        return ["inferred/users/users%2F42/role.md", "inferred/users/users%2F42/team.md", "inferred/users/users%2F42/resolved-name.md"];
+        return ["users/google-chat%3Ausers%2F42/inferred/role.md", "users/google-chat%3Ausers%2F42/inferred/team.md", "users/google-chat%3Ausers%2F42/inferred/resolved-name.md"];
       },
       readWikiFileInRootsFn: async (_vaultPath, roots, file) => {
         readCalls.push({ roots, file });
@@ -75,9 +75,9 @@ describe("buildContextPrimer", () => {
       },
     });
 
-    const primer = await buildContextPrimer("users/42", deps);
+    const primer = await buildContextPrimer("google-chat:users/42", deps);
 
-    expect(listCallArgs).toEqual({ vaultPath: "/vault", roots: ["/vault/inferred/users/users%2F42"] });
+    expect(listCallArgs).toEqual({ vaultPath: "/vault", roots: ["/vault/users/google-chat%3Ausers%2F42/inferred"] });
     expect(readCalls).toHaveLength(3);
     expect(primer).toBe(
       "Known facts:\n- role: Backend engineer focused on the memory pipeline.\n\n" +
@@ -88,12 +88,12 @@ describe("buildContextPrimer", () => {
   it("omits the 'Known facts' section but still includes the session recap when no wiki facts match", async () => {
     const deps = fakeDeps({
       getLastSessionEntries: async () => [lastSessionEntry],
-      listWikiFilesInRootsFn: async () => ["inferred/users/users%2F42/team.md"],
+      listWikiFilesInRootsFn: async () => ["users/google-chat%3Ausers%2F42/inferred/team.md"],
       readWikiFileInRootsFn: async () =>
         inferredNote({ confidence: "medium", derived_from: ["2020-01-01T00:00:00.000Z"] }, "Platform team."),
     });
 
-    const primer = await buildContextPrimer("users/42", deps);
+    const primer = await buildContextPrimer("google-chat:users/42", deps);
 
     expect(primer).toBe("Last session:\n- Discussed KAN-1 rollout");
   });
@@ -106,12 +106,12 @@ describe("buildContextPrimer", () => {
     };
     const deps = fakeDeps({ getLastSessionEntries: async () => [lastSessionEntry, secondEntry] });
 
-    const primer = await buildContextPrimer("users/42", deps);
+    const primer = await buildContextPrimer("google-chat:users/42", deps);
 
     expect(primer).toBe("Last session:\n- Discussed KAN-1 rollout\n- Also fixed the login bug");
   });
 
-  it("scopes the wiki read to the encoded userId's own inferred/ root, never curated/ or another user's", async () => {
+  it("scopes the wiki read to the person's own inferred/ folder, never curated/ or another person's", async () => {
     let receivedRoots: string[] | undefined;
     const deps = fakeDeps({
       getLastSessionEntries: async () => [lastSessionEntry],
@@ -121,9 +121,9 @@ describe("buildContextPrimer", () => {
       },
     });
 
-    await buildContextPrimer("users/42", deps);
+    await buildContextPrimer("google-chat:users/42", deps);
 
-    expect(receivedRoots).toEqual(["/vault/inferred/users/users%2F42"]);
+    expect(receivedRoots).toEqual(["/vault/users/google-chat%3Ausers%2F42/inferred"]);
   });
 
   it("returns just the recap (no crash) when the vault has no matching inferred files at all", async () => {
@@ -132,7 +132,7 @@ describe("buildContextPrimer", () => {
       listWikiFilesInRootsFn: async () => [],
     });
 
-    expect(await buildContextPrimer("users/42", deps)).toBe("Last session:\n- Discussed KAN-1 rollout");
+    expect(await buildContextPrimer("google-chat:users/42", deps)).toBe("Last session:\n- Discussed KAN-1 rollout");
   });
 
   // Regression guard for the stale-primer bug: a pending confirmation must
@@ -145,13 +145,13 @@ describe("buildContextPrimer", () => {
       const deps = fakeDeps({
         getLastSessionEntries: async () => [lastSessionEntry],
         listWikiFilesInRootsFn: async (_vaultPath, roots) => {
-          if (roots.some((r) => r.includes("confirmations"))) return ["inferred/confirmations/users%2F42/j3h4b5.md"];
+          if (roots.some((r) => r.includes("confirmations"))) return ["users/google-chat%3Ausers%2F42/confirmations/j3h4b5.md"];
           return [];
         },
         readWikiFileInRootsFn: async (_vaultPath, roots) => (roots.some((r) => r.includes("confirmations")) ? confirmationNote("pending") : ""),
       });
 
-      const primer = await buildContextPrimer("users/42", deps);
+      const primer = await buildContextPrimer("google-chat:users/42", deps);
 
       expect(primer).toContain("Riferimenti aperti:\n- [REQ:j3h4b5]");
       expect(primer).not.toContain("jira issue delete"); // opaque — no command text leaked into the primer
@@ -162,7 +162,7 @@ describe("buildContextPrimer", () => {
         getLastSessionEntries: async () => [lastSessionEntry],
         listWikiFilesInRootsFn: async (_vaultPath, roots) =>
           roots.some((r) => r.includes("confirmations"))
-            ? ["inferred/confirmations/users%2F42/tok1.md", "inferred/confirmations/users%2F42/tok2.md"]
+            ? ["users/google-chat%3Ausers%2F42/confirmations/tok1.md", "users/google-chat%3Ausers%2F42/confirmations/tok2.md"]
             : [],
         readWikiFileInRootsFn: async (_vaultPath, roots, file) => {
           if (!roots.some((r) => r.includes("confirmations"))) return "";
@@ -170,7 +170,7 @@ describe("buildContextPrimer", () => {
         },
       });
 
-      const primer = await buildContextPrimer("users/42", deps);
+      const primer = await buildContextPrimer("google-chat:users/42", deps);
 
       expect(primer).not.toContain("Riferimenti aperti");
     });
@@ -179,16 +179,16 @@ describe("buildContextPrimer", () => {
       const deps = fakeDeps({
         getLastSessionEntries: async () => [],
         listWikiFilesInRootsFn: async (_vaultPath, roots) =>
-          roots.some((r) => r.includes("confirmations")) ? ["inferred/confirmations/users%2F42/j3h4b5.md"] : [],
+          roots.some((r) => r.includes("confirmations")) ? ["users/google-chat%3Ausers%2F42/confirmations/j3h4b5.md"] : [],
         readWikiFileInRootsFn: async () => confirmationNote("pending"),
       });
 
-      const primer = await buildContextPrimer("users/42", deps);
+      const primer = await buildContextPrimer("google-chat:users/42", deps);
 
       expect(primer).toBe("Riferimenti aperti:\n- [REQ:j3h4b5]");
     });
 
-    it("scopes the confirmations lookup to the encoded userId's own inferred/confirmations/ root", async () => {
+    it("scopes the confirmations lookup to the person's own confirmations/ folder", async () => {
       let confirmationsRoots: string[] | undefined;
       const deps = fakeDeps({
         getLastSessionEntries: async () => [],
@@ -198,9 +198,9 @@ describe("buildContextPrimer", () => {
         },
       });
 
-      await buildContextPrimer("users/42", deps);
+      await buildContextPrimer("google-chat:users/42", deps);
 
-      expect(confirmationsRoots).toEqual(["/vault/inferred/confirmations/users%2F42"]);
+      expect(confirmationsRoots).toEqual(["/vault/users/google-chat%3Ausers%2F42/confirmations"]);
     });
   });
 
@@ -211,7 +211,7 @@ describe("buildContextPrimer", () => {
         readIndexFileFn: async () => "- [[standards/jira-fields]] — custom field conventions\n",
       });
 
-      const primer = await buildContextPrimer("users/42", deps);
+      const primer = await buildContextPrimer("google-chat:users/42", deps);
 
       expect(primer).toBe("Wiki index:\n- [[standards/jira-fields]] — custom field conventions");
     });
@@ -222,7 +222,7 @@ describe("buildContextPrimer", () => {
         readIndexFileFn: async () => "",
       });
 
-      expect(await buildContextPrimer("users/42", deps)).toBe("");
+      expect(await buildContextPrimer("google-chat:users/42", deps)).toBe("");
     });
 
     it("places the wiki index before the per-user sections", async () => {
@@ -231,7 +231,7 @@ describe("buildContextPrimer", () => {
         readIndexFileFn: async () => "- [[glossary]] — team glossary\n",
       });
 
-      const primer = await buildContextPrimer("users/42", deps);
+      const primer = await buildContextPrimer("google-chat:users/42", deps);
 
       expect(primer).toBe(
         "Wiki index:\n- [[glossary]] — team glossary\n\n" + "Last session:\n- Discussed KAN-1 rollout",
@@ -250,18 +250,18 @@ describe("buildContextPrimer", () => {
         },
         readIndexFileFn: async () => "- [[glossary]] — team glossary\n",
         listWikiFilesInRootsFn: async (_vaultPath, roots) =>
-          roots.some((r) => r.includes("confirmations")) ? ["inferred/confirmations/users%2F42/j3h4b5.md"] : [],
+          roots.some((r) => r.includes("confirmations")) ? ["users/google-chat%3Ausers%2F42/confirmations/j3h4b5.md"] : [],
         readWikiFileInRootsFn: async (_vaultPath, roots) => (roots.some((r) => r.includes("confirmations")) ? confirmationNote("pending") : ""),
         log: (m) => logs.push(m),
       });
 
-      const primer = await buildContextPrimer("users/42", deps);
+      const primer = await buildContextPrimer("google-chat:users/42", deps);
 
       // The wiki index and the pending confirmations survive; only the recap goes.
       expect(primer).toContain("Wiki index:\n- [[glossary]] — team glossary");
       expect(primer).toContain("Riferimenti aperti:\n- [REQ:j3h4b5]");
       expect(primer).not.toContain("Last session:");
-      expect(logs).toEqual(["last session for users/42 unavailable, primer built without it: Error: ConnectionRefused"]);
+      expect(logs).toEqual(["last session for google-chat:users/42 unavailable, primer built without it: Error: ConnectionRefused"]);
     });
   });
 });

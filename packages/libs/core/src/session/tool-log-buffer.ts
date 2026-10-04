@@ -1,8 +1,9 @@
 /**
  * Bounded, process-wide history of tool calls across both channels,
  * scoped by session so a recall of "what did you do" only ever surfaces
- * one conversation's own history. Originally built for the admin panel's
- * Tool-log tab (still a consumer, unfiltered); now also backs the
+ * one conversation's own history, and by person (the user key) so the HTTP
+ * surface shows each caller only their own calls. Originally built for the
+ * admin panel's Tool-log tab (still a consumer, unfiltered); now also backs the
  * `recall_tool_calls` model tool (`tool-log-recall-tool.ts`), which is why
  * this lives in `session/` rather than `admin/` — it's the record of what
  * happened in a session, not an admin-only concern. Nothing else keeps
@@ -27,6 +28,8 @@ export type ToolLogEntry = {
   timestamp: string;
   channel: ToolLogChannel;
   sessionKey: string;
+  /** The user key of the person whose turn made the call. */
+  owner: string;
   toolName: string;
   input: string;
   output: string;
@@ -37,7 +40,8 @@ const MAX_CHARS = 2000;
 
 let buffer: ToolLogEntry[] = [];
 
-export function recordStep(channel: ToolLogChannel, sessionKey: string, step: StepInfo): void {
+/** Records every tool call in `step`, made in `sessionKey` during a turn of the person `owner`. */
+export function recordStep(channel: ToolLogChannel, sessionKey: string, owner: string, step: StepInfo): void {
   for (const call of step.toolCalls) {
     const result = step.toolResults.find((r) => r.toolCallId === call.toolCallId);
     const errorPart = step.content.find((p) => p.type === "tool-error" && p.toolCallId === call.toolCallId);
@@ -51,6 +55,7 @@ export function recordStep(channel: ToolLogChannel, sessionKey: string, step: St
       timestamp: new Date().toISOString(),
       channel,
       sessionKey,
+      owner,
       toolName: call.toolName,
       input: truncateForDisplay(call.input, MAX_CHARS),
       output,
@@ -61,9 +66,13 @@ export function recordStep(channel: ToolLogChannel, sessionKey: string, step: St
   }
 }
 
-/** Most recent entries first, optionally restricted to one session. */
-export function getToolLog(filter?: { sessionKey?: string }): ToolLogEntry[] {
-  const matching = filter?.sessionKey ? buffer.filter((e) => e.sessionKey === filter.sessionKey) : buffer;
+/** Most recent entries first, optionally restricted to one session and/or one person. */
+export function getToolLog(filter?: { sessionKey?: string; owner?: string }): ToolLogEntry[] {
+  const matching = buffer.filter(
+    (e) =>
+      (filter?.sessionKey === undefined || e.sessionKey === filter.sessionKey) &&
+      (filter?.owner === undefined || e.owner === filter.owner),
+  );
   return [...matching].reverse();
 }
 

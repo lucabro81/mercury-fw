@@ -40,6 +40,7 @@ import {
   type Provider,
   type HandleTurn,
   type TurnSink,
+  type Principal,
 } from "@mercury-fw/channel-types";
 
 /**
@@ -257,7 +258,7 @@ export type GoogleChatProviderDeps = {
    * the channel's contact with confirmation — the store, vault and note-writer
    * stay in the core.
    */
-  confirm: (token: string, sessionKey: string, userId: string) => Promise<string | null>;
+  confirm: (token: string, sessionKey: string, principal: Principal) => Promise<string | null>;
   /**
    * Handles a `CARD_CLICKED` event's action parameters. Defaults to resolving
    * the confirm button's token through `deps.confirm` (the same path a bare
@@ -315,7 +316,7 @@ export function createGoogleChatProvider(deps: GoogleChatProviderDeps): GoogleCh
         log(`[chat] card click with no token parameter`);
         return;
       }
-      const reply = await deps.confirm(token, deriveSessionKey(space, sender), sender);
+      const reply = await deps.confirm(token, deriveSessionKey(space, sender), { id: sender, provider: "google-chat" });
       if (reply !== null) {
         log(`[chat:${space}] [out] ${reply}`);
         const sent = await sendMessageFn(space, reply, clientDeps);
@@ -478,7 +479,13 @@ export function createGoogleChatProvider(deps: GoogleChatProviderDeps): GoogleCh
     const sessionKey = deriveSessionKey(event.space, event.sender);
     const markedInput = event.senderDisplayName ? `[Da: ${event.senderDisplayName}]\n${event.text}` : event.text;
 
-    const confirmReply = await deps.confirm(event.text, sessionKey, event.sender);
+    const principal: Principal = {
+      id: event.sender,
+      provider: "google-chat",
+      ...(event.senderDisplayName ? { displayName: event.senderDisplayName } : {}),
+    };
+
+    const confirmReply = await deps.confirm(event.text, sessionKey, principal);
     if (confirmReply !== null) {
       log(`[chat:${event.space}] [out] ${confirmReply}`);
       const sent = await sendMessageFn(event.space, confirmReply, clientDeps);
@@ -505,11 +512,7 @@ export function createGoogleChatProvider(deps: GoogleChatProviderDeps): GoogleCh
           multiUser: !event.isDirectMessage,
           text: markedInput,
           sessionKey,
-          principal: {
-            id: event.sender,
-            provider: "google-chat",
-            ...(event.senderDisplayName ? { displayName: event.senderDisplayName } : {}),
-          },
+          principal,
           logPrefix: `[chat:${event.space}:${event.sender}] `,
         },
         sink,

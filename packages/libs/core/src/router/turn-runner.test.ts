@@ -188,15 +188,15 @@ describe("createTurnRunner", () => {
     expect(systems).toEqual(["SINGLE", "MULTI"]);
   });
 
-  test("calls buildTools with the turn's sessionKey, the principal's path-safe id, and the sink's onToolStart/onToolFinish", async () => {
+  test("calls buildTools with the turn's sessionKey, the principal's user key, and the sink's onToolStart/onToolFinish", async () => {
     const calls: Array<[string, string, unknown, unknown]> = [];
     const onToolStart = () => {};
     const onToolFinish = () => {};
     const runner = createTurnRunner({
       model: {} as any,
       systemPrompts: { singleUser: "s", multiUser: "m" },
-      buildTools: (sessionKey, wikiUserId, cb, finishCb) => {
-        calls.push([sessionKey, wikiUserId, cb, finishCb]);
+      buildTools: (sessionKey, key, cb, finishCb) => {
+        calls.push([sessionKey, key, cb, finishCb]);
         return {};
       },
       getOrCreateHistory: () => fakeHistory(),
@@ -210,13 +210,12 @@ describe("createTurnRunner", () => {
 
     await runner(baseTurn({ sessionKey: "sk", principal: verified("users/42") }), baseSink({ onToolStart, onToolFinish }));
 
-    // Encoded so a "/" in the id can't add a path segment under inferred/users/.
-    expect(calls).toEqual([["sk", "users%2F42", onToolStart, onToolFinish]]);
+    expect(calls).toEqual([["sk", "google-chat:users/42", onToolStart, onToolFinish]]);
   });
 
   test("onStepFinish fans out to logStep, recordStepFn, and sink.onStep", async () => {
     const logged: Array<[string, StepInfo]> = [];
-    const recorded: Array<[string, string, StepInfo]> = [];
+    const recorded: Array<[string, string, string, StepInfo]> = [];
     const sunk: StepInfo[] = [];
     const step: StepInfo = { toolCalls: [], toolResults: [], content: [] };
 
@@ -230,17 +229,20 @@ describe("createTurnRunner", () => {
       maybeCapture: async () => {},
       processToolCorrections: async () => {},
       logStep: (prefix, s) => logged.push([prefix, s]),
-      recordStepFn: (channel, sessionKey, s) => recorded.push([channel, sessionKey, s]),
+      recordStepFn: (channel, sessionKey, owner, s) => recorded.push([channel, sessionKey, owner, s]),
       runTurnFn: async (_history, _input, deps) => {
         deps.onStepFinish?.(step);
         return "reply";
       },
     });
 
-    await runner(baseTurn({ channel: "chan", sessionKey: "sk", logPrefix: "[p] " }), baseSink({ onStep: (s) => sunk.push(s) }));
+    await runner(
+      baseTurn({ channel: "chan", sessionKey: "sk", logPrefix: "[p] ", principal: verified("users/42") }),
+      baseSink({ onStep: (s) => sunk.push(s) }),
+    );
 
     expect(logged).toEqual([["[p] ", step]]);
-    expect(recorded).toEqual([["chan", "sk", step]]);
+    expect(recorded).toEqual([["chan", "sk", "google-chat:users/42", step]]);
     expect(sunk).toEqual([step]);
   });
 
@@ -478,13 +480,13 @@ describe("createTurnRunner", () => {
     expect(received).toEqual([stepA, stepB]);
   });
 
-  test("an id with no characters to encode reaches buildTools unchanged (the terminal's \"terminal\" keeps its notes)", async () => {
-    const wikiIds: string[] = [];
+  test("two providers issuing the same id reach buildTools as two people, and nobody's principal still gets a key of its own", async () => {
+    const keys: string[] = [];
     const runner = createTurnRunner({
       model: {} as any,
       systemPrompts: { singleUser: "s", multiUser: "m" },
-      buildTools: (_sessionKey, wikiUserId) => {
-        wikiIds.push(wikiUserId);
+      buildTools: (_sessionKey, key) => {
+        keys.push(key);
         return {};
       },
       getOrCreateHistory: () => fakeHistory(),
@@ -496,47 +498,23 @@ describe("createTurnRunner", () => {
       runTurnFn: async () => "reply",
     });
 
+    await runner(baseTurn({ principal: { id: "alice", provider: "static" } }), baseSink());
+    await runner(baseTurn({ principal: { id: "alice", provider: "oidc" } }), baseSink());
     await runner(baseTurn({ principal: anonymous("terminal") }), baseSink());
 
-    expect(wikiIds).toEqual(["terminal"]);
+    expect(keys).toEqual(["static:alice", "oidc:alice", "none:terminal"]);
   });
 
-  // A client-chosen HTTP conversation id used to reach the wiki raw, so "a/b"
-  // added a path segment under inferred/users/ (and "../x" left it). Encoded,
-  // it stays one segment.
-  test("an id with spaces or slashes reaches buildTools as a single path-safe segment", async () => {
-    const wikiIds: string[] = [];
+  // encodeURIComponent throws on a lone surrogate, and the vault encodes the
+  // key: a channel that doesn't validate its ids must not be able to make the
+  // turn reject before it runs.
+  test("an id with a lone surrogate still runs the turn, with a well-formed key", async () => {
+    const keys: string[] = [];
     const runner = createTurnRunner({
       model: {} as any,
       systemPrompts: { singleUser: "s", multiUser: "m" },
-      buildTools: (_sessionKey, wikiUserId) => {
-        wikiIds.push(wikiUserId);
-        return {};
-      },
-      getOrCreateHistory: () => fakeHistory(),
-      trackSession: () => {},
-      registerCaptureCallback: () => {},
-      maybeCapture: async () => {},
-      processToolCorrections: async () => {},
-      logStep: () => {},
-      runTurnFn: async () => "reply",
-    });
-
-    await runner(baseTurn({ principal: anonymous("a b/c") }), baseSink());
-    await runner(baseTurn({ principal: anonymous("../x") }), baseSink());
-
-    expect(wikiIds).toEqual(["a%20b%2Fc", "..%2Fx"]);
-  });
-
-  // encodeURIComponent throws on a lone surrogate; a channel that doesn't
-  // validate its ids must not be able to make the turn reject before it runs.
-  test("an id with a lone surrogate still runs the turn, with a well-formed wiki id", async () => {
-    const wikiIds: string[] = [];
-    const runner = createTurnRunner({
-      model: {} as any,
-      systemPrompts: { singleUser: "s", multiUser: "m" },
-      buildTools: (_sessionKey, wikiUserId) => {
-        wikiIds.push(wikiUserId);
+      buildTools: (_sessionKey, key) => {
+        keys.push(key);
         return {};
       },
       getOrCreateHistory: () => fakeHistory(),
@@ -551,7 +529,7 @@ describe("createTurnRunner", () => {
 
     await runner(baseTurn({ principal: anonymous("a\ud800") }), sink);
 
-    expect(wikiIds).toEqual(["a%EF%BF%BD"]);
+    expect(keys).toEqual(["none:a\ufffd"]);
     expect(sink.finalized).toEqual(["reply"]);
   });
 
@@ -582,8 +560,7 @@ describe("createTurnRunner", () => {
 
     await runner(baseTurn({ sessionKey: "sk", principal: verified("users/42") }), baseSink());
 
-    // The raw id, not the encoded one: it's what Qdrant already stores per person.
-    expect(tracked).toEqual([["sk", "users/42"]]);
+    expect(tracked).toEqual([["sk", "google-chat:users/42"]]);
     expect(registered).toEqual(["sk"]);
     expect(captured).toEqual(["sk"]);
     expect(historyTrackForCapture).toBe(true);
@@ -637,7 +614,7 @@ describe("createTurnRunner", () => {
     expect(received).toEqual([[onToolStart, onToolFinish]]);
   });
 
-  test("getOrCreateHistory receives the verified principal's id as its third argument (undefined when nobody vouched for it), so a provider can decide whether to seed a context primer", async () => {
+  test("getOrCreateHistory receives the verified principal's user key as its third argument (undefined when nobody vouched for it), so a provider can decide whether to seed a context primer", async () => {
     const seenUserIds: Array<string | undefined> = [];
     const runner = createTurnRunner({
       model: {} as any,
@@ -658,7 +635,7 @@ describe("createTurnRunner", () => {
     await runner(baseTurn({ principal: verified("u1") }), baseSink());
     await runner(baseTurn({ principal: anonymous("u2") }), baseSink());
 
-    expect(seenUserIds).toEqual(["u1", undefined]);
+    expect(seenUserIds).toEqual(["google-chat:u1", undefined]);
   });
 
   test("when nobody vouched for the principal: trackSession, registerCaptureCallback, and maybeCapture are all skipped, and getOrCreateHistory is not asked to track for capture", async () => {
@@ -953,8 +930,8 @@ describe("createTurnRunner", () => {
 
       // Keyed on the same path-safe per-person id the wiki notes use, not the raw one.
       expect(captured).toEqual([
-        { sessionKey: "sk", userId: "users%2F42", role: "user", content: "the question" },
-        { sessionKey: "sk", userId: "users%2F42", role: "assistant", content: "the answer" },
+        { sessionKey: "sk", userId: "google-chat:users/42", role: "user", content: "the question" },
+        { sessionKey: "sk", userId: "google-chat:users/42", role: "assistant", content: "the answer" },
       ]);
     });
 

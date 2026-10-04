@@ -6,6 +6,7 @@ import { parse as parseYaml } from "yaml";
 import {
   writeCuratedNote,
   writeInferredNote,
+  writePersonalNote,
   writeToolCorrectionNote,
   writeRawEntry,
   writeIndexFile,
@@ -124,17 +125,17 @@ describe("writeCuratedNote", () => {
 });
 
 describe("writeInferredNote", () => {
-  it("writes a file under inferred/users/<userId>/<topic>.md with full frontmatter", async () => {
+  it("writes a file in the person's area, users/<encoded key>/inferred/<topic>.md, with full frontmatter", async () => {
     const vaultPath = await makeTempVault();
     await writeInferredNote(
       vaultPath,
-      "user-42",
+      "google-chat:users/42",
       "ticket_closing_style",
       { confidence: "medium", derived_from: ["ep_a1b2", "ep_c3d4"], last_reviewed: null },
       "L'utente tende a chiudere i ticket a lotti.",
     );
 
-    const text = await readFile(join(vaultPath, "inferred/users/user-42/ticket_closing_style.md"), "utf-8");
+    const text = await readFile(join(vaultPath, "users/google-chat%3Ausers%2F42/inferred/ticket_closing_style.md"), "utf-8");
     const { frontmatter, body } = splitFrontmatter(text);
     expect(frontmatter).toEqual({
       type: "inferred",
@@ -150,14 +151,14 @@ describe("writeInferredNote", () => {
     const vaultPath = await makeTempVault();
     await writeInferredNote(
       vaultPath,
-      "user-42",
+      "google-chat:users/42",
       "ticket_closing_style",
       { confidence: "medium", derived_from: ["ep_a1b2"], last_reviewed: null },
       "body",
     );
 
     const log = await gitLog(vaultPath);
-    expect(log[0]).toContain("user-42/ticket_closing_style");
+    expect(log[0]).toContain("google-chat:users/42/ticket_closing_style");
     expect(await gitStatusPorcelain(vaultPath)).toBe("");
   });
 
@@ -166,7 +167,7 @@ describe("writeInferredNote", () => {
     await expect(
       writeInferredNote(
         vaultPath,
-        "user-42",
+        "google-chat:users/42",
         "ticket_closing_style",
         // @ts-expect-error deliberately invalid for the test
         { confidence: "very-high", derived_from: ["ep_a1b2"], last_reviewed: null },
@@ -180,7 +181,7 @@ describe("writeInferredNote", () => {
     await expect(
       writeInferredNote(
         vaultPath,
-        "user-42",
+        "google-chat:users/42",
         "../../evil",
         { confidence: "low", derived_from: ["ep_a1b2"], last_reviewed: null },
         "body",
@@ -188,17 +189,42 @@ describe("writeInferredNote", () => {
     ).rejects.toThrow();
   });
 
-  it("rejects a userId containing a path separator", async () => {
+  it("keeps a key full of separators inside that person's area", async () => {
     const vaultPath = await makeTempVault();
-    await expect(
-      writeInferredNote(
-        vaultPath,
-        "../../evil",
-        "ticket_closing_style",
-        { confidence: "low", derived_from: ["ep_a1b2"], last_reviewed: null },
-        "body",
-      ),
-    ).rejects.toThrow();
+    await writeInferredNote(
+      vaultPath,
+      "static:../../evil",
+      "ticket_closing_style",
+      { confidence: "low", derived_from: ["ep_a1b2"], last_reviewed: null },
+      "body",
+    );
+    expect(await readFile(join(vaultPath, "users/static%3A..%2F..%2Fevil/inferred/ticket_closing_style.md"), "utf-8")).toContain("body");
+  });
+});
+
+describe("writePersonalNote", () => {
+  it("writes a note the model asked for under personal/notes/ into the person's notes folder", async () => {
+    const vaultPath = await makeTempVault();
+    await writePersonalNote(vaultPath, "static:alice", "personal/notes/plans/q4.md", { last_updated: "2026-10-04" }, "Ship #38.");
+
+    const text = await readFile(join(vaultPath, "users/static%3Aalice/notes/plans/q4.md"), "utf-8");
+    const { frontmatter, body } = splitFrontmatter(text);
+    expect(frontmatter).toEqual({ type: "personal", last_updated: "2026-10-04" });
+    expect(body).toBe("Ship #38.\n");
+    expect((await gitLog(vaultPath))[0]).toContain("personal: static:alice/plans/q4.md");
+    expect(await gitStatusPorcelain(vaultPath)).toBe("");
+  });
+
+  it("refuses the common area and anything outside personal/notes/, writing nothing", async () => {
+    const vaultPath = await makeTempVault();
+    await expect(writePersonalNote(vaultPath, "static:alice", "curated/x.md", {}, "x")).rejects.toThrow("promote_note");
+    await expect(writePersonalNote(vaultPath, "static:alice", "personal/inferred/x.md", {}, "x")).rejects.toThrow(
+      "not writable",
+    );
+    await expect(writePersonalNote(vaultPath, "static:alice", "personal/notes/../../static%3Abob/notes/x.md", {}, "x")).rejects.toThrow(
+      "not writable",
+    );
+    expect(await gitLog(vaultPath)).toEqual([]);
   });
 });
 
@@ -384,22 +410,21 @@ describe("deleteCuratedEntry", () => {
 
 // Regression guard for the stale-primer bug: a confirm-required action's
 // lifecycle (staged, then confirmed/failed) must live somewhere the model
-// can't stumble onto by browsing (inferred/confirmations/ is outside
-// inferred/users/<userId>/, the only inferred/ subtree wiki-read.ts's
-// per-user allowedRoots exposes to the model's own tools) but Mercury's own
-// code can still read deterministically — see resolve_reference in
-// wiki-tools.ts and the "Riferimenti aperti" section in context-primer.ts.
+// can't stumble onto by browsing (a person's confirmations/ folder is outside
+// what identity/vault-access.ts exposes to the model's own tools) but
+// Mercury's own code can still read deterministically: see resolve_reference
+// in wiki-tools.ts and the "Riferimenti aperti" section in context-primer.ts.
 describe("writeConfirmationNote", () => {
-  it("writes a note under inferred/confirmations/<encoded userId>/<token>.md", async () => {
+  it("writes a note in the person's area, users/<encoded key>/confirmations/<token>.md", async () => {
     const vaultPath = await makeTempVault();
-    await writeConfirmationNote(vaultPath, "users/42", "j3h4b5", {
+    await writeConfirmationNote(vaultPath, "google-chat:users/42", "j3h4b5", {
       status: "pending",
       requestedAt: "2026-07-27T12:20:00Z",
       resolvedAt: null,
       command: "jira issue delete KAN-1 --confirm",
     });
 
-    const text = await readFile(join(vaultPath, "inferred/confirmations/users%2F42/j3h4b5.md"), "utf-8");
+    const text = await readFile(join(vaultPath, "users/google-chat%3Ausers%2F42/confirmations/j3h4b5.md"), "utf-8");
     const { frontmatter } = splitFrontmatter(text);
     expect(frontmatter).toEqual({
       type: "confirmation",
@@ -412,27 +437,27 @@ describe("writeConfirmationNote", () => {
 
   it("overwrites the same note when the action is later resolved", async () => {
     const vaultPath = await makeTempVault();
-    await writeConfirmationNote(vaultPath, "users/42", "j3h4b5", {
+    await writeConfirmationNote(vaultPath, "google-chat:users/42", "j3h4b5", {
       status: "pending",
       requestedAt: "2026-07-27T12:20:00Z",
       resolvedAt: null,
       command: "jira issue delete KAN-1 --confirm",
     });
-    await writeConfirmationNote(vaultPath, "users/42", "j3h4b5", {
+    await writeConfirmationNote(vaultPath, "google-chat:users/42", "j3h4b5", {
       status: "confirmed",
       requestedAt: "2026-07-27T12:20:00Z",
       resolvedAt: "2026-07-27T12:25:00Z",
       command: "jira issue delete KAN-1 --confirm",
     });
 
-    const text = await readFile(join(vaultPath, "inferred/confirmations/users%2F42/j3h4b5.md"), "utf-8");
+    const text = await readFile(join(vaultPath, "users/google-chat%3Ausers%2F42/confirmations/j3h4b5.md"), "utf-8");
     const { frontmatter } = splitFrontmatter(text);
     expect(frontmatter).toMatchObject({ status: "confirmed", resolved_at: "2026-07-27T12:25:00Z" });
   });
 
   it("commits the write, leaving a clean working tree", async () => {
     const vaultPath = await makeTempVault();
-    await writeConfirmationNote(vaultPath, "users/42", "j3h4b5", {
+    await writeConfirmationNote(vaultPath, "google-chat:users/42", "j3h4b5", {
       status: "pending",
       requestedAt: "2026-07-27T12:20:00Z",
       resolvedAt: null,
@@ -447,7 +472,7 @@ describe("writeConfirmationNote", () => {
   it("rejects a token containing a path separator", async () => {
     const vaultPath = await makeTempVault();
     await expect(
-      writeConfirmationNote(vaultPath, "users/42", "../../evil", {
+      writeConfirmationNote(vaultPath, "google-chat:users/42", "../../evil", {
         status: "pending",
         requestedAt: "2026-07-27T12:20:00Z",
         resolvedAt: null,
@@ -496,7 +521,7 @@ describe("concurrent writes", () => {
       writeRawEntry(vaultPath, "notes/concurrent.md", "raw note"),
       writeInferredNote(
         vaultPath,
-        "user-2",
+        "static:user-2",
         "topic",
         { confidence: "low", derived_from: ["ep_1"], last_reviewed: null },
         "body",

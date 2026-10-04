@@ -17,7 +17,7 @@
 import { QdrantClient } from "@qdrant/js-client-rest";
 import { getOllamaProvider } from "./model/client.ts";
 import { runCli } from "@mercury-fw/cli-engine";
-import { createConfirmationStore, createStageConfirmation, tryConfirm, resolveConfirmation, type ConfirmationStore } from "@mercury-fw/confirm-engine";
+import { createConfirmationStore, createStageConfirmation, type ConfirmationStore } from "@mercury-fw/confirm-engine";
 import { createDisplayStore } from "./tools/display-store.ts";
 import { createPresentTool } from "./tools/present-tool.ts";
 import { loadPlugins } from "./plugins/plugin-loader.ts";
@@ -54,7 +54,7 @@ import {
   storeEpisodicSummary,
   getLastSessionEpisodicSummaries,
 } from "./memory/episodic-store.ts";
-import { ensureVerbatimCollection, listVerbatimBySession, listVerbatimSessions } from "./memory/verbatim-archive-store.ts";
+import { ensureVerbatimCollection } from "./memory/verbatim-archive-store.ts";
 import { createVerbatimArchiveProvider } from "./memory/memory-provider.ts";
 import { ensureSemanticFactsCollection, storeSemanticFact, searchSemanticFactsByTopic } from "./memory/semantic-facts-store.ts";
 import { ensureToolCorrectionsCollection, storeToolCorrection, searchToolCorrectionsByTopic } from "./memory/tool-corrections-store.ts";
@@ -64,7 +64,11 @@ import { createToolCorrectionExtractor } from "./session/tool-correction-extract
 import { createEmbedder } from "./memory/embedder.ts";
 import { initVault } from "./wiki/vault-init.ts";
 import { findOrphanCuratedDocs } from "./wiki/orphan-detector.ts";
-import { listWikiFilesInRoots, readWikiFile, readWikiFileInRoots, readIndexFile } from "./wiki/wiki-read.ts";
+import { listWikiFilesInRoots, readWikiFileInRoots, readIndexFile } from "./wiki/wiki-read.ts";
+import { readInferredNote } from "./identity/vault-access.ts";
+import { createHostReads } from "./identity/host-reads.ts";
+import { bindConfirm } from "./identity/confirm-binding.ts";
+import { migrateMemoryToUserKeys, migrateVaultToUserAreas } from "./identity/migrate-layout.ts";
 import { runRawTriagePass, runIndexAndOrphanPass, runContradictionCheckPass } from "./wiki/self-review-runner.ts";
 import { startSelfReviewCron } from "./cron/self-review-cron.ts";
 import { resolve as resolvePath } from "node:path";
@@ -73,10 +77,7 @@ import type { Tool } from "ai";
 import { startAdminServer } from "./admin/server.ts";
 // The HTTP surface's read routes (4b) reuse the admin panel's per-domain
 // functions — the admin is a POC to be retired later; these reads outlive it.
-import { listWikiVault, readWikiVaultFile, grepWikiVault } from "./admin/wiki-routes.ts";
-import { scrollCollection } from "./admin/qdrant-scroll.ts";
 import { getSelfHealth } from "./admin/model-routes.ts";
-import { getToolLog } from "./session/tool-log-buffer.ts";
 import { buildPluginManifest } from "./plugins/manifest.ts";
 
 /** A stoppable subsystem (cron, server). */
@@ -254,6 +255,10 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   // manual provisioning step.
   const wikiVaultPath = requireEnv("WIKI_VAULT_PATH");
   await initVault(wikiVaultPath);
+  // A vault from before per-person areas gets its notes moved into them.
+  await migrateVaultToUserAreas(wikiVaultPath, (msg) => console.error(`[wiki-vault] ${msg}`)).catch((err: unknown) =>
+    console.error(`[wiki-vault] layout migration failed, Mercury starts anyway: ${String(err)}`),
+  );
 
   // Shared by the idle sweep (final capture + close) and by captureIncrement
   // (the two mid-conversation triggers, neither of which closes the session) —
@@ -267,7 +272,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
       consolidateSemanticFact(userId, topic, {
         vaultPath: wikiVaultPath,
         clusterFn: (u, t, limit) => searchSemanticFactsByTopic(qdrant, semanticFactsCollection, embed, { userId: u, topic: t, limit }),
-        readWikiFileFn: readWikiFile,
+        readInferredNoteFn: readInferredNote,
         writeInferredNoteFn: writeInferredNote,
       }),
     log: (msg) => console.error(`[cron] ${msg}`),
@@ -327,7 +332,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   const toolCorrectionsVectorSize = Number(process.env.QDRANT_TOOL_CORRECTIONS_VECTOR_SIZE ?? "768");
   // Every Layer-3 collection, set up in the background: Mercury starts even
   // while Qdrant isn't answering yet, and memory switches on once it does.
-  setUpWhenReachable(
+  const memoryReady = setUpWhenReachable(
     async () => {
       await ensureEpisodicCollection(qdrant, episodicCollection, episodicVectorSize);
       await ensureVerbatimCollection(qdrant, verbatimCollection, verbatimVectorSize);
@@ -335,6 +340,12 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
       await ensureToolCorrectionsCollection(qdrant, toolCorrectionsCollection, toolCorrectionsVectorSize);
     },
     { log: (msg) => console.error(`[memory] ${msg}`) },
+  );
+  // Memory written before the user key gets it, once Qdrant answers.
+  void memoryReady.done.then(() =>
+    migrateMemoryToUserKeys(qdrant, [episodicCollection, semanticFactsCollection, verbatimCollection], (msg) =>
+      console.error(`[memory] ${msg}`),
+    ),
   );
   const extractToolCorrections = createToolCorrectionExtractor(model, undefined, {
     log: (msg) => console.error(`[cron] ${msg}`),
@@ -382,12 +393,13 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
     }
   }
 
-  // `wikiUserId` is separate from `sessionKey`: inferred/users/<userId> notes
-  // are scoped per-person, not per-(space,person) pair, so it must not include
-  // the space. The turn runner derives it from the turn's principal.
+  // `key` (the user key) is separate from `sessionKey`: a person's wiki area,
+  // memory and confirmations are theirs across spaces and conversations, so
+  // it must not include the space. The turn runner derives it from the
+  // turn's principal.
   function buildTools(
     sessionKey: string,
-    wikiUserId: string,
+    key: string,
     onToolStart?: TurnSink["onToolStart"],
     onToolFinish?: TurnSink["onToolFinish"],
   ): Record<string, Tool> {
@@ -401,7 +413,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
       stageConfirmation: createStageConfirmation({
         store: confirmationStore,
         sessionKey,
-        userId: wikiUserId,
+        owner: key,
         vaultPath: wikiVaultPath,
         writeConfirmationNoteFn: writeConfirmationNote,
       }),
@@ -421,11 +433,14 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
       Object.assign(sessionTools, createPresentTool({ sessionKey, store: displayStore }));
     }
 
-    Object.assign(sessionTools, createWikiTools({ vaultPath: wikiVaultPath, userId: wikiUserId }));
+    Object.assign(
+      sessionTools,
+      createWikiTools({ vaultPath: wikiVaultPath, key, stageConfirmation: sessionToolContext.stageConfirmation }),
+    );
     Object.assign(sessionTools, createToolLogRecallTool({ sessionKey }));
     // Verbatim archive recall, scoped to this person — lets the model resurface
     // what was actually said in earlier conversations, beyond the live window.
-    Object.assign(sessionTools, verbatimProvider.sessionTools!({ sessionKey, userId: wikiUserId }));
+    Object.assign(sessionTools, verbatimProvider.sessionTools!({ sessionKey, userId: key }));
     // read_skill only exists when a plugin contributed at least one skill.
     if (loadedPlugins.skills.length > 0) {
       Object.assign(sessionTools, createReadSkillTool(loadedPlugins.skills));
@@ -513,24 +528,18 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   const channelRuntime: ChannelRuntimeContext = {
     env: process.env,
     log: (msg) => console.error(msg),
-    confirm: (token, sessionKey, userId) => tryConfirm(token, sessionKey, { ...confirmDeps, userId }),
-    resolveConfirmation: (token, sessionKey, userId) => resolveConfirmation(token, sessionKey, { ...confirmDeps, userId }),
+    ...bindConfirm(confirmDeps),
     authenticate: loadAuth(config.auth, { env: process.env, log: (msg) => console.error(msg) }),
-    reads: {
+    // Every read but the manifest and health is scoped to the caller (see
+    // identity/host-reads.ts).
+    reads: createHostReads({
+      vaultPath: wikiVaultPath,
+      qdrant,
+      collections: { verbatim: verbatimCollection, episodic: episodicCollection, semanticFacts: semanticFactsCollection },
+      confirmationStore,
       manifest: () => buildPluginManifest(plugins, loadedPlugins.activated, [], loadedPlugins.skills),
-      pendingConfirmations: () => confirmationStore.pending(),
-      // Durable per-conversation transcript from the verbatim archive (#4):
-      // the client's conversationId is the sessionKey.
-      conversation: (sessionKey, limit, offset) =>
-        listVerbatimBySession(qdrant, verbatimCollection, { sessionKey, limit, offset }),
-      conversations: (limit) => listVerbatimSessions(qdrant, verbatimCollection, { limit }),
-      wikiList: () => listWikiVault(wikiVaultPath),
-      wikiRead: (path) => readWikiVaultFile(wikiVaultPath, path),
-      wikiGrep: (pattern) => grepWikiVault(wikiVaultPath, pattern),
-      memoryScroll: (collection, limit, offset) => scrollCollection(qdrant, collection, { limit, offset }),
-      toolLog: () => getToolLog(),
       health: () => getSelfHealth({ qdrant, ollamaHost }),
-    },
+    }),
   };
 
   /** Starts the Layer-3 idle-capture and self-review crons; returns one stopper. */

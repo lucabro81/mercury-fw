@@ -13,7 +13,7 @@
 import type { LanguageModel } from "ai";
 import { createSessionHistory } from "../session/history.ts";
 import { runTurn } from "../session/agent-turn.ts";
-import { createWikiTools } from "../wiki/wiki-tools.ts";
+import { createSelfReviewTools } from "../wiki/self-review-tools.ts";
 import { writeRawEntry, deleteCuratedEntry, deleteRawEntry } from "../wiki/wiki-note.ts";
 import type { WikiGrepMatch } from "../wiki/wiki-read.ts";
 
@@ -72,23 +72,25 @@ export async function deleteWikiEntry(vaultPath: string, vaultRelativePath: stri
 }
 
 /**
- * Sends `instruction` through a real, short-lived agent turn scoped
- * ONLY to the four wiki tools (`createWikiTools`) — never the full
- * toolset a normal channel gets, so this box can't touch Jira/Bitbucket.
- * Reuses the exact commit path a real conversation would take
- * (`write_file` -> `writeCuratedNote` -> git commit, D-16); this
- * function has no write logic of its own. History is fresh per call,
- * never persisted — this isn't a real session.
+ * Sends `instruction` through a real, short-lived agent turn scoped ONLY to
+ * the operator's wiki tools over the common area (list, read, grep and
+ * `write_curated` from `createSelfReviewTools`, the same ones the nightly
+ * review uses): never the full toolset a normal channel gets, so this box
+ * can't touch Jira/Bitbucket, and never a person's area. Reuses the same
+ * commit path (`writeCuratedNote` -> git commit); this function has no write
+ * logic of its own. History is fresh per call, never persisted — this isn't a
+ * real session.
  */
 export async function editWikiViaModel(model: LanguageModel, vaultPath: string, instruction: string): Promise<string> {
   const history = createSessionHistory(async () => "");
-  const tools = createWikiTools({ vaultPath, userId: "admin" });
+  const { list_files, read_file, grep, write_curated } = createSelfReviewTools({ vaultPath });
+  const tools = { list_files, read_file, grep, write_curated };
   return runTurn(history, instruction, {
     model,
     tools,
     system:
       "You are Mercury's wiki maintenance assistant, invoked from the admin panel. You can only use the " +
-      "wiki tools available to you (list_files, read_file, write_file, grep) — you have no access to Jira, " +
+      "wiki tools available to you (list_files, read_file, grep, write_curated) — you have no access to Jira, " +
       "Bitbucket, or any other tool. Follow the operator's instruction precisely and report back what you did.",
   });
 }

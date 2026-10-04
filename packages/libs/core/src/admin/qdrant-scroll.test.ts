@@ -16,6 +16,25 @@ describe("scrollCollection", () => {
     expect(receivedArgs).toEqual({ limit: 10, offset: undefined, with_payload: true });
   });
 
+  it("restricts the page to one person's points when given a userId", async () => {
+    let receivedArgs: unknown;
+    const client: ScrollableQdrantClient = {
+      scroll: async (_collection, params) => {
+        receivedArgs = params;
+        return { points: [], next_page_offset: null };
+      },
+    };
+
+    await scrollCollection(client, "episodic_memory", { limit: 10, userId: "static:alice" });
+
+    expect(receivedArgs).toEqual({
+      limit: 10,
+      offset: undefined,
+      with_payload: true,
+      filter: { must: [{ key: "userId", match: { value: "static:alice" } }] },
+    });
+  });
+
   it("forwards a given offset to the client verbatim", async () => {
     let receivedOffset: unknown;
     const client: ScrollableQdrantClient = {

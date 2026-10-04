@@ -209,7 +209,7 @@ describe("createCliTool", () => {
       stageConfirmation: createStageConfirmation({
         store: createConfirmationStore(),
         sessionKey: "test-session",
-        userId: "user-x",
+        owner: "static:user-x",
         vaultPath: "/vault",
         writeConfirmationNoteFn: async () => {},
       }),
@@ -225,7 +225,7 @@ describe("createCliTool", () => {
       stageConfirmation: createStageConfirmation({
         store,
         sessionKey: "terminal",
-        userId: "user-x",
+        owner: "static:user-x",
         vaultPath: "/vault",
         writeConfirmationNoteFn: async () => {},
       }),
@@ -452,7 +452,7 @@ describe("createCliTool", () => {
 
     // the staged action is an opaque thunk described by the normalized argv;
     // running it is what finally invokes the CLI with the FULL argv
-    const staged = store.take("terminal", "TOK1");
+    const staged = store.take("terminal", "static:user-x", "TOK1");
     expect(staged?.describe).toBe("jira issue delete KAN-1 --confirm");
     expect(staged?.requestedAt).toEqual(expect.any(String));
     await staged?.run();
@@ -477,7 +477,7 @@ describe("createCliTool", () => {
     const { runCommand } = createCliTool(runCliFn, { jira: jiraConfig }, confirmOpts(store));
     await runCommand.execute({ command: "jira issue delete MER-19" }, {} as never);
 
-    const staged = store.take("terminal", "TOK1");
+    const staged = store.take("terminal", "static:user-x", "TOK1");
     expect(staged?.describe).toBe("jira issue delete MER-19 --confirm");
     await staged?.run();
     expect(ranArgs).toEqual(["issue", "delete", "MER-19", "--confirm"]);
@@ -494,7 +494,7 @@ describe("createCliTool", () => {
     const { runCommand } = createCliTool(runCliFn, { jira: jiraConfig }, confirmOpts(store));
     await runCommand.execute({ command: "jira issue delete MER-19 --confirm" }, {} as never);
 
-    const staged = store.take("terminal", "TOK1");
+    const staged = store.take("terminal", "static:user-x", "TOK1");
     expect(staged?.describe).toBe("jira issue delete MER-19 --confirm");
     await staged?.run();
     expect(ranArgs).toEqual(["issue", "delete", "MER-19", "--confirm"]);
@@ -529,7 +529,7 @@ describe("createCliTool", () => {
     const { runCommand } = createCliTool(runCliFn, { jira: jiraConfig }, confirmOpts(store));
     await runCommand.execute({ command: "jira issue delete KAN-1 --confirm" }, {} as never);
 
-    expect(store.take("some-other-session", "TOK1")).toBeNull();
+    expect(store.take("some-other-session", "static:user-x", "TOK1")).toBeNull();
   });
 
   // The "not permitted" message must only advertise prefixes that will
@@ -651,7 +651,7 @@ describe("createCliTool display staging", () => {
     return createStageConfirmation({
       store: createConfirmationStore(),
       sessionKey: "terminal",
-      userId: "user-x",
+      owner: "static:user-x",
       vaultPath: "/vault",
       writeConfirmationNoteFn: async () => {},
     });

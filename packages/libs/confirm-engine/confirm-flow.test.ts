@@ -3,12 +3,14 @@ import { tryConfirm } from "./confirm-flow.ts";
 import { createConfirmationStore, type StagedAction } from "./confirmation-store.ts";
 import type { WriteConfirmationNote } from "./confirm-flow.ts";
 
+const OWNER = "google-chat:users/42";
+
 const noopWriteConfirmationNoteFn: WriteConfirmationNote = async () => {};
 
 function baseDeps(overrides: Partial<Parameters<typeof tryConfirm>[2]> = {}): Parameters<typeof tryConfirm>[2] {
   return {
     store: createConfirmationStore(),
-    userId: "users/42",
+    owner: OWNER,
     vaultPath: "/vault",
     writeConfirmationNoteFn: noopWriteConfirmationNoteFn,
     ...overrides,
@@ -25,8 +27,7 @@ describe("tryConfirm", () => {
   it("returns null for input that isn't a confirm command, never touching the store or running the action", async () => {
     let called = false;
     const store = createConfirmationStore({ tokenFn: () => "k9m2-x7q4" });
-    store.stage(
-      "terminal",
+    store.stage("terminal", OWNER,
       staged("jira issue delete KAN-1 --confirm", async () => {
         called = true;
         return { ok: true, data: {} };
@@ -42,8 +43,7 @@ describe("tryConfirm", () => {
   it("runs the staged action for a valid token and reports success", async () => {
     const store = createConfirmationStore({ tokenFn: () => "k9m2-x7q4" });
     let ran = false;
-    const token = store.stage(
-      "terminal",
+    const token = store.stage("terminal", OWNER,
       staged("jira issue delete KAN-1 --confirm", async () => {
         ran = true;
         return { ok: true, data: { key: "KAN-1", deleted: true } };
@@ -66,8 +66,7 @@ describe("tryConfirm", () => {
 
   it("reports failure when the staged action's run fails, still consuming the token", async () => {
     const store = createConfirmationStore({ tokenFn: () => "k9m2-x7q4" });
-    const token = store.stage(
-      "terminal",
+    const token = store.stage("terminal", OWNER,
       staged("jira issue delete KAN-1 --confirm", async () => ({ ok: false, error: "jira exited with code 1: boom" })),
     );
 
@@ -86,8 +85,7 @@ describe("tryConfirm", () => {
   describe("confirmation note (resolve side)", () => {
     it("overwrites the note as confirmed on a successful run, using the action's describe as the command", async () => {
       const store = createConfirmationStore({ tokenFn: () => "k9m2-x7q4" });
-      const token = store.stage(
-        "terminal",
+      const token = store.stage("terminal", OWNER,
         staged(
           "jira issue delete KAN-1 --confirm",
           async () => ({ ok: true, data: { deleted: true } }),
@@ -95,8 +93,8 @@ describe("tryConfirm", () => {
         ),
       );
       const writes: unknown[] = [];
-      const writeConfirmationNoteFn: WriteConfirmationNote = async (vaultPath, userId, tok, fields) => {
-        writes.push({ vaultPath, userId, tok, fields });
+      const writeConfirmationNoteFn: WriteConfirmationNote = async (vaultPath, owner, tok, fields) => {
+        writes.push({ vaultPath, owner, tok, fields });
       };
 
       await tryConfirm(
@@ -108,7 +106,7 @@ describe("tryConfirm", () => {
       expect(writes).toEqual([
         {
           vaultPath: "/vault",
-          userId: "users/42",
+          owner: OWNER,
           tok: "k9m2-x7q4",
           fields: {
             status: "confirmed",
@@ -122,25 +120,24 @@ describe("tryConfirm", () => {
 
     it("overwrites the note as failed when the run fails", async () => {
       const store = createConfirmationStore({ tokenFn: () => "k9m2-x7q4" });
-      const token = store.stage(
-        "terminal",
+      const token = store.stage("terminal", OWNER,
         staged("jira issue delete KAN-1 --confirm", async () => ({ ok: false, error: "boom" }), "2026-07-27T12:20:00.000Z"),
       );
       const writes: unknown[] = [];
-      const writeConfirmationNoteFn: WriteConfirmationNote = async (vaultPath, userId, tok, fields) => {
-        writes.push({ vaultPath, userId, tok, fields });
+      const writeConfirmationNoteFn: WriteConfirmationNote = async (vaultPath, owner, tok, fields) => {
+        writes.push({ vaultPath, owner, tok, fields });
       };
 
       await tryConfirm(token, "terminal", baseDeps({ store, writeConfirmationNoteFn }));
 
       expect(writes).toEqual([
-        { vaultPath: "/vault", userId: "users/42", tok: "k9m2-x7q4", fields: expect.objectContaining({ status: "failed" }) },
+        { vaultPath: "/vault", owner: OWNER, tok: "k9m2-x7q4", fields: expect.objectContaining({ status: "failed" }) },
       ]);
     });
 
     it("falls back gracefully when the staged action has no requestedAt (older/test-constructed entries)", async () => {
       const store = createConfirmationStore({ tokenFn: () => "k9m2-x7q4" });
-      const token = store.stage("terminal", staged("jira issue delete KAN-1 --confirm", async () => ({ ok: true, data: {} })));
+      const token = store.stage("terminal", OWNER, staged("jira issue delete KAN-1 --confirm", async () => ({ ok: true, data: {} })));
       const writes: unknown[] = [];
       const writeConfirmationNoteFn: WriteConfirmationNote = async (_v, _u, _t, fields) => {
         writes.push(fields);
@@ -153,8 +150,7 @@ describe("tryConfirm", () => {
 
     it("a wiki-write failure does not break the confirm/execute flow itself", async () => {
       const store = createConfirmationStore({ tokenFn: () => "k9m2-x7q4" });
-      const token = store.stage(
-        "terminal",
+      const token = store.stage("terminal", OWNER,
         staged("jira issue delete KAN-1 --confirm", async () => ({ ok: true, data: { key: "KAN-1", deleted: true } })),
       );
       const writeConfirmationNoteFn: WriteConfirmationNote = async () => {

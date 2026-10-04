@@ -20,7 +20,7 @@ import { isTokenShaped, type ConfirmationStore } from "./confirmation-store.ts";
  */
 export type WriteConfirmationNote = (
   vaultPath: string,
-  userId: string,
+  owner: string,
   token: string,
   fields: { status: "pending" | "confirmed" | "failed"; requestedAt: string; resolvedAt: string | null; command: string },
 ) => Promise<void>;
@@ -32,14 +32,15 @@ export type WriteConfirmationNote = (
  * invoking the model: an unknown/expired/wrong-session token gets a
  * canned message, a valid one actually runs the staged action and
  * reports the outcome. No `conferma ` keyword to type or match — the
- * real gate was always `store.take()`'s existence/session/expiry check,
+ * real gate was always `store.take()`'s existence/session/owner/expiry check,
  * not that prefix (see `isTokenShaped`'s own doc comment). A card button
  * click on Google Chat and a bare token typed on the terminal both resolve
  * through this exact same path.
  */
 export type ConfirmDeps = {
   store: ConfirmationStore;
-  userId: string;
+  /** The person confirming (the core's user key): the token resolves only if they staged it. */
+  owner: string;
   vaultPath: string;
   writeConfirmationNoteFn: WriteConfirmationNote;
   now?: () => Date;
@@ -56,7 +57,7 @@ export async function resolveConfirmation(
     return { status: "not-a-token" };
   }
 
-  const staged = deps.store.take(sessionKey, token);
+  const staged = deps.store.take(sessionKey, deps.owner, token);
   if (!staged) {
     return { status: "not-found" };
   }
@@ -69,7 +70,7 @@ export async function resolveConfirmation(
   // guards against. Same resilience tradeoff as the propose side: a
   // wiki-write failure must not stop the user from getting their result.
   try {
-    await deps.writeConfirmationNoteFn(deps.vaultPath, deps.userId, token, {
+    await deps.writeConfirmationNoteFn(deps.vaultPath, deps.owner, token, {
       status: result.ok ? "confirmed" : "failed",
       requestedAt: staged.requestedAt ?? resolvedAt,
       resolvedAt,

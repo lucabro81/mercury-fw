@@ -17,8 +17,8 @@ describe("createToolLogRecallTool", () => {
   });
 
   it("only returns entries recorded under the same sessionKey", async () => {
-    recordStep("google-chat", "space-A:user-1", stepWithOneCall("runCommand", { command: "jira issue search" }, { ok: true }));
-    recordStep("google-chat", "space-B:user-2", stepWithOneCall("runCommand", { command: "other space's call" }, { ok: true }));
+    recordStep("google-chat", "space-A:user-1", "static:alice", stepWithOneCall("runCommand", { command: "jira issue search" }, { ok: true }));
+    recordStep("google-chat", "space-B:user-2", "static:alice", stepWithOneCall("runCommand", { command: "other space's call" }, { ok: true }));
 
     const { recall_tool_calls } = createToolLogRecallTool({ sessionKey: "space-A:user-1" });
     const result = (await recall_tool_calls.execute!({}, {} as never)) as { ok: true; entries: unknown[] };
@@ -29,7 +29,7 @@ describe("createToolLogRecallTool", () => {
 
   it("respects a custom limit", async () => {
     for (let i = 0; i < 5; i++) {
-      recordStep("terminal", "terminal", stepWithOneCall(`tool-${i}`, {}, { ok: true }));
+      recordStep("terminal", "terminal", "static:alice", stepWithOneCall(`tool-${i}`, {}, { ok: true }));
     }
 
     const { recall_tool_calls } = createToolLogRecallTool({ sessionKey: "terminal" });
@@ -40,7 +40,7 @@ describe("createToolLogRecallTool", () => {
 
   it("defaults to a reasonable limit when none is given", async () => {
     for (let i = 0; i < 20; i++) {
-      recordStep("terminal", "terminal", stepWithOneCall(`tool-${i}`, {}, { ok: true }));
+      recordStep("terminal", "terminal", "static:alice", stepWithOneCall(`tool-${i}`, {}, { ok: true }));
     }
 
     const { recall_tool_calls } = createToolLogRecallTool({ sessionKey: "terminal" });
@@ -50,9 +50,7 @@ describe("createToolLogRecallTool", () => {
   });
 
   it("returns entries with the tool name, input, and output visible", async () => {
-    recordStep(
-      "google-chat",
-      "space-A:user-1",
+    recordStep("google-chat", "space-A:user-1", "static:alice",
       stepWithOneCall("runCommand", { command: 'jira issue search --jql "assignee=x"' }, { ok: true, data: {} }),
     );
 

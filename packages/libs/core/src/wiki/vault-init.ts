@@ -3,14 +3,14 @@
  * is a separate git repository, mounted as an external volume
  * (`wiki-vault:/app/wiki-vault` in docker-compose.yml), not part of
  * Mercury's own repo. This runs at Mercury startup against
- * `WIKI_VAULT_PATH` to make sure the expected curated/inferred structure
+ * `WIKI_VAULT_PATH` to make sure the expected curated/users/raw structure
  * and the vault's own git repo exist, without disturbing whatever
  * content is already there.
  */
 import { mkdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 
-const SUBDIRS = ["curated/design", "curated/standards", "curated/decisions", "inferred/users", "raw"];
+const SUBDIRS = ["curated/design", "curated/standards", "curated/decisions", "users", "raw"];
 
 async function pathExists(path: string): Promise<boolean> {
   try {
@@ -22,7 +22,7 @@ async function pathExists(path: string): Promise<boolean> {
 }
 
 /**
- * Creates the vault's curated/inferred subdirectories and git-inits the
+ * Creates the vault's curated/users/raw subdirectories and git-inits the
  * vault if it isn't already a git repo. Safe to call on every startup:
  * pre-existing directories/content are left untouched, and re-running
  * `git init` on an already-initialized repo is a no-op.

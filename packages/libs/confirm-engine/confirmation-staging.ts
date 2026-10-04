@@ -8,11 +8,11 @@
  * is confirmable. The "resolve" side (running the staged thunk once the token
  * comes back) is `tryConfirm` in `confirm-flow.ts`.
  *
- * Bound per session (sessionKey/userId/vaultPath) at the composition root, so
- * the returned function takes only the action itself. The note lives outside
- * inferred/users/<userId>/ — see `writeConfirmationNote`'s own doc comment for
- * why — and its write is best-effort: a failure is logged, never thrown, so it
- * can't stop the user from seeing and confirming the action.
+ * Bound per session (sessionKey/owner/vaultPath) at the composition root, so
+ * the returned function takes only the action itself. `owner` is the person
+ * staging it: only they can confirm it, and the note is written for them. The
+ * note's write is best-effort: a failure is logged, never thrown, so it can't
+ * stop the user from seeing and confirming the action.
  */
 import type { ConfirmationStore } from "./confirmation-store.ts";
 import type { StageConfirmation } from "@mercury-fw/plugin-types";
@@ -23,8 +23,8 @@ export type { StageConfirmation };
 export function createStageConfirmation(deps: {
   store: ConfirmationStore;
   sessionKey: string;
-  /** Where/who the pending confirmation note is written for. */
-  userId: string;
+  /** The person staging the action (the core's user key): the only one who can confirm it, and whose note it is. */
+  owner: string;
   vaultPath: string;
   /** The note writer, injected by the core (the app's `writeConfirmationNote`). */
   writeConfirmationNoteFn: WriteConfirmationNote;
@@ -36,9 +36,9 @@ export function createStageConfirmation(deps: {
 
   return async (action) => {
     const requestedAt = nowFn().toISOString();
-    const token = deps.store.stage(deps.sessionKey, { run: action.run, describe: action.describe, requestedAt });
+    const token = deps.store.stage(deps.sessionKey, deps.owner, { run: action.run, describe: action.describe, requestedAt });
     try {
-      await write(deps.vaultPath, deps.userId, token, {
+      await write(deps.vaultPath, deps.owner, token, {
         status: "pending",
         requestedAt,
         resolvedAt: null,

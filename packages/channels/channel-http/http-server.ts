@@ -27,6 +27,7 @@ import {
   type Authenticate,
   type ChannelHostReads,
   type ConfirmOutcome,
+  type Principal,
 } from "@mercury-fw/channel-types";
 
 /**
@@ -43,9 +44,9 @@ function forLog(text: string): string {
 }
 
 /** Resolves a bare confirmation token to a reply string, or `null` if the input isn't a token. Injected by the core (`ctx.confirm`). */
-export type ConfirmFn = (token: string, sessionKey: string, userId: string) => Promise<string | null>;
+export type ConfirmFn = (token: string, sessionKey: string, principal: Principal) => Promise<string | null>;
 /** The structured sibling of {@link ConfirmFn}, for the `/confirm` `resolved` flag. Injected by the core (`ctx.resolveConfirmation`). */
-export type ResolveConfirmationFn = (token: string, sessionKey: string, userId: string) => Promise<ConfirmOutcome>;
+export type ResolveConfirmationFn = (token: string, sessionKey: string, principal: Principal) => Promise<ConfirmOutcome>;
 
 export type TurnRequestDeps = {
   handleTurn: HandleTurn;
@@ -169,7 +170,7 @@ export async function handleTurnRequest(req: Request, deps: TurnRequestDeps): Pr
 
       // Same deterministic interception as every other channel — a
       // previously-approved mutation must never depend on the model.
-      const confirmReply = await deps.confirm(text, sessionKey, principal.id);
+      const confirmReply = await deps.confirm(text, sessionKey, principal);
       if (confirmReply !== null) {
         send("final", { text: confirmReply });
         close();
@@ -263,7 +264,7 @@ export async function handleConfirmRequest(req: Request, deps: ConfirmRequestDep
   if (!CONVERSATION_ID.test(conversationId)) {
     return Response.json({ ok: false, error: "invalid conversationId" }, { status: 400, headers: cors });
   }
-  const outcome = await deps.resolveConfirmation(token, `${principal.id}:${conversationId}`, principal.id);
+  const outcome = await deps.resolveConfirmation(token, `${principal.id}:${conversationId}`, principal);
   switch (outcome.status) {
     case "not-a-token":
     case "not-found":
@@ -285,7 +286,10 @@ type ReadRoute = {
  * Builds the read-only routes, each carrying CORS headers on its `GET` and a
  * shared `OPTIONS` preflight so a browser UI on `corsOrigin` (default `*`) can
  * reach them. Every `GET` asks `authenticate` first and answers 401 without
- * calling its getter when nobody is calling; the preflight doesn't ask.
+ * calling its getter when nobody is calling; the preflight doesn't ask. The
+ * caller's principal goes to every per-person getter, so the core answers with
+ * their data only; a conversation is named by its conversationId, as on
+ * `/turn`, and its session key is built from the caller.
  * `json` JSON-encodes with the CORS headers merged in; `badRequest` does the
  * same for a 400.
  */
@@ -296,45 +300,60 @@ export function readRoutes(reads: ChannelHostReads, authenticate: Authenticate, 
   const badRequest = (message: string): Response => json({ ok: false, error: message }, 400);
   const requireParam = (req: Request, name: string): string | null => new URL(req.url).searchParams.get(name);
   const options = () => preflight(corsOrigin);
-  const route = (GET: ReadRoute["GET"]): ReadRoute => ({
-    GET: async (req) => ((await authenticate(req)) === null ? unauthorized(corsOrigin) : GET(req)),
+  const route = (GET: (req: Request, principal: Principal) => Response | Promise<Response>): ReadRoute => ({
+    GET: async (req) => {
+      const principal = await authenticate(req);
+      return principal === null ? unauthorized(corsOrigin) : GET(req, principal);
+    },
     OPTIONS: options,
   });
   return {
     "/manifest": route(() => json({ ok: true, manifest: reads.manifest() })),
-    "/confirmations": route(() => json({ ok: true, pending: reads.pendingConfirmations() })),
-    "/conversation": route(async (req) => {
+    "/confirmations": route((_req, principal) => json({ ok: true, pending: reads.pendingConfirmations(principal) })),
+    "/conversation": route(async (req, principal) => {
       const url = new URL(req.url);
       const id = url.searchParams.get("id");
       if (!id) return badRequest("missing ?id");
+      if (!CONVERSATION_ID.test(id)) return badRequest("invalid conversationId");
       const limit = Number(url.searchParams.get("limit") ?? "200");
       const offset = url.searchParams.get("offset") ?? undefined;
-      return json({ ok: true, ...(await reads.conversation(id, limit, offset) as object) });
+      return json({ ok: true, ...(await reads.conversation(principal, `${principal.id}:${id}`, limit, offset) as object) });
     }),
-    "/conversations": route(async (req) => {
+    "/conversations": route(async (req, principal) => {
       const limit = Number(new URL(req.url).searchParams.get("limit") ?? "50");
-      return json({ ok: true, ...(await reads.conversations(limit) as object) });
+      const { conversations } = (await reads.conversations(principal, limit)) as {
+        conversations: Array<{ sessionKey: string; lastTimestamp: string; preview: string }>;
+      };
+      const prefix = `${principal.id}:`;
+      return json({
+        ok: true,
+        conversations: conversations
+          .filter((c) => c.sessionKey.startsWith(prefix))
+          .map((c) => ({ conversationId: c.sessionKey.slice(prefix.length), lastTimestamp: c.lastTimestamp, preview: c.preview })),
+      });
     }),
-    "/tool-log": route(() => json({ ok: true, entries: reads.toolLog() })),
+    "/tool-log": route((_req, principal) => json({ ok: true, entries: reads.toolLog(principal) })),
     "/health": route(async () => json({ ok: true, ...(await reads.health() as object) })),
-    "/wiki/list": route(async () => json({ ok: true, files: await reads.wikiList() })),
-    "/wiki/read": route(async (req) => {
+    "/wiki/list": route(async (_req, principal) => json({ ok: true, files: await reads.wikiList(principal) })),
+    "/wiki/read": route(async (req, principal) => {
       const path = requireParam(req, "path");
       if (!path) return badRequest("missing ?path");
-      return json({ ok: true, content: await reads.wikiRead(path) });
+      const content = await reads.wikiRead(principal, path);
+      return content === null ? json({ ok: false, error: "not found" }, 404) : json({ ok: true, content });
     }),
-    "/wiki/grep": route(async (req) => {
+    "/wiki/grep": route(async (req, principal) => {
       const pattern = requireParam(req, "pattern");
       if (!pattern) return badRequest("missing ?pattern");
-      return json({ ok: true, matches: await reads.wikiGrep(pattern) });
+      return json({ ok: true, matches: await reads.wikiGrep(principal, pattern) });
     }),
-    "/memory/scroll": route(async (req) => {
+    "/memory/scroll": route(async (req, principal) => {
       const url = new URL(req.url);
       const collection = url.searchParams.get("collection");
       if (!collection) return badRequest("missing ?collection");
       const limit = Number(url.searchParams.get("limit") ?? "50");
       const offset = url.searchParams.get("offset") ?? undefined;
-      return json({ ok: true, ...(await reads.memoryScroll(collection, limit, offset) as object) });
+      const page = await reads.memoryScroll(principal, collection, limit, offset);
+      return page === null ? badRequest(`unknown collection: ${collection}`) : json({ ok: true, ...(page as object) });
     }),
   };
 }

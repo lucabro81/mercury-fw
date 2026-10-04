@@ -131,8 +131,8 @@ export type VerbatimSession = {
 const PREVIEW_CHARS = 120;
 
 /**
- * The known conversations, most-recently-active first — the sidebar a UI shows
- * to switch between conversations. Scrolls the newest `SESSION_SCAN_LIMIT`
+ * One person's conversations, most-recently-active first — the sidebar a UI
+ * shows to switch between them. Scrolls the person's newest `SESSION_SCAN_LIMIT`
  * messages (timestamp desc) and dedups by `sessionKey`, keeping each
  * conversation's most recent message for its timestamp and preview, then caps
  * the result at `limit`. Returns empty if the client can't scroll.
@@ -140,13 +140,13 @@ const PREVIEW_CHARS = 120;
 export async function listVerbatimSessions(
   client: QdrantClientLike,
   collectionName: string,
-  query: { limit: number },
+  query: { userId: string; limit: number },
 ): Promise<{ conversations: VerbatimSession[] }> {
   if (!client.scroll) {
     return { conversations: [] };
   }
   const result = await client.scroll(collectionName, {
-    filter: { must: [] },
+    filter: { must: [{ key: "userId", match: { value: query.userId } }] },
     order_by: { key: "timestamp", direction: "desc" },
     limit: SESSION_SCAN_LIMIT,
     with_payload: true,
@@ -176,20 +176,26 @@ export type VerbatimPage = {
  * The verbatim messages of one conversation (`sessionKey`) in chronological
  * order — the durable transcript a UI renders when it (re)loads a conversation.
  * Unlike `searchVerbatim` this is a plain scroll (no similarity), filtered by
- * `sessionKey` (the true per-conversation key; in the HTTP surface it equals
- * the client's `conversationId`) and ordered by `timestamp` ascending, paged
- * via the opaque `offset` cursor. Returns empty if the client can't scroll.
+ * the person (`userId`) and the conversation (`sessionKey`), so a session key
+ * that isn't the person's own yields nothing, ordered by `timestamp`
+ * ascending, paged via the opaque `offset` cursor. Returns empty if the client
+ * can't scroll.
  */
 export async function listVerbatimBySession(
   client: QdrantClientLike,
   collectionName: string,
-  query: { sessionKey: string; limit: number; offset?: string | number | Record<string, unknown> | null },
+  query: { userId: string; sessionKey: string; limit: number; offset?: string | number | Record<string, unknown> | null },
 ): Promise<VerbatimPage> {
   if (!client.scroll) {
     return { messages: [], nextOffset: null };
   }
   const result = await client.scroll(collectionName, {
-    filter: { must: [{ key: "sessionKey", match: { value: query.sessionKey } }] },
+    filter: {
+      must: [
+        { key: "userId", match: { value: query.userId } },
+        { key: "sessionKey", match: { value: query.sessionKey } },
+      ],
+    },
     order_by: { key: "timestamp", direction: "asc" },
     limit: query.limit,
     offset: query.offset,
