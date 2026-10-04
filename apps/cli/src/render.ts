@@ -5,7 +5,8 @@
  * from `template/` imported as text, so they are bundled with the CLI; the
  * config, the manifest, the env example, the compose file, the persona and the
  * README are generated from the selection. Channels and plugins are always
- * written in catalog order, whatever order they were chosen in.
+ * written in catalog order, whatever order they were chosen in; the auth
+ * provider, when there is one, after the channels.
  */
 import { DEFAULT_PERSONA_TONE } from "@mercury-fw/core";
 import { CATALOG, type CatalogEntry, type EnvVar } from "./catalog.ts";
@@ -25,6 +26,8 @@ export type RenderInput = {
   role: string;
   channels: string[];
   plugins: string[];
+  /** The HTTP channel's auth provider: required with it, refused without it. */
+  auth?: string;
   versions: Record<string, string>;
 };
 
@@ -47,8 +50,9 @@ const CORE_ENV: EnvVar[] = [
 ];
 
 const CONFIG_HEADER = `/**
- * This app's composition: the tool plugins and channels it runs, how the lists
- * its plugins hand over read, and the assistant's persona. The entrypoints
+ * This app's composition: the tool plugins and channels it runs, the auth
+ * provider when a channel needs one, how the lists its plugins hand over read,
+ * and the assistant's persona. The entrypoints
  * (\`src/index.ts\`, \`src/repl.ts\`) hand this config to \`composeMercury\`.
  *
  * Every tool plugin and channel declared here is active.
@@ -61,18 +65,19 @@ export function renderApp(input: RenderInput): Map<string, string> {
   validate(input);
   const channels = selected("channel", input.channels);
   const tools = selected("tool", input.plugins);
+  const auth = selected("auth", input.auth === undefined ? [] : [input.auth])[0];
   const assistantName = input.assistantName.trim();
 
   return new Map([
     [".dockerignore", dockerignore],
-    [".env.example", renderEnv(channels, tools)],
+    [".env.example", renderEnv(channels, auth, tools)],
     [".gitignore", gitignore],
     ["Dockerfile", dockerfile],
-    ["README.md", renderReadme(input.name, channels, tools)],
+    ["README.md", renderReadme(input.name, channels, auth, tools)],
     ["docker-compose.yml", renderCompose(input.name, channels.some((c) => c.id === "http"))],
     ["markdown.d.ts", markdownDts],
-    ["mercury.config.ts", renderConfig(channels, tools)],
-    ["package.json", renderPackageJson(input.name, channels, tools, input.versions)],
+    ["mercury.config.ts", renderConfig(channels, auth, tools)],
+    ["package.json", renderPackageJson(input.name, channels, auth, tools, input.versions)],
     ["persona/identity.md", `You are ${assistantName}, ${input.role.trim().replace(/\.+$/, "")}.\n`],
     // A replacer function, not a string: in a replacement string "$&" and the
     // like are patterns, and the name must land verbatim.
@@ -107,27 +112,41 @@ function validate(input: RenderInput): void {
   if (/[\r\n]/.test(input.assistantName) || /[\r\n]/.test(input.role)) {
     throw new Error("The assistant name and role must each be one line");
   }
-  const selection = selectionError(input.channels, input.plugins);
+  const selection = selectionError(input.channels, input.plugins, input.auth) ?? pairingError(input.channels, input.auth);
   if (selection !== undefined) {
     throw new Error(selection);
   }
 }
 
-/** Names the first channel or plugin id the catalog doesn't have, with the
- * valid ones, or undefined when all are known. Shared with the command, which
- * checks the flags before asking anything. */
-export function selectionError(channels: string[], plugins: string[]): string | undefined {
-  for (const [kind, ids] of [
-    ["channel", channels],
-    ["tool", plugins],
+/** The ids of the catalog entries of `kind`. */
+const idsOf = (kind: CatalogEntry["kind"]): string[] => CATALOG.filter((e) => e.kind === kind).map((e) => e.id);
+
+/** Names the first channel, plugin or auth provider id the catalog doesn't
+ * have, with the valid ones, or undefined when all are known. Shared with the
+ * command, which checks the flags before asking anything. */
+export function selectionError(channels: string[], plugins: string[], auth?: string): string | undefined {
+  for (const [kind, ids, label] of [
+    ["channel", channels, "channel"],
+    ["tool", plugins, "plugin"],
+    ["auth", auth === undefined ? [] : [auth], "auth provider"],
   ] as const) {
-    const valid = CATALOG.filter((e) => e.kind === kind).map((e) => e.id);
+    const valid = idsOf(kind);
     const unknown = ids.find((id) => !valid.includes(id));
     if (unknown !== undefined) {
-      const label = kind === "channel" ? "channel" : "plugin";
       return `Unknown ${label} "${unknown}" (valid: ${valid.join(", ")})`;
     }
   }
+  return undefined;
+}
+
+/** What's wrong with pairing the HTTP channel and the auth provider: it
+ * doesn't start without one, and one without it has nothing to authenticate.
+ * Undefined when they go together. Shared with the command, which checks it
+ * before writing when nothing will ask (`--yes`). */
+export function pairingError(channels: string[], auth?: string): string | undefined {
+  const http = channels.includes("http");
+  if (http && auth === undefined) return `The http channel needs an auth provider (valid: ${idsOf("auth").join(", ")})`;
+  if (!http && auth !== undefined) return `The auth provider "${auth}" goes with the http channel, which isn't chosen`;
   return undefined;
 }
 
@@ -139,7 +158,7 @@ function selected(kind: CatalogEntry["kind"], ids: string[]): CatalogEntry[] {
 /** `mercury.config.ts`: imports, the formatter helpers of the plugins that have
  * any, then the config with each plugin (wrapped in the formatter when it has
  * starting rules) and channel. */
-function renderConfig(channels: CatalogEntry[], tools: CatalogEntry[]): string {
+function renderConfig(channels: CatalogEntry[], auth: CatalogEntry | undefined, tools: CatalogEntry[]): string {
   const withRules = tools.filter((t) => t.formatter);
   const imports = ['import { defineMercuryConfig } from "@mercury-fw/core";'];
   if (withRules.length > 0) {
@@ -149,7 +168,7 @@ function renderConfig(channels: CatalogEntry[], tools: CatalogEntry[]): string {
     const names = t.formatter ? `${t.exportName}, type ${t.formatter.displaysType}` : t.exportName;
     imports.push(`import { ${names} } from "${t.package}";`);
   }
-  for (const c of channels) {
+  for (const c of [...channels, ...(auth ? [auth] : [])]) {
     imports.push(`import { ${c.exportName} } from "${c.package}";`);
   }
   imports.push('import identity from "./persona/identity.md" with { type: "text" };');
@@ -171,6 +190,7 @@ function renderConfig(channels: CatalogEntry[], tools: CatalogEntry[]): string {
     "  persona: { identity, tone },",
     plugins,
     channelList,
+    ...(auth ? [`  auth: ${auth.exportName},`] : []),
     "});",
     "",
   ].join("\n");
@@ -197,10 +217,11 @@ function renderPluginEntry(t: CatalogEntry): string {
 function renderPackageJson(
   name: string,
   channels: CatalogEntry[],
+  auth: CatalogEntry | undefined,
   tools: CatalogEntry[],
   versions: Record<string, string>,
 ): string {
-  const packages = ["@mercury-fw/core", ...channels.map((c) => c.package), ...tools.map((t) => t.package)];
+  const packages = ["@mercury-fw/core", ...[...channels, ...(auth ? [auth] : []), ...tools].map((e) => e.package)];
   if (tools.some((t) => t.formatter)) {
     packages.push("@mercury-fw/formatter");
   }
@@ -236,10 +257,10 @@ function renderPackageJson(
 
 /** The env example: the core's variables, then a section per chosen entry
  * that reads any variable. */
-function renderEnv(channels: CatalogEntry[], tools: CatalogEntry[]): string {
+function renderEnv(channels: CatalogEntry[], auth: CatalogEntry | undefined, tools: CatalogEntry[]): string {
   const block = (vars: EnvVar[]) => vars.map((v) => `# ${v.comment}\n${v.name}=${v.value ?? ""}`).join("\n");
   const sections = [block(CORE_ENV)];
-  for (const entry of [...channels, ...tools]) {
+  for (const entry of [...channels, ...(auth ? [auth] : []), ...tools]) {
     if (entry.env.length > 0) {
       sections.push(`# --- ${entry.id}\n${block(entry.env)}`);
     }
@@ -254,7 +275,7 @@ function renderEnv(channels: CatalogEntry[], tools: CatalogEntry[]): string {
 function renderCompose(name: string, hasHttp: boolean): string {
   const httpPort = hasHttp
     ? [
-        "    # The HTTP surface, on the host: no authentication, keep it off the public network.",
+        "    # The HTTP surface, on the host: every route but its OpenAPI document needs a token.",
         "    ports:",
         '      - "${HTTP_SURFACE_PORT:-4100}:${HTTP_SURFACE_PORT:-4100}"',
       ]
@@ -296,14 +317,14 @@ function renderCompose(name: string, hasHttp: boolean): string {
 }
 
 /** The app's README: what it was scaffolded with and how to run it. */
-function renderReadme(name: string, channels: CatalogEntry[], tools: CatalogEntry[]): string {
+function renderReadme(name: string, channels: CatalogEntry[], auth: CatalogEntry | undefined, tools: CatalogEntry[]): string {
   const list = (entries: CatalogEntry[]) => (entries.length > 0 ? entries.map((e) => e.id).join(", ") : "none");
   return `# ${name}
 
 A Mercury app, scaffolded by \`mfw create\`.
 
 - Channels: ${list(channels)}
-- Tool plugins: ${list(tools)}
+${auth ? `- Auth: ${auth.id}\n` : ""}- Tool plugins: ${list(tools)}
 
 ## Layout
 
@@ -330,17 +351,17 @@ mfw repl
 \`\`\`
 
 \`bun install\` here gives your editor, \`bun run typecheck\` and the app's own \`mfw\` (the one a global \`mfw\` runs inside the app) the packages (tool plugins download their CLI binary as they install); the image installs its own copy when it builds. \`mfw start\` builds the image and starts the app with Qdrant in the background, \`mfw repl\` opens a terminal conversation with the assistant. \`mfw --help\` lists the rest: stopping and restarting, logs, a shell in the container, the wiki and the memory, and resetting them.
-${renderHttpSection(channels)}${CREDENTIALS_SECTION}`;
+${renderHttpSection(channels, auth)}${CREDENTIALS_SECTION}`;
 }
 
-/** The README section on the HTTP surface, for an app with the HTTP channel;
- * nothing without it. */
-function renderHttpSection(channels: CatalogEntry[]): string {
-  if (!channels.some((c) => c.id === "http")) return "";
+/** The README section on the HTTP surface, for an app with the HTTP channel
+ * (and so its auth provider); nothing without it. */
+function renderHttpSection(channels: CatalogEntry[], auth: CatalogEntry | undefined): string {
+  if (!channels.some((c) => c.id === "http") || auth === undefined) return "";
   return `
 ## HTTP surface
 
-The HTTP channel listens on \`http://<host>:4100\`, the port in \`HTTP_SURFACE_PORT\` (the compose file publishes whatever port it holds on the host). It has no authentication: whoever reaches the port can talk to the assistant, so keep it on a network you trust.
+The HTTP channel listens on \`http://<host>:4100\`, the port in \`HTTP_SURFACE_PORT\` (the compose file publishes whatever port it holds on the host). Every route but its OpenAPI document needs \`Authorization: Bearer <token>\`, and the auth provider, \`${auth.id}\` (\`${auth.package}\`), decides who the token belongs to: its variables are in the env example. If the provider can't load, the channel doesn't start and the logs say why.
 `;
 }
 

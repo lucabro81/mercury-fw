@@ -9,7 +9,7 @@
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { Session } from "./runner.ts";
+import type { ReplReply, Session } from "./runner.ts";
 
 export type ReplSessionOptions = {
   /** The command that starts the REPL. */
@@ -27,7 +27,7 @@ export type ReplSessionOptions = {
 /** Starts the REPL and returns the session over it once the REPL is ready
  * (its first prompt is out), so a turn's time is only the turn's; throws
  * when the REPL exits or doesn't get there in time. */
-export async function openReplSession(opts: ReplSessionOptions): Promise<Session> {
+export async function openReplSession(opts: ReplSessionOptions): Promise<Session<ReplReply>> {
   const proc = Bun.spawn(opts.argv, { cwd: opts.cwd, stdin: "pipe", stdout: "pipe", stderr: "pipe" });
   let stdout = "";
   let stderr = "";

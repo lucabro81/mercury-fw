@@ -30,6 +30,7 @@ import { createSemanticFactExtractor } from "./session/semantic-fact-extractor.t
 import { buildContextPrimer } from "./session/context-primer.ts";
 import { buildSystemPrompts } from "./session/system-prompt.ts";
 import { createTurnRunner } from "./router/turn-runner.ts";
+import { loadAuth } from "./router/auth-loader.ts";
 import type { TurnSink } from "./router/provider.ts";
 import type { HandleTurn, ChannelRuntimeContext, ChannelPlugin } from "@mercury-fw/channel-types";
 import {
@@ -506,13 +507,15 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   const confirmDeps: ConfirmDeps = { store: confirmationStore, vaultPath: wikiVaultPath, writeConfirmationNoteFn: writeConfirmationNote };
 
   // The runtime context each channel's build() gets. The floor (confirm) plus
-  // HTTP's optional in-process capabilities (resolveConfirmation + reads), which
-  // can't come from env; a channel that doesn't need them ignores them.
+  // HTTP's optional in-process capabilities (resolveConfirmation, reads and the
+  // declared auth provider), which can't come from env; a channel that doesn't
+  // need them ignores them.
   const channelRuntime: ChannelRuntimeContext = {
     env: process.env,
     log: (msg) => console.error(msg),
     confirm: (token, sessionKey, userId) => tryConfirm(token, sessionKey, { ...confirmDeps, userId }),
     resolveConfirmation: (token, sessionKey, userId) => resolveConfirmation(token, sessionKey, { ...confirmDeps, userId }),
+    authenticate: loadAuth(config.auth, { env: process.env, log: (msg) => console.error(msg) }),
     reads: {
       manifest: () => buildPluginManifest(plugins, loadedPlugins.activated, [], loadedPlugins.skills),
       pendingConfirmations: () => confirmationStore.pending(),

@@ -5,19 +5,30 @@ info:
   description: >
     The HTTP surface of Mercury — the intended primary channel for a
     custom web UI. It is enabled by declaring the `http` channel in
-    `mercury.config.ts` and, by design,
-    carries **no authentication**: it must not be published outside the trusted
-    container network (production simply does not expose the port). CORS is
+    `mercury.config.ts`, together with an auth provider (`auth`): without one
+    the surface doesn't start. CORS is
     enabled on every response (`Access-Control-Allow-Origin`, configurable via
     `HTTP_SURFACE_CORS_ORIGIN`, default `*`) and every route answers an `OPTIONS`
     preflight, so a browser UI on another origin can call it.
 
 
+    ## Authentication
+
+    Every route except this document and the `OPTIONS` preflights needs
+    `Authorization: Bearer <token>`. The app's auth provider decides what a
+    valid token is (an OpenID Connect access token, a static test token); a
+    missing or refused one gets `401` with `WWW-Authenticate: Bearer`, before
+    anything runs.
+
+
     ## Conversations
 
-    A conversation is identified by an opaque, client-owned `conversationId`,
-    which becomes Mercury's session key. Omitting it on `POST /turn` starts a
-    fresh ephemeral conversation. The durable transcript of a conversation is
+    A conversation is identified by an opaque, client-owned `conversationId`
+    and belongs to whoever opened it: Mercury's session key is
+    `<caller id>:<conversationId>`, so the same id sent by someone else is a
+    conversation of their own, and a confirmation token staged in one person's
+    conversation is never found from another's. Omitting `conversationId` on
+    `POST /turn` starts a fresh ephemeral conversation. The durable transcript of a conversation is
     readable via `GET /conversation`, and the list of known conversations via
     `GET /conversations` (both backed by the verbatim archive; they degrade to
     empty when the vector store is unreachable).
@@ -38,6 +49,8 @@ info:
     emits a `pending` event carrying a one-time `token`. The client confirms by
     sending that token back — either as the `text` of a follow-up `POST /turn`,
     or via `POST /confirm`.
+security:
+  - bearerAuth: []
 servers:
   - url: http://localhost:4100
     description: Local/dev surface (HTTP_SURFACE_PORT, default 4100)
@@ -57,6 +70,8 @@ paths:
             schema:
               $ref: "#/components/schemas/TurnRequest"
       responses:
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "200":
           description: >
             An SSE stream. Each event is one of the types in `TurnEvent`:
@@ -79,8 +94,8 @@ paths:
       summary: Confirm a staged irreversible action
       description: >
         Runs a one-time confirmation token through the same mechanism the
-        bare-token-in-`text` path uses, keyed on `conversationId`. Never touches
-        the model.
+        bare-token-in-`text` path uses, keyed on the caller's own conversation
+        (`<caller id>:<conversationId>`). Never touches the model.
       requestBody:
         required: true
         content:
@@ -88,6 +103,8 @@ paths:
             schema:
               $ref: "#/components/schemas/ConfirmRequest"
       responses:
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "200":
           description: >
             `resolved: true` (with the reply `text`) when the token was a pending
@@ -110,7 +127,7 @@ paths:
         - name: id
           in: query
           required: true
-          description: The session key whose messages to return, as `/conversations` lists it (any channel's).
+          description: The session key whose messages to return, as `/conversations` lists it (any channel's; an HTTP one is `<caller id>:<conversationId>`).
           schema:
             type: string
         - name: limit
@@ -126,6 +143,8 @@ paths:
           schema:
             type: string
       responses:
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "200":
           description: The conversation's messages in chronological order.
           content:
@@ -149,6 +168,8 @@ paths:
             type: integer
             default: 50
       responses:
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "200":
           description: The conversation list.
           content:
@@ -159,6 +180,8 @@ paths:
     get:
       summary: Liveness/health of Mercury and its dependencies
       responses:
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "200":
           description: Health snapshot.
           content:
@@ -169,6 +192,8 @@ paths:
     get:
       summary: The loaded plugins, tools and skills
       responses:
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "200":
           description: Plugin manifest.
           content:
@@ -179,6 +204,8 @@ paths:
     get:
       summary: Currently pending confirmations (tokens redacted)
       responses:
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "200":
           description: Pending confirmations.
           content:
@@ -189,6 +216,8 @@ paths:
     get:
       summary: Recent tool-call log entries
       responses:
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "200":
           description: Tool log.
           content:
@@ -199,6 +228,8 @@ paths:
     get:
       summary: List the wiki vault's files
       responses:
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "200":
           description: File list.
           content:
@@ -215,6 +246,8 @@ paths:
           schema:
             type: string
       responses:
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "200":
           description: File content.
           content:
@@ -238,6 +271,8 @@ paths:
           schema:
             type: string
       responses:
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "200":
           description: Matches.
           content:
@@ -271,6 +306,8 @@ paths:
           schema:
             type: string
       responses:
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "200":
           description: A page of points.
           content:
@@ -286,6 +323,7 @@ paths:
   /openapi.yaml:
     get:
       summary: This OpenAPI document
+      security: []
       responses:
         "200":
           description: The raw OpenAPI YAML.
@@ -294,6 +332,25 @@ paths:
               schema:
                 type: string
 components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: A token the app's auth provider accepts.
+  responses:
+    Unauthorized:
+      description: >
+        No `Authorization` header, or a token the auth provider refused.
+        Carries `WWW-Authenticate: Bearer`.
+      headers:
+        WWW-Authenticate:
+          schema:
+            type: string
+            enum: [Bearer]
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
   schemas:
     TurnRequest:
       type: object
@@ -325,6 +382,9 @@ components:
         detail:
           type: string
           description: On `tool` — optional detail.
+        name:
+          type: string
+          description: On `tool` — the tool the model called (e.g. `jiraCommand`); absent for Mercury's own memory notes.
         toolCallId:
           type: string
           description: On `tool`/`tool_finish`.

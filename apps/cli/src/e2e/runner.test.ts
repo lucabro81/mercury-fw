@@ -6,6 +6,7 @@
  */
 import { describe, expect, test } from "bun:test";
 import type { E2eTest, Turn } from "./define.ts";
+import type { TurnData } from "./dump.ts";
 import { runE2e, type RunnerDeps, type Session } from "./runner.ts";
 
 /** A scripted answer to one turn: the steps `/dump` would write, and the printed output. */
@@ -226,5 +227,134 @@ describe("runE2e", () => {
         },
       ],
     ]);
+  });
+});
+
+/** Deps whose sessions answer HTTP turns with `replies` in order, recording
+ * which channel each session was opened on and every (text, token) sent. */
+function fakeHttp(replies: Array<{ turn: TurnData; status: number }>, packages: Record<string, string> = { "@mercury-fw/channel-http": "^0.3.0" }) {
+  const channels: string[] = [];
+  const sent: Array<[string, string | undefined]> = [];
+  const printed: string[] = [];
+  const reports: unknown[] = [];
+  const queue = [...replies];
+  const deps: RunnerDeps = {
+    openSession: async (channel) => {
+      channels.push(channel);
+      return {
+        turn: async (line, token) => {
+          sent.push([line, token]);
+          return queue.shift() ?? { turn: { calls: [], answer: "" }, status: 200 };
+        },
+        close: async () => {},
+      };
+    },
+    cli: async () => ({ code: 0, output: "" }),
+    appPackages: packages,
+    print: (line) => void printed.push(line),
+    now: () => 0,
+    writeReport: async (report) => void reports.push(report),
+  };
+  return { deps, channels, sent, printed, reports };
+}
+
+// #37: a case can talk to the HTTP surface, as one of the test's users.
+describe("runE2e over HTTP", () => {
+  const USERS = { alice: "alice-token", bob: "bob-token" };
+  const pendingCall = { tool: "jiraCommand", input: "jira issue delete SUP-1", output: { pendingConfirmation: true, token: "AB12-CD34", summary: "jira issue delete SUP-1" }, ok: true, pending: true };
+
+  test("sends each turn with its user's token, a turn's own user over the case's, and keeps each turn's status", async () => {
+    const f = fakeHttp([
+      { turn: { calls: [pendingCall], answer: "" }, status: 200 },
+      { turn: { calls: [], answer: "Non trovo nessuna azione in sospeso." }, status: 200 },
+    ]);
+    const statuses: Array<number | undefined> = [];
+    const test: E2eTest = {
+      users: USERS,
+      cases: [
+        {
+          name: "bob can't confirm alice's action",
+          channel: "http",
+          as: "alice",
+          turns: [
+            "Delete SUP-1",
+            { text: (previous) => (previous.calls[0]!.output as { token: string }).token, as: "bob" },
+          ],
+          check: (run, expect) => {
+            statuses.push(...run.turns.map((t) => t.status));
+            expect.answerNot("Confermato");
+          },
+        },
+      ],
+    };
+    expect(await runE2e([{ file: "t.e2e.ts", test }], {}, f.deps)).toBe(0);
+    expect(f.channels).toEqual(["http"]);
+    expect(f.sent).toEqual([
+      ["Delete SUP-1", "alice-token"],
+      ["AB12-CD34", "bob-token"],
+    ]);
+    expect(statuses).toEqual([200, 200]);
+  });
+
+  test("a refused token comes back as a 401 turn the check can look at", async () => {
+    const f = fakeHttp([{ turn: { calls: [], answer: "unauthorized" }, status: 401 }]);
+    const test: E2eTest = {
+      users: { stranger: "wrong" },
+      cases: [{ name: "c", channel: "http", as: "stranger", turns: ["hi"], check: (run, e) => e.that("401", run.last.status === 401) }],
+    };
+    expect(await runE2e([{ file: "t.e2e.ts", test }], {}, f.deps)).toBe(0);
+  });
+
+  test("an HTTP turn may span lines", async () => {
+    const f = fakeHttp([{ turn: { calls: [], answer: "ok" }, status: 200 }]);
+    const test: E2eTest = { users: USERS, cases: [{ name: "c", channel: "http", as: "alice", turns: ["one\ntwo"], check: (run, e) => e.answer("ok") }] };
+    expect(await runE2e([{ file: "t.e2e.ts", test }], {}, f.deps)).toBe(0);
+    expect(f.sent).toEqual([["one\ntwo", "alice-token"]]);
+  });
+
+  test("a user the test doesn't declare fails the run, naming the ones it does", async () => {
+    const f = fakeHttp([]);
+    const test: E2eTest = { users: USERS, cases: [{ name: "c", channel: "http", as: "carol", turns: ["hi"], check: () => {} }] };
+    expect(await runE2e([{ file: "t.e2e.ts", test }], {}, f.deps)).toBe(1);
+    expect(f.printed).toContain('    ✗ run failed: unknown user "carol" (the test\'s users: alice, bob)');
+    expect(f.sent).toEqual([]);
+  });
+
+  test("an HTTP turn with no user fails the run", async () => {
+    const f = fakeHttp([]);
+    const test: E2eTest = { users: USERS, cases: [{ name: "c", channel: "http", turns: ["hi"], check: () => {} }] };
+    expect(await runE2e([{ file: "t.e2e.ts", test }], {}, f.deps)).toBe(1);
+    expect(f.printed).toContain('    ✗ run failed: an HTTP turn needs a user: "as" on the case or on the turn');
+  });
+
+  test("a user on a REPL case fails the run: the REPL has no users", async () => {
+    const f = fake([[answering("x")]]);
+    const test: E2eTest = { users: USERS, cases: [{ name: "c", as: "alice", turns: ["hi"], check: () => {} }] };
+    expect(await runE2e([{ file: "t.e2e.ts", test }], {}, f.deps)).toBe(1);
+    expect(f.printed).toContain('    ✗ run failed: "as" goes with channel "http"');
+  });
+
+  test("an HTTP case needs the HTTP channel in the app, even when the test doesn't list it", async () => {
+    const f = fakeHttp([], { "@mercury-fw/core": "^0.35.0" });
+    const test: E2eTest = { users: USERS, cases: [{ name: "c", channel: "http", as: "alice", turns: ["hi"], check: () => {} }] };
+    expect(await runE2e([{ file: "t.e2e.ts", test }], {}, f.deps)).toBe(1);
+    expect(f.printed).toEqual(["t.e2e.ts", "  the app lacks what the test needs: channel http (@mercury-fw/channel-http)"]);
+    expect(f.channels).toEqual([]);
+  });
+
+  test("the report keeps an HTTP turn's status", async () => {
+    const f = fakeHttp([{ turn: { calls: [], answer: "ok" }, status: 200 }]);
+    const test: E2eTest = { users: USERS, cases: [{ name: "c", channel: "http", as: "alice", turns: ["hi"], check: (run, e) => e.answer("ok") }] };
+    await runE2e([{ file: "t.e2e.ts", test }], {}, f.deps);
+    expect((f.reports[0] as Array<{ runs: Array<{ turns: unknown[] }> }>)[0]!.runs[0]!.turns).toEqual([{ calls: [], answer: "ok", seconds: 0, status: 200 }]);
+  });
+
+  test("a REPL case opens a REPL session", async () => {
+    const opened: string[] = [];
+    const f = fake([[answering("CS")]]);
+    const open = f.deps.openSession;
+    f.deps.openSession = (channel) => (opened.push(channel), open(channel));
+    await runE2e([{ file: "t.e2e.ts", test: { cases: [{ name: "c", turns: ["q"], check: (run, e) => e.answer("CS") }] } }], {}, f.deps);
+    expect(opened).toEqual(["repl"]);
   });
 });

@@ -1,11 +1,14 @@
 /**
- * What `mfw local-packages` writes: the app's `package.json` with `overrides`
+ * What `mfw local-packages` (and `mfw create --local-packages`) writes: the app's `package.json` with `overrides`
  * pointing packages at local tarballs (`bun pm pack`) copied into `.packs/`,
  * which the image copies before `bun install`. Overrides, and not the
  * dependencies themselves, because a packed package names its siblings by
  * version, which the registry has too: only an override sends those
  * transitive dependencies to the tarballs as well.
  */
+
+import { cpSync, existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
+import { join, resolve } from "node:path";
 
 /** The tarballs' folder inside the app, as the Dockerfile copies it. */
 export const LOCAL_PACKS_DIR = ".packs";
@@ -35,17 +38,43 @@ export function withoutLocalOverrides(pkg: Manifest): Manifest {
   return Object.keys(own).length > 0 ? { ...rest, overrides: own } : rest;
 }
 
-/** The package name in a `bun pm pack` tarball, read from its
+/** A local tarball: its file name in the folder, and the package it holds. */
+export type Pack = { file: string; name: string; version: string };
+
+/** The package name and version in a `bun pm pack` tarball, read from its
  * `package/package.json`. */
-export async function packageNameOf(tarball: string): Promise<string> {
+export async function packageOf(tarball: string): Promise<{ name: string; version: string }> {
   const proc = Bun.spawn(["tar", "-xOzf", tarball, "package/package.json"], { stdout: "pipe", stderr: "pipe" });
   const [manifest, code] = await Promise.all([new Response(proc.stdout).text(), proc.exited]);
   try {
     if (code !== 0) throw new Error(`tar exited with ${code}`);
-    const name = (JSON.parse(manifest) as { name?: unknown }).name;
+    const { name, version } = JSON.parse(manifest) as { name?: unknown; version?: unknown };
     if (typeof name !== "string") throw new Error("no name in its package.json");
-    return name;
+    if (typeof version !== "string") throw new Error("no version in its package.json");
+    return { name, version };
   } catch (err) {
     throw new Error(`${tarball} isn't a package tarball: ${err instanceof Error ? err.message : String(err)}`);
   }
+}
+
+/** The tarballs in `from`, in file-name order, each with the package it
+ * holds, for an app in `appDir`. Throws when `from` doesn't exist, holds no
+ * tarball, or is the app's own `.packs/` (which the copy replaces). */
+export async function readPacks(from: string, appDir: string): Promise<Pack[]> {
+  const source = resolve(from);
+  if (source === join(resolve(appDir), LOCAL_PACKS_DIR)) {
+    throw new Error(`${source} is the app's own .packs/: give the folder the tarballs were packed into.`);
+  }
+  if (!existsSync(source)) throw new Error(`${source} doesn't exist.`);
+  const files = readdirSync(source).filter((f) => f.endsWith(".tgz")).sort();
+  if (files.length === 0) throw new Error(`No .tgz in ${source}: pack the packages there first (bun pm pack).`);
+  return Promise.all(files.map(async (file) => ({ file, ...(await packageOf(join(source, file))) })));
+}
+
+/** Copies `packs` from `from` into the app's `.packs/`, in place of whatever was there. */
+export function copyPacks(from: string, appDir: string, packs: Pack[]): void {
+  const target = join(appDir, LOCAL_PACKS_DIR);
+  rmSync(target, { recursive: true, force: true });
+  mkdirSync(target);
+  for (const { file } of packs) cpSync(join(resolve(from), file), join(target, file));
 }

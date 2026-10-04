@@ -38,8 +38,8 @@ export const PENDING_CONFIRMATION_NOTE = "Azione in sospeso, in attesa di confer
 /** Sentinel the model returns for "not addressed to me" in a multi-person space (see `buildSystemPrompt`'s multiUser block). A multi-user channel suppresses it in `finalize`. */
 export const NO_REPLY = "NO_REPLY";
 
-/** Who vouched for a principal's identity. `none` = nobody did (the terminal, the HTTP channel without authentication): nothing identity-dependent treats it as a real person. */
-export type PrincipalProvider = "google-chat" | "none";
+/** Who vouched for a principal's identity: the chat platform itself, an auth provider (`oidc`, `static`), or `none` = nobody did (the terminal): nothing identity-dependent treats it as a real person. */
+export type PrincipalProvider = "google-chat" | "oidc" | "static" | "none";
 
 /** The person behind a turn. The channel builds it; the core derives every per-person id from it. */
 export type Principal = {
@@ -78,8 +78,8 @@ export type InboundTurn = {
  * `onReasoningChunk` (never `onTextChunk`), so *answer* streaming never starts there.
  */
 export type TurnSink = {
-  /** `onToolStart` for `buildTools`. `detail`/`toolCallId` present for a real tool call or a capture-ping with its own id; both undefined = a caller with no correlation id. */
-  onToolStart: (label: string, detail?: string, toolCallId?: string) => void;
+  /** `onToolStart` for `buildTools`. `detail`/`toolCallId` present for a real tool call or a capture-ping with its own id; both undefined = a caller with no correlation id. `toolName` only for a real tool call (the model's tool, e.g. `jiraCommand`), never for a capture-ping. */
+  onToolStart: (label: string, detail?: string, toolCallId?: string, toolName?: string) => void;
   /** Paired with `onToolStart` via `toolCallId` once the call settles. Optional — only Google Chat implements it (patches its status card). */
   onToolFinish?: (toolCallId: string, outcome: ToolOutcome) => void;
   /** Present ⇒ `runTurn` uses `streamText`. Must stay undefined for Google Chat's own *answer* delivery. */
@@ -118,6 +118,25 @@ export type Provider = Notifier & {
   start(handleTurn: HandleTurn): Promise<void>;
   /** Optional lifecycle stop for a channel with a background resource (a Pub/Sub subscription, an HTTP server); the composition root calls it on shutdown. A channel with nothing to release omits it. */
   stop?(): Promise<void>;
+};
+
+/** Who sent `req`, or `null` when it carries no credential the provider accepts. */
+export type Authenticate = (req: Request) => Promise<Principal | null>;
+
+/** Auth-plugin contract version: the core refuses an auth plugin with a different `apiVersion`, and no channel gets `authenticate`. */
+export const AUTH_API_VERSION = 1;
+
+/**
+ * An auth provider, declared as `auth` in `mercury.config.ts`: it tells a
+ * channel whose callers carry their own credentials (HTTP) who is calling.
+ * `build` reads its own config from `env` and throws when it's missing, so a
+ * misconfigured provider leaves the channel without `authenticate` (closed),
+ * never open.
+ */
+export type AuthPlugin = {
+  apiVersion: number;
+  name: string;
+  build: (ctx: { env: Record<string, string | undefined>; log: (msg: string) => void }) => Authenticate;
 };
 
 /** Channel-plugin contract version: the loader refuses a channel with a different `apiVersion` fail-soft, like the tool-plugin loader with `PLUGIN_API_VERSION`. Bumped only on a breaking change to this file's shapes. */
@@ -168,7 +187,7 @@ export type ChannelHostReads = {
  * these, the channel imports none of them.
  *
  * `env`, `log` and `confirm` are the floor every channel relies on.
- * `resolveConfirmation` and `reads` are optional in-process capabilities that
+ * `resolveConfirmation`, `reads` and `authenticate` are optional in-process capabilities that
  * can't come from `env`: the core populates them, only a channel that needs them
  * (HTTP) reads them, the others ignore them.
  */
@@ -189,6 +208,8 @@ export type ChannelRuntimeContext = {
   resolveConfirmation?: (token: string, sessionKey: string, userId: string) => Promise<ConfirmOutcome>;
   /** In-process introspection getters for a channel that exposes an API/UI. */
   reads?: ChannelHostReads;
+  /** The configured auth provider, built; absent when the app declares none or it failed to build. */
+  authenticate?: Authenticate;
 };
 
 /**

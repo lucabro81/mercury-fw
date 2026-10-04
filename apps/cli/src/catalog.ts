@@ -1,5 +1,5 @@
 /**
- * The channels and tool plugins `mfw create` can put in a new app. Written
+ * The channels, auth providers and tool plugins `mfw create` can put in a new app. Written
  * by hand for now: once the packages are published, each plugin will describe
  * itself (kind, export, env vars) and this list goes away. `catalog.test.ts`
  * checks every entry against the real package until then.
@@ -9,12 +9,13 @@
  * example: `value` is the example value, empty when the deployer must fill it. */
 export type EnvVar = { name: string; comment: string; value?: string };
 
-/** A channel or tool plugin the app can include. `id` is the plugin's own
- * `name` (what the logs and `dependsOn` call it), `exportName` the value the
- * app's config imports from `package`. */
+/** A channel, auth provider or tool plugin the app can include. `id` is the
+ * plugin's own `name` (what the logs and `dependsOn` call it), `exportName` the
+ * value the app's config imports from `package`. An auth provider goes with the
+ * HTTP channel, which doesn't start without one. */
 export type CatalogEntry = {
   id: string;
-  kind: "channel" | "tool";
+  kind: "channel" | "auth" | "tool";
   package: string;
   exportName: string;
   env: EnvVar[];
@@ -55,8 +56,30 @@ export const CATALOG: CatalogEntry[] = [
     package: "@mercury-fw/channel-http",
     exportName: "httpChannel",
     env: [
-      { name: "HTTP_SURFACE_PORT", comment: "Port of the HTTP surface (no authentication: keep it off the public network)", value: "4100" },
+      { name: "HTTP_SURFACE_PORT", comment: "Port of the HTTP surface", value: "4100" },
       { name: "HTTP_SURFACE_CORS_ORIGIN", comment: "Origin allowed to call the HTTP surface from a browser, if any" },
+    ],
+  },
+  {
+    id: "oidc",
+    kind: "auth",
+    package: "@mercury-fw/auth-oidc",
+    exportName: "oidcAuth",
+    env: [
+      { name: "OIDC_ISSUER", comment: "Required: the OpenID Connect issuer's URL, as tokens carry it in iss (https://<instance>.zitadel.cloud)" },
+      { name: "OIDC_AUDIENCE", comment: "Required: the client id the UI calling the HTTP surface is registered with on the issuer (tokens carry it in aud)" },
+    ],
+  },
+  {
+    id: "static",
+    kind: "auth",
+    package: "@mercury-fw/auth-static",
+    exportName: "staticAuth",
+    env: [
+      {
+        name: "AUTH_STATIC_TOKENS",
+        comment: 'Required: JSON from bearer token to user, test tokens only: {"<token>": {"id": "alice", "displayName": "Alice"}}',
+      },
     ],
   },
   {

@@ -52,7 +52,7 @@ function buildProgram(handlers: ProgramHandlers, result: { code: number }): Comm
     .command("create")
     .summary("writes a new Mercury app")
     .description(
-      "Writes a new Mercury app into <folder>, which has to be missing or empty (its own name is turned into kebab case). Without options it asks for the app name, the assistant's name and role, and which channels and tool plugins to include; then it writes mercury.config.ts for that selection, the persona (persona/identity.md, persona/tone.md), the service and REPL entrypoints, a Dockerfile, a compose file with Qdrant, and an env example listing every variable the app reads. Then it runs bun install, and creates a git repository on main with a first commit, adding the origin when given (nothing is pushed).",
+      "Writes a new Mercury app into <folder>, which has to be missing or empty (its own name is turned into kebab case). Without options it asks for the app name, the assistant's name and role, and which channels (with the HTTP channel's auth provider) and tool plugins to include; then it writes mercury.config.ts for that selection, the persona (persona/identity.md, persona/tone.md), the service and REPL entrypoints, a Dockerfile, a compose file with Qdrant, and an env example listing every variable the app reads. Then it runs bun install, and creates a git repository on main with a first commit, adding the origin when given (nothing is pushed).",
     )
     .argument("<folder>", "where to write the app")
     .option("--name <name>", "app name, as in package.json (default: the folder's name)")
@@ -63,7 +63,15 @@ function buildProgram(handlers: ProgramHandlers, result: { code: number }): Comm
       `comma-separated: ${CATALOG.filter((e) => e.kind === "channel").map((e) => e.id).join(", ")}`,
     )
     .option("--plugins <ids>", `comma-separated: ${CATALOG.filter((e) => e.kind === "tool").map((e) => e.id).join(", ")}`)
+    .option(
+      "--auth <id>",
+      `the HTTP channel's auth provider, required with it: ${CATALOG.filter((e) => e.kind === "auth").map((e) => e.id).join(", ")}`,
+    )
     .option("--git-remote <url>", "the repository's origin, taken as typed (default: none)")
+    .option(
+      "--local-packages <folder>",
+      "install the packages packed in <folder> (bun pm pack) instead of the registry's, taking their versions from the tarballs, as mfw local-packages does",
+    )
     .option("--no-install", "don't run bun install")
     .option("--no-git", "don't create the git repository")
     .option("-y, --yes", "don't ask: use the flags and the defaults")
@@ -75,7 +83,7 @@ its latest on the registry (https://registry.npmjs.org, or MFW_REGISTRY).
 
 Examples:
   mfw create my-agent
-  mfw create my-agent --assistant-name Hermes --channels http --plugins jira --yes`,
+  mfw create my-agent --assistant-name Hermes --channels http --auth oidc --plugins jira --yes`,
     )
     .action(async (folder: string, opts: CreateOptions) => {
       result.code = await handlers.create(toCreateArgs(folder, opts));

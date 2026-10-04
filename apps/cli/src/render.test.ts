@@ -18,6 +18,8 @@ const versions: Record<string, string> = {
   "@mercury-fw/formatter": "0.1.0",
   "@mercury-fw/channel-google-chat": "0.1.0",
   "@mercury-fw/channel-http": "0.1.0",
+  "@mercury-fw/auth-oidc": "0.1.0",
+  "@mercury-fw/auth-static": "0.1.0",
   "@mercury-fw/plugin-jira": "0.1.0",
   "@mercury-fw/plugin-bitbucket": "0.1.0",
   "@mercury-fw/plugin-atlassian-admin": "0.1.0",
@@ -34,8 +36,9 @@ const input = (over: Partial<RenderInput> = {}): RenderInput => ({
 });
 
 const EMPTY = input();
-const HTTP_JIRA = input({ channels: ["http"], plugins: ["jira"] });
-const FULL = input({ channels: ["google-chat", "http"], plugins: ["jira", "bitbucket", "atlassian-admin"] });
+const HTTP_JIRA = input({ channels: ["http"], plugins: ["jira"], auth: "static" });
+const FULL = input({ channels: ["google-chat", "http"], plugins: ["jira", "bitbucket", "atlassian-admin"], auth: "oidc" });
+const HTTP = input({ channels: ["http"], auth: "static" });
 
 /** Every file the template always writes, whatever was chosen. */
 const ALWAYS = [
@@ -59,7 +62,7 @@ describe("renderApp: files", () => {
   // #144: no generated entrypoint, the core unpacks the CLI credentials
   // each plugin declares, so the files don't depend on the tool plugins.
   test("the same set of files whatever was chosen", () => {
-    for (const choice of [EMPTY, input({ channels: ["http"] }), HTTP_JIRA, FULL]) {
+    for (const choice of [EMPTY, HTTP, HTTP_JIRA, FULL]) {
       expect([...renderApp(choice).keys()].sort()).toEqual(ALWAYS);
     }
   });
@@ -80,14 +83,14 @@ describe("renderApp: Dockerfile", () => {
   // #131: mfw local-packages puts tarballs in .packs/, which the image needs
   // before bun install, and git doesn't.
   test("copies .packs/ before installing, and git ignores it with the e2e results", () => {
-    const dockerfile = renderApp(input({ channels: ["http"] })).get("Dockerfile") ?? "";
+    const dockerfile = renderApp(HTTP).get("Dockerfile") ?? "";
     expect(dockerfile).toContain("COPY --chown=mercury:mercury .pack[s] ./.packs/\nRUN bun install --production");
-    const gitignore = renderApp(input({ channels: ["http"] })).get(".gitignore") ?? "";
+    const gitignore = renderApp(HTTP).get(".gitignore") ?? "";
     expect(gitignore.split("\n")).toEqual(expect.arrayContaining([".packs/", "e2e/results/"]));
   });
 
   test("whatever was chosen, the same Dockerfile", () => {
-    const dockerfile = renderApp(input({ channels: ["http"] })).get("Dockerfile") ?? "";
+    const dockerfile = renderApp(HTTP).get("Dockerfile") ?? "";
     expect(dockerfile.endsWith('CMD ["bun", "src/index.ts"]\n')).toBe(true);
     expect(renderApp(FULL).get("Dockerfile")).toBe(dockerfile);
     expect(renderApp(EMPTY).get("Dockerfile")).toBe(dockerfile);
@@ -104,7 +107,7 @@ describe("renderApp: mercury.config.ts", () => {
   });
 
   test("everything, in catalog order whatever order it was chosen in", () => {
-    const shuffled = input({ channels: ["http", "google-chat"], plugins: ["atlassian-admin", "jira", "bitbucket"] });
+    const shuffled = input({ channels: ["http", "google-chat"], plugins: ["atlassian-admin", "jira", "bitbucket"], auth: "oidc" });
     expect(renderApp(FULL).get("mercury.config.ts")).toBe(golden("full.mercury.config.ts"));
     expect(renderApp(shuffled).get("mercury.config.ts")).toBe(golden("full.mercury.config.ts"));
   });
@@ -194,7 +197,7 @@ describe("renderApp: docker-compose.yml", () => {
 
   // #144: a plugin with a CLI added after the scaffold finds its volume there.
   test("no tool plugin: the CLI credentials volume all the same", () => {
-    const compose = renderApp(input({ channels: ["http"] })).get("docker-compose.yml") ?? "";
+    const compose = renderApp(HTTP).get("docker-compose.yml") ?? "";
     expect(compose).toContain("      - cli-credentials:/home/mercury/.config\n");
     expect(compose).toContain("name: demo_cli-credentials");
     expect(compose).toContain("name: demo_wiki-vault");
@@ -203,7 +206,7 @@ describe("renderApp: docker-compose.yml", () => {
   // Regression (#105): the HTTP surface listened inside the container only,
   // nothing published its port, so it was unreachable from outside.
   test("HTTP channel: the service publishes HTTP_SURFACE_PORT (4100 when unset) on the host", () => {
-    const compose = renderApp(input({ channels: ["http"] })).get("docker-compose.yml") ?? "";
+    const compose = renderApp(HTTP).get("docker-compose.yml") ?? "";
     expect(compose).toContain(
       ['    ports:', '      - "${HTTP_SURFACE_PORT:-4100}:${HTTP_SURFACE_PORT:-4100}"'].join("\n"),
     );
@@ -255,12 +258,23 @@ describe("renderApp: README.md", () => {
     expect(readme).toContain("`bunx mfw start`");
   });
 
-  test("HTTP channel: says where the surface listens on the host, and that it has no authentication", () => {
+  test("HTTP channel: says where the surface listens on the host, and how a caller authenticates", () => {
     const readme = renderApp(HTTP_JIRA).get("README.md") ?? "";
     expect(readme).toContain("## HTTP surface");
     expect(readme).toContain("`http://<host>:4100`");
     expect(readme).toContain("`HTTP_SURFACE_PORT`");
-    expect(readme).toContain("no authentication");
+    expect(readme).toContain("`Authorization: Bearer <token>`");
+    expect(readme).toContain("`static` (`@mercury-fw/auth-static`)");
+    expect(readme).not.toContain("no authentication");
+  });
+
+  test("HTTP with oidc: names the oidc provider", () => {
+    expect(renderApp(FULL).get("README.md") ?? "").toContain("`oidc` (`@mercury-fw/auth-oidc`)");
+  });
+
+  test("names the auth provider among what the app was scaffolded with, only when there is one", () => {
+    expect(renderApp(HTTP_JIRA).get("README.md") ?? "").toContain("- Auth: static\n");
+    expect(renderApp(EMPTY).get("README.md") ?? "").not.toContain("- Auth:");
   });
 
   test("no HTTP channel: no HTTP surface section", () => {
@@ -321,6 +335,22 @@ describe("renderApp: validation", () => {
   test("rejects an unknown channel or plugin, naming the valid ids", () => {
     expect(() => renderApp(input({ channels: ["slack"] }))).toThrow("google-chat, http");
     expect(() => renderApp(input({ plugins: ["http"] }))).toThrow("jira, bitbucket, atlassian-admin");
+  });
+
+  // #37: the HTTP channel doesn't start without an auth provider, so an app
+  // scaffolded with one and not the other would have a surface that never opens,
+  // or a provider nothing uses.
+  test("rejects the HTTP channel without an auth provider, and an auth provider without it", () => {
+    expect(() => renderApp(input({ channels: ["http"] }))).toThrow(
+      'The http channel needs an auth provider (valid: oidc, static)',
+    );
+    expect(() => renderApp(input({ channels: ["google-chat"], auth: "static" }))).toThrow(
+      'The auth provider "static" goes with the http channel, which isn\'t chosen',
+    );
+  });
+
+  test("rejects an unknown auth provider, naming the valid ids", () => {
+    expect(() => renderApp(input({ channels: ["http"], auth: "saml" }))).toThrow('Unknown auth provider "saml" (valid: oidc, static)');
   });
 
   test("rejects a line break in the assistant name or role (each is one line of the persona)", () => {

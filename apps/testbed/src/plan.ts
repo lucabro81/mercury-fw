@@ -1,13 +1,14 @@
 /**
  * The steps `bun run create` takes, worked out from its command line before
- * anything runs: pack this repo's workspaces, create the app with this repo's
- * `mfw create` when it doesn't exist yet (or anew with `--fresh`), then make
- * it install the tarballs with `mfw local-packages`.
+ * anything runs: pack this repo's workspaces, then create the app with this
+ * repo's `mfw create` on the tarballs (`--local-packages`) when it doesn't
+ * exist yet (or anew with `--fresh`), or make an existing one install them
+ * again with `mfw local-packages`.
  */
 import { parseArgs } from "node:util";
 import { join } from "node:path";
 
-export type CreateArgs = { name: string; plugins?: string[]; channels?: string[]; from?: string; fresh: boolean };
+export type CreateArgs = { name: string; plugins?: string[]; channels?: string[]; auth?: string; from?: string; fresh: boolean };
 
 export type Step =
   | { step: "warn"; message: string }
@@ -15,7 +16,8 @@ export type Step =
   | { step: "remove"; dir: string }
   | { step: "run"; argv: string[]; cwd: string };
 
-/** Where the tarballs are, from an app's folder (`apps/<name>`). */
+/** Where the tarballs are, from the test bed's folder and from an app's (`apps/<name>`). */
+const PACKS = ".packs";
 const PACKS_FROM_APP = "../../.packs";
 
 /** A comma-separated list, trimmed, empty items dropped. */
@@ -33,13 +35,14 @@ export function parseCreateArgs(argv: string[]): CreateArgs {
     options: {
       plugins: { type: "string" },
       channels: { type: "string" },
+      auth: { type: "string" },
       from: { type: "string" },
       fresh: { type: "boolean", default: false },
     },
   });
   const name = positionals[0];
   if (name === undefined || positionals.length > 1) {
-    throw new Error("usage: bun run create <name> [--plugins a,b] [--channels c] [--from <test>] [--fresh]");
+    throw new Error("usage: bun run create <name> [--plugins a,b] [--channels c] [--auth static|oidc] [--from <test>] [--fresh]");
   }
   if (!/^[a-z0-9][a-z0-9-]*$/.test(name)) throw new Error(`"${name}" isn't a folder name: lowercase letters, digits and dashes`);
   if (values.from !== undefined && (values.plugins !== undefined || values.channels !== undefined)) {
@@ -49,6 +52,7 @@ export function parseCreateArgs(argv: string[]): CreateArgs {
     name,
     ...(values.plugins !== undefined ? { plugins: list(values.plugins) } : {}),
     ...(values.channels !== undefined ? { channels: list(values.channels) } : {}),
+    ...(values.auth !== undefined ? { auth: values.auth } : {}),
     ...(values.from !== undefined ? { from: values.from } : {}),
     fresh: values.fresh ?? false,
   };
@@ -69,6 +73,9 @@ export function planCreate(args: CreateArgs, { root, exists }: { root: string; e
   if (exists && args.fresh) steps.push({ step: "remove", dir: app });
   steps.push({ step: "pack" });
   if (create) {
+    // The HTTP channel doesn't start without an auth provider: here the static
+    // one, whose test tokens make two users, unless another is given.
+    const auth = (args.channels ?? []).includes("http") ? ["--auth", args.auth ?? "static"] : [];
     steps.push({
       step: "run",
       argv: [
@@ -79,12 +86,15 @@ export function planCreate(args: CreateArgs, { root, exists }: { root: string; e
         (args.plugins ?? []).join(","),
         "--channels",
         (args.channels ?? []).join(","),
-        "--no-install",
+        ...auth,
+        "--local-packages",
+        PACKS,
         "--yes",
       ],
       cwd: root,
     });
+  } else {
+    steps.push({ step: "run", argv: ["mfw", "local-packages", PACKS_FROM_APP], cwd: app });
   }
-  steps.push({ step: "run", argv: ["mfw", "local-packages", PACKS_FROM_APP], cwd: app });
   return steps;
 }

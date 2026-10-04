@@ -50,6 +50,25 @@ describe("appVersions", () => {
     ]);
   });
 
+  // A package packed locally (`--local-packages`) takes its tarball's version,
+  // without asking the registry: a brand-new one isn't there yet.
+  test("a package with a local version takes it, framework included, and the registry isn't asked for it", async () => {
+    const { asked, fetchFn } = fakeRegistry({ "@mercury-fw/plugin-jira": "0.3.2" });
+    const versions = await appVersions(["@mercury-fw/plugin-jira", "@mercury-fw/auth-static"], {
+      registry: "https://registry.test",
+      fetchFn,
+      local: { "@mercury-fw/auth-static": "0.0.0", "@mercury-fw/core": "0.35.0-dev", "@mercury-fw/plugin-bitbucket": "9.9.9" },
+    });
+    expect(versions).toEqual({
+      "@mercury-fw/cli": pkg.version,
+      "@mercury-fw/core": "0.35.0-dev",
+      "@mercury-fw/formatter": pkg.version,
+      "@mercury-fw/plugin-jira": "0.3.2",
+      "@mercury-fw/auth-static": "0.0.0",
+    });
+    expect(asked).toEqual(["https://registry.test/@mercury-fw%2Fplugin-jira/latest"]);
+  });
+
   test("nothing chosen: no request, framework only", async () => {
     const { asked, fetchFn } = fakeRegistry({});
     expect(await appVersions([], { registry: "https://registry.test", fetchFn })).toEqual(

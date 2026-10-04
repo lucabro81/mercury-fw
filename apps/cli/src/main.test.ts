@@ -91,13 +91,14 @@ const versions: Record<string, string> = {
   "@mercury-fw/core": cliVersion(),
   "@mercury-fw/formatter": cliVersion(),
   "@mercury-fw/channel-http": PLUGIN_VERSION,
+  "@mercury-fw/auth-static": PLUGIN_VERSION,
   "@mercury-fw/plugin-jira": PLUGIN_VERSION,
 };
 
 describe("mfw create --yes", () => {
   test("writes exactly the rendered app, named after the folder by default", async () => {
     const dir = join(base, "demo");
-    const result = await run("create", dir, "--channels", "http", "--plugins", "jira", "--yes");
+    const result = await run("create", dir, "--channels", "http", "--auth", "static", "--plugins", "jira", "--yes");
     expect(result.code).toBe(0);
     const expected = renderApp({
       name: "demo",
@@ -105,6 +106,7 @@ describe("mfw create --yes", () => {
       role: "an internal assistant",
       channels: ["http"],
       plugins: ["jira"],
+      auth: "static",
       versions,
     });
     for (const [path, content] of expected) {
@@ -181,6 +183,72 @@ Optional, to have mfw everywhere:
   });
 });
 
+// #37: a test bed app is made on this repo's packed packages, a brand-new
+// one included, which the registry doesn't have yet.
+describe("mfw create --local-packages", () => {
+  /** A tarball named `file` in `dir`, holding `name` at `version`, as `bun pm pack` makes it. */
+  async function pack(dir: string, file: string, name: string, version: string): Promise<void> {
+    const work = mkdtempSync(join(base, "pack-"));
+    mkdirSync(join(work, "package"));
+    writeFileSync(join(work, "package", "package.json"), JSON.stringify({ name, version }));
+    mkdirSync(dir, { recursive: true });
+    expect(await Bun.spawn(["tar", "czf", join(dir, file), "-C", work, "package"]).exited).toBe(0);
+  }
+
+  /** A registry that has nothing, recording every request. */
+  function emptyRegistry() {
+    const asked: string[] = [];
+    const server = Bun.serve({
+      port: 0,
+      fetch: (req) => {
+        asked.push(new URL(req.url).pathname);
+        return new Response("not found", { status: 404 });
+      },
+    });
+    return { asked, server };
+  }
+
+  test("versions from the tarballs, overrides to them, .packs/ filled, the registry never asked", async () => {
+    const packs = join(base, "packs");
+    await pack(packs, "core.tgz", "@mercury-fw/core", "0.35.0");
+    await pack(packs, "http.tgz", "@mercury-fw/channel-http", "0.3.0");
+    await pack(packs, "static.tgz", "@mercury-fw/auth-static", "0.0.0");
+    await pack(packs, "kit.tgz", "@mercury-fw/kit", "0.35.0");
+    const { asked, server } = emptyRegistry();
+    try {
+      const dir = join(base, "demo");
+      const result = await runWith(server.url.origin, "create", dir, "--channels", "http", "--auth", "static", "--local-packages", packs, "--yes", "--no-install");
+      expect(result.stderr).toBe("");
+      expect(result.code).toBe(0);
+      expect(asked).toEqual([]);
+      const manifest = JSON.parse(readFileSync(join(dir, "package.json"), "utf-8"));
+      expect(manifest.dependencies).toEqual({
+        "@mercury-fw/auth-static": "^0.0.0",
+        "@mercury-fw/channel-http": "^0.3.0",
+        "@mercury-fw/core": "^0.35.0",
+      });
+      expect(manifest.overrides).toEqual({
+        "@mercury-fw/auth-static": "file:./.packs/static.tgz",
+        "@mercury-fw/channel-http": "file:./.packs/http.tgz",
+        "@mercury-fw/core": "file:./.packs/core.tgz",
+        "@mercury-fw/kit": "file:./.packs/kit.tgz",
+      });
+      expect(readdirSync(join(dir, ".packs")).sort()).toEqual(["core.tgz", "http.tgz", "kit.tgz", "static.tgz"]);
+    } finally {
+      server.stop(true);
+    }
+  });
+
+  test("a folder with no tarball exits 1 before anything is written", async () => {
+    const empty = join(base, "empty");
+    mkdirSync(empty);
+    const result = await run("create", join(base, "demo"), "--local-packages", empty, "--yes");
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain(`No .tgz in ${empty}`);
+    expect(readdirSync(base)).toEqual(["empty"]);
+  });
+});
+
 // Regression: these were only discovered after the whole wizard had been
 // answered; they must fail before any question is asked.
 describe("mfw create, checks before the wizard", () => {
@@ -188,6 +256,37 @@ describe("mfw create, checks before the wizard", () => {
     const result = await run("create", join(base, "demo"), "--channels", "slack");
     expect(result.code).toBe(1);
     expect(result.stderr).toContain('Unknown channel "slack" (valid: google-chat, http)');
+  });
+
+  test("an unknown auth provider given as a flag, without --yes, exits 1 naming the valid ones", async () => {
+    const result = await run("create", join(base, "demo"), "--channels", "http", "--auth", "saml");
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain('Unknown auth provider "saml" (valid: oidc, static)');
+  });
+
+  // #37: with --yes nothing asks for the provider, so the pairing is settled up front.
+  test("--yes with the http channel and no auth provider exits 1 and writes nothing", async () => {
+    const dir = join(base, "demo");
+    const result = await run("create", dir, "--channels", "http", "--yes");
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain("The http channel needs an auth provider (valid: oidc, static)");
+    expect(readdirSync(base)).toEqual([]);
+  });
+
+  test("--yes with an auth provider and no http channel exits 1 and writes nothing", async () => {
+    const result = await run("create", join(base, "demo"), "--auth", "static", "--yes");
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain('The auth provider "static" goes with the http channel');
+    expect(readdirSync(base)).toEqual([]);
+  });
+
+  // Cold review of #37: without --yes the wizard dropped a --auth that the
+  // channels given as flags have no use for, silently.
+  test("--auth with channels given as flags that don't include http, without --yes, exits 1 before the wizard", async () => {
+    const result = await run("create", join(base, "demo"), "--channels", "google-chat", "--auth", "static");
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain('The auth provider "static" goes with the http channel, which isn\'t chosen');
+    expect(readdirSync(base)).toEqual([]);
   });
 
   test("a folder that isn't empty, without --yes, exits 1 and is left alone", async () => {
@@ -211,13 +310,13 @@ async function git(dir: string, ...args: string[]): Promise<string> {
 describe("mfw create, the repository", () => {
   test("a repository on main with one commit holding every written file, and the origin as typed", async () => {
     const dir = join(base, "demo");
-    const result = await run("create", dir, "--channels", "http", "--plugins", "jira", "--git-remote", "git@example.com:acme/demo.git", "--yes");
+    const result = await run("create", dir, "--channels", "http", "--auth", "static", "--plugins", "jira", "--git-remote", "git@example.com:acme/demo.git", "--yes");
     expect(result.code).toBe(0);
     expect(await git(dir, "branch", "--show-current")).toBe("main");
-    expect(await git(dir, "log", "--format=%B")).toBe(`Scaffold with mfw create ${cliVersion()}\n\nChannels: http\nPlugins: jira`);
+    expect(await git(dir, "log", "--format=%B")).toBe(`Scaffold with mfw create ${cliVersion()}\n\nChannels: http\nPlugins: jira\nAuth: static`);
     expect(await git(dir, "rev-list", "--count", "HEAD")).toBe("1");
     expect(await git(dir, "status", "--porcelain")).toBe("");
-    const written = renderApp({ name: "demo", assistantName: "Mercury", role: "an internal assistant", channels: ["http"], plugins: ["jira"], versions });
+    const written = renderApp({ name: "demo", assistantName: "Mercury", role: "an internal assistant", channels: ["http"], plugins: ["jira"], auth: "static", versions });
     expect((await git(dir, "ls-files")).split("\n").sort()).toEqual([...written.keys()].sort());
     expect(await git(dir, "remote", "get-url", "origin")).toBe("git@example.com:acme/demo.git");
     expect(result.stdout).toContain("  origin: git@example.com:acme/demo.git\n");

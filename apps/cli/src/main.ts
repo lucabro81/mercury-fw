@@ -5,15 +5,16 @@
  * commands operate an existing app from inside its folder (see
  * `app/commands.ts`). The command line itself is declared in `program.ts`.
  */
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import type { CreateArgs } from "./args.ts";
 import { CATALOG } from "./catalog.ts";
 import { kebabCase } from "./naming.ts";
 import { runProgram } from "./program.ts";
-import { renderApp, selectionError } from "./render.ts";
+import { pairingError, renderApp, selectionError } from "./render.ts";
 import { appVersions, cliVersion, newerCli, registryFrom } from "./versions.ts";
 import { appCommands, terminalDeps, type AppDeps } from "./app/commands.ts";
+import { copyPacks, readPacks, withLocalOverrides } from "./app/local-packages.ts";
 import { findApp, type App } from "./app/find-app.ts";
 import { askAnswers, DEFAULT_ASSISTANT_NAME, DEFAULT_ROLE, type Answers } from "./wizard.ts";
 import { finishApp, finishMessage, spawnRun, type Run } from "./finish.ts";
@@ -27,6 +28,7 @@ function answersFromFlags(args: CreateArgs, defaultName: string): Answers {
     role: args.role ?? DEFAULT_ROLE,
     channels: args.channels ?? [],
     plugins: args.plugins ?? [],
+    ...(args.auth !== undefined ? { auth: args.auth } : {}),
     ...(args.gitRemote !== undefined ? { gitRemote: args.gitRemote } : {}),
   };
 }
@@ -104,8 +106,12 @@ function remoteError(args: CreateArgs): string | undefined {
 /** `mfw create`: returns the exit code. `rawArgs` are the arguments after
  * `create` as typed, for a relaunch. */
 async function create(args: CreateArgs, rawArgs: string[], relaunch: Relaunch, globalInstall: boolean, run: Run): Promise<number> {
-  const relaunched = await relaunchIfStale(rawArgs, relaunch, globalInstall);
-  if (relaunched !== undefined) return relaunched;
+  // An app made on local tarballs is made by this CLI, whatever the registry
+  // has: that's the point of packing them.
+  if (args.localPackages === undefined) {
+    const relaunched = await relaunchIfStale(rawArgs, relaunch, globalInstall);
+    if (relaunched !== undefined) return relaunched;
+  }
   // The folder is created in kebab case, only its own name: the parent path is
   // taken as typed. Its name is also the app name's default.
   const typed = resolve(args.dir);
@@ -115,23 +121,38 @@ async function create(args: CreateArgs, rawArgs: string[], relaunch: Relaunch, g
   }
   const dir = join(dirname(typed), folder);
   // What the command line already settles is checked before any question, so
-  // the wizard is never answered for nothing.
+  // the wizard is never answered for nothing. The HTTP channel and its auth
+  // provider are paired here with --yes, or when the flags give both;
+  // otherwise the wizard asks.
+  const pairedByFlags = args.yes || (args.channels !== undefined && args.auth !== undefined);
   const early =
     targetError(dir) ??
-    selectionError(args.channels ?? [], args.plugins ?? []) ??
+    selectionError(args.channels ?? [], args.plugins ?? [], args.auth) ??
+    (pairedByFlags ? pairingError(args.channels ?? [], args.auth) : undefined) ??
     remoteError(args);
   if (early !== undefined) {
     throw new Error(early);
   }
+  const packs = args.localPackages === undefined ? undefined : await readPacks(args.localPackages, dir);
   const answers = args.yes ? answersFromFlags(args, folder) : await askAnswers(args, dir);
   if (answers === undefined) {
     return 1;
   }
-  const chosen = CATALOG.filter(
-    (e) => (e.kind === "channel" ? answers.channels : answers.plugins).includes(e.id),
+  const chosen = CATALOG.filter((e) =>
+    e.kind === "auth" ? e.id === answers.auth : (e.kind === "channel" ? answers.channels : answers.plugins).includes(e.id),
   ).map((e) => e.package);
-  const versions = await appVersions(chosen, { registry: registryFrom(process.env.MFW_REGISTRY) });
+  const versions = await appVersions(chosen, {
+    registry: registryFrom(process.env.MFW_REGISTRY),
+    ...(packs !== undefined ? { local: Object.fromEntries(packs.map((p) => [p.name, p.version])) } : {}),
+  });
   writeApp(dir, renderApp({ ...answers, versions }));
+  if (packs !== undefined && args.localPackages !== undefined) {
+    // What `mfw local-packages` does, before the install sees the manifest.
+    const manifestPath = join(dir, "package.json");
+    const manifest = withLocalOverrides(JSON.parse(readFileSync(manifestPath, "utf-8")) as Record<string, unknown>, packs);
+    writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+    copyPacks(args.localPackages, dir, packs);
+  }
   const none = (ids: string[]) => (ids.length > 0 ? ids.join(", ") : "none");
   const report = await finishApp(
     dir,
@@ -141,7 +162,7 @@ async function create(args: CreateArgs, rawArgs: string[], relaunch: Relaunch, g
       ...(answers.gitRemote !== undefined ? { remote: answers.gitRemote } : {}),
       commitMessage: [
         `Scaffold with mfw create ${cliVersion()}`,
-        `Channels: ${none(answers.channels)}\nPlugins: ${none(answers.plugins)}`,
+        `Channels: ${none(answers.channels)}\nPlugins: ${none(answers.plugins)}${answers.auth !== undefined ? `\nAuth: ${answers.auth}` : ""}`,
       ],
     },
     run,

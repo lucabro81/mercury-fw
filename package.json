@@ -31,6 +31,7 @@
     "apps/*",
     "packages/types/*",
     "packages/channels/*",
+    "packages/auth/*",
     "packages/tools/*",
     "packages/formatters/*",
     "packages/libs/*",

@@ -1,6 +1,7 @@
 /**
- * This app's composition: the tool plugins and channels it runs, how the lists
- * its plugins hand over read, and the assistant's persona. The entrypoints
+ * This app's composition: the tool plugins and channels it runs, the auth
+ * provider when a channel needs one, how the lists its plugins hand over read,
+ * and the assistant's persona. The entrypoints
  * (`src/index.ts`, `src/repl.ts`) hand this config to `composeMercury`.
  *
  * Every tool plugin and channel declared here is active.
@@ -12,6 +13,7 @@ import { bitbucketPlugin } from "@mercury-fw/plugin-bitbucket";
 import { atlassianAdminPlugin } from "@mercury-fw/plugin-atlassian-admin";
 import { googleChatChannel } from "@mercury-fw/channel-google-chat";
 import { httpChannel } from "@mercury-fw/channel-http";
+import { oidcAuth } from "@mercury-fw/auth-oidc";
 import identity from "./persona/identity.md" with { type: "text" };
 import tone from "./persona/tone.md" with { type: "text" };
 
@@ -34,4 +36,5 @@ export default defineMercuryConfig({
     atlassianAdminPlugin,
   ],
   channels: [googleChatChannel, httpChannel],
+  auth: oidcAuth,
 });
