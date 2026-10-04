@@ -154,7 +154,6 @@ packages/libs/core/
     ├── credentials/           # unpacks each plugin-declared CLI login from the env file onto the volume (~/.config) at startup, linking one declared elsewhere in the home
     ├── memory/                # Layer 3 — episodic store (Qdrant)
     ├── wiki/                  # Layer 2 — vault init/read/write (common `curated/` + per-person `users/<key>/`) + vault-cli.ts (maintenance CLI, see Operational notes)
-    ├── admin/                 # POC admin panel — dev-only, no auth, off unless ADMIN_PANEL_ENABLED=true
     └── cron/                  # idle-session scanner
 ```
 

@@ -1,7 +1,7 @@
 /**
  * Service entrypoint: builds the app with `composeMercury`, fed
  * `mercury.config.ts`, and starts what a long-running service runs: the
- * declared channels, the admin panel (when enabled) and the memory crons.
+ * declared channels and the memory crons.
  * Headless; the interactive terminal is `bun run repl` (`repl.ts`).
  *
  * Stays alive on the channels' background resources and the cron intervals,
@@ -18,7 +18,6 @@ for (const { name, provider } of loadedChannels) {
   console.error(`[channel] ${name} started`);
 }
 
-const adminServer = app.startAdmin();
 const crons = app.startCrons();
 console.error("[service] up — channels and crons started; waiting for SIGINT/SIGTERM");
 
@@ -31,7 +30,6 @@ async function shutdown(signal: string): Promise<void> {
   shuttingDown = true;
   console.error(`[shutdown] ${signal} received, releasing subsystems`);
   crons.stop();
-  adminServer?.stop();
   for (const { name, provider } of loadedChannels) {
     await provider.stop?.();
     console.error(`[shutdown] channel ${name} stopped`);

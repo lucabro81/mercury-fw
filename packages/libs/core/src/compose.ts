@@ -5,9 +5,9 @@
  * every other module takes them as inputs.
  *
  * It *builds*, it does not *start*: `composeMercury()` returns `handleTurn`, the
- * channel runtime context, and deferred `startCrons`/`startAdmin` closures, so
- * each entrypoint decides what to run. The long-running service (`index.ts`)
- * starts the network channels + crons + admin; the dev REPL (`repl.ts`) starts
+ * channel runtime context, and a deferred `startCrons` closure, so each
+ * entrypoint decides what to run. The long-running service (`index.ts`)
+ * starts the network channels + crons; the dev REPL (`repl.ts`) starts
  * only the terminal against the same `handleTurn`.
  *
  * Note: this factory (and `repl.ts`) are written to be lifted into the future
@@ -16,7 +16,6 @@
  */
 import { QdrantClient } from "@qdrant/js-client-rest";
 import { getOllamaProvider } from "./model/client.ts";
-import { runCli } from "@mercury-fw/cli-engine";
 import { createConfirmationStore, createStageConfirmation, type ConfirmationStore } from "@mercury-fw/confirm-engine";
 import { createDisplayStore } from "./tools/display-store.ts";
 import { createPresentTool } from "./tools/present-tool.ts";
@@ -74,10 +73,7 @@ import { startSelfReviewCron } from "./cron/self-review-cron.ts";
 import { resolve as resolvePath } from "node:path";
 import { homedir } from "node:os";
 import type { Tool } from "ai";
-import { startAdminServer } from "./admin/server.ts";
-// The HTTP surface's read routes (4b) reuse the admin panel's per-domain
-// functions — the admin is a POC to be retired later; these reads outlive it.
-import { getSelfHealth } from "./admin/model-routes.ts";
+import { getSelfHealth } from "./health.ts";
 import { buildPluginManifest } from "./plugins/manifest.ts";
 
 /** A stoppable subsystem (cron, server). */
@@ -91,8 +87,8 @@ export type ConfirmDeps = {
 };
 
 /**
- * The built Mercury instance. `build`, not `start`: the channels, crons and
- * admin are not running until an entrypoint starts them.
+ * The built Mercury instance. `build`, not `start`: the channels and crons
+ * are not running until an entrypoint starts them.
  */
 export type ComposedApp = {
   /** The turn driver every channel funnels through (see `turn-runner.ts`). */
@@ -107,8 +103,6 @@ export type ComposedApp = {
   ollamaModel: string;
   /** Starts the Layer-3 idle-capture and self-review crons; returns a single stopper for shutdown. */
   startCrons: () => Stoppable;
-  /** Starts the POC admin panel if `ADMIN_PANEL_ENABLED`; returns it (to stop on shutdown), or undefined. */
-  startAdmin: () => Stoppable | undefined;
 };
 
 /** Reads a required env var, failing fast instead of silently defaulting. */
@@ -584,33 +578,6 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
     };
   }
 
-  /**
-   * Starts the POC admin panel if `ADMIN_PANEL_ENABLED` — opt-in, dev-only,
-   * unauthenticated. Reuses the already-constructed qdrant client, model and
-   * vault path. Returns it (to stop on shutdown), or undefined when disabled.
-   */
-  function startAdmin(): Stoppable | undefined {
-    if (process.env.ADMIN_PANEL_ENABLED !== "true") return undefined;
-    const adminPort = Number(process.env.ADMIN_PANEL_PORT ?? "4000");
-    const adminServer = startAdminServer({
-      port: adminPort,
-      vaultPath: wikiVaultPath,
-      model,
-      qdrant,
-      qdrantCollections: { episodic: episodicCollection, semanticFacts: semanticFactsCollection },
-      // Every CLI is a plugin now (no file-based bucket), so there are no
-      // centrally-configured CLIs for the POC admin's CLI status to cover.
-      activeCliConfigs: {},
-      runCliFn: runCli,
-      ollamaHost,
-      ollamaModel,
-      systemPrompts: { terminal: system, googleChat: chatSystem },
-      envFilePath: ".env",
-    });
-    console.error(`[admin] panel listening on http://localhost:${adminPort}`);
-    return adminServer;
-  }
-
   return {
     handleTurn,
     channels: config.channels ?? [],
@@ -619,6 +586,5 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
     ollamaHost,
     ollamaModel,
     startCrons,
-    startAdmin,
   };
 }

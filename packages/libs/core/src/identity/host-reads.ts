@@ -12,7 +12,7 @@
  */
 import type { ChannelHostReads, Principal } from "@mercury-fw/channel-types";
 import type { ConfirmationStore } from "@mercury-fw/confirm-engine";
-import { scrollCollection, type ScrollableQdrantClient } from "../admin/qdrant-scroll.ts";
+import { scrollCollection, type ScrollableQdrantClient } from "../memory/qdrant-scroll.ts";
 import type { QdrantClientLike } from "../memory/episodic-store.ts";
 import { listVerbatimBySession, listVerbatimSessions } from "../memory/verbatim-archive-store.ts";
 import { getToolLog } from "../session/tool-log-buffer.ts";
