@@ -13,8 +13,9 @@
 export type SessionLock = {
   /**
    * Runs `fn` once every earlier run on `key` has settled. If `signal` is
-   * aborted by then, `fn` never starts and the result is `undefined`. A
-   * rejection reaches this caller only, never the runs queued after it.
+   * aborted before `fn` starts, `fn` never starts and the result is
+   * `undefined` right away, while the runs queued after it keep their place.
+   * A rejection reaches this caller only, never the runs queued after it.
    */
   run<T>(key: string, fn: () => Promise<T>, signal?: AbortSignal): Promise<T | undefined>;
   /** The keys something is running or waiting on, for tests and diagnostics. */
@@ -27,14 +28,30 @@ export function createSessionLock(): SessionLock {
 
   return {
     run<T>(key: string, fn: () => Promise<T>, signal?: AbortSignal): Promise<T | undefined> {
+      if (signal?.aborted) return Promise.resolve(undefined);
       const previous = tails.get(key) ?? Promise.resolve();
-      const result = previous.then(() => (signal?.aborted ? undefined : fn()));
+      let started = false;
+      const result = previous.then(() => {
+        if (signal?.aborted) return undefined;
+        started = true;
+        return fn();
+      });
       const tail = result.catch(() => {});
       tails.set(key, tail);
       void tail.then(() => {
         if (tails.get(key) === tail) tails.delete(key);
       });
-      return result;
+      if (signal === undefined) return result;
+      // Released as soon as it's aborted while waiting, not when the run
+      // ahead of it settles; once `fn` started, its own handling of the
+      // signal decides.
+      return new Promise<T | undefined>((resolve, reject) => {
+        const onAbort = () => {
+          if (!started) resolve(undefined);
+        };
+        signal.addEventListener("abort", onAbort, { once: true });
+        result.then(resolve, reject).finally(() => signal.removeEventListener("abort", onAbort));
+      });
     },
     activeKeys: () => [...tails.keys()],
   };

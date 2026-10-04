@@ -91,6 +91,31 @@ describe("createSessionLock", () => {
     expect(started).toBe(false);
   });
 
+  // A turn whose client went away used to keep its sink (and connection)
+  // until the turn ahead of it finished, even though it would never run.
+  test("work aborted while it waits resolves right away, and the work after it still waits its turn", async () => {
+    const lock = createSessionLock();
+    const first = gate();
+    const controller = new AbortController();
+    const events: string[] = [];
+
+    const a = lock.run("s1", async () => {
+      await first.promise;
+      events.push("a");
+    });
+    const b = lock.run("s1", async () => events.push("b"), controller.signal);
+    const c = lock.run("s1", async () => events.push("c"));
+
+    controller.abort();
+    expect(await b).toBeUndefined();
+    await settle();
+    expect(events).toEqual([]);
+
+    first.open();
+    await Promise.all([a, c]);
+    expect(events).toEqual(["a", "c"]);
+  });
+
   test("work whose signal is already aborted never starts", async () => {
     const lock = createSessionLock();
     const controller = new AbortController();

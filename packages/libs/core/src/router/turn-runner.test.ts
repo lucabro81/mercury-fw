@@ -1179,8 +1179,11 @@ describe("createTurnRunner", () => {
         waitingSink,
       );
       controller.abort();
+      await second;
+      // Released while the first turn is still running.
+      expect(waitingSink.disposed).toBe(true);
       firstGate.open();
-      await Promise.all([first, second]);
+      await first;
 
       expect(ran).toEqual(["first"]);
       // Only the first turn tracked the session (at its start and its end).
