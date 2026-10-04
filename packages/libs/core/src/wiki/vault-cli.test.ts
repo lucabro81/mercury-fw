@@ -49,6 +49,22 @@ describe("vault-cli read", () => {
   });
 });
 
+// Regression: read joined the path onto the vault unchecked, so "../" printed
+// files outside it (the container's own, the operator's env file included).
+describe("vault-cli read outside the vault", () => {
+  test("a path that leaves the vault is refused, exit 1, nothing printed", async () => {
+    const outside = join(vault, "..", `${vault.split("/").pop()}-outside.md`);
+    await Bun.write(outside, "secret");
+    try {
+      for (const path of [`../${outside.split("/").pop()}`, outside, "curated/../../x.md"]) {
+        expect(await run(["read", path])).toEqual({ code: 1, stdout: "", stderr: `not a path in the vault: ${path}\n` });
+      }
+    } finally {
+      rmSync(outside, { force: true });
+    }
+  });
+});
+
 describe("vault-cli grep", () => {
   // #138: wiki grep ignores case, here as in the model's tool.
   test("ignores case", async () => {
