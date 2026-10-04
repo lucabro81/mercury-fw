@@ -68,6 +68,10 @@ function buildProgram(handlers: ProgramHandlers, result: { code: number }): Comm
       `the HTTP channel's auth provider, required with it: ${CATALOG.filter((e) => e.kind === "auth").map((e) => e.id).join(", ")}`,
     )
     .option("--git-remote <url>", "the repository's origin, taken as typed (default: none)")
+    .option(
+      "--local-packages <folder>",
+      "install the packages packed in <folder> (bun pm pack) instead of the registry's, taking their versions from the tarballs, as mfw local-packages does",
+    )
     .option("--no-install", "don't run bun install")
     .option("--no-git", "don't create the git repository")
     .option("-y, --yes", "don't ask: use the flags and the defaults")

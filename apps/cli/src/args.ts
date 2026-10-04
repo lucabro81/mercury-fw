@@ -19,6 +19,8 @@ export type CreateArgs = {
   auth?: string;
   /** The repository's origin, taken as typed. */
   gitRemote?: string;
+  /** A folder of packed tarballs the app installs instead of the registry's packages. */
+  localPackages?: string;
   yes: boolean;
   /** Run `bun install` after writing (`--no-install` turns it off). */
   install: boolean;
@@ -35,6 +37,7 @@ export type CreateOptions = {
   plugins?: string;
   auth?: string;
   gitRemote?: string;
+  localPackages?: string;
   yes?: boolean;
   install?: boolean;
   git?: boolean;
@@ -56,6 +59,7 @@ export function toCreateArgs(folder: string, opts: CreateOptions): CreateArgs {
   if (opts.channels !== undefined) args.channels = list(opts.channels);
   if (opts.plugins !== undefined) args.plugins = list(opts.plugins);
   if (opts.auth !== undefined && opts.auth.trim() !== "") args.auth = opts.auth.trim();
+  if (opts.localPackages !== undefined) args.localPackages = opts.localPackages;
   // Blank is none, as in the wizard.
   if (opts.gitRemote !== undefined && opts.gitRemote.trim() !== "") args.gitRemote = opts.gitRemote.trim();
   return args;

@@ -183,6 +183,72 @@ Optional, to have mfw everywhere:
   });
 });
 
+// #37: a test bed app is made on this repo's packed packages, a brand-new
+// one included, which the registry doesn't have yet.
+describe("mfw create --local-packages", () => {
+  /** A tarball named `file` in `dir`, holding `name` at `version`, as `bun pm pack` makes it. */
+  async function pack(dir: string, file: string, name: string, version: string): Promise<void> {
+    const work = mkdtempSync(join(base, "pack-"));
+    mkdirSync(join(work, "package"));
+    writeFileSync(join(work, "package", "package.json"), JSON.stringify({ name, version }));
+    mkdirSync(dir, { recursive: true });
+    expect(await Bun.spawn(["tar", "czf", join(dir, file), "-C", work, "package"]).exited).toBe(0);
+  }
+
+  /** A registry that has nothing, recording every request. */
+  function emptyRegistry() {
+    const asked: string[] = [];
+    const server = Bun.serve({
+      port: 0,
+      fetch: (req) => {
+        asked.push(new URL(req.url).pathname);
+        return new Response("not found", { status: 404 });
+      },
+    });
+    return { asked, server };
+  }
+
+  test("versions from the tarballs, overrides to them, .packs/ filled, the registry never asked", async () => {
+    const packs = join(base, "packs");
+    await pack(packs, "core.tgz", "@mercury-fw/core", "0.35.0");
+    await pack(packs, "http.tgz", "@mercury-fw/channel-http", "0.3.0");
+    await pack(packs, "static.tgz", "@mercury-fw/auth-static", "0.0.0");
+    await pack(packs, "kit.tgz", "@mercury-fw/kit", "0.35.0");
+    const { asked, server } = emptyRegistry();
+    try {
+      const dir = join(base, "demo");
+      const result = await runWith(server.url.origin, "create", dir, "--channels", "http", "--auth", "static", "--local-packages", packs, "--yes", "--no-install");
+      expect(result.stderr).toBe("");
+      expect(result.code).toBe(0);
+      expect(asked).toEqual([]);
+      const manifest = JSON.parse(readFileSync(join(dir, "package.json"), "utf-8"));
+      expect(manifest.dependencies).toEqual({
+        "@mercury-fw/auth-static": "^0.0.0",
+        "@mercury-fw/channel-http": "^0.3.0",
+        "@mercury-fw/core": "^0.35.0",
+      });
+      expect(manifest.overrides).toEqual({
+        "@mercury-fw/auth-static": "file:./.packs/static.tgz",
+        "@mercury-fw/channel-http": "file:./.packs/http.tgz",
+        "@mercury-fw/core": "file:./.packs/core.tgz",
+        "@mercury-fw/kit": "file:./.packs/kit.tgz",
+      });
+      expect(readdirSync(join(dir, ".packs")).sort()).toEqual(["core.tgz", "http.tgz", "kit.tgz", "static.tgz"]);
+    } finally {
+      server.stop(true);
+    }
+  });
+
+  test("a folder with no tarball exits 1 before anything is written", async () => {
+    const empty = join(base, "empty");
+    mkdirSync(empty);
+    const result = await run("create", join(base, "demo"), "--local-packages", empty, "--yes");
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain(`No .tgz in ${empty}`);
+    expect(readdirSync(base)).toEqual(["empty"]);
+  });
+});
+
 // Regression: these were only discovered after the whole wizard had been
 // answered; they must fail before any question is asked.
 describe("mfw create, checks before the wizard", () => {

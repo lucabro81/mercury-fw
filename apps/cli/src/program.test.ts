@@ -111,6 +111,12 @@ describe("create", () => {
     expect(h.calls[0]?.[1]).toMatchObject({ channels: ["http"], plugins: [] });
   });
 
+  test("--local-packages: the folder of tarballs, as typed", async () => {
+    const h = harness();
+    await h.run("create", "d", "--local-packages", "../.packs");
+    expect(h.calls[0]?.[1]).toMatchObject({ localPackages: "../.packs" });
+  });
+
   test("--no-install and --no-git turn the steps after writing off", async () => {
     const h = harness();
     await h.run("create", "d", "--no-install", "--no-git");
