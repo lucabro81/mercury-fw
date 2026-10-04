@@ -2,7 +2,8 @@ import { describe, expect, test } from "bun:test";
 import { createTurnRunner, type PostTurnGuard } from "./turn-runner.ts";
 import type { InboundTurn, TurnSink } from "./provider.ts";
 import type { Principal } from "@mercury-fw/channel-types";
-import type { SessionHistory } from "../session/history.ts";
+import { createSessionHistory, type SessionHistory } from "../session/history.ts";
+import { createSessionLock } from "./session-lock.ts";
 import type { StepInfo } from "../session/step-info.ts";
 
 function fakeHistory(overrides: Partial<SessionHistory> = {}): SessionHistory {
@@ -1068,6 +1069,141 @@ describe("createTurnRunner", () => {
 
       await expect(runner(baseTurn({ principal: verified("u1") }), sink)).resolves.toBeUndefined();
       expect(sink.finalized).toEqual(["reply"]);
+    });
+  });
+
+  // Regression for #154: HTTP never serialised two /turn calls on the same
+  // conversation, so both ran on one SessionHistory at once and its messages
+  // interleaved (user, user, assistant, assistant).
+  describe("concurrent turns", () => {
+    /** A promise plus the function that resolves it. */
+    function gate(): { promise: Promise<void>; open: () => void } {
+      let open!: () => void;
+      const promise = new Promise<void>((resolve) => {
+        open = resolve;
+      });
+      return { promise, open };
+    }
+
+    const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+    function runnerWith(overrides: Partial<Parameters<typeof createTurnRunner>[0]>) {
+      return createTurnRunner({
+        model: {} as any,
+        systemPrompts: { singleUser: "s", multiUser: "m" },
+        buildTools: () => ({}),
+        getOrCreateHistory: () => fakeHistory(),
+        trackSession: () => {},
+        registerCaptureCallback: () => {},
+        maybeCapture: async () => {},
+        processToolCorrections: async () => {},
+        logStep: () => {},
+        ...overrides,
+      });
+    }
+
+    test("two turns on the same session run one after the other, post-turn work included", async () => {
+      const history = createSessionHistory(async () => "summary");
+      const firstGate = gate();
+      const events: string[] = [];
+      const runner = runnerWith({
+        getOrCreateHistory: () => history,
+        runTurnFn: async (h, input) => {
+          events.push(`start:${input}`);
+          await h.addUserMessage(input);
+          if (input === "first") await firstGate.promise;
+          await h.addAssistantMessage(`answer to ${input}`);
+          return `answer to ${input}`;
+        },
+        processToolCorrections: async () => {
+          events.push("corrections");
+        },
+      });
+
+      const first = runner(baseTurn({ text: "first" }), baseSink());
+      const second = runner(baseTurn({ text: "second" }), baseSink());
+      await settle();
+      expect(events).toEqual(["start:first"]);
+
+      firstGate.open();
+      await Promise.all([first, second]);
+      expect(events).toEqual(["start:first", "corrections", "start:second", "corrections"]);
+      expect(history.getMessages()).toEqual([
+        { role: "user", content: "first" },
+        { role: "assistant", content: "answer to first" },
+        { role: "user", content: "second" },
+        { role: "assistant", content: "answer to second" },
+      ]);
+    });
+
+    test("turns on different sessions run in parallel", async () => {
+      const firstGate = gate();
+      const started: string[] = [];
+      const runner = runnerWith({
+        runTurnFn: async (_h, input) => {
+          started.push(input);
+          if (input === "first") await firstGate.promise;
+          return "reply";
+        },
+      });
+
+      const first = runner(baseTurn({ text: "first", sessionKey: "a" }), baseSink());
+      await runner(baseTurn({ text: "second", sessionKey: "b" }), baseSink());
+      expect(started).toEqual(["first", "second"]);
+      firstGate.open();
+      await first;
+    });
+
+    test("a turn aborted while it waits never runs, and its sink is still released", async () => {
+      const firstGate = gate();
+      const ran: string[] = [];
+      const tracked: string[] = [];
+      const runner = runnerWith({
+        trackSession: (key) => tracked.push(key),
+        runTurnFn: async (_h, input) => {
+          ran.push(input);
+          if (input === "first") await firstGate.promise;
+          return "reply";
+        },
+      });
+      const controller = new AbortController();
+      const waitingSink = baseSink();
+
+      const first = runner(baseTurn({ text: "first", principal: verified("u1") }), baseSink());
+      const second = runner(
+        baseTurn({ text: "second", principal: verified("u1"), abortSignal: controller.signal }),
+        waitingSink,
+      );
+      controller.abort();
+      firstGate.open();
+      await Promise.all([first, second]);
+
+      expect(ran).toEqual(["first"]);
+      expect(tracked).toEqual(["session-1"]);
+      expect(waitingSink.finalized).toEqual([]);
+      expect(waitingSink.disposed).toBe(true);
+    });
+
+    test("a turn waits for other work holding the same session in the shared lock", async () => {
+      const sessionLock = createSessionLock();
+      const sweepGate = gate();
+      const ran: string[] = [];
+      const runner = runnerWith({
+        sessionLock,
+        runTurnFn: async (_h, input) => {
+          ran.push(input);
+          return "reply";
+        },
+      });
+
+      const sweep = sessionLock.run("session-1", () => sweepGate.promise);
+      const turn = runner(baseTurn({ text: "hello" }), baseSink());
+      await settle();
+      expect(ran).toEqual([]);
+
+      sweepGate.open();
+      await Promise.all([sweep, turn]);
+      expect(ran).toEqual(["hello"]);
     });
   });
 });

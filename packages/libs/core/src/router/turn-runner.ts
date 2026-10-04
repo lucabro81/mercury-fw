@@ -26,6 +26,7 @@ import { recordStep } from "../session/tool-log-buffer.ts";
 import type { HandleTurn, InboundTurn, TurnSink } from "./provider.ts";
 import type { Principal } from "@mercury-fw/channel-types";
 import { userKey } from "../identity/user-key.ts";
+import { createSessionLock, type SessionLock } from "./session-lock.ts";
 
 export type TurnRunnerDeps = {
   model: LanguageModel;
@@ -93,6 +94,12 @@ export type TurnRunnerDeps = {
    * an artifact is shown only when the model explicitly presented it.
    */
   takeSurfacedDisplays?: (sessionKey: string) => string[];
+  /**
+   * Serialises everything that touches one session: this runner's turns and
+   * whatever else the composition root runs on a session (the idle sweep).
+   * Defaults to a lock of the runner's own.
+   */
+  sessionLock?: SessionLock;
 };
 
 /**
@@ -109,8 +116,25 @@ function principalIds(principal: Principal): { key: string; tracked: boolean } {
 export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
   const postTurnGuards = deps.postTurnGuards ?? [];
   const logPostTurnGuard = deps.logPostTurnGuardFn ?? ((message: string) => console.log(message));
+  const sessionLock = deps.sessionLock ?? createSessionLock();
 
+  // One turn at a time per session, post-turn work included (it reads the
+  // history and the capture markers); a turn whose client went away while
+  // it waited never starts, but its sink is still released.
   return async (turn: InboundTurn, sink: TurnSink): Promise<void> => {
+    let started = false;
+    await sessionLock.run(
+      turn.sessionKey,
+      () => {
+        started = true;
+        return runTurnLocked(turn, sink);
+      },
+      turn.abortSignal,
+    );
+    if (!started) sink.dispose();
+  };
+
+  async function runTurnLocked(turn: InboundTurn, sink: TurnSink): Promise<void> {
     const { key, tracked } = principalIds(turn.principal);
     if (tracked) {
       deps.trackSession(turn.sessionKey, key, (deps.now ?? Date.now)());
@@ -217,5 +241,5 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
       }
     }
     await deps.processToolCorrections(steps, sink.onToolStart, sink.onToolFinish);
-  };
+  }
 }
