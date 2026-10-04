@@ -63,6 +63,7 @@ export async function migrateVaultToUserAreas(vaultPath: string, log: (msg: stri
   const moved = new Set<string>();
   const people = new Set<string>();
   const left: string[] = [];
+  const dropped: string[] = [];
 
   await changeVaultAndCommit(vaultPath, "migrate: per-person notes into users/<key>/", async () => {
     for (const { from, to } of LEGACY_FOLDERS) {
@@ -86,6 +87,10 @@ export async function migrateVaultToUserAreas(vaultPath: string, log: (msg: stri
             () => false,
           );
           if (taken && !((await isPending(dst)) && !(await isPending(src)))) {
+            // A stale pending copy goes quietly; anything else is worth a line.
+            if (!(await isPending(src))) {
+              dropped.push(`dropped ${relative(vaultPath, src)}: ${relative(vaultPath, dst)} already exists (the vault's git history keeps it)`);
+            }
             await rm(src);
             continue;
           }
@@ -102,8 +107,10 @@ export async function migrateVaultToUserAreas(vaultPath: string, log: (msg: stri
   });
 
   for (const path of left) log(`left ${path} in place: ${UNATTRIBUTABLE}`);
+  for (const line of dropped) log(line);
   if (moved.size > 0) {
-    log(`moved ${moved.size} notes of ${people.size} ${people.size === 1 ? "person" : "people"} into users/<key>/`);
+    const notes = moved.size === 1 ? "note" : "notes";
+    log(`moved ${moved.size} ${notes} of ${people.size} ${people.size === 1 ? "person" : "people"} into users/<key>/`);
   }
 }
 

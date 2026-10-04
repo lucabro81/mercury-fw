@@ -98,6 +98,24 @@ describe("migrateVaultToUserAreas", () => {
     expect(logs).toEqual(["moved 2 notes of 1 person into users/<key>/"]);
   });
 
+  it("says which legacy note it dropped because the area already had one, other than a stale pending confirmation", async () => {
+    const vault = await legacyVault({
+      "users/google-chat%3Ausers%2F42/inferred/team.md": "current",
+      "inferred/users/users%2F42/team.md": "older",
+      "inferred/confirmations/users%252F42/aaaa-1111.md": pending,
+      "inferred/confirmations/users%2F42/aaaa-1111.md": confirmed,
+    });
+    const logs: string[] = [];
+
+    await migrateVaultToUserAreas(vault, (m) => logs.push(m));
+
+    expect(await readFile(join(vault, "users/google-chat%3Ausers%2F42/inferred/team.md"), "utf-8")).toBe("current");
+    expect(logs).toEqual([
+      "dropped inferred/users/users%2F42/team.md: users/google-chat%3Ausers%2F42/inferred/team.md already exists (the vault's git history keeps it)",
+      "moved 1 note of 1 person into users/<key>/",
+    ]);
+  });
+
   it("leaves what it can't attribute where it is, and says so", async () => {
     const vault = await legacyVault({
       "inferred/users/alice/team.md": "x",
