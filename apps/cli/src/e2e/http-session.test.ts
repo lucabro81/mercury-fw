@@ -48,6 +48,19 @@ describe("turnFromSse", () => {
     ]);
   });
 
+  // Cold review of #37: the token was attached only when tool_finish came
+  // first. The surface sends it in that order, but a token must not vanish if
+  // the order ever changes.
+  test("attaches the token whichever comes first, the pending event or the call's tool_finish", () => {
+    const body = [
+      event("tool", { label: "x", detail: "jira issue delete SUP-1", toolCallId: "1", name: "jiraCommand" }),
+      event("pending", { command: "jira issue delete SUP-1", token: "AB12-CD34" }),
+      event("tool_finish", { toolCallId: "1", outcome: "pending" }),
+      event("final", { text: "" }),
+    ].join("");
+    expect(turnFromSse(body).calls[0]?.output).toEqual({ pendingConfirmation: true, token: "AB12-CD34", summary: "jira issue delete SUP-1" });
+  });
+
   test("leaves out Mercury's own memory notes, which have no tool name, and a call that never settled is not ok", () => {
     const body = [
       event("tool", { label: "Mi sto segnando…", detail: "…", toolCallId: "c1" }),

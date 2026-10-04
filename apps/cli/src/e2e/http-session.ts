@@ -36,6 +36,8 @@ function events(body: string): Array<{ name: string; data: Record<string, unknow
  * `error` event, or when the stream has no `final` one. */
 export function turnFromSse(body: string): TurnData {
   const calls: Array<Call & { id: unknown }> = [];
+  // A pending event's output, waiting for its call's tool_finish when it came first.
+  const unclaimed: unknown[] = [];
   let answer: string | undefined;
   for (const { name, data } of events(body)) {
     if (name === "tool" && typeof data.name === "string") {
@@ -46,9 +48,12 @@ export function turnFromSse(body: string): TurnData {
       if (call === undefined) continue;
       call.pending = data.outcome === "pending";
       call.ok = data.outcome === "success" || call.pending;
+      if (call.pending && unclaimed.length > 0) call.output = unclaimed.shift();
     } else if (name === "pending") {
+      const output = { pendingConfirmation: true, token: data.token, summary: data.command };
       const call = calls.findLast((c) => c.pending && c.output === undefined);
-      if (call !== undefined) call.output = { pendingConfirmation: true, token: data.token, summary: data.command };
+      if (call !== undefined) call.output = output;
+      else unclaimed.push(output);
     } else if (name === "final") {
       answer = String(data.text ?? "");
     } else if (name === "error") {
