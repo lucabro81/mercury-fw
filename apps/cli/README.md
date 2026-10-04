@@ -230,7 +230,7 @@ mfw local-packages --off
 
 ### `mfw e2e [tests...] [--repeat N]`
 
-Runs end-to-end tests against the app's real model: each test case sends its turns to the app's REPL in the container, as `mfw repl` would, and checks what each turn did, the tool calls with their inputs and results, and the answer. It's how you find out whether the model actually uses a plugin the way its skill says, at the first try, with the app's own model, configuration, wiki and credentials. That's also why it doesn't belong in CI: the results depend on the model, on what's in the vault and in Qdrant, and on accounts a CI runner shouldn't have.
+Runs end-to-end tests against the app's real model: each test case sends its turns to the app's REPL in the container, as `mfw repl` would, or to its HTTP surface as one of the test's users, and checks what each turn did, the tool calls with their inputs and results, and the answer. It's how you find out whether the model actually uses a plugin the way its skill says, at the first try, with the app's own model, configuration, wiki and credentials. That's also why it doesn't belong in CI: the results depend on the model, on what's in the vault and in Qdrant, and on accounts a CI runner shouldn't have.
 
 Without arguments it runs every `e2e/*.e2e.ts` in the app; with files, those (they can live anywhere). It prints every check of every run, keeps everything (each turn's calls and answer, each check) in `e2e/results/<time>/`, which `.gitignore` leaves out, and exits 1 when a case didn't pass. The app must be built and its `.env` filled in, as for `mfw repl`. `--repeat N` runs each case N times, overriding its own `repeat`.
 
@@ -284,13 +284,44 @@ The call helpers look at every turn of the run, the answer helpers at the last o
 
 A turn can be a function of the one before, for a follow-up or a confirmation: `(previous) => …` returns the next message from `previous.calls` and `previous.answer` (an irreversible command comes back as a call whose output holds the pending confirmation's token, and sending the token as the next turn confirms it). Each turn is one line, as the REPL reads them.
 
+#### On the HTTP surface
+
+A case with `channel: "http"` sends its turns to the app's HTTP surface instead, as one of the test's `users`: each is a name and a token the app's auth provider accepts (with `static`, one of `AUTH_STATIC_TOKENS`). The app's service has to be running (`mfw start`); the surface's URL is the port compose publishes. A turn can name its own user, so one case can stage an action as Alice and try to confirm it as Bob in the same conversation id:
+
+```ts
+export default e2e({
+  users: { alice: "alice-test-token", bob: "bob-test-token", stranger: "not-a-token" },
+  cases: [
+    {
+      name: "no token, no turn",
+      channel: "http",
+      as: "stranger",
+      turns: ["hi"],
+      check: (run, expect) => expect.that("refused with 401", run.last.status === 401),
+    },
+    {
+      name: "Bob can't confirm what Alice staged",
+      channel: "http",
+      as: "alice",
+      turns: [
+        "Delete the issue SUP-1 on Jira",
+        { text: (previous) => (previous.calls.find((c) => c.pending)?.output as { token: string }).token, as: "bob" },
+      ],
+      check: (run, expect) => expect.answerNot("Confermato"),
+    },
+  ],
+});
+```
+
+Each run of an HTTP case is a conversation of its own. A turn also has the response's `status` (200, or 401 for a refused token). The event stream carries no tool results, so on HTTP a call's `input` is the line the surface shows for it (the command, for a CLI tool) and its `output` is there only for a call staged for confirmation, with the token, as on the REPL. A turn may span several lines.
+
 `before`, `after` and `check` also get `cli(command)`, which runs `sh -c command` in the app's container, outside the model, and resolves to its exit code and output: to prepare data (an issue to work on, a note in the wiki with the vault CLI), to check what a turn changed (`jira issue get KEY --select fields.assignee.displayName` after an assignment), to clean up. `after` runs even when the run or the check failed. A test that changes an external system has to clean up after itself, so start from read-only ones.
 
 #### What it can and can't test
 
 It can test how the model uses a plugin through its skill (the commands and flags it picks, rejected or failed calls, how many calls it takes), what the answer says or must not say, what a turn changed in an external system, the confirmation of an irreversible command, conversations over several turns, several plugins working together, and what the wiki and memory make of a conversation.
 
-It can't test how a channel shows a turn (Google Chat's cards, the HTTP channel's events: the REPL runs the same turn, without them), the background jobs (the nightly wiki review, idle-session capture), or the exact wording of an answer: checks look for properties, and `repeat` with `minPasses` says how steady the behaviour is. Durations are in the report and in `e2e/results/`, never a check.
+It can't test how Google Chat shows a turn (its cards), the background jobs (the nightly wiki review, idle-session capture), or the exact wording of an answer: checks look for properties, and `repeat` with `minPasses` says how steady the behaviour is. Durations are in the report and in `e2e/results/`, never a check.
 
 ```bash
 mfw e2e

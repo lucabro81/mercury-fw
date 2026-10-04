@@ -15,6 +15,7 @@ import { LOCAL_PACKS_DIR, packageNameOf, withLocalOverrides, withoutLocalOverrid
 import { findTests, loadTest } from "../e2e/load.ts";
 import { runE2e } from "../e2e/runner.ts";
 import { openReplSession } from "../e2e/session.ts";
+import { openHttpSession, surfaceUrlFromPs } from "../e2e/http-session.ts";
 
 export type AppDeps = {
   /** Runs `argv` in `cwd` on the user's terminal (stdin, stdout, stderr) and returns its exit code. */
@@ -209,8 +210,9 @@ export function appCommands(app: App, deps: AppDeps) {
       return deps.run(["bun", "install"], { cwd: app.dir });
     },
     /** Runs e2e tests (`tests`, or the app's `e2e/*.e2e.ts`) against the app's
-     * REPL in its container, keeping the turns and checks in
-     * `e2e/results/<time>/`; returns 1 when a case didn't pass. */
+     * REPL in its container, or against its running service's HTTP surface for
+     * a case on `http`, keeping the turns and checks in `e2e/results/<time>/`;
+     * returns 1 when a case didn't pass. */
     e2e: async (tests: string[], { repeat }: { repeat?: number }) => {
       const files = findTests(tests, { appDir: app.dir, cwd: process.cwd() });
       const loaded = await Promise.all(files.map(async (file) => ({ file: relative(process.cwd(), file) || file, test: await loadTest(file) })));
@@ -221,15 +223,23 @@ export function appCommands(app: App, deps: AppDeps) {
       chmodSync(results, 0o777);
       let sessions = 0;
       return runE2e(loaded, repeat === undefined ? {} : { repeat }, {
-        openSession: async () =>
-          openReplSession({
+        openSession: async (channel) => {
+          if (channel === "http") {
+            // Where the running service publishes the surface, as compose reports it.
+            const ps = await captureCode([...COMPOSE, "ps", "--format", "json", SERVICE], app.dir);
+            const baseUrl = ps.code === 0 ? surfaceUrlFromPs(ps.output, SERVICE) : undefined;
+            if (baseUrl === undefined) throw new Error("the app's service isn't running or publishes no HTTP port: mfw start");
+            return openHttpSession({ baseUrl, timeoutMs: E2E_TURN_TIMEOUT_MS });
+          }
+          return openReplSession({
             argv: [...COMPOSE, "run", "--rm", "-T", "-v", `${results}:/e2e`, SERVICE, "bun", "run", "repl"],
             cwd: app.dir,
             hostDir: results,
             replDir: "/e2e",
             name: `run-${++sessions}`,
             timeoutMs: E2E_TURN_TIMEOUT_MS,
-          }),
+          });
+        },
         cli: (command) => captureCode([...COMPOSE, "run", "--rm", "-T", "--no-deps", SERVICE, "sh", "-c", command], app.dir),
         appPackages: (readManifest() as { dependencies?: Record<string, string> }).dependencies ?? {},
         print: deps.print,
