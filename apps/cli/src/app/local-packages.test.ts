@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { LOCAL_PACKS_DIR, packageNameOf, withLocalOverrides, withoutLocalOverrides } from "./local-packages.ts";
+import { LOCAL_PACKS_DIR, packageOf, readPacks, withLocalOverrides, withoutLocalOverrides } from "./local-packages.ts";
 
 describe("withLocalOverrides", () => {
   test("points every packed package at its tarball in .packs/", () => {
@@ -63,7 +63,7 @@ describe("withoutLocalOverrides", () => {
   });
 });
 
-describe("packageNameOf", () => {
+describe("packageOf", () => {
   let dir: string;
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), "mfw-local-packages-"));
@@ -82,14 +82,57 @@ describe("packageNameOf", () => {
     return file;
   }
 
-  test("reads the name from the tarball's package.json, not from its file name", async () => {
-    expect(await packageNameOf(await tarball('{ "name": "@mercury-fw/plugin-jira", "version": "0.4.0" }'))).toBe("@mercury-fw/plugin-jira");
+  test("reads the name and version from the tarball's package.json, not from its file name", async () => {
+    expect(await packageOf(await tarball('{ "name": "@mercury-fw/plugin-jira", "version": "0.4.0" }'))).toEqual({
+      name: "@mercury-fw/plugin-jira",
+      version: "0.4.0",
+    });
+  });
+
+  test("a package.json without a version is an error naming the tarball", async () => {
+    await expect(packageOf(await tarball('{ "name": "@mercury-fw/plugin-jira" }'))).rejects.toThrow("p.tgz isn't a package tarball: no version in its package.json");
   });
 
   test("a file that isn't a package tarball is an error naming it", async () => {
     const file = join(dir, "broken.tgz");
     writeFileSync(file, "not a tarball");
-    await expect(packageNameOf(file)).rejects.toThrow("broken.tgz");
+    await expect(packageOf(file)).rejects.toThrow("broken.tgz");
+  });
+});
+
+describe("readPacks", () => {
+  let dir: string;
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "mfw-read-packs-"));
+  });
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  /** A tarball named `file` in `dir/packs`, holding `name` at `version`. */
+  async function pack(file: string, name: string, version: string): Promise<void> {
+    const work = mkdtempSync(join(dir, "w-"));
+    mkdirSync(join(work, "package"));
+    writeFileSync(join(work, "package", "package.json"), JSON.stringify({ name, version }));
+    mkdirSync(join(dir, "packs"), { recursive: true });
+    expect(await Bun.spawn(["tar", "czf", join(dir, "packs", file), "-C", work, "package"]).exited).toBe(0);
+  }
+
+  test("every tarball in the folder, by file name, with the package it holds", async () => {
+    await pack("b.tgz", "@mercury-fw/core", "0.35.0");
+    await pack("a.tgz", "@mercury-fw/auth-static", "0.0.0");
+    writeFileSync(join(dir, "packs", "notes.txt"), "not a tarball");
+    expect(await readPacks(join(dir, "packs"), join(dir, "app"))).toEqual([
+      { file: "a.tgz", name: "@mercury-fw/auth-static", version: "0.0.0" },
+      { file: "b.tgz", name: "@mercury-fw/core", version: "0.35.0" },
+    ]);
+  });
+
+  test("a folder that doesn't exist, holds no tarball, or is the app's own .packs/ is an error", async () => {
+    await expect(readPacks(join(dir, "nope"), join(dir, "app"))).rejects.toThrow(`${join(dir, "nope")} doesn't exist.`);
+    mkdirSync(join(dir, "empty"));
+    await expect(readPacks(join(dir, "empty"), join(dir, "app"))).rejects.toThrow(`No .tgz in ${join(dir, "empty")}`);
+    await expect(readPacks(join(dir, "app", ".packs"), join(dir, "app"))).rejects.toThrow("is the app's own .packs/");
   });
 });
 

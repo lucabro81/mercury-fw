@@ -5,13 +5,13 @@
  * and validated before any of this runs (`program.ts`); what runs a command is
  * injected (`AppDeps`), which is how the tests see the exact calls.
  */
-import { chmodSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, join, relative, resolve } from "node:path";
 import { appCliCredentials, volumePath, type CliCredentials } from "@mercury-fw/utils";
 import { packCredentials, readServiceAccountKey, setEnvVar } from "./credentials.ts";
 import type { App } from "./find-app.ts";
-import { LOCAL_PACKS_DIR, packageNameOf, withLocalOverrides, withoutLocalOverrides } from "./local-packages.ts";
+import { copyPacks, LOCAL_PACKS_DIR, readPacks, withLocalOverrides, withoutLocalOverrides } from "./local-packages.ts";
 import { findTests, loadTest } from "../e2e/load.ts";
 import { runE2e } from "../e2e/runner.ts";
 import { openReplSession } from "../e2e/session.ts";
@@ -194,19 +194,11 @@ export function appCommands(app: App, deps: AppDeps) {
      * image copies too), overridden in the manifest, then installed.
      * Everything is checked before anything is written. */
     localPackages: async (from: string) => {
-      const source = resolve(from);
-      const target = join(app.dir, LOCAL_PACKS_DIR);
-      if (source === target) throw new Error(`${source} is the app's own .packs/: give the folder the tarballs were packed into.`);
-      if (!existsSync(source)) throw new Error(`${source} doesn't exist.`);
-      const files = readdirSync(source).filter((f) => f.endsWith(".tgz")).sort();
-      if (files.length === 0) throw new Error(`No .tgz in ${source}: pack the packages there first (bun pm pack).`);
-      const packs = await Promise.all(files.map(async (file) => ({ name: await packageNameOf(join(source, file)), file })));
+      const packs = await readPacks(from, app.dir);
       const manifest = withLocalOverrides(readManifest(), packs);
-      rmSync(target, { recursive: true, force: true });
-      mkdirSync(target);
-      for (const { file } of packs) cpSync(join(source, file), join(target, file));
+      copyPacks(from, app.dir, packs);
       writeManifest(manifest);
-      deps.print(`${packs.length} local packages in ${target}: ${packs.map((p) => p.name).join(", ")}.`);
+      deps.print(`${packs.length} local packages in ${join(app.dir, LOCAL_PACKS_DIR)}: ${packs.map((p) => p.name).join(", ")}.`);
       return deps.run(["bun", "install"], { cwd: app.dir });
     },
     /** Runs e2e tests (`tests`, or the app's `e2e/*.e2e.ts`) against the app's
