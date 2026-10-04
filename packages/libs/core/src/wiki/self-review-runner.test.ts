@@ -49,7 +49,7 @@ describe("runRawTriagePass", () => {
     // The real ai-sdk stopWhen value isn't easily introspectable, so this
     // test only pins the exported constant used to build it — a smoke
     // check that the module didn't silently drop the multi-step budget.
-    expect(SELF_REVIEW_STEP_COUNT).toBeGreaterThan(1);
+    expect(SELF_REVIEW_STEP_COUNT).toBe(100);
     stepCount = SELF_REVIEW_STEP_COUNT;
     expect(stepCount).toBe(SELF_REVIEW_STEP_COUNT);
   });

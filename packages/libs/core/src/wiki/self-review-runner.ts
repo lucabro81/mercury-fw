@@ -17,9 +17,9 @@ import { generateText } from "ai-sdk-ollama";
 import type { Message } from "../session/history.ts";
 import { createSelfReviewTools } from "./self-review-tools.ts";
 
-/** Empirical, tuned later — generous headroom for reading several docs and
- * writing/deleting within one pass, well above a conversational turn's. */
-export const SELF_REVIEW_STEP_COUNT = 15;
+/** A guard against a model that loops, not what decides how far a pass gets:
+ * 15 left passes half done, and rereading a doc that changed costs steps. */
+export const SELF_REVIEW_STEP_COUNT = 100;
 
 type GenerateTextFn = (params: {
   model: LanguageModel;
