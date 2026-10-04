@@ -19,6 +19,10 @@ describe("parseCreateArgs", () => {
     });
   });
 
+  test("--auth: the HTTP channel's auth provider", () => {
+    expect(parseCreateArgs(["prova", "--channels", "http", "--auth", "oidc"])).toEqual({ name: "prova", channels: ["http"], auth: "oidc", fresh: false });
+  });
+
   test("--from: a test file whose plugins and channels the app gets", () => {
     expect(parseCreateArgs(["prova", "--from", "tests/jira.e2e.ts"])).toEqual({ name: "prova", from: "tests/jira.e2e.ts", fresh: false });
   });
@@ -42,9 +46,20 @@ describe("planCreate", () => {
   test("a new app: pack, create it with the CLI of this repo, then install the tarballs", () => {
     expect(planCreate({ name: "prova", plugins: ["jira"], channels: ["http"], fresh: false }, { root: ROOT, exists: false })).toEqual([
       { step: "pack" },
-      { step: "run", argv: ["mfw", "create", "apps/prova", "--plugins", "jira", "--channels", "http", "--no-install", "--yes"], cwd: ROOT },
+      { step: "run", argv: ["mfw", "create", "apps/prova", "--plugins", "jira", "--channels", "http", "--auth", "static", "--no-install", "--yes"], cwd: ROOT },
       { step: "run", argv: ["mfw", "local-packages", "../../.packs"], cwd: `${ROOT}/apps/prova` },
     ]);
+  });
+
+  // #37: the HTTP channel doesn't start without an auth provider; in the test
+  // bed the static one, whose test tokens make two users, unless told otherwise.
+  test("the HTTP channel gets the static auth provider, or the one given", () => {
+    const create = (args: { channels?: string[]; auth?: string }) =>
+      (planCreate({ name: "prova", fresh: false, ...args }, { root: ROOT, exists: false })[1] as { argv: string[] }).argv;
+    expect(create({ channels: ["http"] })).toContain("--auth");
+    expect(create({ channels: ["http"] }).slice(-4)).toEqual(["--auth", "static", "--no-install", "--yes"]);
+    expect(create({ channels: ["http"], auth: "oidc" }).slice(-4)).toEqual(["--auth", "oidc", "--no-install", "--yes"]);
+    expect(create({ channels: ["google-chat"] })).not.toContain("--auth");
   });
 
   test("nothing chosen: an app with neither, as mfw create makes it", () => {

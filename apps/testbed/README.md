@@ -31,7 +31,7 @@ bun run create prova --plugins jira --channels http
 bun run create prova --from tests/example.e2e.ts
 ```
 
-The app lands in `apps/prova`, which git ignores and which isn't a workspace of the repo: it installs from tarballs like any app would, not through links to the sources (a link would point outside the folder Docker builds from). `--plugins` and `--channels` take catalog ids, as `mfw create` does; `--from` takes them from what a test declares it needs.
+The app lands in `apps/prova`, which git ignores and which isn't a workspace of the repo: it installs from tarballs like any app would, not through links to the sources (a link would point outside the folder Docker builds from). `--plugins` and `--channels` take catalog ids, as `mfw create` does; `--from` takes them from what a test declares it needs (the HTTP channel too, when one of its cases talks to it). With the HTTP channel the app gets the `static` auth provider, whose test tokens make two users; `--auth oidc` picks the other one.
 
 What it runs, in order, so you can also run the steps yourself:
 
@@ -54,6 +54,14 @@ The login of a plugin's CLI goes in a `*_CONFIG_TAR_B64` variable, the CLI's con
 - `bunx mfw credentials set jira-cli` packs `~/.config/jira-cli` of this machine: the account you logged into the CLI with, which may be yours rather than the bot's. The app then acts as that account, so `currentUser()` is you, and a comment it writes is yours.
 - To use the same account as another app (the service account a deployed instance runs as), copy that app's line for the variable into this `.env`, or run `mfw credentials set jira-cli --print` where its config folder is and paste the line.
 
+With the HTTP channel and `static`, `AUTH_STATIC_TOKENS` holds the test tokens and who each one is. These are the ones `tests/http-auth.e2e.ts` sends, appended from the app's folder:
+
+```bash
+printf '%s\n' 'AUTH_STATIC_TOKENS={"alice-test-token": {"id": "alice", "displayName": "Alice"}, "bob-test-token": {"id": "bob", "displayName": "Bob"}}' >> .env
+```
+
+They're test values for a local app, never a deployed one's. Without the variable the HTTP channel doesn't start, and `bunx mfw logs` says why.
+
 A Google Chat channel needs its own Chat app's key (`bunx mfw google-chat set-key`, see the [channel's README](../../packages/channels/channel-google-chat/README.md)). Two apps on one subscription split the conversations, so a test bed app shouldn't use a deployed instance's subscription.
 
 ## Running it
@@ -66,7 +74,10 @@ From the app's folder:
 bunx mfw start
 bunx mfw repl
 bunx mfw e2e ../../tests/jira.e2e.ts
+bunx mfw e2e ../../tests/http-auth.e2e.ts
 ```
+
+A case on the HTTP surface talks to the running service, so `bunx mfw start` comes first; the REPL ones start a container of their own.
 
 `bunx mfw start` builds the image with the tarballs (the Dockerfile copies `.packs/` before installing) and starts the app and its Qdrant. Each app has its own Docker volumes, named after its folder: its wiki, memory and credentials don't mix with other apps'.
 
@@ -83,7 +94,7 @@ A change to the template (what `mfw create` writes) only shows up in a new app: 
 
 A test is a `*.e2e.ts` file: the plugins and channels the app needs, then cases of turns sent to the model with checks on the tool calls each turn made and on the answer. The format, the checks you can make and what can't be tested are in the CLI's README, under [`mfw e2e`](../cli/README.md#mfw-e2e-tests---repeat-n).
 
-Start from the example, a template that runs nowhere as it is: copy it under another name in `tests/` (git ignores everything there but the example), for instance `tests/jira.e2e.ts`, and fill in the constants at its top with what the Jira your app reaches actually has (a project's name and key, part of a person's name and their full name). It's committed for one reason: the typecheck keeps it in step with the test format. Tests can also live in the app's own `e2e/` folder, where `bunx mfw e2e` without arguments finds them.
+Start from the example, a template that runs nowhere as it is: copy it under another name in `tests/` (git ignores everything there but the example), for instance `tests/jira.e2e.ts`, and fill in the constants at its top with what the Jira your app reaches actually has (a project's name and key, part of a person's name and their full name). It's committed for one reason: the typecheck keeps it in step with the test format. `tests/http-auth.e2e.ts` is committed too, and runs as it is on an app with the HTTP channel and the static tokens above: a token the app doesn't know gets a 401, and Bob, sending Alice's conversation id, lands in a conversation of his own. Tests can also live in the app's own `e2e/` folder, where `bunx mfw e2e` without arguments finds them.
 
 Prefer read-only cases. A case that changes an external system (creates an issue, assigns one, comments) cleans up after itself in `after`, with `cli`, which runs a command in the app's container outside the model.
 

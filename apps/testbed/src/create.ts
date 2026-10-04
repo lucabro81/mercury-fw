@@ -12,12 +12,16 @@ import { parseCreateArgs, planCreate, type CreateArgs } from "./plan.ts";
 
 const ROOT = join(import.meta.dir, "..");
 
-/** `args` with the plugins and channels a `--from` test declares. */
+/** `args` with the plugins and channels a `--from` test declares, the HTTP
+ * channel included when one of its cases talks to it. */
 async function settle(args: CreateArgs): Promise<CreateArgs> {
   if (args.from === undefined) return args;
-  const test = ((await import(resolve(args.from))) as { default?: { plugins?: string[]; channels?: string[] } }).default;
+  const test = (
+    (await import(resolve(args.from))) as { default?: { plugins?: string[]; channels?: string[]; cases?: Array<{ channel?: string }> } }
+  ).default;
   if (test === undefined) throw new Error(`${args.from} has no default export: not an e2e test`);
-  return { ...args, plugins: test.plugins ?? [], channels: test.channels ?? [] };
+  const http = (test.cases ?? []).some((c) => c.channel === "http") ? ["http"] : [];
+  return { ...args, plugins: test.plugins ?? [], channels: [...new Set([...(test.channels ?? []), ...http])] };
 }
 
 try {

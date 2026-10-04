@@ -2,3 +2,4 @@ apps/
 .packs/
 tests/*
 !tests/example.e2e.ts
+!tests/http-auth.e2e.ts
