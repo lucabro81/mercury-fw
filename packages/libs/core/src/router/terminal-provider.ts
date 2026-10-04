@@ -18,6 +18,7 @@ import { detectPendingConfirmation } from "../session/pending-confirmation.ts";
 import { PENDING_CONFIRMATION_NOTE } from "../session/agent-turn.ts";
 import type { Provider, HandleTurn, TurnSink } from "./provider.ts";
 import type { Principal } from "@mercury-fw/channel-types";
+import { userKey } from "../identity/user-key.ts";
 import type { StepInfo } from "../session/step-info.ts";
 import type { writeConfirmationNote } from "../wiki/wiki-note.ts";
 
@@ -70,7 +71,7 @@ export function createTerminalProvider(deps: TerminalProviderDeps): Provider {
           // let running a previously-approved mutation depend on the model.
           const confirmReply = await tryConfirmFn(input, TERMINAL_SESSION_KEY, {
             ...deps.confirmDeps,
-            userId: TERMINAL_SESSION_KEY,
+            owner: userKey(TERMINAL_PRINCIPAL),
           });
           if (confirmReply !== null) {
             // A turn of its own, with no model steps: /dump mustn't show the one before.

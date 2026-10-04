@@ -72,15 +72,27 @@ describe("loadChannels", () => {
     expect(logs.some((l) => l.includes("google-chat") && l.includes("apiVersion 1"))).toBe(true);
   });
 
+  // Guards against a channel written for apiVersion 2 (confirm and the reads
+  // without the caller's principal) being handed per-person getters it would
+  // call with its arguments shifted.
+  it("refuses a channel written for contract 2, before reads were per person", () => {
+    const logs: string[] = [];
+    const build = mock(() => fakeProvider());
+    const loaded = loadChannels([channel("http", build, 2)], { runtime: runtimeWith(logs) });
+    expect(loaded).toEqual([]);
+    expect(build).not.toHaveBeenCalled();
+    expect(logs.some((l) => l.includes("http") && l.includes("apiVersion 2"))).toBe(true);
+  });
+
   // The first-party channels declare their version as a literal: one written
   // for a newer contract, next to an older core, must be refused, not loaded.
   it("refuses a channel written for a newer contract than this core's", () => {
     const logs: string[] = [];
     const build = mock(() => fakeProvider());
-    const loaded = loadChannels([channel("google-chat", build, 3)], { runtime: runtimeWith(logs) });
+    const loaded = loadChannels([channel("google-chat", build, CHANNEL_API_VERSION + 1)], { runtime: runtimeWith(logs) });
     expect(loaded).toEqual([]);
     expect(build).not.toHaveBeenCalled();
-    expect(logs.some((l) => l.includes("google-chat") && l.includes("apiVersion 3"))).toBe(true);
+    expect(logs.some((l) => l.includes("google-chat") && l.includes(`apiVersion ${CHANNEL_API_VERSION + 1}`))).toBe(true);
   });
 
   it("isolates a build that throws and keeps the other channels", () => {

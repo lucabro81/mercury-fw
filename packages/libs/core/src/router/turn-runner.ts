@@ -25,6 +25,7 @@ import type { SessionHistory } from "../session/history.ts";
 import { recordStep } from "../session/tool-log-buffer.ts";
 import type { HandleTurn, InboundTurn, TurnSink } from "./provider.ts";
 import type { Principal } from "@mercury-fw/channel-types";
+import { userKey } from "../identity/user-key.ts";
 
 export type TurnRunnerDeps = {
   model: LanguageModel;
@@ -32,30 +33,30 @@ export type TurnRunnerDeps = {
   systemPrompts: { singleUser: string; multiUser: string };
   buildTools: (
     sessionKey: string,
-    wikiUserId: string,
+    key: string,
     onToolStart?: TurnSink["onToolStart"],
     onToolFinish?: TurnSink["onToolFinish"],
   ) => Record<string, Tool>;
   /**
-   * `userId` is forwarded (not interpreted here) so a provider's own
-   * closure can decide whether to seed a first-ever session with a
-   * context primer (see `src/session/context-primer.ts`) — building one
-   * needs a real per-user identity, which only some providers have.
+   * `key` is the user key, forwarded (not interpreted here) so a provider's
+   * own closure can decide whether to seed a first-ever session with a
+   * context primer (see `src/session/context-primer.ts`); `undefined` when
+   * nobody vouched for the person, since a primer needs a real identity.
    */
-  getOrCreateHistory: (sessionKey: string, trackForCapture: boolean, userId: string | undefined) => Promise<SessionHistory> | SessionHistory;
-  /** Layer-3 session tracking (sessionUsers map + idle scanner touch). Only for turns that carry a userId. */
-  trackSession: (sessionKey: string, userId: string, at: number) => void;
+  getOrCreateHistory: (sessionKey: string, trackForCapture: boolean, key: string | undefined) => Promise<SessionHistory> | SessionHistory;
+  /** Layer-3 session tracking (sessionUsers map + idle scanner touch). Only for turns whose person a provider vouched for. */
+  trackSession: (sessionKey: string, key: string, at: number) => void;
   /** Refreshes this turn's tool-status callbacks for out-of-band capture messages. */
   registerCaptureCallback: (sessionKey: string, onToolStart: TurnSink["onToolStart"], onToolFinish: TurnSink["onToolFinish"]) => void;
-  /** Mid-conversation Layer-3 capture threshold check. Only for turns that carry a userId. */
+  /** Mid-conversation Layer-3 capture threshold check. Only for turns whose person a provider vouched for. */
   maybeCapture: (sessionKey: string, history: SessionHistory) => Promise<void>;
   /**
    * Archives one message of the verbatim user↔model exchange (issue #4).
    * Wired by the composition root to the verbatim-archive provider; absent
-   * on an instance with no such provider. Only called for turns that carry a
-   * `userId` (the archive is per-user, like Layer-3 capture), keyed on the
-   * space-independent `wikiUserId`, and only ever with the model's own answer
-   * text — never the appended `present` displays.
+   * on an instance with no such provider. Only called for turns whose person
+   * a provider vouched for (the archive is per-person, like Layer-3 capture),
+   * with `userId` set to the space-independent user key, and only ever with
+   * the model's own answer text — never the appended `present` displays.
    */
   captureVerbatim?: (msg: {
     sessionKey: string;
@@ -95,19 +96,13 @@ export type TurnRunnerDeps = {
 };
 
 /**
- * The per-person ids the core derives from a turn's principal. `captureUserId`
- * is the raw id, set only when a provider vouched for the person, so a turn
- * nobody vouched for is never tracked for Layer-3 capture. `wikiUserId` is the
- * same id encoded for `inferred/users/<id>` and the verbatim archive, so a "/"
- * can't add a segment; `.` and `..` survive encoding and are refused by the
- * wiki's own guards. `toWellFormed` keeps a lone surrogate from making the
- * encoding throw.
+ * Who the turn is for, as the core keeps it: the user key (`identity/user-key.ts`)
+ * every per-person store uses, and whether a provider vouched for the person.
+ * A turn nobody vouched for (the terminal) still gets a key, so its wiki area
+ * works like anyone's, but it's never tracked for Layer-3 capture.
  */
-function principalIds(principal: Principal): { captureUserId?: string; wikiUserId: string } {
-  return {
-    captureUserId: principal.provider === "none" ? undefined : principal.id,
-    wikiUserId: encodeURIComponent(principal.id.toWellFormed()),
-  };
+function principalIds(principal: Principal): { key: string; tracked: boolean } {
+  return { key: userKey(principal), tracked: principal.provider !== "none" };
 }
 
 /** Builds the shared `HandleTurn` every provider's driver calls once it has a real message to run through the model. */
@@ -116,10 +111,9 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
   const logPostTurnGuard = deps.logPostTurnGuardFn ?? ((message: string) => console.log(message));
 
   return async (turn: InboundTurn, sink: TurnSink): Promise<void> => {
-    const { captureUserId, wikiUserId } = principalIds(turn.principal);
-    const tracked = captureUserId !== undefined;
+    const { key, tracked } = principalIds(turn.principal);
     if (tracked) {
-      deps.trackSession(turn.sessionKey, captureUserId, (deps.now ?? Date.now)());
+      deps.trackSession(turn.sessionKey, key, (deps.now ?? Date.now)());
       deps.registerCaptureCallback(turn.sessionKey, sink.onToolStart, sink.onToolFinish);
     }
 
@@ -137,10 +131,10 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
       // already scheduled when the sink was constructed keeps running
       // otherwise, firing on its own 60s schedule regardless of whether
       // the turn itself already failed and was reported.
-      history = await deps.getOrCreateHistory(turn.sessionKey, tracked, captureUserId);
+      history = await deps.getOrCreateHistory(turn.sessionKey, tracked, tracked ? key : undefined);
       const text = await (deps.runTurnFn ?? runTurn)(history, turn.text, {
         model: deps.model,
-        tools: deps.buildTools(turn.sessionKey, wikiUserId, sink.onToolStart, sink.onToolFinish),
+        tools: deps.buildTools(turn.sessionKey, key, sink.onToolStart, sink.onToolFinish),
         system: turn.multiUser ? deps.systemPrompts.multiUser : deps.systemPrompts.singleUser,
         onTextChunk: sink.onTextChunk,
         onReasoningChunk: sink.onReasoningChunk,
@@ -148,7 +142,7 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
         onStepFinish: (step) => {
           steps.push(step);
           deps.logStep(turn.logPrefix, step);
-          (deps.recordStepFn ?? recordStep)(turn.channel, turn.sessionKey, step);
+          (deps.recordStepFn ?? recordStep)(turn.channel, turn.sessionKey, key, step);
           sink.onStep?.(step);
         },
         onUsage: sink.onUsage,
@@ -204,14 +198,14 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
       // The answer is already delivered; a capture failure must never
       // propagate out of this awaited handler and take the process down.
       if (deps.captureVerbatim) {
-        // The archive is per-person and space-independent, so it keys on
-        // wikiUserId (the same identity the wiki notes use), not the
-        // space-scoped session.
+        // The archive is per-person and space-independent, so it keys on the
+        // user key (the same identity the wiki and the rest of memory use),
+        // not the space-scoped session.
         try {
-          await deps.captureVerbatim({ sessionKey: turn.sessionKey, userId: wikiUserId, role: "user", content: turn.text });
+          await deps.captureVerbatim({ sessionKey: turn.sessionKey, userId: key, role: "user", content: turn.text });
           await deps.captureVerbatim({
             sessionKey: turn.sessionKey,
-            userId: wikiUserId,
+            userId: key,
             role: "assistant",
             content: assistantText,
           });

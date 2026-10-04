@@ -56,7 +56,7 @@ describe("createTerminalProvider", () => {
         capturedHandleInput = handleInput;
       },
       tryConfirmFn: async (input, sessionKey, deps) => {
-        tryConfirmArgs = [input, sessionKey, deps.userId];
+        tryConfirmArgs = [input, sessionKey, deps.owner];
         return "Confermato ed eseguito.";
       },
     });
@@ -69,7 +69,7 @@ describe("createTerminalProvider", () => {
     const result = await capturedHandleInput("ABC123", () => {});
     expect(handleTurnCalled).toBe(false);
     expect(result).toBe("Confermato ed eseguito.");
-    expect(tryConfirmArgs).toEqual(["ABC123", "terminal", "terminal"]);
+    expect(tryConfirmArgs).toEqual(["ABC123", "terminal", "none:terminal"]);
   });
 
   // #131: /dump after a confirmation still wrote the turn before it, so an

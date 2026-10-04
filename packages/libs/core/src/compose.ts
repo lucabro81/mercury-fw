@@ -54,7 +54,7 @@ import {
   storeEpisodicSummary,
   getLastSessionEpisodicSummaries,
 } from "./memory/episodic-store.ts";
-import { ensureVerbatimCollection, listVerbatimBySession, listVerbatimSessions } from "./memory/verbatim-archive-store.ts";
+import { ensureVerbatimCollection } from "./memory/verbatim-archive-store.ts";
 import { createVerbatimArchiveProvider } from "./memory/memory-provider.ts";
 import { ensureSemanticFactsCollection, storeSemanticFact, searchSemanticFactsByTopic } from "./memory/semantic-facts-store.ts";
 import { ensureToolCorrectionsCollection, storeToolCorrection, searchToolCorrectionsByTopic } from "./memory/tool-corrections-store.ts";
@@ -64,7 +64,10 @@ import { createToolCorrectionExtractor } from "./session/tool-correction-extract
 import { createEmbedder } from "./memory/embedder.ts";
 import { initVault } from "./wiki/vault-init.ts";
 import { findOrphanCuratedDocs } from "./wiki/orphan-detector.ts";
-import { listWikiFilesInRoots, readWikiFile, readWikiFileInRoots, readIndexFile } from "./wiki/wiki-read.ts";
+import { listWikiFilesInRoots, readWikiFileInRoots, readIndexFile } from "./wiki/wiki-read.ts";
+import { readInferredNote } from "./identity/vault-access.ts";
+import { userKey } from "./identity/user-key.ts";
+import { createHostReads } from "./identity/host-reads.ts";
 import { runRawTriagePass, runIndexAndOrphanPass, runContradictionCheckPass } from "./wiki/self-review-runner.ts";
 import { startSelfReviewCron } from "./cron/self-review-cron.ts";
 import { resolve as resolvePath } from "node:path";
@@ -267,7 +270,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
       consolidateSemanticFact(userId, topic, {
         vaultPath: wikiVaultPath,
         clusterFn: (u, t, limit) => searchSemanticFactsByTopic(qdrant, semanticFactsCollection, embed, { userId: u, topic: t, limit }),
-        readWikiFileFn: readWikiFile,
+        readInferredNoteFn: readInferredNote,
         writeInferredNoteFn: writeInferredNote,
       }),
     log: (msg) => console.error(`[cron] ${msg}`),
@@ -382,12 +385,13 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
     }
   }
 
-  // `wikiUserId` is separate from `sessionKey`: inferred/users/<userId> notes
-  // are scoped per-person, not per-(space,person) pair, so it must not include
-  // the space. The turn runner derives it from the turn's principal.
+  // `key` (the user key) is separate from `sessionKey`: a person's wiki area,
+  // memory and confirmations are theirs across spaces and conversations, so
+  // it must not include the space. The turn runner derives it from the
+  // turn's principal.
   function buildTools(
     sessionKey: string,
-    wikiUserId: string,
+    key: string,
     onToolStart?: TurnSink["onToolStart"],
     onToolFinish?: TurnSink["onToolFinish"],
   ): Record<string, Tool> {
@@ -401,7 +405,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
       stageConfirmation: createStageConfirmation({
         store: confirmationStore,
         sessionKey,
-        userId: wikiUserId,
+        owner: key,
         vaultPath: wikiVaultPath,
         writeConfirmationNoteFn: writeConfirmationNote,
       }),
@@ -421,11 +425,14 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
       Object.assign(sessionTools, createPresentTool({ sessionKey, store: displayStore }));
     }
 
-    Object.assign(sessionTools, createWikiTools({ vaultPath: wikiVaultPath, userId: wikiUserId }));
+    Object.assign(
+      sessionTools,
+      createWikiTools({ vaultPath: wikiVaultPath, key, stageConfirmation: sessionToolContext.stageConfirmation }),
+    );
     Object.assign(sessionTools, createToolLogRecallTool({ sessionKey }));
     // Verbatim archive recall, scoped to this person — lets the model resurface
     // what was actually said in earlier conversations, beyond the live window.
-    Object.assign(sessionTools, verbatimProvider.sessionTools!({ sessionKey, userId: wikiUserId }));
+    Object.assign(sessionTools, verbatimProvider.sessionTools!({ sessionKey, userId: key }));
     // read_skill only exists when a plugin contributed at least one skill.
     if (loadedPlugins.skills.length > 0) {
       Object.assign(sessionTools, createReadSkillTool(loadedPlugins.skills));
@@ -513,24 +520,20 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   const channelRuntime: ChannelRuntimeContext = {
     env: process.env,
     log: (msg) => console.error(msg),
-    confirm: (token, sessionKey, userId) => tryConfirm(token, sessionKey, { ...confirmDeps, userId }),
-    resolveConfirmation: (token, sessionKey, userId) => resolveConfirmation(token, sessionKey, { ...confirmDeps, userId }),
+    confirm: (token, sessionKey, principal) => tryConfirm(token, sessionKey, { ...confirmDeps, owner: userKey(principal) }),
+    resolveConfirmation: (token, sessionKey, principal) =>
+      resolveConfirmation(token, sessionKey, { ...confirmDeps, owner: userKey(principal) }),
     authenticate: loadAuth(config.auth, { env: process.env, log: (msg) => console.error(msg) }),
-    reads: {
+    // Every read but the manifest and health is scoped to the caller (see
+    // identity/host-reads.ts).
+    reads: createHostReads({
+      vaultPath: wikiVaultPath,
+      qdrant,
+      collections: { verbatim: verbatimCollection, episodic: episodicCollection, semanticFacts: semanticFactsCollection },
+      confirmationStore,
       manifest: () => buildPluginManifest(plugins, loadedPlugins.activated, [], loadedPlugins.skills),
-      pendingConfirmations: () => confirmationStore.pending(),
-      // Durable per-conversation transcript from the verbatim archive (#4):
-      // the client's conversationId is the sessionKey.
-      conversation: (sessionKey, limit, offset) =>
-        listVerbatimBySession(qdrant, verbatimCollection, { sessionKey, limit, offset }),
-      conversations: (limit) => listVerbatimSessions(qdrant, verbatimCollection, { limit }),
-      wikiList: () => listWikiVault(wikiVaultPath),
-      wikiRead: (path) => readWikiVaultFile(wikiVaultPath, path),
-      wikiGrep: (pattern) => grepWikiVault(wikiVaultPath, pattern),
-      memoryScroll: (collection, limit, offset) => scrollCollection(qdrant, collection, { limit, offset }),
-      toolLog: () => getToolLog(),
       health: () => getSelfHealth({ qdrant, ollamaHost }),
-    },
+    }),
   };
 
   /** Starts the Layer-3 idle-capture and self-review crons; returns one stopper. */
