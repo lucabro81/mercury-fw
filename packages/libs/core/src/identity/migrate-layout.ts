@@ -60,7 +60,7 @@ async function removeIfEmpty(dir: string): Promise<void> {
 
 /** Moves the vault's legacy per-person folders into `users/<key>/`, as one commit. */
 export async function migrateVaultToUserAreas(vaultPath: string, log: (msg: string) => void): Promise<void> {
-  let moved = 0;
+  const moved = new Set<string>();
   const people = new Set<string>();
   const left: string[] = [];
 
@@ -91,7 +91,7 @@ export async function migrateVaultToUserAreas(vaultPath: string, log: (msg: stri
           }
           await mkdir(dirname(dst), { recursive: true });
           await rename(src, dst);
-          moved += 1;
+          moved.add(dst);
           people.add(key);
         }
         await rm(source, { recursive: true, force: true });
@@ -102,7 +102,9 @@ export async function migrateVaultToUserAreas(vaultPath: string, log: (msg: stri
   });
 
   for (const path of left) log(`left ${path} in place: ${UNATTRIBUTABLE}`);
-  if (moved > 0) log(`moved ${moved} notes of ${people.size} people into users/<key>/`);
+  if (moved.size > 0) {
+    log(`moved ${moved.size} notes of ${people.size} ${people.size === 1 ? "person" : "people"} into users/<key>/`);
+  }
 }
 
 type ScrollOffset = string | number | Record<string, unknown> | null | undefined;

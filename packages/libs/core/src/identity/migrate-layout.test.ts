@@ -86,13 +86,16 @@ describe("migrateVaultToUserAreas", () => {
       "inferred/confirmations/users%2F42/aaaa-1111.md": confirmed,
       "inferred/confirmations/users%252F42/cccc-3333.md": pending,
     });
+    const logs: string[] = [];
 
-    await migrateVaultToUserAreas(vault, () => {});
+    await migrateVaultToUserAreas(vault, (m) => logs.push(m));
 
     const area = join(vault, "users/google-chat%3Ausers%2F42/confirmations");
     expect(await readFile(join(area, "aaaa-1111.md"), "utf-8")).toBe(confirmed);
     expect(await readFile(join(area, "cccc-3333.md"), "utf-8")).toBe(pending);
     expect(await exists(join(vault, "inferred"))).toBe(false);
+    // Two notes end up in the area, whichever copy of the first one won.
+    expect(logs).toEqual(["moved 2 notes of 1 person into users/<key>/"]);
   });
 
   it("leaves what it can't attribute where it is, and says so", async () => {
