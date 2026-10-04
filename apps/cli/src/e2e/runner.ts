@@ -1,14 +1,15 @@
 /**
  * Runs e2e tests against an app: for each case (as many times as it
  * repeats), a fresh session (the REPL, or one conversation on the HTTP
- * surface) gets the case's turns, the checks run on what each turn did, and
+ * surface) gets the case's turns, or each of its lanes gets a session and
+ * they all send their turns at once; the checks run on what each turn did, and
  * every check is printed; the exit code says whether every case passed enough
  * runs. The sessions, the container commands and the report's destination are
  * injected (`session.ts`, `http-session.ts` and `commands.ts` hold the real
  * ones), so the tests drive the runner with scripted turns.
  */
 import { CATALOG } from "../catalog.ts";
-import type { Context, E2eCase, E2eTest, Run, Turn } from "./define.ts";
+import type { Context, E2eCase, E2eTest, Run, Turn, Turns, TurnText } from "./define.ts";
 import { turnFromDump, type TurnData } from "./dump.ts";
 import { createExpect, type Check } from "./expect.ts";
 
@@ -137,40 +138,96 @@ function tokenFor(channel: Channel, user: string | undefined, users: Record<stri
   return token;
 }
 
-/** One run of a case in a fresh session: `before`, the turns, the checks, `after`. */
+/** A turn ready to send: its text, and the token its user goes with. */
+type PlannedTurn = { text: TurnText; token: string | undefined };
+
+/** Settles every turn's user (the turn's own, or `user`) before anything is
+ * sent, so a case that doesn't add up costs nothing. */
+function plan(turns: Turns, channel: Channel, user: string | undefined, users: Record<string, string>): PlannedTurn[] {
+  return turns.map((next) => {
+    const { text, as } = typeof next === "object" ? next : { text: next, as: undefined };
+    return { text, token: tokenFor(channel, as ?? user, users) };
+  });
+}
+
+/** Sends `planned` on `session` one after the other, pushing each turn onto
+ * `turns` as it comes back (a function turn sees the one before it there). */
+async function sendTurns(session: Session, planned: PlannedTurn[], channel: Channel, turns: Turn[], deps: RunnerDeps): Promise<void> {
+  for (const { text, token } of planned) {
+    const line = typeof text === "string" ? text : text(turns.at(-1)!);
+    if (channel === "repl" && line.includes("\n")) throw new Error("a turn must be one line (the REPL reads one line per turn)");
+    const start = deps.now();
+    const reply = await session.turn(line, token);
+    const seconds = (deps.now() - start) / 1000;
+    if ("status" in reply) {
+      turns.push({ ...reply.turn, seconds, status: reply.status });
+      continue;
+    }
+    const data = turnFromDump(reply.dump);
+    const answer = data.calls.length === 0 && data.answer === "" ? answerFromOutput(reply.output) : data.answer;
+    turns.push({ calls: data.calls, answer, seconds });
+  }
+}
+
+/** Runs a case's lanes at the same time, each lane's turns in order, lanes
+ * naming the same conversation on one session; returns each lane's turns,
+ * filled in as they come back. */
+async function runLanes(
+  c: E2eCase,
+  channel: Channel,
+  users: Record<string, string>,
+  laneTurns: Turn[][],
+  deps: RunnerDeps,
+): Promise<void> {
+  if (channel !== "http") throw new Error('"lanes" go with channel "http"');
+  const lanes = c.lanes!.map((lane) => ({ conversation: lane.conversation, planned: plan(lane.turns, channel, lane.as ?? c.as, users) }));
+  const opened: Session[] = [];
+  const byConversation = new Map<string, Session>();
+  try {
+    const sessions: Session[] = [];
+    for (const { conversation } of lanes) {
+      let session = conversation === undefined ? undefined : byConversation.get(conversation);
+      if (session === undefined) {
+        session = await deps.openSession(channel);
+        opened.push(session);
+        if (conversation !== undefined) byConversation.set(conversation, session);
+      }
+      sessions.push(session);
+    }
+    await Promise.all(lanes.map((lane, i) => sendTurns(sessions[i]!, lane.planned, channel, laneTurns[i]!, deps)));
+  } finally {
+    await Promise.all(opened.map((session) => session.close()));
+  }
+}
+
+/** One run of a case in a fresh session (or one per lane): `before`, the turns, the checks, `after`. */
 async function runOnce(c: E2eCase, users: Record<string, string>, deps: RunnerDeps): Promise<RunReport> {
   const channel: Channel = c.channel ?? "repl";
   const ctx: Context = { cli: deps.cli };
   const turns: Turn[] = [];
+  const laneTurns: Turn[][] = (c.lanes ?? []).map(() => []);
   let checks: Check[] = [];
   try {
     await c.before?.(ctx);
-    // Every turn's user is settled before the session opens, so a case that
-    // doesn't add up costs nothing.
-    const planned = c.turns.map((next) => {
-      const { text, as } = typeof next === "object" ? next : { text: next, as: undefined };
-      return { text, token: tokenFor(channel, as ?? c.as, users) };
-    });
-    const session = await deps.openSession(channel);
-    try {
-      for (const { text, token } of planned) {
-        const line = typeof text === "string" ? text : text(turns.at(-1)!);
-        if (channel === "repl" && line.includes("\n")) throw new Error("a turn must be one line (the REPL reads one line per turn)");
-        const start = deps.now();
-        const reply = await session.turn(line, token);
-        const seconds = (deps.now() - start) / 1000;
-        if ("status" in reply) {
-          turns.push({ ...reply.turn, seconds, status: reply.status });
-          continue;
-        }
-        const data = turnFromDump(reply.dump);
-        const answer = data.calls.length === 0 && data.answer === "" ? answerFromOutput(reply.output) : data.answer;
-        turns.push({ calls: data.calls, answer, seconds });
+    if ((c.turns === undefined) === (c.lanes === undefined)) throw new Error('a case has either "turns" or "lanes"');
+    let lanes: Run[] | undefined;
+    if (c.lanes !== undefined) {
+      try {
+        await runLanes(c, channel, users, laneTurns, deps);
+      } finally {
+        turns.push(...laneTurns.flat());
       }
-    } finally {
-      await session.close();
+      lanes = laneTurns.map((laneTurn) => ({ turns: laneTurn, last: laneTurn.at(-1)! }));
+    } else {
+      const planned = plan(c.turns!, channel, c.as, users);
+      const session = await deps.openSession(channel);
+      try {
+        await sendTurns(session, planned, channel, turns, deps);
+      } finally {
+        await session.close();
+      }
     }
-    const run: Run = { turns, last: turns.at(-1)! };
+    const run: Run = { turns, last: turns.at(-1)!, ...(lanes === undefined ? {} : { lanes }) };
     const recorder = createExpect(run);
     try {
       await c.check(run, recorder.expect, ctx);
