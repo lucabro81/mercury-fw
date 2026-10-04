@@ -29,9 +29,9 @@ describe("httpChannel", () => {
   // A literal, not CHANNEL_API_VERSION: the import reports whatever contract
   // is installed, so an old channel next to a newer core would claim the new
   // version and be loaded. The literal is the contract this code was written for.
-  it("declares the http name at channel api version 2", () => {
+  it("declares the http name at channel api version 3", () => {
     expect(httpChannel.name).toBe("http");
-    expect(httpChannel.apiVersion).toBe(2);
+    expect(httpChannel.apiVersion).toBe(3);
   });
 
   it("builds a provider when confirm, resolveConfirmation, reads and authenticate are all present", () => {

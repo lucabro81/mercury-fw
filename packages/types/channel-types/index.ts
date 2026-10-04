@@ -176,8 +176,10 @@ export type ChannelHostReads = {
   /** The person's conversations, most-recently-active first. */
   conversations: (principal: Principal, limit: number) => Promise<unknown>;
   wikiList: (principal: Principal) => Promise<unknown>;
+  /** The file at `path` as the person names it (`curated/...`, `personal/...`), or `null` when it isn't among what they can see. */
   wikiRead: (principal: Principal, path: string) => Promise<unknown>;
   wikiGrep: (principal: Principal, pattern: string) => Promise<unknown>;
+  /** A page of the person's points in `collection`, or `null` when it isn't a collection kept per person. */
   memoryScroll: (principal: Principal, collection: string, limit: number, offset?: string) => Promise<unknown>;
   toolLog: (principal: Principal) => unknown;
   health: () => Promise<unknown>;

@@ -354,17 +354,17 @@ describe("authentication on /turn and /confirm", () => {
   });
 
   it("checks a bare token in /turn against the caller's own session, as the caller", async () => {
-    let seen: string[] = [];
+    let seen: unknown[] = [];
     const res = await handleTurnRequest(turnReq({ text: "k9m2-x7q4", conversationId: "c" }), {
       handleTurn: async () => {},
-      confirm: async (token, sessionKey, userId) => {
-        seen = [token, sessionKey, userId];
+      confirm: async (token, sessionKey, principal) => {
+        seen = [token, sessionKey, principal];
         return "Confermato";
       },
       authenticate: asAlice,
     });
     await res.text();
-    expect(seen).toEqual(["k9m2-x7q4", "alice:c", "alice"]);
+    expect(seen).toEqual(["k9m2-x7q4", "alice:c", ALICE]);
   });
 
   it("answers /confirm with 401 without resolving anything", async () => {
@@ -421,16 +421,16 @@ describe("handleConfirmRequest", () => {
     expect(await res.json()).toMatchObject({ ok: true, resolved: true, text: expect.stringContaining("l'esecuzione è fallita") });
   });
 
-  it("passes the caller's own session key, and the caller as the user id", async () => {
-    let seenKey: string | undefined;
+  it("passes the caller's own session key, and the caller", async () => {
+    let seen: unknown[] = [];
     await handleConfirmRequest(confirmReq({ token: "k9m2-x7q4", conversationId: "conv-9" }), {
       authenticate: asAlice,
-      resolveConfirmation: async (_token, sessionKey, userId) => {
-        seenKey = `${sessionKey} ${userId}`;
+      resolveConfirmation: async (_token, sessionKey, principal) => {
+        seen = [sessionKey, principal];
         return { status: "not-found" };
       },
     });
-    expect(seenKey).toBe("alice:conv-9 alice");
+    expect(seen).toEqual(["alice:conv-9", ALICE]);
   });
 
   it("returns 400 for a conversationId outside the allowed characters, without resolving", async () => {
@@ -526,21 +526,22 @@ describe("CORS", () => {
   });
 });
 
-// #37: the reads expose every conversation, the wiki and memory, so each one
-// needs an authenticated caller; filtering them per person is #38's.
+// #37: the reads expose conversations, the wiki and memory, so each one needs
+// an authenticated caller; #38: and each per-person getter is told who is
+// asking, so the core returns only what belongs to them.
 describe("authentication on the read routes", () => {
-  const calls: string[] = [];
+  const calls: Array<[string, unknown]> = [];
   const spyReads: ChannelHostReads = {
-    manifest: () => (calls.push("manifest"), {}),
-    pendingConfirmations: () => (calls.push("pendingConfirmations"), []),
-    conversation: async () => (calls.push("conversation"), {}),
-    conversations: async () => (calls.push("conversations"), {}),
-    wikiList: async () => (calls.push("wikiList"), []),
-    wikiRead: async () => (calls.push("wikiRead"), ""),
-    wikiGrep: async () => (calls.push("wikiGrep"), []),
-    memoryScroll: async () => (calls.push("memoryScroll"), {}),
-    toolLog: () => (calls.push("toolLog"), []),
-    health: async () => (calls.push("health"), {}),
+    manifest: () => (calls.push(["manifest", undefined]), {}),
+    pendingConfirmations: (p) => (calls.push(["pendingConfirmations", p]), []),
+    conversation: async (p) => (calls.push(["conversation", p]), {}),
+    conversations: async (p) => (calls.push(["conversations", p]), { conversations: [] }),
+    wikiList: async (p) => (calls.push(["wikiList", p]), []),
+    wikiRead: async (p) => (calls.push(["wikiRead", p]), ""),
+    wikiGrep: async (p) => (calls.push(["wikiGrep", p]), []),
+    memoryScroll: async (p) => (calls.push(["memoryScroll", p]), {}),
+    toolLog: (p) => (calls.push(["toolLog", p]), []),
+    health: async () => (calls.push(["health", undefined]), {}),
   };
   /** A request every route accepts once authenticated (each required parameter present). */
   const get = (path: string) => new Request(`http://x${path}?id=c&path=a.md&pattern=x&collection=m`);
@@ -558,19 +559,55 @@ describe("authentication on the read routes", () => {
     expect(calls).toEqual([]);
   });
 
-  it("serves every read route to an authenticated caller", async () => {
+  it("serves every read route to an authenticated caller, telling each per-person getter who is asking", async () => {
     calls.length = 0;
     for (const [path, route] of Object.entries(readRoutes(spyReads, asAlice))) {
       expect((await route.GET(get(path))).status).toBe(200);
     }
-    expect(calls.sort()).toEqual(
-      ["conversation", "conversations", "health", "manifest", "memoryScroll", "pendingConfirmations", "toolLog", "wikiGrep", "wikiList", "wikiRead"],
-    );
+    expect(calls.sort(([a], [b]) => a.localeCompare(b))).toEqual([
+      ["conversation", ALICE],
+      ["conversations", ALICE],
+      ["health", undefined],
+      ["manifest", undefined],
+      ["memoryScroll", ALICE],
+      ["pendingConfirmations", ALICE],
+      ["toolLog", ALICE],
+      ["wikiGrep", ALICE],
+      ["wikiList", ALICE],
+      ["wikiRead", ALICE],
+    ]);
   });
 
   it("answers a preflight without asking who is calling", () => {
     const routes = readRoutes(spyReads, refuse);
     expect(routes["/manifest"]!.OPTIONS().status).toBe(204);
+  });
+});
+
+describe("GET /wiki/read and /memory/scroll", () => {
+  const reads: ChannelHostReads = {
+    manifest: () => ({}),
+    pendingConfirmations: () => [],
+    conversation: async () => ({}),
+    conversations: async () => ({ conversations: [] }),
+    wikiList: async () => [],
+    wikiRead: async () => null,
+    wikiGrep: async () => [],
+    memoryScroll: async () => null,
+    toolLog: () => [],
+    health: async () => ({}),
+  };
+
+  it("answers 404 for a wiki path the caller can't see, as if it didn't exist", async () => {
+    const res = await readRoutes(reads, asAlice)["/wiki/read"]!.GET(new Request("http://x/wiki/read?path=../etc/passwd"));
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ ok: false, error: "not found" });
+  });
+
+  it("answers 400 for a collection that isn't kept per person", async () => {
+    const res = await readRoutes(reads, asAlice)["/memory/scroll"]!.GET(new Request("http://x/memory/scroll?collection=tool_corrections"));
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ ok: false, error: "unknown collection: tool_corrections" });
   });
 });
 
@@ -624,41 +661,17 @@ describe("GET /conversation", () => {
     health: async () => ({}),
   };
 
-  // /conversations lists every channel's archived session keys (Google Chat's
-  // "spaces/X:users/42", the terminal's "terminal"): the read route must open
-  // each of them. The /turn id rule doesn't apply here; the id is only a filter.
-  it("opens a session key /conversations lists, whatever channel it came from", async () => {
-    const seen: string[] = [];
-    const reads: ChannelHostReads = {
-      ...baseReads,
-      conversations: async () => ({ conversations: [{ id: "spaces/X:users/42" }, { id: "terminal" }] }),
-      conversation: async (id) => {
-        seen.push(id);
-        return { messages: [], nextOffset: null };
-      },
-    };
-    const routes = readRoutes(reads, asAlice);
-    const listed = (await (await routes["/conversations"]!.GET(new Request("http://x/conversations"))).json()) as {
-      conversations: Array<{ id: string }>;
-    };
-    for (const { id } of listed.conversations) {
-      const res = await routes["/conversation"]!.GET(new Request(`http://x/conversation?id=${encodeURIComponent(id)}`));
-      expect(res.status).toBe(200);
-    }
-    expect(seen).toEqual(["spaces/X:users/42", "terminal"]);
-  });
-
   it("returns 400 when ?id is missing", async () => {
     const res = await readRoutes(baseReads, asAlice)["/conversation"]!.GET(new Request("http://x/conversation"));
     expect(res.status).toBe(400);
   });
 
-  it("returns the conversation's messages and forwards id/limit/offset to the getter", async () => {
-    let seen: { id: string; limit: number; offset?: string } | undefined;
+  it("opens the caller's own conversation: the getter gets the caller, their session key, limit and offset", async () => {
+    let seen: unknown[] | undefined;
     const reads: ChannelHostReads = {
       ...baseReads,
-      conversation: async (id, limit, offset) => {
-        seen = { id, limit, offset };
+      conversation: async (principal, sessionKey, limit, offset) => {
+        seen = [principal, sessionKey, limit, offset];
         return {
           messages: [{ role: "user", content: "hi", timestamp: "2026-09-24T10:00:00.000Z" }],
           nextOffset: null,
@@ -669,27 +682,58 @@ describe("GET /conversation", () => {
       new Request("http://x/conversation?id=conv-1&limit=10&offset=cur"),
     );
     const payload = (await res.json()) as { ok: boolean; messages: unknown[]; nextOffset: unknown };
-    expect(seen).toEqual({ id: "conv-1", limit: 10, offset: "cur" });
+    expect(seen).toEqual([ALICE, "alice:conv-1", 10, "cur"]);
     expect(payload.ok).toBe(true);
     expect(payload.messages).toHaveLength(1);
     expect(payload.nextOffset).toBeNull();
   });
 
-  it("GET /conversations lists conversations and forwards the limit", async () => {
-    let seenLimit: number | undefined;
+  // Regression: ?id used to be any session key /conversations listed, every
+  // channel's and every person's, so one caller could read another's
+  // conversation. It's now a conversationId, the same as /turn takes, and
+  // the session key is built from the caller.
+  it("refuses an id that isn't a conversationId, without calling the getter", async () => {
+    let called = false;
     const reads: ChannelHostReads = {
       ...baseReads,
-      conversations: async (limit) => {
-        seenLimit = limit;
-        return { conversations: [{ sessionKey: "conv-1", lastTimestamp: "t", preview: "hi" }] };
+      conversation: async () => {
+        called = true;
+        return {};
       },
     };
-    const res = await readRoutes(reads, asAlice)["/conversations"]!.GET(
-      new Request("http://x/conversations?limit=5"),
-    );
-    const payload = (await res.json()) as { ok: boolean; conversations: unknown[] };
-    expect(seenLimit).toBe(5);
-    expect(payload.ok).toBe(true);
-    expect(payload.conversations).toHaveLength(1);
+    for (const id of ["spaces/X:users/42", "bob:c", "terminal:x", "../c", "c d"]) {
+      const res = await readRoutes(reads, asAlice)["/conversation"]!.GET(
+        new Request(`http://x/conversation?id=${encodeURIComponent(id)}`),
+      );
+      expect(res.status).toBe(400);
+    }
+    expect(called).toBe(false);
+  });
+
+  it("GET /conversations lists the caller's conversations by conversationId, forwarding the limit", async () => {
+    let seen: unknown[] | undefined;
+    const reads: ChannelHostReads = {
+      ...baseReads,
+      conversations: async (principal, limit) => {
+        seen = [principal, limit];
+        return {
+          conversations: [
+            { sessionKey: "alice:conv-2", lastTimestamp: "t2", preview: "later" },
+            { sessionKey: "alice:conv-1", lastTimestamp: "t1", preview: "hi" },
+            // Not the caller's HTTP session key: never listed, whatever the core returned.
+            { sessionKey: "spaces/X:users/42", lastTimestamp: "t0", preview: "chat" },
+          ],
+        };
+      },
+    };
+    const res = await readRoutes(reads, asAlice)["/conversations"]!.GET(new Request("http://x/conversations?limit=5"));
+    expect(seen).toEqual([ALICE, 5]);
+    expect(await res.json()).toEqual({
+      ok: true,
+      conversations: [
+        { conversationId: "conv-2", lastTimestamp: "t2", preview: "later" },
+        { conversationId: "conv-1", lastTimestamp: "t1", preview: "hi" },
+      ],
+    });
   });
 });
