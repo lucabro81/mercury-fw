@@ -77,10 +77,7 @@ import type { Tool } from "ai";
 import { startAdminServer } from "./admin/server.ts";
 // The HTTP surface's read routes (4b) reuse the admin panel's per-domain
 // functions — the admin is a POC to be retired later; these reads outlive it.
-import { listWikiVault, readWikiVaultFile, grepWikiVault } from "./admin/wiki-routes.ts";
-import { scrollCollection } from "./admin/qdrant-scroll.ts";
 import { getSelfHealth } from "./admin/model-routes.ts";
-import { getToolLog } from "./session/tool-log-buffer.ts";
 import { buildPluginManifest } from "./plugins/manifest.ts";
 
 /** A stoppable subsystem (cron, server). */

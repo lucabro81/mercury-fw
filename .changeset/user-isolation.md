@@ -18,3 +18,4 @@ Isolation between the people an agent talks to.
 - `@mercury-fw/channel-google-chat`: on channel contract 3.
 - At startup, an instance's existing data moves to the new layout. Google Chat and terminal notes go into their areas, and Qdrant's ids go onto the new keys. Ids that don't say which provider they came from are left in place and logged.
 - `mfw vault read` refuses a path outside the vault.
+- The admin panel's wiki box edits the common area with the operator's tools (list, read, grep, `write_curated`), the same the nightly review uses.
