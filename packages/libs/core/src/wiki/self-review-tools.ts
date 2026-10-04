@@ -18,8 +18,8 @@
 import type { ExecutableTool } from "@mercury-fw/plugin-types";
 import { tool } from "ai";
 import { z } from "zod";
-import { listWikiFilesInRoots, readWikiFileInRoots, grepWikiInRoots, selfReviewRoots, readIndexFile } from "./wiki-read.ts";
-import { writeCuratedNote, writeIndexFile, deleteRawEntry, deleteCuratedEntry, relativeToCurated } from "./wiki-note.ts";
+import { listWikiFilesInRoots, readWikiFileInRoots, grepWikiInRoots, selfReviewRoots } from "./wiki-read.ts";
+import { writeCuratedNote, updateIndexFile, deleteRawEntry, deleteCuratedEntry, relativeToCurated } from "./wiki-note.ts";
 import { normalizeIndexKey, upsertIndexEntry, removeIndexEntry } from "./index-entry.ts";
 
 export type SelfReviewToolsDeps = { vaultPath: string };
@@ -102,8 +102,7 @@ export function createSelfReviewTools(
         return { ok: false as const, error: `${curatedPath} does not exist — create it first with write_curated` };
       }
       try {
-        const current = await readIndexFile(vaultPath);
-        await writeIndexFile(vaultPath, upsertIndexEntry(current, key, description));
+        await updateIndexFile(vaultPath, (current) => upsertIndexEntry(current, key, description));
         return { ok: true as const };
       } catch (err) {
         return { ok: false as const, error: String(err) };
@@ -118,8 +117,7 @@ export function createSelfReviewTools(
     execute: async ({ path }) => {
       const key = normalizeIndexKey(path);
       try {
-        const current = await readIndexFile(vaultPath);
-        await writeIndexFile(vaultPath, removeIndexEntry(current, key));
+        await updateIndexFile(vaultPath, (current) => removeIndexEntry(current, key));
         return { ok: true as const };
       } catch (err) {
         return { ok: false as const, error: String(err) };

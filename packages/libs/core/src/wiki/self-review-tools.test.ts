@@ -167,6 +167,21 @@ describe("createSelfReviewTools", () => {
     await expect(readFile(join(vaultPath, "index.md"), "utf-8")).rejects.toThrow();
   });
 
+  // Regression for #154: index.md was read, then written in a separate step,
+  // so two updates in one step (the SDK runs a step's tool calls together)
+  // both started from the same index and one entry was lost.
+  it("concurrent update_index_entry calls keep every entry", async () => {
+    const vaultPath = await makeTempVault();
+    const docs = ["a", "b", "c", "d"];
+    for (const doc of docs) await writeCuratedNote(vaultPath, `${doc}.md`, {}, doc);
+    const { update_index_entry } = createSelfReviewTools({ vaultPath });
+
+    await Promise.all(docs.map((doc) => update_index_entry.execute({ path: doc, description: `about ${doc}` }, {} as never)));
+
+    const index = await readFile(join(vaultPath, "index.md"), "utf-8");
+    for (const doc of docs) expect(index).toContain(`[[${doc}]]`);
+  });
+
   it("remove_index_entry removes an existing entry", async () => {
     const vaultPath = await makeTempVault();
     await writeCuratedNote(vaultPath, "glossary.md", {}, "body");

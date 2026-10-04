@@ -132,8 +132,12 @@ export function createWikiTools(
         const token = await stageConfirmation({
           describe: summary,
           run: async () => {
-            if (await curatedExists(destination)) return { ok: false, error: taken };
-            await writeCuratedNote(vaultPath, destination, { last_updated: today() }, body);
+            // Checked again where the write happens: something may have
+            // landed at the destination since the note was staged.
+            const written = await writeCuratedNote(vaultPath, destination, { last_updated: today() }, body, {
+              when: (current) => current === null,
+            });
+            if (!written) return { ok: false, error: taken };
             return { ok: true, data: { promoted: `curated/${destination}` } };
           },
         });

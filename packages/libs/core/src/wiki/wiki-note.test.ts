@@ -9,7 +9,6 @@ import {
   writePersonalNote,
   writeToolCorrectionNote,
   writeRawEntry,
-  writeIndexFile,
   deleteRawEntry,
   deleteCuratedEntry,
   writeConfirmationNote,
@@ -331,10 +330,10 @@ describe("writeRawEntry", () => {
   });
 });
 
-describe("writeIndexFile", () => {
+describe("updateIndexFile", () => {
   it("writes verbatim content at the vault root as index.md, with no frontmatter", async () => {
     const vaultPath = await makeTempVault();
-    await writeIndexFile(vaultPath, "- [[standards/jira-fields]] — custom field conventions");
+    await updateIndexFile(vaultPath, () => "- [[standards/jira-fields]] — custom field conventions");
 
     const text = await readFile(join(vaultPath, "index.md"), "utf-8");
     expect(text).toBe("- [[standards/jira-fields]] — custom field conventions\n");
@@ -343,7 +342,7 @@ describe("writeIndexFile", () => {
 
   it("commits the write, leaving a clean working tree", async () => {
     const vaultPath = await makeTempVault();
-    await writeIndexFile(vaultPath, "index content");
+    await updateIndexFile(vaultPath, () => "index content");
 
     const log = await gitLog(vaultPath);
     expect(log[0]).toContain("index");

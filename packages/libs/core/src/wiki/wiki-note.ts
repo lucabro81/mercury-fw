@@ -396,17 +396,9 @@ export async function writeRawEntry(vaultPath: string, relativePath: string, bod
   await writeVerbatimFile(vaultPath, fullPath, content, `raw: ${relativePath}`);
 }
 
-/** Overwrites `index.md` at the vault root with `content` verbatim — no
- * frontmatter, it's a generated Karpathy-pattern index, not a note.
- * Whole-file replace: the caller (self-review) computes the full new
- * text and passes the complete replacement, same as every writer here. */
-export async function writeIndexFile(vaultPath: string, content: string): Promise<void> {
-  const fullPath = resolve(vaultPath, "index.md");
-  const normalized = content.endsWith("\n") ? content : `${content}\n`;
-  await writeVerbatimFile(vaultPath, fullPath, normalized, "index: update");
-}
-
-/** Rewrites `index.md` as `change` turns its current text ("" when it doesn't exist) into, read and written in one unit of the queue. */
+/** Rewrites `index.md` at the vault root as `change` turns its current text
+ * ("" when it doesn't exist) into, read and written in one unit of the queue.
+ * No frontmatter: it's a generated Karpathy-pattern index, not a note. */
 export async function updateIndexFile(vaultPath: string, change: (current: string) => string): Promise<void> {
   const fullPath = resolve(vaultPath, "index.md");
   await serializeCommit(async () => {
