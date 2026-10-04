@@ -33,7 +33,7 @@ regression test that fails before the fix and passes after.
 
 ## What it is
 
-Mercury is a framework for building your own agent, published on npm as `@mercury-fw/*`: an app declares its plugins, channels and persona in `mercury.config.ts`, and `@mercury-fw/core` runs the rest. Apps are scaffolded with `bun create mercury-agent` (`mfw create`) and live in repositories of their own, the production instance included. This repo holds the framework, the first-party plugins and channels, the CLI, and a test bed (`apps/testbed`) where a change is tried live before it's published.
+Mercury is a framework for building your own agent, published on npm as `@mercury-fw/*`: an app declares its plugins, channels, auth provider and persona in `mercury.config.ts`, and `@mercury-fw/core` runs the rest. Apps are scaffolded with `bun create mercury-agent` (`mfw create`) and live in repositories of their own, the production instance included. This repo holds the framework, the first-party plugins and channels, the CLI, and a test bed (`apps/testbed`) where a change is tried live before it's published.
 
 ## Stack
 
@@ -101,7 +101,10 @@ mercury/                       # repo root
 │   │   └── channel-types/         # the shared ChannelPlugin contract (channels) — Provider/TurnSink + confirm helpers, imported by core and channels
 │   ├── channels/
 │   │   ├── channel-google-chat/   # Google Chat channel plugin: the registered-app transport (Pub/Sub + REST), loaded by the channel loader
-│   │   └── channel-http/          # HTTP channel plugin: the opt-in conversational HTTP surface (SSE /turn, /confirm, read routes, OpenAPI) for a custom UI
+│   │   └── channel-http/          # HTTP channel plugin: the opt-in conversational HTTP surface (SSE /turn, /confirm, read routes, OpenAPI) for a custom UI; needs an auth provider
+│   ├── auth/
+│   │   ├── auth-oidc/             # auth provider: verifies an OpenID Connect bearer token (issuer's JWKS via jose) into a Principal
+│   │   └── auth-static/           # auth provider: a fixed token→principal map from AUTH_STATIC_TOKENS, for the test bed and e2e
 │   ├── tools/
 │   │   ├── plugin-jira/           # Jira plugin: allowlist, SKILL.md, issue-list extractor + the typed kinds of list it emits (JiraDisplays), pinned CLI binary
 │   │   ├── plugin-bitbucket/      # Bitbucket plugin: allowlist + pinned CLI binary (the minimal plugin shape)
@@ -118,7 +121,7 @@ mercury/                       # repo root
 │       └── typescript-config/     # the shared Bun tsconfig every workspace extends
 └── apps/
     ├── create-mercury-agent/     # what `bun create mercury-agent` runs: `mfw create`, nothing of its own
-    ├── cli/                   # @mercury-fw/cli — program.ts (the command line, commander), `mfw create <folder>`: catalog.ts (channels/plugins it offers), render.ts (template + selection → files), write.ts, wizard.ts (@clack/prompts), finish.ts (install + first commit), template/*.tpl (static files, imported as text); app/ (find-app.ts, commands.ts: the commands that operate an app; credentials.ts: packing a CLI's config folder into its env variable; local-packages.ts); e2e/ (the e2e test format, runner and REPL session behind `mfw e2e`, `@mercury-fw/cli/e2e`)
+    ├── cli/                   # @mercury-fw/cli — program.ts (the command line, commander), `mfw create <folder>`: catalog.ts (channels/auth providers/plugins it offers), render.ts (template + selection → files), write.ts, wizard.ts (@clack/prompts), finish.ts (install + first commit), template/*.tpl (static files, imported as text); app/ (find-app.ts, commands.ts: the commands that operate an app; credentials.ts: packing a CLI's config folder into its env variable; local-packages.ts); e2e/ (the e2e test format, runner, and the REPL and HTTP sessions behind `mfw e2e`, `@mercury-fw/cli/e2e`)
     └── testbed/               # private: create.ts/pack.ts make apps under apps/ (ignored) on this repo's packed packages; tests/example.e2e.ts, a template; README.md, the procedure
 ```
 
@@ -144,6 +147,7 @@ packages/libs/core/
     ├── router/
     │   ├── turn-runner.ts      # shared per-turn driver every provider funnels through
     │   ├── channel-loader.ts   # generic fail-soft channel-plugin loader — turns the hand-listed channel set into started providers
+    │   ├── auth-loader.ts      # builds the declared auth provider into the `authenticate` channels get; fail-soft and closed (no provider ⇒ HTTP doesn't start)
     │   ├── terminal.ts         # the REPL loop (stdin/stdout), driven by the app's repl.ts — a dev console, not a channel
     │   └── tool-log.ts         # terminal-only debug visibility helpers
     ├── credentials/           # unpacks each plugin-declared CLI login from the env file onto the volume (~/.config) at startup, linking one declared elsewhere in the home
@@ -157,7 +161,7 @@ packages/libs/core/
 
 SemVer via [Changesets](https://github.com/changesets/changesets); every package's `CHANGELOG.md` is public, same audience as the READMEs.
 
-- **The framework moves in lockstep**: the Changesets `fixed` group (`.changeset/config.json`) holds core, the contracts, kit, cli-engine, confirm-engine, utils, formatter, the CLI and `create-mercury-agent`, so they always share one version, tagged `vX.Y.Z`. **Plugins and channels are versioned on their own** (tagged `<name>@<version>`): their `@mercury-fw/*` dependencies are `peerDependencies` over the whole `0.x` line (`workspace:*` as devDependencies for local development), because the real compatibility gate is `apiVersion`, checked at load time. The reference app `mercury` is private and outside the group.
+- **The framework moves in lockstep**: the Changesets `fixed` group (`.changeset/config.json`) holds core, the contracts, kit, cli-engine, confirm-engine, utils, formatter, the CLI and `create-mercury-agent`, so they always share one version, tagged `vX.Y.Z`. **Plugins, channels and auth providers are versioned on their own** (tagged `<name>@<version>`): their `@mercury-fw/*` dependencies are `peerDependencies` over the whole `0.x` line (`workspace:*` as devDependencies for local development), because the real compatibility gate is `apiVersion`, checked at load time. The reference app `mercury` is private and outside the group.
 - Everything follows the latest minor of its current major: caret ranges for npm dependencies (refreshed with `bun update`, never `--latest`), `bun-version: "1.x"` and `node-version: "24"` in CI, actions on their major tag, images on their major tag (`oven/bun:1`, `qdrant/qdrant:v1`). `devEngines` asks for Bun `^1.4.2` because Turbo refuses a `devEngines.packageManager` without a version. A major upgrade is never part of that: each one gets its own issue, its changelog read and its own verification. An exact pin only once an update breaks something, with the reason next to it.
 - No exact pins on external dependencies: caret ranges, and `bun.lock` is what makes the repo reproducible. A published package with a pinned dependency can't share it with the rest of the app (that's how two `@ai-sdk/provider` copies broke a scaffolded app's typecheck).
 - Every relevant change gets a changeset: `bun run changeset`, naming the packages it actually touches. Changeset descriptions are public text: no `D-XX`/`S-XX`/milestone references, no internal-only context.

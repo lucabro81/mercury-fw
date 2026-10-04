@@ -89,7 +89,7 @@ The framework, released together under one version:
 | [`@mercury-fw/cli-engine`](packages/libs/cli-engine) | For plugins that work through a CLI: parsing, allowlist, execution, confirmation staging. |
 | [`@mercury-fw/confirm-engine`](packages/libs/confirm-engine), [`@mercury-fw/utils`](packages/libs/utils) | Internals the packages above build on. |
 
-The first-party plugins and channels, each with its own version:
+The first-party plugins, channels and auth providers, each with its own version:
 
 | Package | What it does |
 |---|---|
@@ -97,7 +97,9 @@ The first-party plugins and channels, each with its own version:
 | [`@mercury-fw/plugin-bitbucket`](packages/tools/plugin-bitbucket) | Bitbucket pull requests through the `bitbucket` CLI, read-only. |
 | [`@mercury-fw/plugin-atlassian-admin`](packages/tools/plugin-atlassian-admin) | User lookup in an Atlassian organization through the `atlassian-admin` CLI, read-only. |
 | [`@mercury-fw/channel-google-chat`](packages/channels/channel-google-chat) | Google Chat, as a registered Chat app. |
-| [`@mercury-fw/channel-http`](packages/channels/channel-http) | An HTTP surface for a custom UI: streamed turns and read-only routes. |
+| [`@mercury-fw/channel-http`](packages/channels/channel-http) | An HTTP surface for a custom UI: streamed turns and read-only routes, for authenticated callers only. |
+| [`@mercury-fw/auth-oidc`](packages/auth/auth-oidc) | Who is calling the HTTP surface, from a token an OpenID Connect issuer (Zitadel, Google, Keycloak) signed. |
+| [`@mercury-fw/auth-static`](packages/auth/auth-static) | Who is calling the HTTP surface, from a fixed map of test tokens: for the test bed and e2e tests. |
 
 ## Versions and compatibility
 
