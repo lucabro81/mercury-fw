@@ -150,9 +150,10 @@ packages/libs/core/
     │   ├── auth-loader.ts      # builds the declared auth provider into the `authenticate` channels get; fail-soft and closed (no provider ⇒ HTTP doesn't start)
     │   ├── terminal.ts         # the REPL loop (stdin/stdout), driven by the app's repl.ts — a dev console, not a channel
     │   └── tool-log.ts         # terminal-only debug visibility helpers
+    ├── identity/              # who sees what, decided in one place: the user key (`<provider>:<id>`), a person's vault area (`users/<key>/`, `personal/` to the model) and its access checks, the per-person channel reads, the startup migration of pre-key data
     ├── credentials/           # unpacks each plugin-declared CLI login from the env file onto the volume (~/.config) at startup, linking one declared elsewhere in the home
     ├── memory/                # Layer 3 — episodic store (Qdrant)
-    ├── wiki/                  # Layer 2 — vault init/read/write + vault-cli.ts (maintenance CLI, see Operational notes)
+    ├── wiki/                  # Layer 2 — vault init/read/write (common `curated/` + per-person `users/<key>/`) + vault-cli.ts (maintenance CLI, see Operational notes)
     ├── admin/                 # POC admin panel — dev-only, no auth, off unless ADMIN_PANEL_ENABLED=true
     └── cron/                  # idle-session scanner
 ```

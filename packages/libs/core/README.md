@@ -30,6 +30,14 @@ A scaffolded app's `src/index.ts` (the service) and `src/repl.ts` (the REPL) are
 
 Qdrant being unreachable degrades memory, it doesn't stop the agent.
 
+## Who sees what
+
+The core keeps one identity per person, `<provider>:<id>` (`google-chat:users/42`, `oidc:<sub>`), so two providers issuing the same id are still two people. Memory, the conversation archive, the tool log and pending confirmations are kept per person, and a confirmation can only be confirmed by whoever staged it.
+
+The wiki has a common area, `curated/`, that everyone reads, and an area per person under `users/<key>/`, which the model sees as `personal/`: `personal/notes/` is what it writes for that person, `personal/inferred/` what consolidation learned about them. Nobody sees anyone else's area. The model can't write the common area directly: `promote_note` copies one of the person's notes there, and only once they confirm it with the token. The operator's tools (`mfw vault`, the nightly review) still see the whole vault.
+
+An instance that ran an earlier version gets its data moved at startup: Google Chat and terminal notes into their areas, the memory's ids onto the new keys. An id that doesn't say which provider it came from stays where it is, with a line in the log.
+
 ## Requirements
 
 Bun: the package ships its TypeScript source, which Bun runs as is, plus type declarations for your editor and `tsc`.
