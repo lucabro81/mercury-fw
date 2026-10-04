@@ -16,6 +16,7 @@
  * invalid call is a self-correctable model turn, not a crashed tool call.
  */
 import type { ExecutableTool, StageConfirmation } from "@mercury-fw/plugin-types";
+import { join } from "node:path";
 import { tool } from "ai";
 import { z } from "zod";
 import {
@@ -23,6 +24,7 @@ import {
   grepVisible,
   listVisible,
   readConfirmationNote,
+  readPersonalNote,
   readVisible,
 } from "../identity/vault-access.ts";
 import { writeCuratedNote, writePersonalNote } from "./wiki-note.ts";
@@ -53,6 +55,7 @@ export function createWikiTools(
 ): Record<"list_files" | "read_file" | "write_file" | "grep" | "promote_note" | "resolve_reference", ExecutableTool> {
   const { vaultPath, key, stageConfirmation } = deps;
   const scope = { vaultPath, key };
+  const curatedExists = (destination: string) => Bun.file(join(vaultPath, "curated", destination)).exists();
 
   const list_files = tool({
     description:
@@ -114,18 +117,22 @@ export function createWikiTools(
   const promote_note = tool({
     description:
       'Share one of the person\'s notes with the whole team: copies "from" (a path under personal/notes/) to "to" in ' +
-      'curated/ (e.g. "standards/release.md"). It only happens once the person explicitly confirms it, so use it ' +
-      "only when they asked to share the note.",
+      'curated/ (e.g. "standards/release.md"), a .md file that doesn\'t exist yet. It only happens once the person ' +
+      "explicitly confirms it, so use it only when they asked to share the note.",
     inputSchema: z.object({ from: z.string().min(1), to: z.string() }),
     execute: async ({ from, to }) => {
       try {
-        if (!from.startsWith("personal/notes/")) throw new Error(`only a note under personal/notes/ can be promoted: ${from}`);
-        const body = withoutFrontmatter(await readVisible(scope, from));
+        const body = withoutFrontmatter(await readPersonalNote(scope, from));
         const destination = curatedDestination(vaultPath, to);
+        // Never over a document the team already has: the note goes under
+        // another name, and the nightly review reconciles similar ones.
+        const taken = `curated/${destination} already exists: promote the note under another name`;
+        if (await curatedExists(destination)) throw new Error(taken);
         const summary = `promote ${from} to curated/${destination}`;
         const token = await stageConfirmation({
           describe: summary,
           run: async () => {
+            if (await curatedExists(destination)) return { ok: false, error: taken };
             await writeCuratedNote(vaultPath, destination, { last_updated: today() }, body);
             return { ok: true, data: { promoted: `curated/${destination}` } };
           },

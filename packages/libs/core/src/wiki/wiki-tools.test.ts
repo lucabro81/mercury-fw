@@ -199,6 +199,9 @@ describe("createWikiTools", () => {
         "personal/notes/missing.md",
         "users/static%3Abob/notes/secret.md",
         "personal/notes/../../static%3Abob/notes/secret.md",
+        // Regression: the prefix was checked on the text, before resolving, so
+        // ".." reached the person's inferred notes and promoted them.
+        "personal/notes/../inferred/topic-x.md",
       ]) {
         const result = await call(tools.promote_note, { from, to: "x.md" });
         expect(result.ok).toBe(false);
@@ -218,6 +221,51 @@ describe("createWikiTools", () => {
       }
       expect(staged).toEqual([]);
     });
+  });
+
+  describe("promote_note onto an existing document", () => {
+    it("refuses, without staging, a destination the common area already has: the note goes under another name", async () => {
+      const vaultPath = await makeTempVault();
+      await writeCuratedNote(vaultPath, "standards/release.md", {}, "The team's own.");
+      await writePersonalNote(vaultPath, ALICE, "personal/notes/release.md", {}, "Release on Tuesdays.");
+      const { tools, staged } = toolsFor(vaultPath, ALICE);
+
+      const result = await call(tools.promote_note, { from: "personal/notes/release.md", to: "standards/release.md" });
+
+      expect(result).toEqual({
+        ok: false,
+        error: "Error: curated/standards/release.md already exists: promote the note under another name",
+      });
+      expect(staged).toEqual([]);
+    });
+
+    it("doesn't overwrite one that appeared between staging and confirmation", async () => {
+      const vaultPath = await makeTempVault();
+      await writePersonalNote(vaultPath, ALICE, "personal/notes/release.md", {}, "Release on Tuesdays.");
+      const { tools, staged } = toolsFor(vaultPath, ALICE);
+      await call(tools.promote_note, { from: "personal/notes/release.md", to: "standards/release.md" });
+      await writeCuratedNote(vaultPath, "standards/release.md", {}, "Written meanwhile.");
+
+      expect(await staged[0]!.run()).toEqual({
+        ok: false,
+        error: "curated/standards/release.md already exists: promote the note under another name",
+      });
+      expect(await readFile(join(vaultPath, "curated/standards/release.md"), "utf-8")).toContain("Written meanwhile.");
+    });
+  });
+
+  // list_files and grep only see .md files: anything else would be written
+  // and then invisible to everyone, the person who asked for it included.
+  it("write_file and promote_note take only .md files", async () => {
+    const vaultPath = await makeTempVault();
+    await writePersonalNote(vaultPath, ALICE, "personal/notes/release.md", {}, "Release on Tuesdays.");
+    const { tools, staged } = toolsFor(vaultPath, ALICE);
+
+    expect((await call(tools.write_file, { path: "personal/notes/x.txt", content: "x" })).ok).toBe(false);
+    expect((await call(tools.write_file, { path: "personal/notes/x", content: "x" })).ok).toBe(false);
+    expect((await call(tools.promote_note, { from: "personal/notes/release.md", to: "standards/release.txt" })).ok).toBe(false);
+    expect(staged).toEqual([]);
+    expect(await exists(join(vaultPath, "users/static%3Aalice/notes/x.txt"))).toBe(false);
   });
 
   describe("resolve_reference", () => {

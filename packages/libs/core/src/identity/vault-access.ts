@@ -71,6 +71,15 @@ export async function grepVisible(scope: VaultScope, pattern: string): Promise<W
   return matches.map((match) => ({ ...match, path: toVisible(scope, match.path) }));
 }
 
+/** The content of one of the person's notes (below `personal/notes/`), checked after resolving the path so `..` can't reach anything else; throws otherwise. */
+export async function readPersonalNote(scope: VaultScope, path: string): Promise<string> {
+  const target = resolveVisible(scope, path);
+  if (!within(resolve(scope.vaultPath, userArea(scope.key), "notes"), target)) {
+    throw new Error(`only a note under personal/notes/ can be promoted: ${path}`);
+  }
+  return readFile(target, "utf-8");
+}
+
 /** The person's consolidated note on `topic` (`users/<key>/inferred/<topic>.md`), for consolidation to compare against; throws when there is none. */
 export async function readInferredNote(vaultPath: string, key: string, topic: string): Promise<string> {
   return readVisible({ vaultPath, key }, `${PERSONAL}/inferred/${topic}.md`);
@@ -84,7 +93,7 @@ export async function readConfirmationNote(vaultPath: string, key: string, token
   return readFile(target, "utf-8");
 }
 
-/** `path` as a destination in the common area, relative to `curated/` (a leading `curated/` is accepted and dropped); throws when it would land anywhere else. */
+/** `path` as a destination in the common area, relative to `curated/` (a leading `curated/` is accepted and dropped); throws when it would land anywhere else, or isn't a `.md` file (the only ones listing and grep see). */
 export function curatedDestination(vaultPath: string, path: string): string {
   const relativePath = path.replace(/^curated\//, "");
   const curated = resolve(vaultPath, "curated");
@@ -92,6 +101,7 @@ export function curatedDestination(vaultPath: string, path: string): string {
   if (!within(curated, target) || target === curated || relativePath.endsWith("/")) {
     throw new Error(`not a destination in the common area: ${path}`);
   }
+  if (!relativePath.endsWith(".md")) throw new Error(`not a .md file: ${path}`);
   return relativePath;
 }
 
@@ -106,5 +116,6 @@ export function personalNotePath(vaultPath: string, key: string, path: string): 
   if (head !== PERSONAL || !within(notes, target) || target === notes || path.endsWith("/")) {
     throw new Error(`not writable: ${path} (write under personal/notes/)`);
   }
+  if (!path.endsWith(".md")) throw new Error(`not a .md file: ${path}`);
   return target;
 }
