@@ -74,7 +74,10 @@ export default e2e({
         expect.call("write_file", undefined, "Alice's turn writes the note");
         const note = await cli(`cat ${ALICE_NOTE}`);
         expect.that("the note is in Alice's area", note.code === 0 && note.output.includes(NOTE_WORD));
-        expect.answerNot(NOTE_WORD, "Bob doesn't find it");
+        // Bob's question names the word, so the answer may repeat it: what
+        // matters is that his search finds nothing, and no path to the note.
+        expect.answer("NOTHING FOUND", "Bob doesn't find it");
+        expect.answerNot("e2e-isolation", "Bob doesn't learn where it is");
       },
     },
   ],
