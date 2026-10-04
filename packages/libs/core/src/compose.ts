@@ -68,6 +68,7 @@ import { listWikiFilesInRoots, readWikiFileInRoots, readIndexFile } from "./wiki
 import { readInferredNote } from "./identity/vault-access.ts";
 import { userKey } from "./identity/user-key.ts";
 import { createHostReads } from "./identity/host-reads.ts";
+import { migrateMemoryToUserKeys, migrateVaultToUserAreas } from "./identity/migrate-layout.ts";
 import { runRawTriagePass, runIndexAndOrphanPass, runContradictionCheckPass } from "./wiki/self-review-runner.ts";
 import { startSelfReviewCron } from "./cron/self-review-cron.ts";
 import { resolve as resolvePath } from "node:path";
@@ -257,6 +258,10 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   // manual provisioning step.
   const wikiVaultPath = requireEnv("WIKI_VAULT_PATH");
   await initVault(wikiVaultPath);
+  // A vault from before per-person areas gets its notes moved into them.
+  await migrateVaultToUserAreas(wikiVaultPath, (msg) => console.error(`[wiki-vault] ${msg}`)).catch((err: unknown) =>
+    console.error(`[wiki-vault] layout migration failed, Mercury starts anyway: ${String(err)}`),
+  );
 
   // Shared by the idle sweep (final capture + close) and by captureIncrement
   // (the two mid-conversation triggers, neither of which closes the session) —
@@ -330,7 +335,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   const toolCorrectionsVectorSize = Number(process.env.QDRANT_TOOL_CORRECTIONS_VECTOR_SIZE ?? "768");
   // Every Layer-3 collection, set up in the background: Mercury starts even
   // while Qdrant isn't answering yet, and memory switches on once it does.
-  setUpWhenReachable(
+  const memoryReady = setUpWhenReachable(
     async () => {
       await ensureEpisodicCollection(qdrant, episodicCollection, episodicVectorSize);
       await ensureVerbatimCollection(qdrant, verbatimCollection, verbatimVectorSize);
@@ -338,6 +343,12 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
       await ensureToolCorrectionsCollection(qdrant, toolCorrectionsCollection, toolCorrectionsVectorSize);
     },
     { log: (msg) => console.error(`[memory] ${msg}`) },
+  );
+  // Memory written before the user key gets it, once Qdrant answers.
+  void memoryReady.done.then(() =>
+    migrateMemoryToUserKeys(qdrant, [episodicCollection, semanticFactsCollection, verbatimCollection], (msg) =>
+      console.error(`[memory] ${msg}`),
+    ),
   );
   const extractToolCorrections = createToolCorrectionExtractor(model, undefined, {
     log: (msg) => console.error(`[cron] ${msg}`),

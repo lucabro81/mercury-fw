@@ -185,6 +185,29 @@ async function writeNoteFile(
   await writeVerbatimFile(vaultPath, fullPath, content, commitMessage);
 }
 
+/**
+ * Runs `change` (any rearrangement of the vault's files) on the same queue as
+ * every writer, then stages everything and commits it as one `message` when
+ * it changed something. For maintenance that moves files around in bulk, such
+ * as a layout migration, so it lands as one revertable commit.
+ */
+export async function changeVaultAndCommit(vaultPath: string, message: string, change: () => Promise<void>): Promise<void> {
+  await serializeCommit(async () => {
+    await change();
+    await runGit(vaultPath, ["add", "-A"]);
+    if (!(await hasStagedChanges(vaultPath))) return;
+    await runGit(vaultPath, [
+      "-c",
+      `user.email=${MERCURY_GIT_AUTHOR.email}`,
+      "-c",
+      `user.name=${MERCURY_GIT_AUTHOR.name}`,
+      "commit",
+      "-m",
+      message,
+    ]);
+  });
+}
+
 /** `git rm` + commit through the same queue as every writer above, so
  * the same `git revert` safety net covers deletions too. A target already gone
  * is a no-op success, not an error — same philosophy as the byte-identical
