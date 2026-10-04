@@ -65,7 +65,6 @@ import { createEmbedder } from "./memory/embedder.ts";
 import { initVault } from "./wiki/vault-init.ts";
 import { findOrphanCuratedDocs } from "./wiki/orphan-detector.ts";
 import { listWikiFilesInRoots, readWikiFileInRoots, readIndexFile } from "./wiki/wiki-read.ts";
-import { readInferredNote } from "./identity/vault-access.ts";
 import { createHostReads } from "./identity/host-reads.ts";
 import { bindConfirm } from "./identity/confirm-binding.ts";
 import { migrateMemoryToUserKeys, migrateVaultToUserAreas } from "./identity/migrate-layout.ts";
@@ -267,7 +266,6 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
       consolidateSemanticFact(userId, topic, {
         vaultPath: wikiVaultPath,
         clusterFn: (u, t, limit) => searchSemanticFactsByTopic(qdrant, semanticFactsCollection, embed, { userId: u, topic: t, limit }),
-        readInferredNoteFn: readInferredNote,
         writeInferredNoteFn: writeInferredNote,
       }),
     log: (msg) => console.error(`[cron] ${msg}`),
@@ -349,7 +347,6 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
     vaultPath: wikiVaultPath,
     clusterFn: (tool, topic, limit) =>
       searchToolCorrectionsByTopic(qdrant, toolCorrectionsCollection, embed, { tool, topic, limit }),
-    readNoteFn: (vp, relativePath) => readWikiFileInRoots(vp, [resolvePath(vp, "curated")], relativePath),
     writeNoteFn: writeToolCorrectionNote,
     // A single confirmed correction is already a strong signal — unlike
     // identity/preference facts (DEFAULT_CONSOLIDATION_K = 3). k: 1 fires

@@ -80,11 +80,6 @@ export async function readPersonalNote(scope: VaultScope, path: string): Promise
   return readFile(target, "utf-8");
 }
 
-/** The person's consolidated note on `topic` (`users/<key>/inferred/<topic>.md`), for consolidation to compare against; throws when there is none. */
-export async function readInferredNote(vaultPath: string, key: string, topic: string): Promise<string> {
-  return readVisible({ vaultPath, key }, `${PERSONAL}/inferred/${topic}.md`);
-}
-
 /** The person's own confirmation note for `token`, the only way to reach their `confirmations/` folder; throws when there is none. */
 export async function readConfirmationNote(vaultPath: string, key: string, token: string): Promise<string> {
   const confirmations = resolve(vaultPath, userArea(key), "confirmations");

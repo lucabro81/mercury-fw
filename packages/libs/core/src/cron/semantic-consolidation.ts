@@ -7,10 +7,11 @@
  * compare it against whatever's already written in the person's
  * `users/<key>/inferred/<topic>.md` — write only if the challenger's
  * count strictly exceeds the incumbent's (never on a tie, and never when
- * no single value is unambiguously dominant in the current window).
+ * no single value is unambiguously dominant in the current window). The
+ * comparison runs inside the vault's commit chain (the writer's `when`), so
+ * two consolidations of the same note can't both beat the same incumbent.
  */
 import { parse as parseYaml } from "yaml";
-import type { readInferredNote } from "../identity/vault-access.ts";
 import type { writeInferredNote, writeToolCorrectionNote } from "../wiki/wiki-note.ts";
 import type { SemanticFactEntry } from "../memory/semantic-facts-store.ts";
 import type { ToolCorrectionEntry } from "../memory/tool-corrections-store.ts";
@@ -21,7 +22,6 @@ type Confidence = "low" | "medium" | "high";
 export type ConsolidationDeps = {
   vaultPath: string;
   clusterFn: ClusterFn;
-  readInferredNoteFn: typeof readInferredNote;
   writeInferredNoteFn: typeof writeInferredNote;
   k?: number;
   confidenceForCount?: (dominantCount: number, k: number) => Confidence;
@@ -32,15 +32,14 @@ type ToolCorrectionClusterFn = (tool: string, topic: string, limit: number) => P
 
 /**
  * Same shape as `ConsolidationDeps`, keyed by `tool` instead of a person:
- * `readNoteFn`/`writeNoteFn` deliberately don't take a person at all
- * (unlike `readInferredNoteFn`/`writeInferredNoteFn` above): a procedural
+ * `writeNoteFn` deliberately doesn't take a person at all (unlike
+ * `writeInferredNoteFn` above): a procedural
  * correction lives under `curated/standards/`, visible to every session
  * regardless of who asks, never scoped to one person's area.
  */
 export type ToolCorrectionConsolidationDeps = {
   vaultPath: string;
   clusterFn: ToolCorrectionClusterFn;
-  readNoteFn: (vaultPath: string, relativePath: string) => Promise<string>;
   writeNoteFn: typeof writeToolCorrectionNote;
   k?: number;
   confidenceForCount?: (dominantCount: number, k: number) => Confidence;
@@ -96,14 +95,11 @@ function dominantValue(
   return { value: best.value, supportingTimestamps: best.timestamps };
 }
 
-async function readIncumbentCount(deps: ConsolidationDeps, key: string, topic: string): Promise<number> {
-  let text: string;
-  try {
-    text = await deps.readInferredNoteFn(deps.vaultPath, key, topic);
-  } catch {
+/** How many occurrences the note `text` was derived from: 0 for no note, or one without `derived_from`. */
+function incumbentCount(text: string | null): number {
+  if (text === null) {
     return 0;
   }
-
   const match = /^---\n([\s\S]*?)\n---\n/.exec(text);
   if (!match) {
     return 0;
@@ -128,11 +124,6 @@ export async function consolidateSemanticFact(key: string, topic: string, deps: 
     return;
   }
 
-  const incumbentCount = await readIncumbentCount(deps, key, topic);
-  if (dominant.supportingTimestamps.length <= incumbentCount) {
-    return;
-  }
-
   const now = deps.now ?? (() => new Date().toISOString());
   await deps.writeInferredNoteFn(
     deps.vaultPath,
@@ -144,31 +135,8 @@ export async function consolidateSemanticFact(key: string, topic: string, deps: 
       last_reviewed: now(),
     },
     dominant.value,
+    { when: (current) => dominant.supportingTimestamps.length > incumbentCount(current) },
   );
-}
-
-async function readToolCorrectionIncumbentCount(
-  deps: ToolCorrectionConsolidationDeps,
-  tool: string,
-  topic: string,
-): Promise<number> {
-  let text: string;
-  try {
-    // Full vault-root-relative path, matching how readWikiFileInRoots (the
-    // real implementation) resolves it: always against the vault root,
-    // never against whichever specific root in the allowed list happens to
-    // match.
-    text = await deps.readNoteFn(deps.vaultPath, `curated/standards/${tool}-${topic}.md`);
-  } catch {
-    return 0;
-  }
-
-  const match = /^---\n([\s\S]*?)\n---\n/.exec(text);
-  if (!match) {
-    return 0;
-  }
-  const frontmatter = parseYaml(match[1] as string) as { derived_from?: unknown };
-  return Array.isArray(frontmatter.derived_from) ? frontmatter.derived_from.length : 0;
 }
 
 /**
@@ -193,11 +161,6 @@ export async function consolidateToolCorrection(
     return;
   }
 
-  const incumbentCount = await readToolCorrectionIncumbentCount(deps, tool, topic);
-  if (dominant.supportingTimestamps.length <= incumbentCount) {
-    return;
-  }
-
   const now = deps.now ?? (() => new Date().toISOString());
   await deps.writeNoteFn(
     deps.vaultPath,
@@ -209,5 +172,6 @@ export async function consolidateToolCorrection(
       last_reviewed: now(),
     },
     dominant.value,
+    { when: (current) => dominant.supportingTimestamps.length > incumbentCount(current) },
   );
 }
