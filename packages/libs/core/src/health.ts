@@ -1,11 +1,8 @@
 /**
- * Admin panel's Model tab (Ollama host/model/context-length/reachability)
- * and the self+dependency health check that stands in for "container
- * status" (see plan §5 — no Docker socket access, so this is Mercury's
- * own process plus its two real dependencies, not `docker compose ps`).
+ * Mercury's own health and its two real dependencies' reachability, for the
+ * HTTP surface's `/health`: the process (uptime, memory), Qdrant and the
+ * Ollama endpoint. No Docker socket access, so it's not `docker compose ps`.
  */
-import { getLoadedContextLength } from "../model/context-size.ts";
-
 type OllamaTagsResponse = { models?: Array<{ name: string }> };
 
 /** Live model names Ollama actually has pulled, or `null` if the host isn't reachable. */
@@ -20,28 +17,6 @@ export async function getAvailableModels(host: string, fetchFn: typeof fetch = f
   }
 }
 
-export type ModelStatus = {
-  host: string;
-  model: string;
-  contextLength: number | null;
-  availableModels: string[] | null;
-};
-
-export async function getModelStatus(
-  host: string,
-  model: string,
-  fetchFn: typeof fetch = fetch,
-): Promise<ModelStatus> {
-  // getLoadedContextLength (unlike getAvailableModels) doesn't catch its own
-  // fetch failures — an unreachable host makes it throw, which would
-  // otherwise take the whole status endpoint down with it.
-  const [contextLength, availableModels] = await Promise.all([
-    getLoadedContextLength(host, model, fetchFn).catch(() => null),
-    getAvailableModels(host, fetchFn),
-  ]);
-  return { host, model, contextLength, availableModels };
-}
-
 export type SelfHealth = {
   uptimeSeconds: number;
   memory: { rss: number; heapUsed: number; heapTotal: number };
@@ -49,6 +24,7 @@ export type SelfHealth = {
   ollamaReachable: boolean;
 };
 
+/** The process's uptime and memory, and whether Qdrant and the Ollama endpoint answer. */
 export async function getSelfHealth(deps: {
   qdrant: { getCollections(): Promise<unknown> };
   ollamaHost: string;

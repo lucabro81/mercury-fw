@@ -1,7 +1,7 @@
 /**
- * Read-only point enumeration for the admin panel's Qdrant inspection tab —
- * `episodic-store.ts`/`semantic-facts-store.ts` only wrap similarity
- * `search`, there's no existing way to just list what's in a collection.
+ * Read-only point enumeration, for `mfw memory` and the HTTP surface's
+ * `/memory/scroll`: `episodic-store.ts`/`semantic-facts-store.ts` only wrap
+ * similarity `search`, there's no other way to just list what's in a collection.
  * One page per call (not an auto-paging fetch-everything loop): a real
  * collection can be arbitrarily large, so the caller decides whether to
  * request another page via the returned `nextOffset`.

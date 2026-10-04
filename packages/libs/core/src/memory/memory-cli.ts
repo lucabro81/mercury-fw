@@ -10,7 +10,7 @@
  */
 import { parseArgs } from "node:util";
 import { QdrantClient } from "@qdrant/js-client-rest";
-import { scrollCollection } from "../admin/qdrant-scroll.ts";
+import { scrollCollection } from "./qdrant-scroll.ts";
 
 type ScrollOffset = string | number | Record<string, unknown> | null;
 

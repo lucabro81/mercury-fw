@@ -2,11 +2,9 @@
  * Bounded, process-wide history of tool calls across both channels,
  * scoped by session so a recall of "what did you do" only ever surfaces
  * one conversation's own history, and by person (the user key) so the HTTP
- * surface shows each caller only their own calls. Originally built for the
- * admin panel's Tool-log tab (still a consumer, unfiltered); now also backs the
- * `recall_tool_calls` model tool (`tool-log-recall-tool.ts`), which is why
- * this lives in `session/` rather than `admin/` — it's the record of what
- * happened in a session, not an admin-only concern. Nothing else keeps
+ * surface shows each caller only their own calls. It backs the
+ * `recall_tool_calls` model tool (`tool-log-recall-tool.ts`) and the HTTP
+ * `/tool-log` route: the record of what happened in a session. Nothing else keeps
  * this beyond the current turn (`src/index.ts`'s terminal-only `lastSteps`
  * resets every turn, Google Chat's `onStepFinish` only logs to stderr) —
  * `recordStep` is called additively from both channels' existing
