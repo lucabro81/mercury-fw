@@ -654,6 +654,23 @@ describe("writes guarded by the current content", () => {
     for (const line of lines) expect(text).toContain(line);
   });
 
+  // A file that exists but can't be read used to count as missing, so a
+  // create-only write went through and replaced it.
+  it("a file that can't be read fails the write instead of counting as missing", async () => {
+    const vaultPath = await makeTempVault();
+    await writeCuratedNote(vaultPath, "standards/locked.md", {}, "the team's");
+    const locked = join(vaultPath, "curated/standards/locked.md");
+    await chmod(locked, 0o000);
+    try {
+      await expect(
+        writeCuratedNote(vaultPath, "standards/locked.md", {}, "a promotion", { when: (current) => current === null }),
+      ).rejects.toThrow();
+    } finally {
+      await chmod(locked, 0o644);
+    }
+    expect(await readFile(locked, "utf-8")).toContain("the team's");
+  });
+
   it("writes leave no temporary file behind", async () => {
     const vaultPath = await makeTempVault();
     await writeCuratedNote(vaultPath, "standards/clean.md", {}, "body");

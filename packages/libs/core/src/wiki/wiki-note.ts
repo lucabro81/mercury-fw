@@ -135,12 +135,14 @@ function serializeCommit<T>(fn: () => Promise<T>): Promise<T> {
  */
 export type WriteCondition = { when?: (current: string | null) => boolean };
 
-/** The file's content, or `null` when there's no file. */
+/** The file's content, or `null` when there's no file; any other read error
+ * throws, since a file that's there but unreadable isn't a missing one. */
 async function readCurrent(fullPath: string): Promise<string | null> {
   try {
     return await readFile(fullPath, "utf-8");
-  } catch {
-    return null;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw err;
   }
 }
 
