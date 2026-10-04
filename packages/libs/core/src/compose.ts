@@ -432,7 +432,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
       sessionTools,
       createWikiTools({ vaultPath: wikiVaultPath, key, stageConfirmation: sessionToolContext.stageConfirmation }),
     );
-    Object.assign(sessionTools, createToolLogRecallTool({ sessionKey }));
+    Object.assign(sessionTools, createToolLogRecallTool({ sessionKey, owner: key }));
     // Verbatim archive recall, scoped to this person — lets the model resurface
     // what was actually said in earlier conversations, beyond the live window.
     Object.assign(sessionTools, verbatimProvider.sessionTools!({ sessionKey, userId: key }));

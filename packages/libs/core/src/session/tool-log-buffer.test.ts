@@ -15,14 +15,14 @@ describe("recordStep / getToolLog", () => {
     resetToolLogForTest();
   });
 
-  it("returns only entries matching the given sessionKey", () => {
+  it("returns only the person's entries from the given session", () => {
     recordStep("google-chat", "space-A:user-1", "static:alice", stepWithOneCall("runCommand", { ok: true }));
     recordStep("google-chat", "space-B:user-2", "static:alice", stepWithOneCall("runCommand", { ok: true }));
 
-    const entries = getToolLog({ sessionKey: "space-A:user-1" });
+    const entries = getToolLog({ owner: "static:alice", sessionKey: "space-A:user-1" });
 
     expect(entries).toHaveLength(1);
-    expect(entries[0]?.toolName).toBe("runCommand");
+    expect(entries[0]?.sessionKey).toBe("space-A:user-1");
   });
 
   it("returns only the given person's entries, whatever session they came from", () => {
@@ -38,31 +38,35 @@ describe("recordStep / getToolLog", () => {
     expect(getToolLog({ owner: "static:carol" })).toEqual([]);
   });
 
-  it("returns everything when no filter is given", () => {
-    recordStep("terminal", "terminal", "static:alice", stepWithOneCall("runCommand", { ok: true }));
-    recordStep("google-chat", "space-A:user-1", "static:alice", stepWithOneCall("write_file", { ok: true }));
-
-    expect(getToolLog()).toHaveLength(2);
-  });
-
-  it("orders results most-recent-first regardless of sessionKey filtering", () => {
+  it("orders results most-recent-first", () => {
     recordStep("terminal", "terminal", "static:alice", stepWithOneCall("first", { ok: true }));
     recordStep("terminal", "terminal", "static:alice", stepWithOneCall("second", { ok: true }));
 
-    const entries = getToolLog({ sessionKey: "terminal" });
+    const entries = getToolLog({ owner: "static:alice", sessionKey: "terminal" });
 
     expect(entries.map((e) => e.toolName)).toEqual(["second", "first"]);
   });
 
-  it("evicts the oldest entry once the buffer exceeds its max size", () => {
+  it("evicts a person's oldest entry once their log exceeds its max size", () => {
     for (let i = 0; i < 205; i++) {
       recordStep("terminal", "terminal", "static:alice", stepWithOneCall(`tool-${i}`, { ok: true }));
     }
 
-    const entries = getToolLog();
+    const entries = getToolLog({ owner: "static:alice" });
 
     expect(entries).toHaveLength(200);
     expect(entries[0]?.toolName).toBe("tool-204");
     expect(entries.at(-1)?.toolName).toBe("tool-5");
+  });
+
+  // Regression for #154: the log was one 200-entry ring for everyone, so a
+  // busy person evicted everyone else's calls and their recall came back empty.
+  it("a busy person never evicts someone else's entries", () => {
+    recordStep("http", "bob:c1", "static:bob", stepWithOneCall("bob_tool", { ok: true }));
+    for (let i = 0; i < 300; i++) {
+      recordStep("http", "alice:c1", "static:alice", stepWithOneCall(`tool-${i}`, { ok: true }));
+    }
+
+    expect(getToolLog({ owner: "static:bob" }).map((e) => e.toolName)).toEqual(["bob_tool"]);
   });
 });
