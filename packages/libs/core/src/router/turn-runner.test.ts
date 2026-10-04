@@ -561,7 +561,11 @@ describe("createTurnRunner", () => {
 
     await runner(baseTurn({ sessionKey: "sk", principal: verified("users/42") }), baseSink());
 
-    expect(tracked).toEqual([["sk", "google-chat:users/42"]]);
+    // Once when the turn starts, once when it ends.
+    expect(tracked).toEqual([
+      ["sk", "google-chat:users/42"],
+      ["sk", "google-chat:users/42"],
+    ]);
     expect(registered).toEqual(["sk"]);
     expect(captured).toEqual(["sk"]);
     expect(historyTrackForCapture).toBe(true);
@@ -1179,7 +1183,8 @@ describe("createTurnRunner", () => {
       await Promise.all([first, second]);
 
       expect(ran).toEqual(["first"]);
-      expect(tracked).toEqual(["session-1"]);
+      // Only the first turn tracked the session (at its start and its end).
+      expect(tracked).toEqual(["session-1", "session-1"]);
       expect(waitingSink.finalized).toEqual([]);
       expect(waitingSink.disposed).toBe(true);
     });
@@ -1204,6 +1209,25 @@ describe("createTurnRunner", () => {
       sweepGate.open();
       await Promise.all([sweep, turn]);
       expect(ran).toEqual(["hello"]);
+    });
+
+    // A turn longer than the idle timeout used to look idle the moment it
+    // ended (activity was recorded only at its start), and the sweep, which
+    // waited for it on the lock, closed the session right away.
+    test("a tracked turn records activity when it ends too", async () => {
+      const touches: number[] = [];
+      let clock = 1_000;
+      const runner = runnerWith({
+        now: () => clock,
+        trackSession: (_key, _user, at) => touches.push(at),
+        runTurnFn: async () => {
+          clock = 5_000;
+          return "reply";
+        },
+      });
+
+      await runner(baseTurn({ principal: verified("u1") }), baseSink());
+      expect(touches).toEqual([1_000, 5_000]);
     });
   });
 });

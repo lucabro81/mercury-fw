@@ -10,6 +10,8 @@ export type IdleSessionScanner = {
   touch(key: string, now: number): void;
   /** Returns every tracked key whose last activity is at least `idleTimeoutMs` before `now`. */
   scanIdle(now: number, idleTimeoutMs: number): string[];
+  /** Whether `key` is tracked and idle at `now`; an untracked key isn't idle. */
+  isIdle(key: string, now: number, idleTimeoutMs: number): boolean;
   /** Stops tracking `key` — call after a session has been consolidated and its raw transcript discarded. */
   clear(key: string): void;
 };
@@ -29,6 +31,10 @@ export function createIdleSessionScanner(): IdleSessionScanner {
         }
       }
       return idle;
+    },
+    isIdle(key, now, idleTimeoutMs) {
+      const lastSeen = lastActivity.get(key);
+      return lastSeen !== undefined && now - lastSeen >= idleTimeoutMs;
     },
     clear(key) {
       lastActivity.delete(key);

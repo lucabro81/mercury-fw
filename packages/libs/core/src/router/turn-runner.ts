@@ -217,6 +217,9 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
     }
 
     if (tracked) {
+      // Activity at the end too: a turn longer than the idle timeout must not
+      // look idle the moment it ends.
+      deps.trackSession(turn.sessionKey, key, (deps.now ?? Date.now)());
       await deps.maybeCapture(turn.sessionKey, history);
       // Fail-soft: the verbatim archive is pure enrichment (principle #3).
       // The answer is already delivered; a capture failure must never

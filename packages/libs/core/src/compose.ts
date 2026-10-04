@@ -28,6 +28,7 @@ import { createEpisodicSummarizer } from "./session/episodic-summarizer.ts";
 import { createSemanticFactExtractor } from "./session/semantic-fact-extractor.ts";
 import { buildContextPrimer } from "./session/context-primer.ts";
 import { buildSystemPrompts } from "./session/system-prompt.ts";
+import { createSessionLock } from "./router/session-lock.ts";
 import { createTurnRunner } from "./router/turn-runner.ts";
 import { loadAuth } from "./router/auth-loader.ts";
 import type { TurnSink } from "./router/provider.ts";
@@ -471,7 +472,11 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   // a given turn came from. getOrCreateHistory seeds a context primer only for
   // a genuinely new, tracked (real per-user identity) session; an identity-less
   // turn (userId undefined) never triggers it.
+  // One turn at a time per session, and the idle sweep waits its turn on the
+  // same lock before it captures and closes a session.
+  const sessionLock = createSessionLock();
   const handleTurn = createTurnRunner({
+    sessionLock,
     model,
     systemPrompts: { singleUser: system, multiUser: chatSystem },
     buildTools,
@@ -554,6 +559,9 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
           sessionUsers.delete(key);
           sessionCaptureMarkers.delete(key);
           sessionOnCaptureCallbacks.delete(key);
+        },
+        withSession: async (key, fn) => {
+          await sessionLock.run(key, fn);
         },
         ...captureDeps,
       },
