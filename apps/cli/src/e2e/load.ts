@@ -30,6 +30,7 @@ export async function loadTest(file: string): Promise<E2eTest> {
     const nonEmpty = (list: unknown) => Array.isArray(list) && list.length > 0;
     if (c.turns !== undefined && c.lanes !== undefined) throw new Error(`${which} has both turns and lanes`);
     if (c.lanes !== undefined) {
+      if (c.channel !== "http") throw new Error(`${which} has lanes, which go with channel "http"`);
       if (!nonEmpty(c.lanes)) throw new Error(`${which} has no turns`);
       for (const [j, lane] of c.lanes.entries()) {
         if (!nonEmpty(lane?.turns)) throw new Error(`${which} lane ${j + 1} has no turns`);
