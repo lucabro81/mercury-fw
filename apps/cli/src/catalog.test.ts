@@ -12,6 +12,8 @@ describe("CATALOG", () => {
     expect(CATALOG.map((e) => `${e.kind}:${e.id}`)).toEqual([
       "channel:google-chat",
       "channel:http",
+      "auth:oidc",
+      "auth:static",
       "tool:jira",
       "tool:bitbucket",
       "tool:atlassian-admin",
@@ -42,6 +44,7 @@ describe("findEntry", () => {
   test("returns the entry of that kind with that id", () => {
     expect(findEntry("tool", "jira")?.package).toBe("@mercury-fw/plugin-jira");
     expect(findEntry("channel", "http")?.exportName).toBe("httpChannel");
+    expect(findEntry("auth", "static")?.package).toBe("@mercury-fw/auth-static");
   });
 
   test("returns undefined for an unknown id or the wrong kind", () => {

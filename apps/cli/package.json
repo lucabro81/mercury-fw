@@ -48,6 +48,8 @@
   "devDependencies": {
     "@mercury-fw/channel-google-chat": "workspace:*",
     "@mercury-fw/channel-http": "workspace:*",
+    "@mercury-fw/auth-oidc": "workspace:*",
+    "@mercury-fw/auth-static": "workspace:*",
     "@mercury-fw/formatter": "workspace:*",
     "@mercury-fw/plugin-atlassian-admin": "workspace:*",
     "@mercury-fw/plugin-bitbucket": "workspace:*",

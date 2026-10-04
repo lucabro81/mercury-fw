@@ -17,6 +17,8 @@ export type Answers = {
   role: string;
   channels: string[];
   plugins: string[];
+  /** The HTTP channel's auth provider, there exactly when that channel is. */
+  auth?: string;
   gitRemote?: string;
 };
 
@@ -67,6 +69,18 @@ export async function askAnswers(args: CreateArgs, dir: string): Promise<Answers
   if (p.isCancel(role)) return cancelled();
   const channels = await pick("channel", "Channels (space to select, none is fine: the REPL always works)", args.channels ?? []);
   if (channels === undefined) return cancelled();
+  // The HTTP channel doesn't start without an auth provider, so choosing it
+  // means choosing one; without it there's nothing to ask.
+  let auth: string | undefined;
+  if (channels.includes("http")) {
+    const picked = await p.select({
+      message: "Auth provider for the HTTP channel (who may call it)",
+      options: CATALOG.filter((e) => e.kind === "auth").map((e) => ({ value: e.id, label: e.id, hint: e.package })),
+      ...(args.auth !== undefined ? { initialValue: args.auth } : {}),
+    });
+    if (p.isCancel(picked)) return cancelled();
+    auth = picked;
+  }
   const plugins = await pick("tool", "Tool plugins (space to select)", args.plugins ?? []);
   if (plugins === undefined) return cancelled();
   // Asked only when there will be a repository and the flag didn't say.
@@ -85,6 +99,7 @@ export async function askAnswers(args: CreateArgs, dir: string): Promise<Answers
       `App: ${name}`,
       `Assistant: You are ${assistantName}, ${role}.`,
       `Channels: ${channels.length > 0 ? channels.join(", ") : "none"}`,
+      ...(auth !== undefined ? [`Auth: ${auth}`] : []),
       `Tool plugins: ${plugins.length > 0 ? plugins.join(", ") : "none"}`,
       ...(args.git ? [`Origin: ${gitRemote ?? "none"}`] : []),
     ].join("\n"),
@@ -92,7 +107,15 @@ export async function askAnswers(args: CreateArgs, dir: string): Promise<Answers
   );
   const ok = await p.confirm({ message: `Create it in ${dir}?` });
   if (p.isCancel(ok) || !ok) return cancelled();
-  return { name, assistantName, role, channels, plugins, ...(gitRemote !== undefined ? { gitRemote } : {}) };
+  return {
+    name,
+    assistantName,
+    role,
+    channels,
+    plugins,
+    ...(auth !== undefined ? { auth } : {}),
+    ...(gitRemote !== undefined ? { gitRemote } : {}),
+  };
 }
 
 function cancelled(): undefined {

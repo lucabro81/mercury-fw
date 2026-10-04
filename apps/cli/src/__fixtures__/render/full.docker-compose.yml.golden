@@ -11,7 +11,7 @@ services:
       # The login of a plugin's CLI, on a volume so what the CLI writes back
       # (refreshed tokens) survives a redeploy: see README.md.
       - cli-credentials:/home/mercury/.config
-    # The HTTP surface, on the host: no authentication, keep it off the public network.
+    # The HTTP surface, on the host: every route but its OpenAPI document needs a token.
     ports:
       - "${HTTP_SURFACE_PORT:-4100}:${HTTP_SURFACE_PORT:-4100}"
     extra_hosts:

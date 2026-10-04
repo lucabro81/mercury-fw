@@ -60,6 +60,7 @@ Then it runs `bun install` in the app and creates a git repository on `main` wit
 | `--role <text>` | Completes "You are <name>, …" (default `an internal assistant`). |
 | `--channels <ids>` | Comma-separated: `google-chat`, `http`. |
 | `--plugins <ids>` | Comma-separated: `jira`, `bitbucket`, `atlassian-admin`. |
+| `--auth <id>` | The HTTP channel's auth provider, `oidc` or `static`: required with `http`, refused without it, since the channel doesn't start without one. The wizard asks for it once `http` is chosen. |
 | `--git-remote <url>` | The repository's `origin`, taken as typed. |
 | `--no-install` | Don't run `bun install`. |
 | `--no-git` | Don't create the repository. |
@@ -67,10 +68,10 @@ Then it runs `bun install` in the app and creates a git repository on `main` wit
 
 ```bash
 mfw create my-agent
-mfw create my-agent --assistant-name Hermes --channels http --plugins jira --yes
+mfw create my-agent --assistant-name Hermes --channels http --auth oidc --plugins jira --yes
 ```
 
-The framework packages get the CLI's own version (they're released together); each chosen plugin or channel gets its latest version on the registry, `https://registry.npmjs.org` unless `MFW_REGISTRY` names another.
+The framework packages get the CLI's own version (they're released together); each chosen plugin, channel or auth provider gets its latest version on the registry, `https://registry.npmjs.org` unless `MFW_REGISTRY` names another.
 
 Before anything else it asks the registry for the latest `@mercury-fw/cli`: a newer one than itself means it's a stale copy (Bun keeps the `create-mercury-agent` that `bun create` ran last in its cache, a release behind), so it says so and runs the same command through the newer version (`bunx @mercury-fw/cli@<newer> create …`), which writes the app instead. A registry that doesn't answer within a few seconds, or a newer version that can't be installed yet, is only a warning, and the CLI carries on with itself. Only CLIs from 0.28.4 on do this: a copy older than that, still in Bun's cache, needs one last `bun pm cache rm`, run from any folder with a `package.json` (Bun refuses it elsewhere).
 

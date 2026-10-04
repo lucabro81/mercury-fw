@@ -23,6 +23,8 @@
         "commander": "^15.0.0",
       },
       "devDependencies": {
+        "@mercury-fw/auth-oidc": "workspace:*",
+        "@mercury-fw/auth-static": "workspace:*",
         "@mercury-fw/channel-google-chat": "workspace:*",
         "@mercury-fw/channel-http": "workspace:*",
         "@mercury-fw/formatter": "workspace:*",
@@ -101,7 +103,7 @@
         "typescript": "^6.0.3",
       },
       "peerDependencies": {
-        "@mercury-fw/channel-types": ">=0.24.0 <1.0.0",
+        "@mercury-fw/channel-types": ">=0.34.0 <1.0.0",
       },
     },
     "packages/channels/channel-http": {
@@ -115,7 +117,7 @@
         "typescript": "^6.0.3",
       },
       "peerDependencies": {
-        "@mercury-fw/channel-types": ">=0.24.0 <1.0.0",
+        "@mercury-fw/channel-types": ">=0.35.0 <1.0.0",
       },
     },
     "packages/config/typescript-config": {

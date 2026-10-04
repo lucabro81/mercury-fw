@@ -91,13 +91,14 @@ const versions: Record<string, string> = {
   "@mercury-fw/core": cliVersion(),
   "@mercury-fw/formatter": cliVersion(),
   "@mercury-fw/channel-http": PLUGIN_VERSION,
+  "@mercury-fw/auth-static": PLUGIN_VERSION,
   "@mercury-fw/plugin-jira": PLUGIN_VERSION,
 };
 
 describe("mfw create --yes", () => {
   test("writes exactly the rendered app, named after the folder by default", async () => {
     const dir = join(base, "demo");
-    const result = await run("create", dir, "--channels", "http", "--plugins", "jira", "--yes");
+    const result = await run("create", dir, "--channels", "http", "--auth", "static", "--plugins", "jira", "--yes");
     expect(result.code).toBe(0);
     const expected = renderApp({
       name: "demo",
@@ -105,6 +106,7 @@ describe("mfw create --yes", () => {
       role: "an internal assistant",
       channels: ["http"],
       plugins: ["jira"],
+      auth: "static",
       versions,
     });
     for (const [path, content] of expected) {
@@ -190,6 +192,28 @@ describe("mfw create, checks before the wizard", () => {
     expect(result.stderr).toContain('Unknown channel "slack" (valid: google-chat, http)');
   });
 
+  test("an unknown auth provider given as a flag, without --yes, exits 1 naming the valid ones", async () => {
+    const result = await run("create", join(base, "demo"), "--channels", "http", "--auth", "saml");
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain('Unknown auth provider "saml" (valid: oidc, static)');
+  });
+
+  // #37: with --yes nothing asks for the provider, so the pairing is settled up front.
+  test("--yes with the http channel and no auth provider exits 1 and writes nothing", async () => {
+    const dir = join(base, "demo");
+    const result = await run("create", dir, "--channels", "http", "--yes");
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain("The http channel needs an auth provider (valid: oidc, static)");
+    expect(readdirSync(base)).toEqual([]);
+  });
+
+  test("--yes with an auth provider and no http channel exits 1 and writes nothing", async () => {
+    const result = await run("create", join(base, "demo"), "--auth", "static", "--yes");
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain('The auth provider "static" goes with the http channel');
+    expect(readdirSync(base)).toEqual([]);
+  });
+
   test("a folder that isn't empty, without --yes, exits 1 and is left alone", async () => {
     const dir = join(base, "demo");
     mkdirSync(dir);
@@ -211,13 +235,13 @@ async function git(dir: string, ...args: string[]): Promise<string> {
 describe("mfw create, the repository", () => {
   test("a repository on main with one commit holding every written file, and the origin as typed", async () => {
     const dir = join(base, "demo");
-    const result = await run("create", dir, "--channels", "http", "--plugins", "jira", "--git-remote", "git@example.com:acme/demo.git", "--yes");
+    const result = await run("create", dir, "--channels", "http", "--auth", "static", "--plugins", "jira", "--git-remote", "git@example.com:acme/demo.git", "--yes");
     expect(result.code).toBe(0);
     expect(await git(dir, "branch", "--show-current")).toBe("main");
-    expect(await git(dir, "log", "--format=%B")).toBe(`Scaffold with mfw create ${cliVersion()}\n\nChannels: http\nPlugins: jira`);
+    expect(await git(dir, "log", "--format=%B")).toBe(`Scaffold with mfw create ${cliVersion()}\n\nChannels: http\nPlugins: jira\nAuth: static`);
     expect(await git(dir, "rev-list", "--count", "HEAD")).toBe("1");
     expect(await git(dir, "status", "--porcelain")).toBe("");
-    const written = renderApp({ name: "demo", assistantName: "Mercury", role: "an internal assistant", channels: ["http"], plugins: ["jira"], versions });
+    const written = renderApp({ name: "demo", assistantName: "Mercury", role: "an internal assistant", channels: ["http"], plugins: ["jira"], auth: "static", versions });
     expect((await git(dir, "ls-files")).split("\n").sort()).toEqual([...written.keys()].sort());
     expect(await git(dir, "remote", "get-url", "origin")).toBe("git@example.com:acme/demo.git");
     expect(result.stdout).toContain("  origin: git@example.com:acme/demo.git\n");

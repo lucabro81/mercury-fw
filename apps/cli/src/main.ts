@@ -11,7 +11,7 @@ import type { CreateArgs } from "./args.ts";
 import { CATALOG } from "./catalog.ts";
 import { kebabCase } from "./naming.ts";
 import { runProgram } from "./program.ts";
-import { renderApp, selectionError } from "./render.ts";
+import { pairingError, renderApp, selectionError } from "./render.ts";
 import { appVersions, cliVersion, newerCli, registryFrom } from "./versions.ts";
 import { appCommands, terminalDeps, type AppDeps } from "./app/commands.ts";
 import { findApp, type App } from "./app/find-app.ts";
@@ -27,6 +27,7 @@ function answersFromFlags(args: CreateArgs, defaultName: string): Answers {
     role: args.role ?? DEFAULT_ROLE,
     channels: args.channels ?? [],
     plugins: args.plugins ?? [],
+    ...(args.auth !== undefined ? { auth: args.auth } : {}),
     ...(args.gitRemote !== undefined ? { gitRemote: args.gitRemote } : {}),
   };
 }
@@ -115,10 +116,12 @@ async function create(args: CreateArgs, rawArgs: string[], relaunch: Relaunch, g
   }
   const dir = join(dirname(typed), folder);
   // What the command line already settles is checked before any question, so
-  // the wizard is never answered for nothing.
+  // the wizard is never answered for nothing. The HTTP channel and its auth
+  // provider are paired here only with --yes: otherwise the wizard asks.
   const early =
     targetError(dir) ??
-    selectionError(args.channels ?? [], args.plugins ?? []) ??
+    selectionError(args.channels ?? [], args.plugins ?? [], args.auth) ??
+    (args.yes ? pairingError(args.channels ?? [], args.auth) : undefined) ??
     remoteError(args);
   if (early !== undefined) {
     throw new Error(early);
@@ -127,8 +130,8 @@ async function create(args: CreateArgs, rawArgs: string[], relaunch: Relaunch, g
   if (answers === undefined) {
     return 1;
   }
-  const chosen = CATALOG.filter(
-    (e) => (e.kind === "channel" ? answers.channels : answers.plugins).includes(e.id),
+  const chosen = CATALOG.filter((e) =>
+    e.kind === "auth" ? e.id === answers.auth : (e.kind === "channel" ? answers.channels : answers.plugins).includes(e.id),
   ).map((e) => e.package);
   const versions = await appVersions(chosen, { registry: registryFrom(process.env.MFW_REGISTRY) });
   writeApp(dir, renderApp({ ...answers, versions }));
@@ -141,7 +144,7 @@ async function create(args: CreateArgs, rawArgs: string[], relaunch: Relaunch, g
       ...(answers.gitRemote !== undefined ? { remote: answers.gitRemote } : {}),
       commitMessage: [
         `Scaffold with mfw create ${cliVersion()}`,
-        `Channels: ${none(answers.channels)}\nPlugins: ${none(answers.plugins)}`,
+        `Channels: ${none(answers.channels)}\nPlugins: ${none(answers.plugins)}${answers.auth !== undefined ? `\nAuth: ${answers.auth}` : ""}`,
       ],
     },
     run,

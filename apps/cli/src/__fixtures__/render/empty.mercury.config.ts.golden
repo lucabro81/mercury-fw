@@ -1,6 +1,7 @@
 /**
- * This app's composition: the tool plugins and channels it runs, how the lists
- * its plugins hand over read, and the assistant's persona. The entrypoints
+ * This app's composition: the tool plugins and channels it runs, the auth
+ * provider when a channel needs one, how the lists its plugins hand over read,
+ * and the assistant's persona. The entrypoints
  * (`src/index.ts`, `src/repl.ts`) hand this config to `composeMercury`.
  *
  * Every tool plugin and channel declared here is active.
