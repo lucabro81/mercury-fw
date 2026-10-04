@@ -37,6 +37,11 @@ import {
  */
 const CONVERSATION_ID = /^[A-Za-z0-9_-]{1,128}$/;
 
+/** `text` with every control character (line breaks included) as `?`, for a log line nobody can forge. */
+function forLog(text: string): string {
+  return text.replace(/[\u0000-\u001f\u007f]/g, "?");
+}
+
 /** Resolves a bare confirmation token to a reply string, or `null` if the input isn't a token. Injected by the core (`ctx.confirm`). */
 export type ConfirmFn = (token: string, sessionKey: string, userId: string) => Promise<string | null>;
 /** The structured sibling of {@link ConfirmFn}, for the `/confirm` `resolved` flag. Injected by the core (`ctx.resolveConfirmation`). */
@@ -196,7 +201,8 @@ export async function handleTurnRequest(req: Request, deps: TurnRequestDeps): Pr
             text,
             sessionKey,
             principal,
-            logPrefix: `[http:${sessionKey}] `,
+            // The caller's id comes from the auth provider, unchecked here.
+            logPrefix: `[http:${forLog(sessionKey)}] `,
             abortSignal: abort.signal,
           },
           sink,

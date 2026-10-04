@@ -336,6 +336,23 @@ describe("authentication on /turn and /confirm", () => {
     expect(key).toBe("alice:terminal");
   });
 
+  // Cold review of #37: the caller's id comes from the auth provider, not from
+  // the conversation id rule, so a line break in it could forge log lines.
+  it("keeps control characters in the caller's id out of the log prefix, not out of the session", async () => {
+    let turn: InboundTurn | undefined;
+    const res = await handleTurnRequest(turnReq({ text: "hi", conversationId: "c" }), {
+      handleTurn: async (t, sink) => {
+        turn = t;
+        await sink.finalize("x");
+      },
+      confirm: async () => null,
+      authenticate: async () => ({ id: "ali\nce\u0007", provider: "oidc" }),
+    });
+    await res.text();
+    expect(turn?.logPrefix).toBe("[http:ali?ce?:c] ");
+    expect(turn?.sessionKey).toBe("ali\nce\u0007:c");
+  });
+
   it("checks a bare token in /turn against the caller's own session, as the caller", async () => {
     let seen: string[] = [];
     const res = await handleTurnRequest(turnReq({ text: "k9m2-x7q4", conversationId: "c" }), {
