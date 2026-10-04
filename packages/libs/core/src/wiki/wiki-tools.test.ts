@@ -1,16 +1,16 @@
 import { describe, it, expect, afterEach } from "bun:test";
-import { mkdtemp, rm, readFile } from "node:fs/promises";
+import { mkdtemp, rm, readFile, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { writeCuratedNote, writeInferredNote, writeConfirmationNote } from "./wiki-note.ts";
+import type { StageConfirmation } from "@mercury-fw/plugin-types";
+import { writeCuratedNote, writeInferredNote, writeConfirmationNote, writePersonalNote } from "./wiki-note.ts";
 import { createWikiTools } from "./wiki-tools.ts";
 import { initVault } from "./vault-init.ts";
 
 const tempDirs: string[] = [];
 
-// writeCuratedNote/writeInferredNote now commit after writing —
-// git add/commit fail outright against a non-repo, so the vault needs to
-// be a real git repo before any write, not just a bare temp dir.
+// Every writer commits after writing: git add/commit fail outright against a
+// non-repo, so the vault needs to be a real git repo before any write.
 async function makeTempVault(): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), "mercury-wiki-tools-test-"));
   tempDirs.push(dir);
@@ -25,192 +25,242 @@ afterEach(async () => {
   }
 });
 
+const ALICE = "static:alice";
+const BOB = "static:bob";
+
+type Staged = Parameters<StageConfirmation>[0];
+
+/** The tools for `key`, with a staging fake that records what was staged and hands back TOK1-xxxx. */
+function toolsFor(vaultPath: string, key: string) {
+  const staged: Staged[] = [];
+  const stageConfirmation: StageConfirmation = async (action) => {
+    staged.push(action);
+    return "TOK1-xxxx";
+  };
+  return { tools: createWikiTools({ vaultPath, key, stageConfirmation }), staged };
+}
+
+/** Runs one tool with `input`, the way the model would. */
+async function call(tool: { execute?: unknown }, input: unknown): Promise<Record<string, unknown>> {
+  return (await (tool.execute as (i: unknown, o: never) => Promise<unknown>)(input, {} as never)) as Record<string, unknown>;
+}
+
+async function exists(path: string): Promise<boolean> {
+  return stat(path).then(
+    () => true,
+    () => false,
+  );
+}
+
+const inferred = { confidence: "low" as const, derived_from: ["ep_1"], last_reviewed: null };
+
 describe("createWikiTools", () => {
-  it("list_files returns curated + own inferred, not other users' inferred", async () => {
+  it("list_files returns the common area plus the person's own notes, under personal/", async () => {
     const vaultPath = await makeTempVault();
     await writeCuratedNote(vaultPath, "glossary.md", {}, "Glossario.");
-    await writeInferredNote(vaultPath, "user-a", "topic-x", { confidence: "low", derived_from: ["ep_1"], last_reviewed: null }, "nota di user-a");
-    await writeInferredNote(vaultPath, "user-b", "topic-y", { confidence: "low", derived_from: ["ep_2"], last_reviewed: null }, "nota di user-b");
+    await writePersonalNote(vaultPath, ALICE, "personal/notes/plan.md", {}, "alice's plan");
+    await writeInferredNote(vaultPath, ALICE, "topic-x", inferred, "nota di alice");
+    await writePersonalNote(vaultPath, BOB, "personal/notes/secret.md", {}, "bob's secret");
+    await writeInferredNote(vaultPath, BOB, "topic-y", inferred, "nota di bob");
 
-    const { list_files } = createWikiTools({ vaultPath, userId: "user-a" });
-    const result = (await list_files.execute({}, {} as never)) as { ok: true; files: string[] };
+    const result = await call(toolsFor(vaultPath, ALICE).tools.list_files, {});
 
-    expect(result.ok).toBe(true);
-    expect(result.files).toContain("curated/glossary.md");
-    expect(result.files).toContain("inferred/users/user-a/topic-x.md");
-    expect(result.files).not.toContain("inferred/users/user-b/topic-y.md");
+    expect(result).toEqual({
+      ok: true,
+      files: ["curated/glossary.md", "personal/inferred/topic-x.md", "personal/notes/plan.md"],
+    });
   });
 
-  it("read_file returns the content of an allowed file", async () => {
+  it("read_file returns the content of a file the person can see", async () => {
     const vaultPath = await makeTempVault();
     await writeCuratedNote(vaultPath, "glossary.md", {}, "Glossario del team.");
+    await writePersonalNote(vaultPath, ALICE, "personal/notes/plan.md", {}, "alice's plan");
+    const { read_file } = toolsFor(vaultPath, ALICE).tools;
 
-    const { read_file } = createWikiTools({ vaultPath, userId: "user-a" });
-    const result = (await read_file.execute({ path: "curated/glossary.md" }, {} as never)) as
-      | { ok: true; content: string }
-      | { ok: false; error: string };
+    expect(await call(read_file, { path: "curated/glossary.md" })).toEqual({ ok: true, content: expect.stringContaining("Glossario del team.") });
+    expect(await call(read_file, { path: "personal/notes/plan.md" })).toEqual({ ok: true, content: expect.stringContaining("alice's plan") });
+  });
 
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.content).toContain("Glossario del team.");
+  it("read_file returns a self-correctable error, not a throw, for another person's note, by any path", async () => {
+    const vaultPath = await makeTempVault();
+    await writePersonalNote(vaultPath, BOB, "personal/notes/secret.md", {}, "bob's secret");
+    const { read_file } = toolsFor(vaultPath, ALICE).tools;
+
+    for (const path of ["users/static%3Abob/notes/secret.md", "personal/../static%3Abob/notes/secret.md", "personal/notes/secret.md"]) {
+      const result = await call(read_file, { path });
+      expect(result.ok).toBe(false);
+      expect(String(result.error)).not.toContain("bob's secret");
     }
   });
 
-  it("read_file returns a self-correctable error, not a throw, for a disallowed path", async () => {
+  it("write_file writes a note under personal/notes/, in the person's own area", async () => {
     const vaultPath = await makeTempVault();
-    await writeInferredNote(vaultPath, "user-b", "topic-y", { confidence: "low", derived_from: ["ep_2"], last_reviewed: null }, "nota di user-b");
+    const { write_file } = toolsFor(vaultPath, ALICE).tools;
 
-    const { read_file } = createWikiTools({ vaultPath, userId: "user-a" });
-    const result = (await read_file.execute({ path: "inferred/users/user-b/topic-y.md" }, {} as never)) as
-      | { ok: true; content: string }
-      | { ok: false; error: string };
+    expect(await call(write_file, { path: "personal/notes/standup.md", content: "Daily at 9." })).toEqual({ ok: true });
+
+    const text = await readFile(join(vaultPath, "users/static%3Aalice/notes/standup.md"), "utf-8");
+    expect(text).toContain("type: personal");
+    expect(text).toContain("Daily at 9.");
+  });
+
+  it("write_file refuses the common area and points at promote_note, writing nothing", async () => {
+    const vaultPath = await makeTempVault();
+    const { write_file } = toolsFor(vaultPath, ALICE).tools;
+
+    const result = await call(write_file, { path: "curated/standards/jira.md", content: "x" });
 
     expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.error).toBeDefined();
+    expect(String(result.error)).toContain("promote_note");
+    expect(await exists(join(vaultPath, "curated/standards/jira.md"))).toBe(false);
+  });
+
+  it("write_file can't reach the person's inferred notes, another person's area, or leave the vault", async () => {
+    const vaultPath = await makeTempVault();
+    const { write_file } = toolsFor(vaultPath, ALICE).tools;
+
+    for (const path of [
+      "personal/inferred/topic-x.md",
+      "personal/notes/../../static%3Abob/notes/x.md",
+      "users/static%3Abob/notes/x.md",
+      "../escape.md",
+    ]) {
+      const result = await call(write_file, { path, content: "x" });
+      expect(result.ok).toBe(false);
     }
+    expect(await exists(join(vaultPath, "users/static%3Abob"))).toBe(false);
+    expect(await exists(join(vaultPath, "users/static%3Aalice/inferred"))).toBe(false);
   });
 
-  it("write_file writes under curated/ given a path relative to it", async () => {
+  it("grep finds matches only in what the person can see, reporting the paths read_file takes", async () => {
     const vaultPath = await makeTempVault();
-    const { write_file } = createWikiTools({ vaultPath, userId: "user-a" });
+    await writeCuratedNote(vaultPath, "glossary.md", {}, "deploy on friday: never");
+    await writePersonalNote(vaultPath, ALICE, "personal/notes/plan.md", {}, "deploy the API");
+    await writePersonalNote(vaultPath, BOB, "personal/notes/plan.md", {}, "deploy bob's thing");
 
-    const result = (await write_file.execute(
-      { path: "standards/new-doc.md", content: "Nuovo standard." },
-      {} as never,
-    )) as { ok: true } | { ok: false; error: string };
+    const result = await call(toolsFor(vaultPath, ALICE).tools.grep, { pattern: "deploy" });
 
-    expect(result.ok).toBe(true);
-    const text = await readFile(join(vaultPath, "curated/standards/new-doc.md"), "utf-8");
-    expect(text).toContain("Nuovo standard.");
-    expect(text).toContain("type: curated");
+    expect(result).toEqual({
+      ok: true,
+      matches: [
+        { path: "curated/glossary.md", line: 5, text: "deploy on friday: never" },
+        { path: "personal/notes/plan.md", line: 5, text: "deploy the API" },
+      ],
+    });
   });
 
-  // #138: grep and read_file give paths starting with curated/; updating
-  // the note grep found wrote curated/curated/….
-  it("write_file takes the vault-relative path grep and read_file give, too", async () => {
-    const vaultPath = await makeTempVault();
-    const { write_file } = createWikiTools({ vaultPath, userId: "user-a" });
-
-    const result = (await write_file.execute({ path: "curated/projects/names.md", content: "Monorepo: MON" }, {} as never)) as { ok: boolean };
-
-    expect(result.ok).toBe(true);
-    expect(await readFile(join(vaultPath, "curated/projects/names.md"), "utf-8")).toContain("Monorepo: MON");
-    await expect(readFile(join(vaultPath, "curated/curated/projects/names.md"), "utf-8")).rejects.toThrow();
-  });
-
-  it("write_file can't use the curated/ prefix to leave curated/", async () => {
-    const vaultPath = await makeTempVault();
-    const { write_file } = createWikiTools({ vaultPath, userId: "user-a" });
-
-    const result = (await write_file.execute({ path: "curated/../inferred/users/user-a/x.md", content: "x" }, {} as never)) as { ok: boolean };
-
-    expect(result.ok).toBe(false);
-    await expect(readFile(join(vaultPath, "inferred/users/user-a/x.md"), "utf-8")).rejects.toThrow();
-  });
-
-  it("write_file cannot be used to write into inferred/ (only curated/ is reachable)", async () => {
-    const vaultPath = await makeTempVault();
-    const { write_file } = createWikiTools({ vaultPath, userId: "user-a" });
-
-    // the tool only ever writes under curated/, so passing an inferred-looking
-    // path just becomes a literal curated/ subpath, never an escape into inferred/
-    await write_file.execute({ path: "../inferred/users/user-a/hacked.md", content: "x" }, {} as never);
-
-    const { list_files } = createWikiTools({ vaultPath, userId: "user-a" });
-    const result = (await list_files.execute({}, {} as never)) as { ok: true; files: string[] };
-    expect(result.files).not.toContain("inferred/users/user-a/hacked.md");
-  });
-
-  it("grep finds matches only within the caller's allowed scope", async () => {
-    const vaultPath = await makeTempVault();
-    await writeInferredNote(vaultPath, "user-a", "topic-x", { confidence: "low", derived_from: ["ep_1"], last_reviewed: null }, "pattern-unico-a");
-    await writeInferredNote(vaultPath, "user-b", "topic-y", { confidence: "low", derived_from: ["ep_2"], last_reviewed: null }, "pattern-unico-b");
-
-    const { grep } = createWikiTools({ vaultPath, userId: "user-a" });
-    const result = (await grep.execute({ pattern: "pattern-unico" }, {} as never)) as
-      | { ok: true; matches: { path: string; line: number; text: string }[] }
-      | { ok: false; error: string };
-
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.matches.length).toBe(1);
-      expect(result.matches[0]!.path).toBe("inferred/users/user-a/topic-x.md");
-    }
-  });
-
-  // Regression guard for the stale-primer bug: a confirmation note must
-  // only ever be reachable by whoever already holds the exact token
-  // (e.g. from the primer's opaque [REQ:<token>] marker) — never by
-  // browsing, and never for another user's token.
-  describe("resolve_reference", () => {
-    it("reads the calling user's own confirmation note by token", async () => {
+  describe("promote_note", () => {
+    it("stages the copy into the common area behind a confirmation, and writes nothing yet", async () => {
       const vaultPath = await makeTempVault();
-      await writeConfirmationNote(vaultPath, "user-a", "j3h4b5", {
-        status: "pending",
-        requestedAt: "2026-07-27T12:20:00Z",
-        resolvedAt: null,
-        command: "jira issue delete KAN-1 --confirm",
-      });
+      await writePersonalNote(vaultPath, ALICE, "personal/notes/release.md", {}, "Release on Tuesdays.");
+      const { tools, staged } = toolsFor(vaultPath, ALICE);
 
-      const { resolve_reference } = createWikiTools({ vaultPath, userId: "user-a" });
-      const result = (await resolve_reference.execute({ token: "j3h4b5" }, {} as never)) as
-        | { ok: true; content: string }
-        | { ok: false; error: string };
+      const result = await call(tools.promote_note, { from: "personal/notes/release.md", to: "standards/release.md" });
+
+      expect(result).toMatchObject({
+        ok: false,
+        pendingConfirmation: true,
+        token: "TOK1-xxxx",
+        summary: "promote personal/notes/release.md to curated/standards/release.md",
+      });
+      expect(String(result.error)).toContain("Never mention the token");
+      expect(staged.map((s) => s.describe)).toEqual(["promote personal/notes/release.md to curated/standards/release.md"]);
+      expect(await exists(join(vaultPath, "curated/standards/release.md"))).toBe(false);
+    });
+
+    it("writes the note's text, as it was when staged, into the common area once confirmed", async () => {
+      const vaultPath = await makeTempVault();
+      await writePersonalNote(vaultPath, ALICE, "personal/notes/release.md", {}, "Release on Tuesdays.");
+      const { tools, staged } = toolsFor(vaultPath, ALICE);
+      await call(tools.promote_note, { from: "personal/notes/release.md", to: "curated/standards/release.md" });
+      await writePersonalNote(vaultPath, ALICE, "personal/notes/release.md", {}, "Changed after staging.");
+
+      expect(await staged[0]!.run()).toEqual({ ok: true, data: { promoted: "curated/standards/release.md" } });
+
+      const text = await readFile(join(vaultPath, "curated/standards/release.md"), "utf-8");
+      expect(text).toContain("type: curated");
+      expect(text).toContain("Release on Tuesdays.");
+      expect(text).not.toContain("type: personal");
+      expect(text).not.toContain("Changed after staging.");
+      // Bob sees it now, since it's in the common area.
+      expect(await call(toolsFor(vaultPath, BOB).tools.read_file, { path: "curated/standards/release.md" })).toMatchObject({ ok: true });
+    });
+
+    it("refuses, without staging, a source outside personal/notes/ or one that doesn't exist", async () => {
+      const vaultPath = await makeTempVault();
+      await writeCuratedNote(vaultPath, "glossary.md", {}, "Glossario.");
+      await writeInferredNote(vaultPath, ALICE, "topic-x", inferred, "nota di alice");
+      await writePersonalNote(vaultPath, BOB, "personal/notes/secret.md", {}, "bob's secret");
+      const { tools, staged } = toolsFor(vaultPath, ALICE);
+
+      for (const from of [
+        "curated/glossary.md",
+        "personal/inferred/topic-x.md",
+        "personal/notes/missing.md",
+        "users/static%3Abob/notes/secret.md",
+        "personal/notes/../../static%3Abob/notes/secret.md",
+      ]) {
+        const result = await call(tools.promote_note, { from, to: "x.md" });
+        expect(result.ok).toBe(false);
+        expect(result.pendingConfirmation).toBeUndefined();
+      }
+      expect(staged).toEqual([]);
+    });
+
+    it("refuses, without staging, a destination outside the common area", async () => {
+      const vaultPath = await makeTempVault();
+      await writePersonalNote(vaultPath, ALICE, "personal/notes/release.md", {}, "Release on Tuesdays.");
+      const { tools, staged } = toolsFor(vaultPath, ALICE);
+
+      for (const to of ["../users/static%3Abob/notes/x.md", "curated/../raw/x.md", "/etc/x.md", "", "curated/"]) {
+        const result = await call(tools.promote_note, { from: "personal/notes/release.md", to });
+        expect(result.ok).toBe(false);
+      }
+      expect(staged).toEqual([]);
+    });
+  });
+
+  describe("resolve_reference", () => {
+    const pending = {
+      status: "pending" as const,
+      requestedAt: "2026-07-27T12:20:00Z",
+      resolvedAt: null,
+      command: "jira issue delete KAN-1 --confirm",
+    };
+
+    it("reads the person's own confirmation note by token", async () => {
+      const vaultPath = await makeTempVault();
+      await writeConfirmationNote(vaultPath, ALICE, "j3h4b5", pending);
+
+      const result = await call(toolsFor(vaultPath, ALICE).tools.resolve_reference, { token: "j3h4b5" });
 
       expect(result.ok).toBe(true);
-      if (result.ok) {
-        expect(result.content).toContain("jira issue delete KAN-1 --confirm");
-        expect(result.content).toContain("status: pending");
-      }
+      expect(result.content).toContain("jira issue delete KAN-1 --confirm");
+      expect(result.content).toContain("status: pending");
     });
 
     it("returns a self-correctable error for an unknown/expired token", async () => {
       const vaultPath = await makeTempVault();
-      const { resolve_reference } = createWikiTools({ vaultPath, userId: "user-a" });
-
-      const result = (await resolve_reference.execute({ token: "nope00" }, {} as never)) as
-        | { ok: true; content: string }
-        | { ok: false; error: string };
-
+      const result = await call(toolsFor(vaultPath, ALICE).tools.resolve_reference, { token: "nope00" });
       expect(result.ok).toBe(false);
     });
 
-    it("cannot resolve another user's token even if the string matches", async () => {
+    it("cannot resolve another person's token even if the string matches, nor climb out with one", async () => {
       const vaultPath = await makeTempVault();
-      await writeConfirmationNote(vaultPath, "user-b", "j3h4b5", {
-        status: "pending",
-        requestedAt: "2026-07-27T12:20:00Z",
-        resolvedAt: null,
-        command: "jira issue delete KAN-1 --confirm",
-      });
+      await writeConfirmationNote(vaultPath, BOB, "j3h4b5", pending);
+      const { resolve_reference } = toolsFor(vaultPath, ALICE).tools;
 
-      const { resolve_reference } = createWikiTools({ vaultPath, userId: "user-a" });
-      const result = (await resolve_reference.execute({ token: "j3h4b5" }, {} as never)) as
-        | { ok: true; content: string }
-        | { ok: false; error: string };
-
-      expect(result.ok).toBe(false);
+      expect((await call(resolve_reference, { token: "j3h4b5" })).ok).toBe(false);
+      expect((await call(resolve_reference, { token: "../../static%3Abob/confirmations/j3h4b5" })).ok).toBe(false);
     });
 
     it("is not discoverable via list_files or grep — only resolve_reference reaches it", async () => {
       const vaultPath = await makeTempVault();
-      await writeConfirmationNote(vaultPath, "user-a", "j3h4b5", {
-        status: "pending",
-        requestedAt: "2026-07-27T12:20:00Z",
-        resolvedAt: null,
-        command: "jira issue delete KAN-1 --confirm",
-      });
+      await writeConfirmationNote(vaultPath, ALICE, "j3h4b5", pending);
+      const { list_files, grep } = toolsFor(vaultPath, ALICE).tools;
 
-      const { list_files, grep } = createWikiTools({ vaultPath, userId: "user-a" });
-      const files = (await list_files.execute({}, {} as never)) as { ok: true; files: string[] };
-      const matches = (await grep.execute({ pattern: "jira issue delete" }, {} as never)) as {
-        ok: true;
-        matches: unknown[];
-      };
-
-      expect(files.files.some((f) => f.includes("confirmations"))).toBe(false);
-      expect(matches.matches).toEqual([]);
+      expect(await call(list_files, {})).toEqual({ ok: true, files: [] });
+      expect(await call(grep, { pattern: "jira issue delete" })).toEqual({ ok: true, matches: [] });
     });
   });
 });

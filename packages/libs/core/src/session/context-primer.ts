@@ -13,11 +13,12 @@ import { resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
 import type { EpisodicSummary } from "../memory/episodic-store.ts";
 import type { listWikiFilesInRoots, readWikiFileInRoots, readIndexFile } from "../wiki/wiki-read.ts";
+import { userArea } from "../identity/user-key.ts";
 
 export type ContextPrimerDeps = {
   vaultPath: string;
   /** Already scoped to the last closed session's own sessionKey — see `getLastSessionEpisodicSummaries`. */
-  getLastSessionEntries: (userId: string) => Promise<EpisodicSummary[]>;
+  getLastSessionEntries: (key: string) => Promise<EpisodicSummary[]>;
   listWikiFilesInRootsFn: typeof listWikiFilesInRoots;
   readWikiFileInRootsFn: typeof readWikiFileInRoots;
   readIndexFileFn: typeof readIndexFile;
@@ -54,15 +55,15 @@ function noteStatus(text: string): string | undefined {
 }
 
 /**
- * Tokens of this user's still-`"pending"` confirmation notes
- * (`inferred/confirmations/<userId>/<token>.md` — see `writeConfirmationNote`
+ * Tokens of this person's still-`"pending"` confirmation notes
+ * (`users/<key>/confirmations/<token>.md` — see `writeConfirmationNote`
  * in `wiki-note.ts`). Deliberately a separate lookup from the "Known facts"
  * cross-reference below: this subtree isn't correlated to the last
  * session's episodic timestamps, it's simply "whatever is still open right
  * now" for this user, regardless of which session staged it.
  */
-async function pendingConfirmationTokens(userId: string, deps: ContextPrimerDeps): Promise<string[]> {
-  const confirmationsRoot = resolve(deps.vaultPath, "inferred", "confirmations", encodeURIComponent(userId));
+async function pendingConfirmationTokens(key: string, deps: ContextPrimerDeps): Promise<string[]> {
+  const confirmationsRoot = resolve(deps.vaultPath, userArea(key), "confirmations");
   const files = await deps.listWikiFilesInRootsFn(deps.vaultPath, [confirmationsRoot]);
   const tokens: string[] = [];
   for (const file of files) {
@@ -75,20 +76,20 @@ async function pendingConfirmationTokens(userId: string, deps: ContextPrimerDeps
 }
 
 /**
- * Text of the primer for `userId`, built from injected deps only — never
+ * Text of the primer for the person `key`, built from injected deps only — never
  * touches Qdrant or the filesystem directly, so tests supply fakes and
  * `index.ts` supplies the real Qdrant-backed episodic query and wiki reads.
  */
-export async function buildContextPrimer(userId: string, deps: ContextPrimerDeps): Promise<string> {
+export async function buildContextPrimer(key: string, deps: ContextPrimerDeps): Promise<string> {
   // Episodic memory is enrichment: without Qdrant the primer goes on without
   // the recap instead of failing the turn.
-  const entries = await deps.getLastSessionEntries(userId).catch((err: unknown) => {
-    deps.log(`last session for ${userId} unavailable, primer built without it: ${String(err)}`);
+  const entries = await deps.getLastSessionEntries(key).catch((err: unknown) => {
+    deps.log(`last session for ${key} unavailable, primer built without it: ${String(err)}`);
     return [];
   });
   // Checked regardless of `entries` — a pending confirmation isn't tied to
   // "was there a prior episodic session", it's simply still open right now.
-  const pendingTokens = await pendingConfirmationTokens(userId, deps);
+  const pendingTokens = await pendingConfirmationTokens(key, deps);
   // Same for every user (curated/ has no per-user scoping) — checked
   // regardless of prior session too, so even a first-ever session gets
   // pointed at what's in the wiki right now.
@@ -106,7 +107,7 @@ export async function buildContextPrimer(userId: string, deps: ContextPrimerDeps
 
   if (entries.length > 0) {
     const entryTimestamps = new Set(entries.map((e) => e.timestamp));
-    const inferredRoot = resolve(deps.vaultPath, "inferred", "users", encodeURIComponent(userId));
+    const inferredRoot = resolve(deps.vaultPath, userArea(key), "inferred");
     const files = await deps.listWikiFilesInRootsFn(deps.vaultPath, [inferredRoot]);
 
     const facts: string[] = [];

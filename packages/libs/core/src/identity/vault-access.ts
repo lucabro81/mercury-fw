@@ -71,6 +71,30 @@ export async function grepVisible(scope: VaultScope, pattern: string): Promise<W
   return matches.map((match) => ({ ...match, path: toVisible(scope, match.path) }));
 }
 
+/** The person's consolidated note on `topic` (`users/<key>/inferred/<topic>.md`), for consolidation to compare against; throws when there is none. */
+export async function readInferredNote(vaultPath: string, key: string, topic: string): Promise<string> {
+  return readVisible({ vaultPath, key }, `${PERSONAL}/inferred/${topic}.md`);
+}
+
+/** The person's own confirmation note for `token`, the only way to reach their `confirmations/` folder; throws when there is none. */
+export async function readConfirmationNote(vaultPath: string, key: string, token: string): Promise<string> {
+  const confirmations = resolve(vaultPath, userArea(key), "confirmations");
+  const target = resolve(confirmations, `${token}.md`);
+  if (!within(confirmations, target) || target === confirmations) throw new Error(`no confirmation ${token}`);
+  return readFile(target, "utf-8");
+}
+
+/** `path` as a destination in the common area, relative to `curated/` (a leading `curated/` is accepted and dropped); throws when it would land anywhere else. */
+export function curatedDestination(vaultPath: string, path: string): string {
+  const relativePath = path.replace(/^curated\//, "");
+  const curated = resolve(vaultPath, "curated");
+  const target = resolve(curated, relativePath);
+  if (!within(curated, target) || target === curated || relativePath.endsWith("/")) {
+    throw new Error(`not a destination in the common area: ${path}`);
+  }
+  return relativePath;
+}
+
 /** The absolute file a write to `path` lands on: only below `personal/notes/`, the one place the model writes for a person. */
 export function personalNotePath(vaultPath: string, key: string, path: string): string {
   if (path.split("/")[0] === "curated") {

@@ -12,7 +12,8 @@ import {
 } from "./semantic-consolidation.ts";
 import type { SemanticFactEntry } from "../memory/semantic-facts-store.ts";
 import type { ToolCorrectionEntry } from "../memory/tool-corrections-store.ts";
-import { readWikiFile, readWikiFileInRoots } from "../wiki/wiki-read.ts";
+import { readWikiFileInRoots } from "../wiki/wiki-read.ts";
+import { readInferredNote, readVisible } from "../identity/vault-access.ts";
 import { writeInferredNote, writeToolCorrectionNote } from "../wiki/wiki-note.ts";
 import { initVault } from "../wiki/vault-init.ts";
 import { resolve } from "node:path";
@@ -26,7 +27,7 @@ function baseDeps(overrides: Partial<ConsolidationDeps>): ConsolidationDeps {
   return {
     vaultPath: VAULT,
     clusterFn: async () => [],
-    readWikiFileFn: NO_INCUMBENT,
+    readInferredNoteFn: NO_INCUMBENT,
     writeInferredNoteFn: async () => {},
     k: 5,
     confidenceForCount: () => "medium",
@@ -35,7 +36,7 @@ function baseDeps(overrides: Partial<ConsolidationDeps>): ConsolidationDeps {
 }
 
 function entry(value: string, timestamp: string, topic = "preferred-language"): SemanticFactEntry {
-  return { userId: "users/42", topic, value, timestamp };
+  return { userId: "google-chat:users/42", topic, value, timestamp };
 }
 
 describe("consolidateSemanticFact", () => {
@@ -48,15 +49,13 @@ describe("consolidateSemanticFact", () => {
       },
     });
 
-    await consolidateSemanticFact("users/42", "preferred-language", deps);
+    await consolidateSemanticFact("google-chat:users/42", "preferred-language", deps);
 
-    // The userId passed to writeInferredNoteFn must be encodeURIComponent-
-    // encoded, matching the convention the model's own wiki tools
-    // (createWikiTools) already use — clusterFn above still saw the raw
-    // "users/42", since that's Qdrant's own storage form.
+    // The same user key Qdrant's facts carry goes to the writer as-is:
+    // encoding it for the vault is userArea's job, done once.
     expect(written).toEqual({
       vaultPath: VAULT,
-      userId: encodeURIComponent("users/42"),
+      userId: "google-chat:users/42",
       topic: "preferred-language",
       fields: { confidence: "medium", derived_from: ["2026-07-20T09:00:00.000Z"], last_reviewed: expect.any(String) },
       body: "italiano",
@@ -67,7 +66,7 @@ describe("consolidateSemanticFact", () => {
     let writeCalls = 0;
     const deps = baseDeps({
       clusterFn: async () => [entry("italiano", "2026-07-20T09:00:00.000Z")],
-      readWikiFileFn: async () =>
+      readInferredNoteFn: async () =>
         [
           "---",
           "type: inferred",
@@ -84,7 +83,7 @@ describe("consolidateSemanticFact", () => {
       },
     });
 
-    await consolidateSemanticFact("users/42", "preferred-language", deps);
+    await consolidateSemanticFact("google-chat:users/42", "preferred-language", deps);
 
     expect(writeCalls).toBe(0);
   });
@@ -96,7 +95,7 @@ describe("consolidateSemanticFact", () => {
         entry("inglese", "2026-07-18T09:00:00.000Z"),
         entry("inglese", "2026-07-19T09:00:00.000Z"),
       ],
-      readWikiFileFn: async () =>
+      readInferredNoteFn: async () =>
         [
           "---",
           "type: inferred",
@@ -113,11 +112,11 @@ describe("consolidateSemanticFact", () => {
       },
     });
 
-    await consolidateSemanticFact("users/42", "preferred-language", deps);
+    await consolidateSemanticFact("google-chat:users/42", "preferred-language", deps);
 
     expect(written).toEqual({
       vaultPath: VAULT,
-      userId: encodeURIComponent("users/42"),
+      userId: "google-chat:users/42",
       topic: "preferred-language",
       fields: {
         confidence: "medium",
@@ -137,7 +136,7 @@ describe("consolidateSemanticFact", () => {
       },
     });
 
-    await consolidateSemanticFact("users/42", "preferred-language", deps);
+    await consolidateSemanticFact("google-chat:users/42", "preferred-language", deps);
 
     expect(writeCalls).toBe(0);
   });
@@ -154,7 +153,7 @@ describe("consolidateSemanticFact", () => {
       },
     });
 
-    await consolidateSemanticFact("users/42", "preferred-language", deps);
+    await consolidateSemanticFact("google-chat:users/42", "preferred-language", deps);
 
     expect(writeCalls).toBe(0);
   });
@@ -175,7 +174,7 @@ describe("consolidateSemanticFact", () => {
       },
     });
 
-    await consolidateSemanticFact("users/42", "preferred-language", deps);
+    await consolidateSemanticFact("google-chat:users/42", "preferred-language", deps);
 
     expect((written as { body: string }).body).toBe("italiano");
     expect((written as { fields: { derived_from: string[] } }).fields.derived_from).toEqual([
@@ -194,7 +193,7 @@ describe("consolidateSemanticFact", () => {
       k: 7,
     });
 
-    await consolidateSemanticFact("users/42", "preferred-language", deps);
+    await consolidateSemanticFact("google-chat:users/42", "preferred-language", deps);
 
     expect(receivedArgs).toEqual([1, 7]);
   });
@@ -209,7 +208,7 @@ describe("consolidateSemanticFact", () => {
       },
     });
 
-    await consolidateSemanticFact("users/42", "preferred-language", deps);
+    await consolidateSemanticFact("google-chat:users/42", "preferred-language", deps);
 
     expect((written as { body: string }).body).toBe("italiano");
   });
@@ -224,7 +223,7 @@ describe("consolidateSemanticFact", () => {
       },
     });
 
-    await consolidateSemanticFact("users/42", "preferred-language", deps);
+    await consolidateSemanticFact("google-chat:users/42", "preferred-language", deps);
 
     expect(receivedLimit).toBe(12);
   });
@@ -239,7 +238,7 @@ describe("consolidateSemanticFact", () => {
       k: undefined as unknown as number,
     });
 
-    await consolidateSemanticFact("users/42", "preferred-language", deps);
+    await consolidateSemanticFact("google-chat:users/42", "preferred-language", deps);
 
     expect(receivedLimit).toBe(DEFAULT_CONSOLIDATION_K);
   });
@@ -254,7 +253,7 @@ describe("consolidateSemanticFact", () => {
       confidenceForCount: undefined as unknown as ConsolidationDeps["confidenceForCount"],
     });
 
-    await consolidateSemanticFact("users/42", "preferred-language", deps);
+    await consolidateSemanticFact("google-chat:users/42", "preferred-language", deps);
 
     expect((written as { fields: { confidence: string } }).fields.confidence).toBe(
       defaultConfidenceForCount(1, DEFAULT_CONSOLIDATION_K),
@@ -280,49 +279,46 @@ describe("consolidateSemanticFact — real wiki read/write (regression: userId e
   // rejects any userId containing "/", but every real Google Chat userId
   // has that shape ("users/<id>") — so consolidation against a real user
   // always threw, silently swallowed by idle-session-cron.ts's own
-  // try/catch. Exercising the REAL writeInferredNote/readWikiFile (not
+  // try/catch. Exercising the REAL writeInferredNote/readInferredNote (not
   // fakes, unlike every test above) is what catches this: a fake never
   // enforces the path-separator guard, so this exact mismatch was never
   // intercepted by the suite before this test existed.
-  it("promotes a fact for a real (slash-containing) userId without throwing, at the same encoded path the model's own wiki tools use", async () => {
+  it("promotes a fact for a real (slash-containing) id without throwing, where the person's own wiki tools find it", async () => {
     const vaultPath = await makeTempVault();
-    const rawUserId = "users/100203105076128909015";
+    const key = "google-chat:users/100203105076128909015";
 
-    await consolidateSemanticFact(rawUserId, "team", {
+    await consolidateSemanticFact(key, "team", {
       vaultPath,
-      clusterFn: async () => [{ userId: rawUserId, topic: "team", value: "platform", timestamp: "2026-07-20T09:00:00.000Z" }],
-      readWikiFileFn: readWikiFile,
+      clusterFn: async () => [{ userId: key, topic: "team", value: "platform", timestamp: "2026-07-20T09:00:00.000Z" }],
+      readInferredNoteFn: readInferredNote,
       writeInferredNoteFn: writeInferredNote,
     });
 
-    // Same path a model-facing wiki tool would use, scoped via
-    // createWikiTools({ userId: encodeURIComponent(sender) }) — proves the
-    // promoted note actually lands where the model can find it.
-    const encodedUserId = encodeURIComponent(rawUserId);
-    const content = await readWikiFile(vaultPath, encodedUserId, `inferred/users/${encodedUserId}/team.md`);
+    // Read the way the person's own wiki tools read it: proves the promoted
+    // note lands where the model can find it.
+    const content = await readVisible({ vaultPath, key }, "personal/inferred/team.md");
     expect(content).toContain("platform");
   });
 
   it("re-clustering the same real userId reads back the incumbent it just wrote, instead of throwing on the raw slash", async () => {
     const vaultPath = await makeTempVault();
-    const rawUserId = "users/100203105076128909015";
+    const key = "google-chat:users/100203105076128909015";
     const deps: ConsolidationDeps = {
       vaultPath,
-      clusterFn: async () => [{ userId: rawUserId, topic: "team", value: "platform", timestamp: "2026-07-20T09:00:00.000Z" }],
-      readWikiFileFn: readWikiFile,
+      clusterFn: async () => [{ userId: key, topic: "team", value: "platform", timestamp: "2026-07-20T09:00:00.000Z" }],
+      readInferredNoteFn: readInferredNote,
       writeInferredNoteFn: writeInferredNote,
     };
 
-    await consolidateSemanticFact(rawUserId, "team", deps);
+    await consolidateSemanticFact(key, "team", deps);
 
     // Second round: same value, same single occurrence — not strictly
     // greater than the incumbent's own count, so it must not throw trying
     // to read the incumbent back (would throw before the fix) and must not
     // re-write (tie, not an improvement).
-    await consolidateSemanticFact(rawUserId, "team", deps);
+    await consolidateSemanticFact(key, "team", deps);
 
-    const encodedUserId = encodeURIComponent(rawUserId);
-    const content = await readWikiFile(vaultPath, encodedUserId, `inferred/users/${encodedUserId}/team.md`);
+    const content = await readVisible({ vaultPath, key }, "personal/inferred/team.md");
     expect(content).toContain("platform");
   });
 });
@@ -454,7 +450,7 @@ describe("consolidateToolCorrection — real wiki read/write", () => {
       writeNoteFn: writeToolCorrectionNote,
     });
 
-    const content = await readWikiFile(vaultPath, "anyone", "curated/standards/jira-select-prefix.md");
+    const content = await readVisible({ vaultPath, key: "static:anyone" }, "curated/standards/jira-select-prefix.md");
     expect(content).toContain("ogni --select deve iniziare per issues.");
   });
 
@@ -479,13 +475,13 @@ describe("consolidateToolCorrection — real wiki read/write", () => {
     };
 
     await consolidateToolCorrection("jira", "select-prefix", deps);
-    const firstWrite = await readWikiFile(vaultPath, "anyone", "curated/standards/jira-select-prefix.md");
+    const firstWrite = await readVisible({ vaultPath, key: "static:anyone" }, "curated/standards/jira-select-prefix.md");
 
     // Same single occurrence again: incumbent count (1) must be read back
     // correctly and compared as a tie (1 <= 1), not silently treated as 0
     // (which would look like "no incumbent" and re-write every time).
     await consolidateToolCorrection("jira", "select-prefix", deps);
-    const secondRead = await readWikiFile(vaultPath, "anyone", "curated/standards/jira-select-prefix.md");
+    const secondRead = await readVisible({ vaultPath, key: "static:anyone" }, "curated/standards/jira-select-prefix.md");
 
     expect(secondRead).toBe(firstWrite);
   });
