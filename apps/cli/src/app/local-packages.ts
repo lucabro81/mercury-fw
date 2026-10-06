@@ -69,8 +69,9 @@ export async function packageOf(tarball: string): Promise<{ name: string; versio
 }
 
 /** The tarballs in `from`, in file-name order, each with the package it
- * holds and its name after its content, for an app in `appDir`. Throws when `from` doesn't exist, holds no
- * tarball, or is the app's own `.packs/` (which the copy replaces). */
+ * holds and its name after its content, for an app in `appDir`. Throws when
+ * `from` doesn't exist, holds no tarball, or is the app's own `.packs/`
+ * (which the copy replaces). */
 export async function readPacks(from: string, appDir: string): Promise<Pack[]> {
   const source = resolve(from);
   if (source === join(resolve(appDir), LOCAL_PACKS_DIR)) {
