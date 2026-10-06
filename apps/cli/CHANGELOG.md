@@ -1,5 +1,13 @@
 # @mercury-fw/cli
 
+## 0.38.1
+
+### Patch Changes
+
+- 972a17f: - `mfw local-packages` and `mfw create --local-packages` name each tarball in `.packs/` after its content, so a package repacked at the same version is installed anew instead of kept from Bun's cache or refused by the lockfile's integrity check
+  - @mercury-fw/core@0.38.1
+  - @mercury-fw/utils@0.38.1
+
 ## 0.38.0
 
 ### Minor Changes

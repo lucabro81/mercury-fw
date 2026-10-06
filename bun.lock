@@ -12,7 +12,7 @@
     },
     "apps/cli": {
       "name": "@mercury-fw/cli",
-      "version": "0.38.0",
+      "version": "0.38.1",
       "bin": {
         "mfw": "./src/bin.ts",
       },
@@ -38,7 +38,7 @@
     },
     "apps/create-mercury-agent": {
       "name": "create-mercury-agent",
-      "version": "0.38.0",
+      "version": "0.38.1",
       "bin": {
         "create-mercury-agent": "./index.ts",
       },
@@ -126,7 +126,7 @@
     },
     "packages/formatters/formatter": {
       "name": "@mercury-fw/formatter",
-      "version": "0.38.0",
+      "version": "0.38.1",
       "dependencies": {
         "@mercury-fw/plugin-types": "workspace:*",
       },
@@ -138,7 +138,7 @@
     },
     "packages/libs/cli-engine": {
       "name": "@mercury-fw/cli-engine",
-      "version": "0.38.0",
+      "version": "0.38.1",
       "dependencies": {
         "@mercury-fw/plugin-types": "workspace:*",
         "ai": "^7.0.126",
@@ -153,7 +153,7 @@
     },
     "packages/libs/confirm-engine": {
       "name": "@mercury-fw/confirm-engine",
-      "version": "0.38.0",
+      "version": "0.38.1",
       "dependencies": {
         "@mercury-fw/channel-types": "workspace:*",
         "@mercury-fw/plugin-types": "workspace:*",
@@ -166,7 +166,7 @@
     },
     "packages/libs/core": {
       "name": "@mercury-fw/core",
-      "version": "0.38.0",
+      "version": "0.38.1",
       "dependencies": {
         "@mercury-fw/channel-types": "workspace:*",
         "@mercury-fw/cli-engine": "workspace:*",
@@ -187,7 +187,7 @@
     },
     "packages/libs/kit": {
       "name": "@mercury-fw/kit",
-      "version": "0.38.0",
+      "version": "0.38.1",
       "dependencies": {
         "@mercury-fw/channel-types": "workspace:*",
         "@mercury-fw/plugin-types": "workspace:*",
@@ -200,7 +200,7 @@
     },
     "packages/libs/utils": {
       "name": "@mercury-fw/utils",
-      "version": "0.38.0",
+      "version": "0.38.1",
       "devDependencies": {
         "@mercury-fw/typescript-config": "*",
         "@types/bun": "^1.4.2",
@@ -264,7 +264,7 @@
     },
     "packages/types/channel-types": {
       "name": "@mercury-fw/channel-types",
-      "version": "0.38.0",
+      "version": "0.38.1",
       "dependencies": {
         "@mercury-fw/plugin-types": "workspace:*",
       },
@@ -276,7 +276,7 @@
     },
     "packages/types/plugin-types": {
       "name": "@mercury-fw/plugin-types",
-      "version": "0.38.0",
+      "version": "0.38.1",
       "dependencies": {
         "ai": "^7.0.126",
       },
