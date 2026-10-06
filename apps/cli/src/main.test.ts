@@ -5,6 +5,7 @@
  * message saying why, writing nothing.
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, spyOn, test } from "bun:test";
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -227,13 +228,16 @@ describe("mfw create --local-packages", () => {
         "@mercury-fw/channel-http": "^0.3.0",
         "@mercury-fw/core": "^0.35.0",
       });
+      // Named after their content in the app (#169).
+      const named = (file: string) =>
+        file.replace(/\.tgz$/, `-${createHash("sha256").update(readFileSync(join(packs, file))).digest("hex").slice(0, 8)}.tgz`);
       expect(manifest.overrides).toEqual({
-        "@mercury-fw/auth-static": "file:./.packs/static.tgz",
-        "@mercury-fw/channel-http": "file:./.packs/http.tgz",
-        "@mercury-fw/core": "file:./.packs/core.tgz",
-        "@mercury-fw/kit": "file:./.packs/kit.tgz",
+        "@mercury-fw/auth-static": `file:./.packs/${named("static.tgz")}`,
+        "@mercury-fw/channel-http": `file:./.packs/${named("http.tgz")}`,
+        "@mercury-fw/core": `file:./.packs/${named("core.tgz")}`,
+        "@mercury-fw/kit": `file:./.packs/${named("kit.tgz")}`,
       });
-      expect(readdirSync(join(dir, ".packs")).sort()).toEqual(["core.tgz", "http.tgz", "kit.tgz", "static.tgz"]);
+      expect(readdirSync(join(dir, ".packs")).sort()).toEqual(["core.tgz", "http.tgz", "kit.tgz", "static.tgz"].map(named));
     } finally {
       server.stop(true);
     }

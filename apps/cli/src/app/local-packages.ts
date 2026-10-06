@@ -4,10 +4,14 @@
  * which the image copies before `bun install`. Overrides, and not the
  * dependencies themselves, because a packed package names its siblings by
  * version, which the registry has too: only an override sends those
- * transitive dependencies to the tarballs as well.
+ * transitive dependencies to the tarballs as well. Each tarball is named
+ * after its content there: Bun takes a `file:` tarball whose spec didn't
+ * change for the one in its lockfile, so a repack at the same version needs
+ * another name to be installed.
  */
 
-import { cpSync, existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 /** The tarballs' folder inside the app, as the Dockerfile copies it. */
@@ -38,8 +42,15 @@ export function withoutLocalOverrides(pkg: Manifest): Manifest {
   return Object.keys(own).length > 0 ? { ...rest, overrides: own } : rest;
 }
 
-/** A local tarball: its file name in the folder, and the package it holds. */
-export type Pack = { file: string; name: string; version: string };
+/** A local tarball: its file name in the folder (`source`), its name in the
+ * app's `.packs/` (`file`), and the package it holds. */
+export type Pack = { source: string; file: string; name: string; version: string };
+
+/** `file`'s name with the first 8 hex digits of `tarball`'s sha256 before `.tgz`. */
+function contentName(file: string, tarball: string): string {
+  const hash = createHash("sha256").update(readFileSync(tarball)).digest("hex").slice(0, 8);
+  return `${file.slice(0, -".tgz".length)}-${hash}.tgz`;
+}
 
 /** The package name and version in a `bun pm pack` tarball, read from its
  * `package/package.json`. */
@@ -58,8 +69,9 @@ export async function packageOf(tarball: string): Promise<{ name: string; versio
 }
 
 /** The tarballs in `from`, in file-name order, each with the package it
- * holds, for an app in `appDir`. Throws when `from` doesn't exist, holds no
- * tarball, or is the app's own `.packs/` (which the copy replaces). */
+ * holds and its name after its content, for an app in `appDir`. Throws when
+ * `from` doesn't exist, holds no tarball, or is the app's own `.packs/`
+ * (which the copy replaces). */
 export async function readPacks(from: string, appDir: string): Promise<Pack[]> {
   const source = resolve(from);
   if (source === join(resolve(appDir), LOCAL_PACKS_DIR)) {
@@ -68,13 +80,15 @@ export async function readPacks(from: string, appDir: string): Promise<Pack[]> {
   if (!existsSync(source)) throw new Error(`${source} doesn't exist.`);
   const files = readdirSync(source).filter((f) => f.endsWith(".tgz")).sort();
   if (files.length === 0) throw new Error(`No .tgz in ${source}: pack the packages there first (bun pm pack).`);
-  return Promise.all(files.map(async (file) => ({ file, ...(await packageOf(join(source, file))) })));
+  return Promise.all(
+    files.map(async (file) => ({ source: file, file: contentName(file, join(source, file)), ...(await packageOf(join(source, file))) })),
+  );
 }
 
-/** Copies `packs` from `from` into the app's `.packs/`, in place of whatever was there. */
+/** Copies `packs` from `from` into the app's `.packs/` under their content names, in place of whatever was there. */
 export function copyPacks(from: string, appDir: string, packs: Pack[]): void {
   const target = join(appDir, LOCAL_PACKS_DIR);
   rmSync(target, { recursive: true, force: true });
   mkdirSync(target);
-  for (const { file } of packs) cpSync(join(resolve(from), file), join(target, file));
+  for (const { source, file } of packs) cpSync(join(resolve(from), source), join(target, file));
 }
