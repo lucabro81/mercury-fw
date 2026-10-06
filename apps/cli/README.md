@@ -222,7 +222,7 @@ Makes the app install `@mercury-fw/*` packages from local tarballs instead of th
 
 Overrides, and not the dependencies themselves, because a packed package names the packages it depends on by version, and the registry has those versions too: only an override sends them to the tarballs as well (a packed `@mercury-fw/core` depends on `@mercury-fw/plugin-types`, for example). The Dockerfile `mfw create` writes copies `.packs/` before installing, so the image gets the same packages (an app created before 0.31.0 needs `COPY --chown=mercury:mercury .pack[s] ./.packs/` added after the line copying `package.json`); `.gitignore` leaves it out of the repository.
 
-Run it again after packing anew: it replaces the tarballs and the overrides of the previous run, and leaves alone the overrides you wrote yourself. `--off` takes the app back to the registry: the overrides it wrote and `.packs/` go, then `bun install`. After either, `mfw start` rebuilds the image with the packages now installed.
+Run it again after packing anew: it replaces the tarballs and the overrides of the previous run, and leaves alone the overrides you wrote yourself. In `.packs/` each tarball is named after its content (`mercury-fw-core-0.38.0-1a2b3c4d.tgz`): Bun doesn't look again at a tarball whose override didn't change, it keeps what its lockfile and its cache hold, so a repack at the same version needs a new name to be installed. `--off` takes the app back to the registry: the overrides it wrote and `.packs/` go, then `bun install`. After either, `mfw start` rebuilds the image with the packages now installed.
 
 ```bash
 mfw local-packages ../mercury-fw/apps/testbed/.packs
