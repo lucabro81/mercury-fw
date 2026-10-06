@@ -3,6 +3,7 @@
  * tarballs shaped like `bun pm pack`'s: what lands in `.packs/`, what the
  * manifest says, and the install that follows.
  */
+import { createHash } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -27,12 +28,19 @@ afterEach(() => {
   rmSync(base, { recursive: true, force: true });
 });
 
-/** Writes a tarball named `file` into `packs`, holding a package called `name`. */
-async function pack(name: string, file: string): Promise<void> {
+/** Writes a tarball named `file` into `packs`, holding a package called `name`, with `code` as its index.ts. */
+async function pack(name: string, file: string, code = ""): Promise<void> {
   const work = mkdtempSync(join(base, "pack-"));
   mkdirSync(join(work, "package"));
   writeFileSync(join(work, "package", "package.json"), JSON.stringify({ name, version: "0.30.0" }));
+  writeFileSync(join(work, "package", "index.ts"), code);
   expect(await Bun.spawn(["tar", "czf", join(packs, file), "-C", work, "package"]).exited).toBe(0);
+}
+
+/** The name `file` in `packs` gets in the app's .packs/: the first 8 hex digits of its sha256 before `.tgz`. */
+function named(file: string): string {
+  const hash = createHash("sha256").update(readFileSync(join(packs, file))).digest("hex").slice(0, 8);
+  return file.replace(/\.tgz$/, `-${hash}.tgz`);
 }
 
 /** Deps that record the commands run and the printed lines; the install answers `installCode`. */
@@ -60,11 +68,14 @@ describe("local-packages <folder>", () => {
     await pack("@mercury-fw/plugin-types", "mercury-fw-plugin-types-0.30.0.tgz");
     const f = fake();
     expect(await appCommands(app, f.deps).localPackages(packs)).toBe(0);
-    expect(readdirSync(join(app.dir, ".packs")).sort()).toEqual(["mercury-fw-core-0.30.0.tgz", "mercury-fw-plugin-types-0.30.0.tgz"]);
+    const core = named("mercury-fw-core-0.30.0.tgz");
+    const types = named("mercury-fw-plugin-types-0.30.0.tgz");
+    expect(readdirSync(join(app.dir, ".packs")).sort()).toEqual([core, types]);
+    expect(readFileSync(join(app.dir, ".packs", core))).toEqual(readFileSync(join(packs, "mercury-fw-core-0.30.0.tgz")));
     expect(manifest().overrides).toEqual({
       "some-lib": "1.2.3",
-      "@mercury-fw/core": "file:./.packs/mercury-fw-core-0.30.0.tgz",
-      "@mercury-fw/plugin-types": "file:./.packs/mercury-fw-plugin-types-0.30.0.tgz",
+      "@mercury-fw/core": `file:./.packs/${core}`,
+      "@mercury-fw/plugin-types": `file:./.packs/${types}`,
     });
     expect(f.runs).toEqual([{ argv: ["bun", "install"], cwd: app.dir }]);
     expect(f.printed).toEqual([`2 local packages in ${join(app.dir, ".packs")}: @mercury-fw/core, @mercury-fw/plugin-types.`]);
@@ -76,8 +87,25 @@ describe("local-packages <folder>", () => {
     await appCommands(app, fake().deps).localPackages(packs);
     rmSync(join(packs, "mercury-fw-kit-0.30.0.tgz"));
     await appCommands(app, fake().deps).localPackages(packs);
-    expect(readdirSync(join(app.dir, ".packs"))).toEqual(["mercury-fw-core-0.30.0.tgz"]);
+    expect(readdirSync(join(app.dir, ".packs"))).toEqual([named("mercury-fw-core-0.30.0.tgz")]);
     expect(Object.keys(manifest().overrides)).toEqual(["some-lib", "@mercury-fw/core"]);
+  });
+
+  // #169: repacked with other code at the same version, the tarball kept its
+  // name, so the override didn't change and Bun kept the old package from its
+  // cache, or failed the lockfile's integrity check without it.
+  test("a repack at the same version with other code changes the override; with the same code it doesn't", async () => {
+    await pack("@mercury-fw/core", "mercury-fw-core-0.30.0.tgz", "export const v = 1;\n");
+    await pack("@mercury-fw/kit", "mercury-fw-kit-0.30.0.tgz");
+    await appCommands(app, fake().deps).localPackages(packs);
+    const before = manifest().overrides;
+    await pack("@mercury-fw/core", "mercury-fw-core-0.30.0.tgz", "export const v = 2;\n");
+    await appCommands(app, fake().deps).localPackages(packs);
+    const core = named("mercury-fw-core-0.30.0.tgz");
+    expect(manifest().overrides["@mercury-fw/core"]).toBe(`file:./.packs/${core}`);
+    expect(manifest().overrides["@mercury-fw/core"]).not.toBe(before["@mercury-fw/core"]);
+    expect(manifest().overrides["@mercury-fw/kit"]).toBe(before["@mercury-fw/kit"]);
+    expect(readdirSync(join(app.dir, ".packs")).sort()).toEqual([core, named("mercury-fw-kit-0.30.0.tgz")]);
   });
 
   test("the install's exit code comes back", async () => {
@@ -100,7 +128,7 @@ describe("local-packages <folder>", () => {
     await appCommands(app, fake().deps).localPackages(packs);
     const f = fake();
     await expect(appCommands(app, f.deps).localPackages(join(app.dir, ".packs"))).rejects.toThrow("is the app's own .packs/");
-    expect(readdirSync(join(app.dir, ".packs"))).toEqual(["mercury-fw-core-0.30.0.tgz"]);
+    expect(readdirSync(join(app.dir, ".packs"))).toEqual([named("mercury-fw-core-0.30.0.tgz")]);
     expect(f.runs).toEqual([]);
   });
 

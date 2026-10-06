@@ -4,7 +4,8 @@
  * `package.json`, so transitive dependencies resolve to the tarballs too.
  */
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { LOCAL_PACKS_DIR, packageOf, readPacks, withLocalOverrides, withoutLocalOverrides } from "./local-packages.ts";
@@ -109,23 +110,42 @@ describe("readPacks", () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  /** A tarball named `file` in `dir/packs`, holding `name` at `version`. */
-  async function pack(file: string, name: string, version: string): Promise<void> {
+  /** A tarball named `file` in `dir/packs`, holding `name` at `version`, and `code` as its index.ts. */
+  async function pack(file: string, name: string, version: string, code = ""): Promise<void> {
     const work = mkdtempSync(join(dir, "w-"));
     mkdirSync(join(work, "package"));
     writeFileSync(join(work, "package", "package.json"), JSON.stringify({ name, version }));
+    writeFileSync(join(work, "package", "index.ts"), code);
     mkdirSync(join(dir, "packs"), { recursive: true });
     expect(await Bun.spawn(["tar", "czf", join(dir, "packs", file), "-C", work, "package"]).exited).toBe(0);
   }
 
-  test("every tarball in the folder, by file name, with the package it holds", async () => {
+  /** The first 8 hex digits of the sha256 of `file` in `dir/packs`. */
+  function hashOf(file: string): string {
+    return createHash("sha256").update(readFileSync(join(dir, "packs", file))).digest("hex").slice(0, 8);
+  }
+
+  test("every tarball in the folder, by file name, with the package it holds and its name after its content", async () => {
     await pack("b.tgz", "@mercury-fw/core", "0.35.0");
     await pack("a.tgz", "@mercury-fw/auth-static", "0.0.0");
     writeFileSync(join(dir, "packs", "notes.txt"), "not a tarball");
     expect(await readPacks(join(dir, "packs"), join(dir, "app"))).toEqual([
-      { file: "a.tgz", name: "@mercury-fw/auth-static", version: "0.0.0" },
-      { file: "b.tgz", name: "@mercury-fw/core", version: "0.35.0" },
+      { source: "a.tgz", file: `a-${hashOf("a.tgz")}.tgz`, name: "@mercury-fw/auth-static", version: "0.0.0" },
+      { source: "b.tgz", file: `b-${hashOf("b.tgz")}.tgz`, name: "@mercury-fw/core", version: "0.35.0" },
     ]);
+  });
+
+  // #169: a repack at the same version kept the same file name, so the same
+  // override, and Bun kept the old package (or failed its integrity check).
+  test("a tarball repacked with other content at the same version gets another name; the same content, the same name", async () => {
+    await pack("mercury-fw-core-0.38.0.tgz", "@mercury-fw/core", "0.38.0");
+    const [first] = await readPacks(join(dir, "packs"), join(dir, "app"));
+    const [again] = await readPacks(join(dir, "packs"), join(dir, "app"));
+    expect(again?.file).toBe(first!.file);
+    await pack("mercury-fw-core-0.38.0.tgz", "@mercury-fw/core", "0.38.0", "export const changed = true;\n");
+    const [repacked] = await readPacks(join(dir, "packs"), join(dir, "app"));
+    expect(repacked?.file).toMatch(/^mercury-fw-core-0\.38\.0-[0-9a-f]{8}\.tgz$/);
+    expect(repacked?.file).not.toBe(first!.file);
   });
 
   test("a folder that doesn't exist, holds no tarball, or is the app's own .packs/ is an error", async () => {
