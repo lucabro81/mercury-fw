@@ -148,11 +148,10 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   const plugins = config.plugins;
 
   // A plugin's CLI that keeps its login in a folder finds it in place before
-  // the plugin loads: unpacked from the env file on a fresh credentials volume.
+  // the plugin loads: on the credentials volume, linked when it's kept elsewhere.
   await materializeCliCredentials({
     appDir: process.cwd(),
     homeDir: homedir(),
-    env: process.env,
     log: (msg) => console.error(msg),
   });
 
