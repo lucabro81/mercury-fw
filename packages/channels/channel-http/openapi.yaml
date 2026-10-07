@@ -87,7 +87,9 @@ paths:
             An SSE stream. Each event is one of the types in `TurnEvent`:
             `reasoning`/`reasoning_end`, `text` (incremental deltas), `tool`/
             `tool_finish` (status of a tool call), `pending` (a staged
-            confirm-required action, with its command and token), `final` (the
+            confirm-required action, with its command and token), `login` (a
+            service the caller has to log in to first, with the link to open),
+            `final` (the
             authoritative complete answer), and `error`.
           content:
             text/event-stream:
@@ -339,6 +341,30 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  /login/callback:
+    get:
+      summary: Where a person comes back after logging in to a service
+      description: >
+        Mounted when `HTTP_SURFACE_PUBLIC_URL` is set. The service sends the
+        person's browser here with `code` and `state` (or `error`); the
+        single-use state is the credential, so no bearer token is needed.
+        Answers with a plain-text page.
+      security: []
+      parameters:
+        - { name: code, in: query, schema: { type: string } }
+        - { name: state, in: query, schema: { type: string } }
+        - { name: error, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: Logged in.
+          content:
+            text/plain:
+              schema: { type: string }
+        "400":
+          description: Refused, expired, already used, or missing code/state.
+          content:
+            text/plain:
+              schema: { type: string }
   /openapi.yaml:
     get:
       summary: This OpenAPI document
@@ -416,6 +442,12 @@ components:
         token:
           type: string
           description: On `pending` — the one-time confirmation token.
+        service:
+          type: string
+          description: On `login` — the service the caller has to log in to.
+        url:
+          type: string
+          description: On `login` — the link the caller opens to log in; it comes back to `/login/callback`.
         text:
           type: string
           description: On `final` — the authoritative complete answer.

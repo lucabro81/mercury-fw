@@ -29,7 +29,7 @@ describe("httpChannel", () => {
   // A literal, not CHANNEL_API_VERSION: the import reports whatever contract
   // is installed, so an old channel next to a newer core would claim the new
   // version and be loaded. The literal is the contract this code was written for.
-  it("declares the http name at channel api version 3", () => {
+  it("declares the http name at channel api version 4", () => {
     expect(httpChannel.name).toBe("http");
     expect(httpChannel.apiVersion).toBe(4);
   });
@@ -39,6 +39,26 @@ describe("httpChannel", () => {
     expect(typeof provider?.start).toBe("function");
     expect(typeof provider?.notify).toBe("function");
     expect(typeof provider?.stop).toBe("function");
+  });
+
+  // #176: the provider can send a person back only to a URL it can reach.
+  it("offers its login callback when it has a public URL", () => {
+    for (const publicUrl of ["https://mercury.example", "https://mercury.example/"]) {
+      const accepted: string[] = [];
+      httpChannel.build(
+        fullCtx({
+          env: { HTTP_SURFACE_PUBLIC_URL: publicUrl },
+          logins: { accept: (url) => accepted.push(url), complete: async () => ({ ok: true, service: "x" }) },
+        }),
+      );
+      expect(accepted).toEqual(["https://mercury.example/login/callback"]);
+    }
+  });
+
+  it("offers no login callback without a public URL", () => {
+    const accepted: string[] = [];
+    httpChannel.build(fullCtx({ logins: { accept: (url) => accepted.push(url), complete: async () => ({ ok: true, service: "x" }) } }));
+    expect(accepted).toEqual([]);
   });
 
   it("throws (loader isolates it) when resolveConfirmation is missing", () => {

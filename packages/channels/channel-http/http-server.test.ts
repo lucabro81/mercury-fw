@@ -1,5 +1,5 @@
 import { describe, it, expect } from "bun:test";
-import { handleTurnRequest, handleConfirmRequest, openApiResponse, readRoutes, startHttpServer } from "./http-server.ts";
+import { handleTurnRequest, handleConfirmRequest, handleLoginCallback, openApiResponse, readRoutes, startHttpServer } from "./http-server.ts";
 import type { Authenticate, HandleTurn, InboundTurn, TurnSink, ChannelHostReads, Principal } from "@mercury-fw/channel-types";
 import type { StepInfo } from "@mercury-fw/plugin-types";
 
@@ -126,6 +126,33 @@ describe("handleTurnRequest", () => {
     expect(body).toContain("event: pending");
     expect(body).toContain("jira issue delete KAN-1");
     expect(body).toContain("TOK-123");
+  });
+
+  // #176: the link a person logs in with goes to the client, never through the model.
+  it("surfaces a login a tool asked for as a login event with the service and the link", async () => {
+    const loginStep: StepInfo = {
+      toolCalls: [{ toolCallId: "1", toolName: "jiraCommand", input: { command: "jira issue search" } }],
+      toolResults: [
+        {
+          toolCallId: "1",
+          toolName: "jiraCommand",
+          output: { ok: false, loginRequired: true, service: "jira", authorizeUrl: "https://auth.example/authorize?x=1", error: "log in" },
+        },
+      ],
+      content: [],
+    } as unknown as StepInfo;
+    const handleTurn: HandleTurn = async (_turn, sink) => {
+      sink.onStep?.(loginStep);
+      await sink.finalize("You need to log in to Jira first.");
+    };
+    const res = await handleTurnRequest(turnReq({ text: "my issues", conversationId: "c" }), {
+      handleTurn,
+      confirm: async () => null,
+      authenticate: asAlice,
+    });
+    const body = await res.text();
+    expect(body).toContain('event: login\ndata: {"service":"jira","url":"https://auth.example/authorize?x=1"}\n\n');
+    expect(body.indexOf("event: login")).toBeLessThan(body.indexOf("event: final"));
   });
 
   it("uses a fresh ephemeral session key when the client supplies no conversationId", async () => {
@@ -453,6 +480,68 @@ describe("handleConfirmRequest", () => {
     expect(noToken.status).toBe(400);
     const noConv = await handleConfirmRequest(confirmReq({ token: "TOK" }), stub);
     expect(noConv.status).toBe(400);
+  });
+});
+
+// #176: where the provider sends the person back after they log in. Public:
+// the single-use state is what ties it to the person who started.
+describe("handleLoginCallback", () => {
+  const callback = (query: string) => new Request(`http://x/login/callback${query}`);
+
+  it("finishes the login the state was issued for, and tells the person to go back", async () => {
+    const calls: string[] = [];
+    const res = await handleLoginCallback(callback("?code=c-1&state=st-1"), {
+      complete: async (state, code) => {
+        calls.push(`${state} ${code}`);
+        return { ok: true, service: "jira" };
+      },
+    });
+    expect(calls).toEqual(["st-1 c-1"]);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toStartWith("text/plain");
+    expect(await res.text()).toBe("You're logged in to jira. Go back to the conversation and ask again.");
+  });
+
+  it("reports a login that didn't go through", async () => {
+    const res = await handleLoginCallback(callback("?code=c&state=st"), {
+      complete: async () => ({ ok: false, error: "This login link has expired or was already used: ask Mercury again for a new one." }),
+    });
+    expect(res.status).toBe(400);
+    expect(await res.text()).toBe("This login link has expired or was already used: ask Mercury again for a new one.");
+  });
+
+  it("a refused consent, or a request without code and state, completes nothing", async () => {
+    for (const [query, text] of [
+      ["?error=access_denied&state=st", "The login didn't happen (access_denied). Ask Mercury again for a new link."],
+      ["?state=st", "The login link came back without a code or a state. Ask Mercury again for a new link."],
+      ["?code=c", "The login link came back without a code or a state. Ask Mercury again for a new link."],
+      ["", "The login link came back without a code or a state. Ask Mercury again for a new link."],
+    ] as const) {
+      let called = false;
+      const res = await handleLoginCallback(callback(query), {
+        complete: async () => {
+          called = true;
+          return { ok: true, service: "jira" };
+        },
+      });
+      expect(called).toBe(false);
+      expect(res.status).toBe(400);
+      expect(await res.text()).toBe(text);
+    }
+  });
+
+  it("is mounted, without authentication, only when the server can complete logins", async () => {
+    const base = { handleTurn: async () => {}, confirm: async () => null, resolveConfirmation: async () => ({ status: "not-a-token" as const }), authenticate: refuse, port: 0 };
+    const withLogins = startHttpServer({ ...base, completeLogin: async () => ({ ok: true, service: "jira" }) });
+    const without = startHttpServer(base);
+    try {
+      const ok = await fetch(`http://localhost:${withLogins.port}/login/callback?code=c&state=s`);
+      expect(ok.status).toBe(200);
+      expect((await fetch(`http://localhost:${without.port}/login/callback?code=c&state=s`)).status).toBe(404);
+    } finally {
+      withLogins.stop(true);
+      without.stop(true);
+    }
   });
 });
 
