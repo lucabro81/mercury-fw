@@ -47,13 +47,18 @@
     "cliBinary": {
       "repo": "lucabro81/CLI-monorepo",
       "crate": "bitbucket",
-      "version": "2.1.0"
+      "version": "2.3.0"
     },
     "cliCredentials": {
       "folder": "bitbucket-cli",
       "setup": [
         "bitbucket",
         "init"
+      ],
+      "userSetup": [
+        "bitbucket",
+        "init",
+        "--user-app"
       ],
       "check": [
         "bitbucket",

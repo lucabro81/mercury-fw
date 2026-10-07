@@ -35,13 +35,18 @@
     "cliBinary": {
       "repo": "lucabro81/CLI-monorepo",
       "crate": "jira",
-      "version": "2.1.0"
+      "version": "2.3.0"
     },
     "cliCredentials": {
       "folder": "jira-cli",
       "setup": [
         "jira",
         "init"
+      ],
+      "userSetup": [
+        "jira",
+        "init",
+        "--user-app"
       ],
       "check": [
         "jira",

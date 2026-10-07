@@ -23,7 +23,7 @@
  */
 import { readFileSync } from "node:fs";
 import { PLUGIN_API_VERSION, type Plugin, type CliPostProcessor, parseSkill } from "@mercury-fw/plugin-types";
-import { runCli, createCliTool, parseCliConfig, createCliStatusDescriber } from "@mercury-fw/cli-engine";
+import { runCli, createCliTool, createCliPersonLogin, parseCliConfig, createCliStatusDescriber } from "@mercury-fw/cli-engine";
 import rawConfig from "./jira.json";
 import { createJiraIssueListExtractor } from "./issue-list-extractor.ts";
 
@@ -58,6 +58,9 @@ export function createJiraPlugin(deps: { runCliFn?: typeof runCli } = {}): Plugi
   return {
     apiVersion: PLUGIN_API_VERSION,
     name: "jira",
+    // Every command runs as the person the turn is for, logged in to Jira
+    // through Mercury: they see and change what their own account can.
+    actsAs: "person",
     skills: [jiraSkill],
     build: (ctx) => {
       // The browse links the issue lists point to: not derivable from any CLI
@@ -90,11 +93,14 @@ export function createJiraPlugin(deps: { runCliFn?: typeof runCli } = {}): Plugi
 
       return {
         postProcess,
+        login: createCliPersonLogin(runCliFn, loaded.binary, { redirectUri: true }),
         sessionTools: (sctx, decoratedPostProcess) => {
           const { runCommand } = createCliTool(runCliFn, configs, {
             stageConfirmation: sctx.stageConfirmation,
             stashDisplay: sctx.stashDisplay,
             postProcess: decoratedPostProcess,
+            person: sctx.person,
+            requireLogin: sctx.requireLogin,
           });
           return { jiraCommand: runCommand };
         },

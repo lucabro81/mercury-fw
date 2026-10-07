@@ -26,6 +26,10 @@ function commandOf(input: unknown): string | undefined {
 export const atlassianAdminPlugin: Plugin = {
   apiVersion: PLUGIN_API_VERSION,
   name: "atlassian-admin",
+  // The organization's API key is Mercury's own: whoever asks, it answers as
+  // the organization, so only someone allowed to make Mercury act as itself
+  // may use it.
+  actsAs: "mercury",
   build: (ctx) => {
     // Schema-only validation — the pinned binary is co-shipped, so no
     // `--version` check (see the Jira/Bitbucket plugins / `parseCliConfig`).
