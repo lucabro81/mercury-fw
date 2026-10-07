@@ -1,14 +1,13 @@
 /**
- * Packing a CLI's config folder into the value of its credentials variable,
- * and writing that variable into the app's env file, on temporary folders:
- * never a real CLI's config.
+ * Writing a variable into the app's env file, and reading a service account
+ * key file, on temporary folders.
  */
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { chmodSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createPrivateKey, generateKeyPairSync } from "node:crypto";
-import { packCredentials, readServiceAccountKey, setEnvVar } from "./credentials.ts";
+import { readServiceAccountKey, setEnvVar } from "./credentials.ts";
 
 let base: string;
 beforeEach(() => {
@@ -16,52 +15,6 @@ beforeEach(() => {
 });
 afterEach(() => {
   rmSync(base, { recursive: true, force: true });
-});
-
-/** A fake CLI config folder at `dir`: one file at its root, one in a subfolder. */
-function fakeConfig(dir: string): void {
-  mkdirSync(join(dir, "profiles"), { recursive: true });
-  writeFileSync(join(dir, "app.json"), '{"client_id":"fake"}\n');
-  writeFileSync(join(dir, "profiles", "default.json"), '{"token":"fake"}\n');
-}
-
-/** Unpacks `value` the way the core does at startup (base64 -d | tar xzf - -C dest)
- * and returns every file path under `dest`, sorted. */
-async function unpack(value: string): Promise<string[]> {
-  const dest = join(base, "unpacked");
-  mkdirSync(dest);
-  const proc = Bun.spawn(["tar", "xzf", "-", "-C", dest], { stdin: Buffer.from(value, "base64"), stderr: "pipe" });
-  expect(await proc.exited).toBe(0);
-  return [...new Bun.Glob("**/*").scanSync({ cwd: dest, dot: true })].sort();
-}
-
-describe("packCredentials", () => {
-  test("the folder at the root of the archive, with everything in it, as base64 on one line", async () => {
-    fakeConfig(join(base, "jira-cli"));
-    const value = await packCredentials(join(base, "jira-cli"), "jira-cli");
-    expect(value).toMatch(/^[A-Za-z0-9+/]+=*$/);
-    expect(await unpack(value)).toEqual(["jira-cli/app.json", "jira-cli/profiles/default.json"]);
-  });
-
-  test("a folder with another name lands under the CLI's folder name", async () => {
-    fakeConfig(join(base, "somewhere", "my-jira-login"));
-    const value = await packCredentials(join(base, "somewhere", "my-jira-login"), "jira-cli");
-    expect(await unpack(value)).toEqual(["jira-cli/app.json", "jira-cli/profiles/default.json"]);
-  });
-
-  // Regression: a config folder that is itself a symlink (dotfiles managed by
-  // stow or chezmoi) was packed as the bare link, which the container unpacked
-  // as a dangling symlink: the folder "existed" forever, the CLI never logged in.
-  test("a config folder that is a symlink packs what it points to", async () => {
-    fakeConfig(join(base, "dotfiles", "jira"));
-    symlinkSync(join(base, "dotfiles", "jira"), join(base, "jira-cli"));
-    const value = await packCredentials(join(base, "jira-cli"), "jira-cli");
-    expect(await unpack(value)).toEqual(["jira-cli/app.json", "jira-cli/profiles/default.json"]);
-  });
-
-  test("a missing folder is an error that names it", async () => {
-    await expect(packCredentials(join(base, "nope"), "jira-cli")).rejects.toThrow(`No folder at ${join(base, "nope")}`);
-  });
 });
 
 describe("setEnvVar", () => {

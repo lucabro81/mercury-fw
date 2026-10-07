@@ -26,7 +26,8 @@ function harness({ code = 0, appError }: { code?: number; appError?: string } = 
     vault: record("vault"),
     memory: record("memory"),
     reset: record("reset"),
-    credentialsSet: record("credentialsSet"),
+    credentialsSetup: record("credentialsSetup"),
+    credentialsCheck: record("credentialsCheck"),
     credentialsReset: record("credentialsReset"),
     googleChatSetKey: record("googleChatSetKey"),
     localPackages: record("localPackages"),
@@ -173,9 +174,10 @@ describe("app commands reach the app with their arguments", () => {
     [["memory", "list"], ["memory", ["list"]]],
     [["memory", "read", "episodic_memory"], ["memory", ["read", "episodic_memory"]]],
     [["memory", "read", "episodic_memory", "--limit", "5"], ["memory", ["read", "episodic_memory", "--limit", "5"]]],
-    [["credentials", "set", "jira-cli"], ["credentialsSet", "jira-cli", { print: false }]],
-    [["credentials", "set", "@mercury-fw/plugin-jira", "--from", "/x/login", "--print"], ["credentialsSet", "@mercury-fw/plugin-jira", { from: "/x/login", print: true }]],
-    [["credentials", "reset", "jira-cli"], ["credentialsReset", "jira-cli"]],
+    [["credentials", "setup", "jira-cli"], ["credentialsSetup", "jira-cli"]],
+    [["credentials", "check", "@mercury-fw/plugin-jira"], ["credentialsCheck", "@mercury-fw/plugin-jira"]],
+    [["credentials", "reset", "jira-cli"], ["credentialsReset", "jira-cli", {}]],
+    [["credentials", "reset", "jira-cli", "--user", "oidc:123"], ["credentialsReset", "jira-cli", { user: "oidc:123" }]],
     [["google-chat", "set-key", "key.json"], ["googleChatSetKey", "key.json", {}]],
     [
       ["google-chat", "set-key", "key.json", "--subscription", "projects/p/subscriptions/s"],
@@ -225,8 +227,9 @@ describe("refused before anything runs", () => {
     [["memory", "read", "x", "--limit", "ten"], "--limit takes a positive whole number"],
     [["memory", "list", "--limit", "5"], "unknown option '--limit'"],
     [["deploy"], "unknown command 'deploy'"],
-    [["credentials", "set"], "missing required argument 'plugin'"],
-    [["credentials", "set", "jira", "--form", "/x"], "unknown option '--form'"],
+    [["credentials", "setup"], "missing required argument 'plugin'"],
+    [["credentials", "setup", "jira", "--from", "/x"], "unknown option '--from'"],
+    [["credentials", "set", "jira"], "unknown command 'set'"],
     [["credentials", "reset", "jira", "bitbucket"], "too many arguments"],
     [["credentials", "copy", "jira"], "unknown command 'copy'"],
     [["google-chat", "set-key"], "missing required argument 'key-file'"],
@@ -266,7 +269,7 @@ describe("help", () => {
     for (const c of COMMANDS) expect(h.out()).toContain(`  ${c}`);
   });
 
-  test.each([...COMMANDS.map((c) => [c]), ["vault", "write-curated"], ["memory", "read"], ["credentials", "set"], ["credentials", "reset"], ["google-chat", "set-key"]])(
+  test.each([...COMMANDS.map((c) => [c]), ["vault", "write-curated"], ["memory", "read"], ["credentials", "setup"], ["credentials", "check"], ["credentials", "reset"], ["google-chat", "set-key"]])(
     "mfw %s … --help describes it and runs nothing",
     async (...path) => {
       const h = harness();

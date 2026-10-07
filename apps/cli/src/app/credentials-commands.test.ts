@@ -1,19 +1,18 @@
 /**
- * `mfw credentials set|reset` on a temporary app (a manifest with the jira
- * plugin and a third-party plugin among its dependencies, each declaring its
- * CLI credentials folder in its installed package.json) and a fake CLI config
- * folder: what ends up in the env file, what's printed (never the value,
- * unless asked), and the docker calls of a reset.
+ * `mfw credentials setup|check|reset` on a temporary app (a manifest with the
+ * jira plugin, a third-party plugin and one keeping its login outside
+ * ~/.config among its dependencies, each declaring its CLI login in its
+ * installed package.json): the docker calls that run the declared commands
+ * inside the app's container, where the CLI writes onto the credentials volume.
  */
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { appCommands, type AppDeps } from "./commands.ts";
 
 let base: string;
 let app: { dir: string; name: string };
-let envFile: string;
 beforeEach(() => {
   base = mkdtempSync(join(tmpdir(), "mercury-credentials-cmd-"));
   app = { dir: join(base, "my-agent"), name: "my-agent" };
@@ -31,14 +30,18 @@ beforeEach(() => {
     }),
   );
   installed("@mercury-fw/core", {});
-  installed("@mercury-fw/plugin-jira", { mercury: { cliCredentials: { folder: "jira-cli" } } });
-  // Not in the CLI's catalog: the declaration alone is what makes it work.
-  installed("acme-mercury-plugin", { mercury: { cliCredentials: { folder: "acme-cli" } } });
+  installed("@mercury-fw/plugin-jira", {
+    mercury: {
+      cliCredentials: { folder: "jira-cli", setup: ["jira", "init"], check: ["jira", "doctor"], logout: ["jira", "auth", "logout"] },
+    },
+  });
+  // Not in the CLI's catalog: the declaration alone is what makes it work. It
+  // declares neither a check nor a logout.
+  installed("acme-mercury-plugin", { mercury: { cliCredentials: { folder: "acme-cli", setup: ["acme", "login"] } } });
   // A CLI that keeps its login outside ~/.config.
-  installed("cloudy-plugin", { mercury: { cliCredentials: { path: ".cloudy" } } });
-  envFile = join(app.dir, [".", "env"].join(""));
-  mkdirSync(join(base, "home", ".config", "jira-cli"), { recursive: true });
-  writeFileSync(join(base, "home", ".config", "jira-cli", "app.json"), '{"client_id":"fake"}\n');
+  installed("cloudy-plugin", {
+    mercury: { cliCredentials: { path: ".cloudy", setup: ["cloudy", "init"], check: ["cloudy", "status"], logout: ["cloudy", "logout"] } },
+  });
 });
 afterEach(() => {
   rmSync(base, { recursive: true, force: true });
@@ -66,140 +69,154 @@ function fake({ answer = "", codes = [] as number[] } = {}) {
       return answer;
     },
     print: (line) => void printed.push(line),
-    // Never the real home: a test must not read a real CLI's credentials.
     home: join(base, "home"),
   };
   return { deps, runs, printed, asked };
 }
 
-describe("credentials set", () => {
-  test("packs ~/.config/<folder> into the plugin's variable in the env file, never printing the value", async () => {
-    const f = fake();
-    expect(await appCommands(app, f.deps).credentialsSet("jira-cli", { print: false })).toBe(0);
-    const line = readFileSync(envFile, "utf-8");
-    expect(line).toMatch(/^JIRA_CLI_CONFIG_TAR_B64=[A-Za-z0-9+/]+=*\n$/);
-    const value = line.trim().split("=").slice(1).join("=");
-    expect(f.printed.join("\n")).not.toContain(value);
-    expect(f.printed).toEqual([
-      `JIRA_CLI_CONFIG_TAR_B64 set in ${envFile}, from ${join(base, "home", ".config", "jira-cli")}.`,
-      "The app unpacks it at its next start, if the volume has no jira-cli folder yet; if it has one, run mfw credentials reset jira-cli first.",
-    ]);
-    expect(f.runs).toEqual([]);
-  });
+const RUN = ["docker", "compose", "run", "--rm", "--no-deps"];
 
-  test("--from packs another folder", async () => {
-    mkdirSync(join(base, "elsewhere"));
-    writeFileSync(join(base, "elsewhere", "token.json"), "{}\n");
-    const f = fake();
-    await appCommands(app, f.deps).credentialsSet("jira-cli", { from: join(base, "elsewhere"), print: false });
-    expect(f.printed[0]).toBe(`JIRA_CLI_CONFIG_TAR_B64 set in ${envFile}, from ${join(base, "elsewhere")}.`);
-    expect(readFileSync(envFile, "utf-8")).toStartWith("JIRA_CLI_CONFIG_TAR_B64=");
-  });
+/** How a login kept outside ~/.config is reached by a one-off container: the
+ * home path linked to the volume first, as the core does at startup. */
+const LINKED = [
+  "sh",
+  "-c",
+  'mkdir -p "$1" "$(dirname "$2")" && ln -sfn "$1" "$2" && shift 2 && exec "$@"',
+  "sh",
+  "/home/mercury/.config/mercury-home/.cloudy",
+  "/home/mercury/.cloudy",
+];
 
-  test("--print prints the line and leaves the env file alone", async () => {
-    const f = fake();
-    await appCommands(app, f.deps).credentialsSet("jira-cli", { from: join(base, "home", ".config", "jira-cli"), print: true });
-    expect(f.printed).toHaveLength(1);
-    expect(f.printed[0]).toMatch(/^JIRA_CLI_CONFIG_TAR_B64=[A-Za-z0-9+/]+=*$/);
-    expect(existsSync(envFile)).toBe(false);
-  });
-
-  test("the plugin can be named by its package too", async () => {
-    const f = fake();
-    expect(await appCommands(app, f.deps).credentialsSet("@mercury-fw/plugin-jira", { print: false })).toBe(0);
-    expect(readFileSync(envFile, "utf-8")).toStartWith("JIRA_CLI_CONFIG_TAR_B64=");
-  });
+describe("credentials setup", () => {
+  test.each(["jira-cli", "@mercury-fw/plugin-jira"])(
+    "named %p: runs the declared setup in the app's container, on the terminal",
+    async (plugin) => {
+      const f = fake();
+      expect(await appCommands(app, f.deps).credentialsSetup(plugin)).toBe(0);
+      expect(f.runs).toEqual([[...RUN, "mercury", "jira", "init"]]);
+      expect(f.printed).toEqual(["Next: mfw credentials check @mercury-fw/plugin-jira"]);
+    },
+  );
 
   test("a plugin outside the CLI's catalog works the same, through its declaration", async () => {
-    mkdirSync(join(base, "home", ".config", "acme-cli"), { recursive: true });
-    writeFileSync(join(base, "home", ".config", "acme-cli", "auth"), "x\n");
     const f = fake();
-    expect(await appCommands(app, f.deps).credentialsSet("acme-mercury-plugin", { print: false })).toBe(0);
-    expect(readFileSync(envFile, "utf-8")).toMatch(/^ACME_CLI_CONFIG_TAR_B64=[A-Za-z0-9+/]+=*\n$/);
+    expect(await appCommands(app, f.deps).credentialsSetup("acme-mercury-plugin")).toBe(0);
+    expect(f.runs).toEqual([[...RUN, "mercury", "acme", "login"]]);
+    expect(f.printed).toEqual([]);
+  });
+
+  // #144: a login kept outside ~/.config is written through the link onto the volume.
+  test("a login declared elsewhere in the home is linked to the volume before the setup runs", async () => {
+    const f = fake();
+    expect(await appCommands(app, f.deps).credentialsSetup("cloudy-plugin")).toBe(0);
+    expect(f.runs).toEqual([[...RUN, "mercury", ...LINKED, "cloudy", "init"]]);
+  });
+
+  test("a failed setup returns its exit code and suggests nothing", async () => {
+    const f = fake({ codes: [2] });
+    expect(await appCommands(app, f.deps).credentialsSetup("jira-cli")).toBe(2);
+    expect(f.printed).toEqual([]);
   });
 
   // The short catalog name ("jira") isn't a name a third-party plugin has to
-  // follow, so it's no longer accepted.
+  // follow, so it isn't accepted.
   test.each(["jira", "bitbucket"])("%p isn't a declared package or folder: an error listing what the app has", async (name) => {
     const f = fake();
-    await expect(appCommands(app, f.deps).credentialsSet(name, { print: false })).rejects.toThrow(
+    await expect(appCommands(app, f.deps).credentialsSetup(name)).rejects.toThrow(
       `my-agent has no CLI credentials named "${name}". It has: @mercury-fw/plugin-jira (jira-cli), acme-mercury-plugin (acme-cli), cloudy-plugin (.cloudy).`,
     );
-    expect(existsSync(envFile)).toBe(false);
-  });
-
-  // #144: a login declared outside ~/.config is packed from where it is.
-  test("a login declared elsewhere in the home is packed from there, under its own name", async () => {
-    mkdirSync(join(base, "home", ".cloudy"), { recursive: true });
-    writeFileSync(join(base, "home", ".cloudy", "token"), "x\n");
-    const f = fake();
-    expect(await appCommands(app, f.deps).credentialsSet(".cloudy", { print: false })).toBe(0);
-    expect(f.printed[0]).toBe(`CLOUDY_CONFIG_TAR_B64 set in ${envFile}, from ${join(base, "home", ".cloudy")}.`);
-    const value = readFileSync(envFile, "utf-8").trim().split("=").slice(1).join("=");
-    const listing = Bun.spawnSync(["tar", "-tzf", "-"], { stdin: Buffer.from(value, "base64") }).stdout.toString();
-    expect(listing.split("\n").filter(Boolean).sort()).toEqual([".cloudy/", ".cloudy/token"]);
+    expect(f.runs).toEqual([]);
   });
 
   test("an app without its dependencies installed says to install them", async () => {
     rmSync(join(app.dir, "node_modules"), { recursive: true });
     const f = fake();
-    await expect(appCommands(app, f.deps).credentialsSet("jira-cli", { print: false })).rejects.toThrow("run bun install");
+    await expect(appCommands(app, f.deps).credentialsSetup("jira-cli")).rejects.toThrow("run bun install");
   });
 
   // Review of #144: another dependency's problem made every name fail.
   test("another dependency's problem doesn't stop a plugin that's fine", async () => {
     rmSync(join(app.dir, "node_modules", "acme-mercury-plugin"), { recursive: true });
     const f = fake();
-    expect(await appCommands(app, f.deps).credentialsSet("jira-cli", { print: false })).toBe(0);
-    expect(readFileSync(envFile, "utf-8")).toStartWith("JIRA_CLI_CONFIG_TAR_B64=");
+    expect(await appCommands(app, f.deps).credentialsSetup("jira-cli")).toBe(0);
+  });
+});
+
+describe("credentials check", () => {
+  test("runs the declared check in the app's container", async () => {
+    const f = fake({ codes: [1] });
+    expect(await appCommands(app, f.deps).credentialsCheck("@mercury-fw/plugin-jira")).toBe(1);
+    expect(f.runs).toEqual([[...RUN, "-T", "mercury", "jira", "doctor"]]);
+  });
+
+  test("a login declared elsewhere is linked first", async () => {
+    const f = fake();
+    await appCommands(app, f.deps).credentialsCheck(".cloudy");
+    expect(f.runs).toEqual([[...RUN, "-T", "mercury", ...LINKED, "cloudy", "status"]]);
+  });
+
+  test("a plugin declaring no check says so, and runs nothing", async () => {
+    const f = fake();
+    await expect(appCommands(app, f.deps).credentialsCheck("acme-mercury-plugin")).rejects.toThrow(
+      "acme-mercury-plugin declares no command to check its CLI's login.",
+    );
+    expect(f.runs).toEqual([]);
   });
 });
 
 describe("credentials reset", () => {
-  const STEPS = [
-    ["docker", "compose", "stop", "mercury"],
-    ["docker", "compose", "run", "--rm", "--no-deps", "-T", "mercury", "rm", "-rf", "/home/mercury/.config/jira-cli"],
-    ["docker", "compose", "up", "-d", "mercury"],
-  ];
-
   test.each(["jira-cli", "@mercury-fw/plugin-jira"])(
-    "named %p, confirmed with the folder's name: the folder goes from the volume, the app comes back",
+    "named %p, confirmed with the folder's name: logs the service identity out",
     async (plugin) => {
       const f = fake({ answer: "jira-cli" });
-      expect(await appCommands(app, f.deps).credentialsReset(plugin)).toBe(0);
+      expect(await appCommands(app, f.deps).credentialsReset(plugin, {})).toBe(0);
       expect(f.asked).toEqual([
-        "This deletes the jira-cli folder from the app's credentials volume, and any token the CLI refreshed since it was unpacked. Type the folder's name (jira-cli) to confirm: ",
+        "This logs the service identity of @mercury-fw/plugin-jira's CLI out: commands that run as it fail until mfw credentials setup @mercury-fw/plugin-jira. Type the folder's name (jira-cli) to confirm: ",
       ]);
-      expect(f.runs).toEqual(STEPS);
+      expect(f.runs).toEqual([[...RUN, "-T", "mercury", "jira", "auth", "logout"]]);
     },
   );
 
-  test.each(["", "y", "jira", "@mercury-fw/plugin-jira", "my-agent"])("answer %p: nothing is deleted, exit 1", async (answer) => {
+  test("--user logs one person out, by the id the CLI knows them by", async () => {
+    const f = fake({ answer: "jira-cli" });
+    expect(await appCommands(app, f.deps).credentialsReset("jira-cli", { user: "oidc:Alice" })).toBe(0);
+    expect(f.asked[0]).toStartWith("This logs oidc:Alice out of @mercury-fw/plugin-jira's CLI: they log in again the next time they need it.");
+    const [last] = f.runs;
+    expect(last?.slice(0, -1)).toEqual([...RUN, "-T", "mercury", "jira", "auth", "logout", "--user"]);
+    expect(last?.at(-1)).toMatch(/^oidc:[0-9a-f]{32}$/);
+  });
+
+  test("--user with a key the CLIs accept as it is passes it unchanged", async () => {
+    const f = fake({ answer: "jira-cli" });
+    await appCommands(app, f.deps).credentialsReset("jira-cli", { user: "static:alice" });
+    expect(f.runs).toEqual([[...RUN, "-T", "mercury", "jira", "auth", "logout", "--user", "static:alice"]]);
+  });
+
+  test.each(["", "y", "jira", "@mercury-fw/plugin-jira", "my-agent"])("answer %p: nothing runs, exit 1", async (answer) => {
     const f = fake({ answer });
-    expect(await appCommands(app, f.deps).credentialsReset("@mercury-fw/plugin-jira")).toBe(1);
+    expect(await appCommands(app, f.deps).credentialsReset("@mercury-fw/plugin-jira", {})).toBe(1);
     expect(f.runs).toEqual([]);
-    expect(f.printed).toEqual(["Not confirmed: nothing deleted."]);
+    expect(f.printed).toEqual(["Not confirmed: nobody logged out."]);
   });
 
-  test("a step failing after the stop says the app is down", async () => {
-    const f = fake({ answer: "jira-cli", codes: [0, 1] });
-    expect(await appCommands(app, f.deps).credentialsReset("jira-cli")).toBe(1);
-    expect(f.runs).toEqual(STEPS.slice(0, 2));
-    expect(f.printed).toEqual(["The mercury service was stopped and not restarted: mfw start brings it back."]);
-  });
-
-  test("a login declared elsewhere in the home is deleted from where the volume keeps it", async () => {
+  test("a login declared elsewhere is linked first", async () => {
     const f = fake({ answer: ".cloudy" });
-    expect(await appCommands(app, f.deps).credentialsReset("cloudy-plugin")).toBe(0);
-    expect(f.asked[0]).toContain("Type the folder's name (.cloudy) to confirm: ");
-    expect(f.runs[1]).toEqual([
-      "docker", "compose", "run", "--rm", "--no-deps", "-T", "mercury", "rm", "-rf", "/home/mercury/.config/mercury-home/.cloudy",
-    ]);
+    expect(await appCommands(app, f.deps).credentialsReset("cloudy-plugin", {})).toBe(0);
+    expect(f.runs).toEqual([[...RUN, "-T", "mercury", ...LINKED, "cloudy", "logout"]]);
+  });
+
+  test("a plugin declaring no logout says so before any question", async () => {
+    const f = fake({ answer: "acme-cli" });
+    await expect(appCommands(app, f.deps).credentialsReset("acme-mercury-plugin", {})).rejects.toThrow(
+      "acme-mercury-plugin declares no command to log its CLI out.",
+    );
+    expect(f.asked).toEqual([]);
+    expect(f.runs).toEqual([]);
   });
 
   test("a plugin the app doesn't have is refused before any question", async () => {
     const f = fake({ answer: "bitbucket" });
-    await expect(appCommands(app, f.deps).credentialsReset("bitbucket")).rejects.toThrow('no CLI credentials named "bitbucket"');
+    await expect(appCommands(app, f.deps).credentialsReset("bitbucket", {})).rejects.toThrow('no CLI credentials named "bitbucket"');
     expect(f.asked).toEqual([]);
     expect(f.runs).toEqual([]);
   });

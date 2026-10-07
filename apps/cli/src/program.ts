@@ -228,30 +228,35 @@ Examples:
     .command("credentials")
     .summary("the login of a plugin's CLI")
     .description(
-      "For a tool plugin whose CLI keeps its login in a folder (under ~/.config, or elsewhere in the home), and declares it (mercury.cliCredentials in its package.json): the folder travels in a variable of the env file, and the app unpacks it onto the credentials volume at the first start without that folder. What the CLI refreshes afterwards stays on the volume.",
+      "For a tool plugin whose CLI keeps its login in a folder (under ~/.config, or elsewhere in the home), and declares it with the commands that set it up (mercury.cliCredentials in its package.json): the commands run in a one-off container of the app, so the CLI writes its login straight onto the credentials volume, where it stays across redeploys. Every environment (development, production) sets up its own.",
     )
     .helpCommand(false)
     .addHelpText("after", INSIDE_AN_APP);
   credentials
-    .command("set")
-    .summary("packs a CLI's login folder into the env file")
+    .command("setup")
+    .summary("sets up a CLI's login in the app's container")
     .description(
-      "Packs the plugin's CLI login folder (where the plugin declares it, ~/.config/<folder> or another path under the home, unless --from says otherwise) and writes it as the plugin's variable in the app's env file, replacing an older value. The value is never printed, unless --print asks for the line instead.",
+      "Runs the setup the plugin declares for its CLI's service identity (the identity Mercury acts as), in a one-off container on your terminal: the CLI asks for what it needs, and its login lands on the credentials volume. People log in on their own later, through Mercury.",
     )
     .argument("<plugin>", "the plugin's package (@mercury-fw/plugin-jira) or its CLI's folder as declared (jira-cli)")
-    .option("--from <dir>", "the CLI's login folder, when it isn't where the plugin declares it")
-    .option("--print", "print the line to paste elsewhere, and leave the env file alone")
-    .action(async (plugin: string, opts: { from?: string; print?: boolean }) =>
-      inApp((app) => app.credentialsSet(plugin, { ...(opts.from === undefined ? {} : { from: opts.from }), print: opts.print ?? false }))(),
-    );
+    .action(async (plugin: string) => inApp((app) => app.credentialsSetup(plugin))());
+  credentials
+    .command("check")
+    .summary("checks a CLI's login")
+    .description("Runs the check the plugin declares for its CLI's login (its doctor, for the first-party plugins), in a one-off container.")
+    .argument("<plugin>", "the plugin's package or its CLI's folder")
+    .action(async (plugin: string) => inApp((app) => app.credentialsCheck(plugin))());
   credentials
     .command("reset")
-    .summary("clears a CLI's folder from the volume")
+    .summary("logs an identity out of a CLI")
     .description(
-      "Deletes the plugin's CLI folder from the credentials volume, after you type the folder's name, so its variable is unpacked again at the next start: what to run after correcting the variable. Any token the CLI refreshed on the volume goes with it.",
+      "Runs the logout the plugin declares for its CLI, after you type the folder's name: of the service identity, which then needs mfw credentials setup again, or with --user of one person, who logs in again through Mercury the next time they need it. Local only: the tokens aren't revoked at the service.",
     )
     .argument("<plugin>", "the plugin's package or its CLI's folder")
-    .action(async (plugin: string) => inApp((app) => app.credentialsReset(plugin))());
+    .option("--user <key>", "the person to log out, by their user key (<provider>:<id>, e.g. oidc:312345678901234567)")
+    .action(async (plugin: string, opts: { user?: string }) =>
+      inApp((app) => app.credentialsReset(plugin, opts.user === undefined ? {} : { user: opts.user }))(),
+    );
 
   const googleChat = program
     .command("google-chat")
