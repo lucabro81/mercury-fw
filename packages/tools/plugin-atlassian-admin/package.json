@@ -50,7 +50,9 @@
       "version": "0.1.2"
     },
     "cliCredentials": {
-      "folder": "atlassian-admin-cli"
+      "folder": "atlassian-admin-cli",
+      "setup": ["atlassian-admin", "init"],
+      "check": ["atlassian-admin", "doctor"]
     }
   }
 }
