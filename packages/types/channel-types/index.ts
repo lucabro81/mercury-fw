@@ -2,7 +2,8 @@
  * Shared contract between the core and every channel plugin: the turn shape
  * (`Provider`/`InboundTurn`/`TurnSink`/`HandleTurn`/`Notifier`), the pure
  * confirmation pieces a channel uses to build its own UI
- * (`detectPendingConfirmation`, `PENDING_CONFIRMATION_NOTE`, `NO_REPLY`), and
+ * (`detectPendingConfirmation`, `PENDING_CONFIRMATION_NOTE`, `NO_REPLY`), the
+ * login a tool asks a person for (`detectLoginRequired`), and
  * the channel-plugin system (`ChannelPlugin`/`ChannelRuntimeContext`/
  * `CHANNEL_API_VERSION`). The stateful half of confirmation (`ConfirmationStore`,
  * `tryConfirm`) stays in the core and reaches a channel via `ctx.confirm`.
@@ -28,6 +29,24 @@ export function detectPendingConfirmation(step: StepInfo): PendingConfirmation |
     if (!output || output.pendingConfirmation !== true || typeof output.token !== "string") continue;
 
     return { token: output.token, summary: typeof output.summary === "string" ? output.summary : "" };
+  }
+  return null;
+}
+
+/** A login a tool asked the person for: the service it's for and the link to open. */
+export type LoginRequest = { service: string; url: string };
+
+/**
+ * Returns the first login a tool asked for in `step` (its result carries
+ * `loginRequired` and the link), or `null`. A channel shows the link to the
+ * person itself: the model is never handed it, so it can't mangle or leak it.
+ */
+export function detectLoginRequired(step: StepInfo): LoginRequest | null {
+  for (const call of step.toolCalls) {
+    const result = step.toolResults.find((r) => r.toolCallId === call.toolCallId);
+    const output = result?.output as { loginRequired?: unknown; authorizeUrl?: unknown; service?: unknown } | undefined;
+    if (!output || output.loginRequired !== true || typeof output.authorizeUrl !== "string") continue;
+    return { service: typeof output.service === "string" ? output.service : "", url: output.authorizeUrl };
   }
   return null;
 }
@@ -140,7 +159,7 @@ export type AuthPlugin = {
 };
 
 /** Channel-plugin contract version: the loader refuses a channel with a different `apiVersion` fail-soft, like the tool-plugin loader with `PLUGIN_API_VERSION`. Bumped only on a breaking change to this file's shapes. */
-export const CHANNEL_API_VERSION = 3;
+export const CHANNEL_API_VERSION = 4;
 
 /**
  * Structured outcome of resolving a confirmation token, distinguishing cases the
@@ -185,6 +204,23 @@ export type ChannelHostReads = {
   health: () => Promise<unknown>;
 };
 
+/** How finishing a login came out: the service the person is now logged in to, or why not. */
+export type LoginOutcome = { ok: true; service: string } | { ok: false; error: string };
+
+/**
+ * Logins of people to the services Mercury's plugins act on, for a channel
+ * that can receive the provider's redirect (the HTTP surface, when it has a
+ * public URL). `accept` offers the URL the provider sends the person back to;
+ * without one, a plugin asking for a login says no channel can take it.
+ * `complete` finishes the login the `state` was issued for, with the `code`
+ * the provider sent: `state` is single-use and tied to the person who
+ * started, so the request carrying it needs no other credential.
+ */
+export type ChannelLogins = {
+  accept: (callbackUrl: string) => void;
+  complete: (state: string, code: string) => Promise<LoginOutcome>;
+};
+
 /**
  * The minimal capabilities every channel gets from the core — the intersection
  * across terminal, HTTP and Google Chat, nothing channel-specific. Anything
@@ -193,7 +229,7 @@ export type ChannelHostReads = {
  * these, the channel imports none of them.
  *
  * `env`, `log` and `confirm` are the floor every channel relies on.
- * `resolveConfirmation`, `reads` and `authenticate` are optional in-process capabilities that
+ * `resolveConfirmation`, `reads`, `authenticate` and `logins` are optional in-process capabilities that
  * can't come from `env`: the core populates them, only a channel that needs them
  * (HTTP) reads them, the others ignore them.
  */
@@ -217,6 +253,8 @@ export type ChannelRuntimeContext = {
   reads?: ChannelHostReads;
   /** The configured auth provider, built; absent when the app declares none or it failed to build. */
   authenticate?: Authenticate;
+  /** People's logins to the plugins' services (see `ChannelLogins`). */
+  logins?: ChannelLogins;
 };
 
 /**

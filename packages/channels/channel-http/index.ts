@@ -20,7 +20,7 @@ export { createHttpProvider, type HttpProviderDeps } from "./http-provider.ts";
 export const httpChannel: ChannelPlugin = {
   // The contract this channel is written for, as a literal: importing
   // CHANNEL_API_VERSION would report whichever contract is installed.
-  apiVersion: 3,
+  apiVersion: 4,
   name: "http",
   build: (ctx) => {
     if (!ctx.resolveConfirmation || !ctx.reads) {

@@ -7,6 +7,6 @@ describe("googleChatChannel", () => {
   // version and be loaded. The literal is the contract this code was written for.
   it("declares the google-chat name at channel api version 3", () => {
     expect(googleChatChannel.name).toBe("google-chat");
-    expect(googleChatChannel.apiVersion).toBe(3);
+    expect(googleChatChannel.apiVersion).toBe(4);
   });
 });

@@ -31,7 +31,7 @@ describe("httpChannel", () => {
   // version and be loaded. The literal is the contract this code was written for.
   it("declares the http name at channel api version 3", () => {
     expect(httpChannel.name).toBe("http");
-    expect(httpChannel.apiVersion).toBe(3);
+    expect(httpChannel.apiVersion).toBe(4);
   });
 
   it("builds a provider when confirm, resolveConfirmation, reads and authenticate are all present", () => {
