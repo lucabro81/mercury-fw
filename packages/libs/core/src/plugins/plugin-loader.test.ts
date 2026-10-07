@@ -16,9 +16,10 @@ import { loadPlugins, type PluginLoadContext } from "./plugin-loader.ts";
  * taking down the other plugins or the process; and activation is reported in
  * `activated` (there is no central config map to infer it from anymore).
  */
-/** A synthetic plugin, defaulting to the compatible apiVersion. */
+/** A synthetic plugin, defaulting to the compatible apiVersion and to acting
+ * as the person (offered to everyone, nothing logged about it). */
 function plug(p: Partial<Plugin> & Pick<Plugin, "name">): Plugin {
-  return { apiVersion: PLUGIN_API_VERSION, ...p };
+  return { apiVersion: PLUGIN_API_VERSION, actsAs: "person", ...p };
 }
 
 function baseCtx(overrides: Partial<PluginLoadContext> = {}): PluginLoadContext {
@@ -46,7 +47,7 @@ describe("loadPlugins", () => {
     const guard = { statusLabel: "l", statusId: "g", shouldRun: () => true, run: async () => ({ text: "", outcome: "success" as const }) };
     const plugin = plug({ name: "jira", build: () => ({ postProcess: pp, sessionTools: factory, postTurnGuards: [guard] }) });
     const loaded = await loadPlugins([plugin], baseCtx());
-    expect(loaded.sessionToolBundles).toEqual([{ build: factory, postProcess: pp }]);
+    expect(loaded.sessionToolBundles).toEqual([{ name: "jira", build: factory, postProcess: pp }]);
     expect(loaded.postTurnGuards).toEqual([guard]);
   });
 
@@ -117,8 +118,8 @@ describe("loadPlugins", () => {
     expect(loaded.activated).toEqual(["p1", "p2"]);
     expect(loaded.promptFragments).toEqual(["F1", "F2"]);
     expect(loaded.sessionToolBundles).toEqual([
-      { build: fA, postProcess: undefined },
-      { build: fB, postProcess: undefined },
+      { name: "p1", build: fA },
+      { name: "p2", build: fB },
     ]);
     expect(loaded.postTurnGuards).toEqual([gA, gB]);
   });
@@ -131,6 +132,45 @@ describe("loadPlugins", () => {
     const plain = plug({ name: "plain" });
     const loaded = await loadPlugins([p1, plain, p2], baseCtx());
     expect(loaded.skills).toEqual([s1, s2]);
+  });
+});
+
+// #176: whose identity a plugin acts with decides who it's offered to.
+describe("loadPlugins: who each plugin is offered to", () => {
+  const login = { start: async () => ({ ok: false as const, error: "x" }), complete: async () => ({ ok: true as const }) };
+  const tools = () => ({ t: {} as never });
+
+  it("offers a plugin acting as the person to people too, with its login", async () => {
+    const plugin = plug({
+      name: "jira",
+      actsAs: "person",
+      systemPromptFragment: "FRAG",
+      skills: [{ name: "jira", description: "d", body: "b" }],
+      build: () => ({ sessionTools: tools, login }),
+    });
+    const loaded = await loadPlugins([plugin], baseCtx());
+    expect(loaded.sessionToolBundles).toEqual([{ name: "jira", build: tools, login }]);
+    expect(loaded.forPeople).toEqual({
+      promptFragments: ["FRAG"],
+      skills: [{ name: "jira", description: "d", body: "b" }],
+      sessionToolBundles: [{ name: "jira", build: tools, login }],
+    });
+  });
+
+  it("keeps a plugin acting as Mercury, or declaring nothing, out of what people are offered, and says so once", async () => {
+    const logs: string[] = [];
+    const asMercury = plug({ name: "admin", actsAs: "mercury", systemPromptFragment: "ADMIN", build: () => ({ sessionTools: tools }) });
+    const undeclared = plug({ name: "other", actsAs: undefined, skills: [{ name: "other", description: "d", body: "b" }] });
+    const loaded = await loadPlugins([asMercury, undeclared], baseCtx({ log: (m) => logs.push(m) }));
+    expect(loaded.activated).toEqual(["admin", "other"]);
+    expect(loaded.promptFragments).toEqual(["ADMIN"]);
+    expect(loaded.skills.map((s) => s.name)).toEqual(["other"]);
+    expect(loaded.sessionToolBundles.map((b) => b.name)).toEqual(["admin"]);
+    expect(loaded.forPeople).toEqual({ promptFragments: [], skills: [], sessionToolBundles: [] });
+    expect(logs).toEqual([
+      'plugin "admin" acts as Mercury itself: offered on the terminal only, until people can be allowed to make Mercury act as itself',
+      'plugin "other" acts as Mercury itself: offered on the terminal only, until people can be allowed to make Mercury act as itself',
+    ]);
   });
 });
 
