@@ -449,6 +449,20 @@ describe("createCliTool", () => {
       });
     }
 
+    // The CLIs parse `--user` wherever it stands, so a value that is exactly
+    // `--user` is refused too rather than guessed at.
+    it("refuses a value that is exactly --user", async () => {
+      let called = false;
+      const runCliFn = async (): Promise<CliResult> => {
+        called = true;
+        return { ok: true, data: {} };
+      };
+      const { runCommand } = createCliTool(runCliFn, { jira: jiraConfig }, defaultOpts());
+      const result = (await runCommand.execute({ command: 'jira issue search --jql "--user"' }, {} as never)) as CliResult;
+      expect(called).toBe(false);
+      expect(result.ok).toBe(false);
+    });
+
     it("still runs a command whose value merely contains the word user", async () => {
       let receivedArgs: string[] | undefined;
       const runCliFn = async (_binary: string, args: string[]): Promise<CliResult> => {

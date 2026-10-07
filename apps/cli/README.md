@@ -219,7 +219,7 @@ mfw credentials check jira-cli
 
 ### `mfw credentials reset <plugin> [--user <key>]`
 
-Runs the logout the plugin declares in a one-off container, after you type the folder's name. Without `--user` it logs out the identity Mercury runs as, which then needs `mfw credentials setup` again; with `--user` it logs out one person, by their user key (`<provider>:<id>`), who logs in again through Mercury the next time they need it. The CLI only forgets the login: the tokens aren't revoked at the service.
+Runs the logout the plugin declares in a one-off container, after you type the name it's declared by (its folder). Without `--user` it logs out the identity Mercury runs as, which then needs `mfw credentials setup` again; with `--user` it logs out one person, by their user key (`<provider>:<id>`), who logs in again through Mercury the next time they need it. The CLI only forgets the login: the tokens aren't revoked at the service.
 
 ```bash
 mfw credentials reset jira-cli

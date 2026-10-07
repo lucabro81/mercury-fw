@@ -18,3 +18,4 @@ A CLI's login is set up inside the app's container, no longer carried in the env
 - A command the model writes with `--user` is refused: which person a CLI acts as is never the model's to pick.
 - `cliUserId` (`@mercury-fw/utils`) maps a user key to the id a CLI knows a person by.
 - plugin-jira and plugin-bitbucket pin their CLIs at 2.1.0, which keep the service identity and each person apart and refuse the old login folder. After updating, remove the plugin's `*_CONFIG_TAR_B64` line from the env file and run `mfw credentials setup` once; on Jira, Mercury now runs as an Atlassian Service Account.
+- plugin-atlassian-admin keeps its CLI at 0.1.2, whose `init` doesn't prompt for the organization key: until it does, write the key from `mfw shell` with `atlassian-admin init --api-key <KEY> --org-id <ORG_ID>` (the plugin's README says so).

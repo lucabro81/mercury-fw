@@ -250,7 +250,7 @@ Examples:
     .command("reset")
     .summary("logs an identity out of a CLI")
     .description(
-      "Runs the logout the plugin declares for its CLI, after you type the folder's name: of the service identity, which then needs mfw credentials setup again, or with --user of one person, who logs in again through Mercury the next time they need it. Local only: the tokens aren't revoked at the service.",
+      "Runs the logout the plugin declares for its CLI, after you type the name it's declared by: of the service identity, which then needs mfw credentials setup again, or with --user of one person, who logs in again through Mercury the next time they need it. Local only: the tokens aren't revoked at the service.",
     )
     .argument("<plugin>", "the plugin's package or its CLI's folder")
     .option("--user <key>", "the person to log out, by their user key (<provider>:<id>, e.g. oidc:312345678901234567)")

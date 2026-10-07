@@ -129,8 +129,9 @@ export function appCommands(app: App, deps: AppDeps) {
       return 0;
     },
     /** Runs the plugin's declared setup in a one-off container on the user's
-     * terminal, so the CLI asks what it needs and writes its login straight
-     * onto the credentials volume. */
+     * terminal (without `-T`, compose attaches a TTY whenever stdin is one),
+     * so the CLI asks what it needs and writes its login straight onto the
+     * credentials volume. */
     credentialsSetup: async (plugin: string) => {
       const declared = credentialsOf(app, plugin);
       const code = await deps.run([...COMPOSE, "run", "--rm", "--no-deps", SERVICE, ...inContainer(declared, declared.setup)], {
@@ -148,7 +149,7 @@ export function appCommands(app: App, deps: AppDeps) {
       });
     },
     /** Runs the plugin's declared logout, of the service identity or of the
-     * person whose user key is `user`, once the user types the folder's name.
+     * person whose user key is `user`, once the user types the declared name.
      * A wrong answer runs nothing. */
     credentialsReset: async (plugin: string, { user }: { user?: string }) => {
       const declared = credentialsOf(app, plugin);
@@ -157,7 +158,7 @@ export function appCommands(app: App, deps: AppDeps) {
         user === undefined
           ? `This logs the service identity of ${declared.package}'s CLI out: commands that run as it fail until mfw credentials setup ${declared.package}.`
           : `This logs ${user} out of ${declared.package}'s CLI: they log in again the next time they need it.`;
-      const answer = await deps.ask(`${who} Type the folder's name (${declared.name}) to confirm: `);
+      const answer = await deps.ask(`${who} Type ${declared.name} to confirm: `);
       if (answer.trim() !== declared.name) {
         deps.print("Not confirmed: nobody logged out.");
         return 1;
@@ -280,6 +281,18 @@ export function appCommands(app: App, deps: AppDeps) {
   }
 }
 
+/** Links `$2` (the home path) to `$1` (its place on the volume) the way the
+ * core does at startup, never replacing something else at `$2`, then runs the
+ * rest of the arguments. */
+const LINK_THEN_RUN = [
+  'mkdir -p "$1" "$(dirname "$2")" || exit 1',
+  'if [ -L "$2" ] && [ "$(readlink "$2")" = "$1" ]; then :',
+  'elif [ -e "$2" ] || [ -L "$2" ]; then echo "$2 is already there and is not a link to the credentials volume" >&2; exit 1',
+  'else ln -s "$1" "$2" || exit 1; fi',
+  'shift 2',
+  'exec "$@"',
+].join("\n");
+
 /** `argv` as the app's container runs it for `declared`: as it is for a
  * login under ~/.config, the volume's mount; for one kept elsewhere in the
  * home, after linking that path to the volume, as the core does at startup,
@@ -289,7 +302,7 @@ function inContainer(declared: CliCredentials, argv: string[]): string[] {
   return [
     "sh",
     "-c",
-    'mkdir -p "$1" "$(dirname "$2")" && ln -sfn "$1" "$2" && shift 2 && exec "$@"',
+    LINK_THEN_RUN,
     "sh",
     `/home/mercury/${volumePath(declared.path)}`,
     `/home/mercury/${declared.path}`,

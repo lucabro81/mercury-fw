@@ -81,7 +81,14 @@ const RUN = ["docker", "compose", "run", "--rm", "--no-deps"];
 const LINKED = [
   "sh",
   "-c",
-  'mkdir -p "$1" "$(dirname "$2")" && ln -sfn "$1" "$2" && shift 2 && exec "$@"',
+  [
+    'mkdir -p "$1" "$(dirname "$2")" || exit 1',
+    'if [ -L "$2" ] && [ "$(readlink "$2")" = "$1" ]; then :',
+    'elif [ -e "$2" ] || [ -L "$2" ]; then echo "$2 is already there and is not a link to the credentials volume" >&2; exit 1',
+    'else ln -s "$1" "$2" || exit 1; fi',
+    "shift 2",
+    'exec "$@"',
+  ].join("\n"),
   "sh",
   "/home/mercury/.config/mercury-home/.cloudy",
   "/home/mercury/.cloudy",
@@ -171,7 +178,7 @@ describe("credentials reset", () => {
       const f = fake({ answer: "jira-cli" });
       expect(await appCommands(app, f.deps).credentialsReset(plugin, {})).toBe(0);
       expect(f.asked).toEqual([
-        "This logs the service identity of @mercury-fw/plugin-jira's CLI out: commands that run as it fail until mfw credentials setup @mercury-fw/plugin-jira. Type the folder's name (jira-cli) to confirm: ",
+        "This logs the service identity of @mercury-fw/plugin-jira's CLI out: commands that run as it fail until mfw credentials setup @mercury-fw/plugin-jira. Type jira-cli to confirm: ",
       ]);
       expect(f.runs).toEqual([[...RUN, "-T", "mercury", "jira", "auth", "logout"]]);
     },
