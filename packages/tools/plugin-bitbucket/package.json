@@ -1,6 +1,6 @@
 {
   "name": "@mercury-fw/plugin-bitbucket",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -51,9 +51,19 @@
     },
     "cliCredentials": {
       "folder": "bitbucket-cli",
-      "setup": ["bitbucket", "init"],
-      "check": ["bitbucket", "doctor"],
-      "logout": ["bitbucket", "auth", "logout"]
+      "setup": [
+        "bitbucket",
+        "init"
+      ],
+      "check": [
+        "bitbucket",
+        "doctor"
+      ],
+      "logout": [
+        "bitbucket",
+        "auth",
+        "logout"
+      ]
     }
   }
 }

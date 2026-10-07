@@ -1,6 +1,6 @@
 {
   "name": "@mercury-fw/plugin-atlassian-admin",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -51,8 +51,14 @@
     },
     "cliCredentials": {
       "folder": "atlassian-admin-cli",
-      "setup": ["atlassian-admin", "init"],
-      "check": ["atlassian-admin", "doctor"]
+      "setup": [
+        "atlassian-admin",
+        "init"
+      ],
+      "check": [
+        "atlassian-admin",
+        "doctor"
+      ]
     }
   }
 }

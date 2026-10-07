@@ -1,6 +1,6 @@
 {
   "name": "@mercury-fw/plugin-jira",
-  "version": "0.4.3",
+  "version": "0.5.0",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -39,9 +39,19 @@
     },
     "cliCredentials": {
       "folder": "jira-cli",
-      "setup": ["jira", "init"],
-      "check": ["jira", "doctor"],
-      "logout": ["jira", "auth", "logout"]
+      "setup": [
+        "jira",
+        "init"
+      ],
+      "check": [
+        "jira",
+        "doctor"
+      ],
+      "logout": [
+        "jira",
+        "auth",
+        "logout"
+      ]
     }
   },
   "dependencies": {
