@@ -42,22 +42,34 @@ describe("httpChannel", () => {
   });
 
   // #176: the provider can send a person back only to a URL it can reach.
-  it("offers its login callback when it has a public URL", () => {
+  // Review of #176: offered once the server listens, so a surface that failed
+  // to start never sends people to a callback nobody serves.
+  it("offers its login callback when it has a public URL, once it's listening", async () => {
     for (const publicUrl of ["https://mercury.example", "https://mercury.example/"]) {
       const accepted: string[] = [];
-      httpChannel.build(
+      const provider = httpChannel.build(
         fullCtx({
-          env: { HTTP_SURFACE_PUBLIC_URL: publicUrl },
+          env: { HTTP_SURFACE_PUBLIC_URL: publicUrl, HTTP_SURFACE_PORT: "0" },
           logins: { accept: (url) => accepted.push(url), complete: async () => ({ ok: true, service: "x" }) },
         }),
-      );
-      expect(accepted).toEqual(["https://mercury.example/login/callback"]);
+      )!;
+      expect(accepted).toEqual([]);
+      await provider.start(async () => {});
+      try {
+        expect(accepted).toEqual(["https://mercury.example/login/callback"]);
+      } finally {
+        await provider.stop?.();
+      }
     }
   });
 
-  it("offers no login callback without a public URL", () => {
+  it("offers no login callback without a public URL", async () => {
     const accepted: string[] = [];
-    httpChannel.build(fullCtx({ logins: { accept: (url) => accepted.push(url), complete: async () => ({ ok: true, service: "x" }) } }));
+    const provider = httpChannel.build(
+      fullCtx({ env: { HTTP_SURFACE_PORT: "0" }, logins: { accept: (url) => accepted.push(url), complete: async () => ({ ok: true, service: "x" }) } }),
+    )!;
+    await provider.start(async () => {});
+    await provider.stop?.();
     expect(accepted).toEqual([]);
   });
 

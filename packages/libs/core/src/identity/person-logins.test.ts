@@ -96,16 +96,38 @@ describe("createPersonLogins", () => {
     expect(f.calls.filter((c) => c.startsWith("complete"))).toEqual([]);
   });
 
-  // The CLI keeps one pending login per person: a new start replaces it, so
-  // the older state could only fail at the CLI.
-  it("a new login for the same person and service replaces the older state", async () => {
+  // Review of #176: the CLI keeps one pending login per person, so starting
+  // another would void the link already shown. While it's valid, it's reused.
+  it("a login still pending for the same person and service is reused, link and state", async () => {
     const logins = createPersonLogins();
     logins.accept("https://cb");
     const f = fakeLogin();
+    const first = await logins.require("jira", f.login, "static:alice");
+    expect(await logins.require("jira", f.login, "static:alice")).toEqual(first);
+    expect(f.calls.filter((c) => c.startsWith("start"))).toHaveLength(1);
+    expect(await logins.complete("st-1", "c")).toEqual({ ok: true, service: "jira" });
+  });
+
+  it("two tool calls asking at once start one login", async () => {
+    const logins = createPersonLogins();
+    logins.accept("https://cb");
+    const f = fakeLogin();
+    const [a, b] = await Promise.all([logins.require("jira", f.login, "static:alice"), logins.require("jira", f.login, "static:alice")]);
+    expect(a).toEqual(b);
+    expect(f.calls.filter((c) => c.startsWith("start"))).toHaveLength(1);
+  });
+
+  it("once the pending login expires, asking again starts a new one", async () => {
+    let now = 0;
+    const logins = createPersonLogins({ now: () => now, ttlMs: 1000 });
+    logins.accept("https://cb");
+    const f = fakeLogin();
     await logins.require("jira", f.login, "static:alice");
+    now = 1001;
     await logins.require("jira", f.login, "static:alice");
+    expect(f.calls.filter((c) => c.startsWith("start"))).toHaveLength(2);
     expect((await logins.complete("st-1", "c")).ok).toBe(false);
-    expect(await logins.complete("st-2", "c")).toEqual({ ok: true, service: "jira" });
+    expect((await logins.complete("st-2", "c")).ok).toBe(true);
   });
 
   it("two people logging in at once each finish their own", async () => {
@@ -119,14 +141,18 @@ describe("createPersonLogins", () => {
     expect(f.calls.filter((c) => c.startsWith("complete"))).toEqual(["complete static:bob cb st-2", "complete static:alice ca st-1"]);
   });
 
-  it("a login the service refuses is reported with its reason", async () => {
-    const logins = createPersonLogins();
+  // Review of #176: the outcome goes to an unauthenticated browser, so the
+  // CLI's own error stays in the log.
+  it("a login the service refuses is reported without the CLI's error, which goes to the log", async () => {
+    const logs: string[] = [];
+    const logins = createPersonLogins({ log: (m) => logs.push(m) });
     logins.accept("https://cb");
     const f = fakeLogin({ completeError: "jira exited with code 1: code expired" });
     await logins.require("jira", f.login, "static:alice");
     expect(await logins.complete("st-1", "c")).toEqual({
       ok: false,
-      error: "The jira login didn't go through: jira exited with code 1: code expired. Ask Mercury again for a new link.",
+      error: "The jira login didn't go through. Ask Mercury again for a new link.",
     });
+    expect(logs).toEqual(["[login] jira login of static:alice failed: jira exited with code 1: code expired"]);
   });
 });

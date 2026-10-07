@@ -126,6 +126,15 @@ export function omitDisplayForModel(output: unknown): unknown {
   return rest;
 }
 
+/** Drops the link from a `loginRequired` result before it reaches the model:
+ * it carries the login's state, the only credential of the callback the
+ * person comes back to, so the channel shows it and the model never sees it. */
+function omitLoginLinkForModel(output: unknown): unknown {
+  if (typeof output !== "object" || output === null || (output as { loginRequired?: unknown }).loginRequired !== true) return output;
+  const { authorizeUrl: _url, ...rest } = output as Record<string, unknown>;
+  return rest;
+}
+
 /**
  * Builds the `runCommand` tool: the model writes a whole CLI invocation as
  * one string, `execute` parses it (`parseCommand`), checks the binary
@@ -270,7 +279,7 @@ export function createCliTool(
       }
       return processed;
     },
-    toModelOutput: ({ output }) => ({ type: "json", value: omitDisplayForModel(output) as JSONValue }),
+    toModelOutput: ({ output }) => ({ type: "json", value: omitLoginLinkForModel(omitDisplayForModel(output)) as JSONValue }),
   });
 
   return { runCommand };

@@ -535,6 +535,22 @@ describe("createCliTool", () => {
       expect(asked).toBe(1);
     });
 
+    // Review of #176: the link carries the login's state, the only credential
+    // of the public callback. The channel shows it; the model never sees it.
+    it("keeps the login link out of what the model sees, while execute's own return keeps it for the channel", async () => {
+      const r = recording({ ok: false, error: "jira exited with code 3: x", exitCode: 3 });
+      const login = { ok: false as const, loginRequired: true as const, service: "jira", authorizeUrl: "https://auth?state=s", error: "log in" };
+      const { runCommand } = createCliTool(r.runCliFn, { jira: jiraConfig }, {
+        ...defaultOpts(),
+        person: { key: "static:alice" },
+        requireLogin: async () => login,
+      });
+      const result = await runCommand.execute({ command: "jira doctor" }, {} as never);
+      expect(result).toEqual(login);
+      const modelOutput = await runCommand.toModelOutput?.({ toolCallId: "c", input: { command: "jira doctor" }, output: result } as never);
+      expect(modelOutput).toEqual({ type: "json", value: { ok: false, loginRequired: true, service: "jira", error: "log in" } });
+    });
+
     it("any other failure, or the service not being logged in, is returned as it is", async () => {
       for (const [person, exitCode] of [[{ key: "static:alice" }, 1], [null, 3]] as const) {
         const failure: CliResult = { ok: false, error: `jira exited with code ${exitCode}: x`, exitCode };

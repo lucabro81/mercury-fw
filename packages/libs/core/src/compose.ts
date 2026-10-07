@@ -183,7 +183,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
 
   // People's pending logins to the plugins' services, finished by the channel
   // that receives the provider's redirect.
-  const personLogins = createPersonLogins();
+  const personLogins = createPersonLogins({ log: (msg) => console.error(msg) });
 
   const histories = new Map<string, SessionHistory>();
   /**
@@ -503,7 +503,14 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
       qdrant,
       collections: { verbatim: verbatimCollection, episodic: episodicCollection, semanticFacts: semanticFactsCollection },
       confirmationStore,
-      manifest: () => buildPluginManifest(plugins, loadedPlugins.activated, [], loadedPlugins.skills),
+      // What people are offered: a plugin acting as Mercury isn't advertised to them.
+      manifest: () =>
+        buildPluginManifest(
+          plugins.filter((p) => p.actsAs === "person"),
+          loadedPlugins.activated,
+          [],
+          loadedPlugins.forPeople.skills,
+        ),
       health: () => getSelfHealth({ qdrant, ollamaHost }),
     }),
     logins: { accept: personLogins.accept, complete: personLogins.complete },

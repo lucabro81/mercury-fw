@@ -12,7 +12,7 @@
  * but required here, so a context missing them throws — the loader isolates it
  * fail-soft, and without an auth provider the surface never opens. With a
  * public URL (`HTTP_SURFACE_PUBLIC_URL`) it also takes people's logins: it
- * offers `<url>/login/callback` to the core and mounts that route.
+ * mounts `<url>/login/callback` and, once it's listening, offers it to the core.
  */
 import type { ChannelPlugin } from "@mercury-fw/channel-types";
 import { createHttpProvider } from "./http-provider.ts";
@@ -35,7 +35,6 @@ export const httpChannel: ChannelPlugin = {
     // the address their browser reaches the surface at.
     const publicUrl = ctx.env.HTTP_SURFACE_PUBLIC_URL?.trim().replace(/\/+$/, "");
     const logins = publicUrl ? ctx.logins : undefined;
-    logins?.accept(`${publicUrl}/login/callback`);
     return createHttpProvider({
       port: Number(ctx.env.HTTP_SURFACE_PORT ?? "4100"),
       corsOrigin: ctx.env.HTTP_SURFACE_CORS_ORIGIN ?? "*",
@@ -43,7 +42,7 @@ export const httpChannel: ChannelPlugin = {
       resolveConfirmation: ctx.resolveConfirmation,
       reads: ctx.reads,
       authenticate: ctx.authenticate,
-      ...(logins ? { completeLogin: logins.complete } : {}),
+      ...(logins ? { logins: { callbackUrl: `${publicUrl}/login/callback`, accept: logins.accept, complete: logins.complete } } : {}),
     });
   },
 };

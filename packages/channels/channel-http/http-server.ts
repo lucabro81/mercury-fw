@@ -288,7 +288,11 @@ export type CompleteLoginFn = (state: string, code: string) => Promise<LoginOutc
 
 /** A plain-text page for the person's browser, at the end of their login. */
 function loginPage(text: string, status: number): Response {
-  return new Response(text, { status, headers: { "content-type": "text/plain; charset=utf-8" } });
+  // The URL carried the code and the state: neither kept nor passed on.
+  return new Response(text, {
+    status,
+    headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store", "referrer-policy": "no-referrer" },
+  });
 }
 
 /**
@@ -301,7 +305,10 @@ function loginPage(text: string, status: number): Response {
 export async function handleLoginCallback(req: Request, deps: { complete: CompleteLoginFn }): Promise<Response> {
   const params = new URL(req.url).searchParams;
   const error = params.get("error");
-  if (error !== null) return loginPage(`The login didn't happen (${error}). Ask Mercury again for a new link.`, 400);
+  if (error !== null) {
+    const reason = error.replace(/[^A-Za-z0-9_.-]/g, "").slice(0, 64);
+    return loginPage(`The login didn't happen (${reason}). Ask Mercury again for a new link.`, 400);
+  }
   const code = params.get("code");
   const state = params.get("state");
   if (!code || !state) return loginPage("The login link came back without a code or a state. Ask Mercury again for a new link.", 400);

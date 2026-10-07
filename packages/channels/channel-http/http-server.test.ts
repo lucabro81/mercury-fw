@@ -500,6 +500,15 @@ describe("handleLoginCallback", () => {
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toStartWith("text/plain");
     expect(await res.text()).toBe("You're logged in to jira. Go back to the conversation and ask again.");
+    expect(res.headers.get("cache-control")).toBe("no-store");
+    expect(res.headers.get("referrer-policy")).toBe("no-referrer");
+  });
+
+  it("keeps only a short, plain reason from the error the service sent back", async () => {
+    const res = await handleLoginCallback(callback(`?error=${encodeURIComponent("access_denied <b>x</b>" + "y".repeat(100))}`), {
+      complete: async () => ({ ok: true, service: "jira" }),
+    });
+    expect(await res.text()).toBe(`The login didn't happen (access_deniedbxb${"y".repeat(48)}). Ask Mercury again for a new link.`);
   });
 
   it("reports a login that didn't go through", async () => {
