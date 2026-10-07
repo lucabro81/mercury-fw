@@ -128,8 +128,8 @@ export function omitDisplayForModel(output: unknown): unknown {
 /**
  * Builds the `runCommand` tool: the model writes a whole CLI invocation as
  * one string, `execute` parses it (`parseCommand`), checks the binary
- * against `configs`, then classifies the argv via `matchCommand` — each
- * failure mode (unparseable / unknown binary / confirm-required /
+ * against `configs`, refuses an identity flag (`--user`), then classifies the argv via `matchCommand` — each
+ * failure mode (unparseable / identity flag / unknown binary / confirm-required /
  * not-allowed) gets a distinct, self-correctable error message — before
  * ever calling `runCliFn`. `runCliFn` is injected (defaulting to the real
  * `runCli` in production) so tests can supply a fake without spawning a
@@ -179,6 +179,16 @@ export function createCliTool(
       const parsed = parseCommand(command);
       if (!parsed.ok) {
         return { ok: false, error: `could not parse "${command}": ${parsed.error}` };
+      }
+
+      // The CLIs act as whoever `--user <id>` names: which identity a command
+      // runs as is Mercury's decision, never something the model writes.
+      if (parsed.args.some((a) => a === "--user" || a.startsWith("--user="))) {
+        return {
+          ok: false,
+          error:
+            "--user is not allowed: Mercury decides whose account a command runs as, never the command itself. Run it again without --user.",
+        };
       }
 
       const config = configs[parsed.binary];
