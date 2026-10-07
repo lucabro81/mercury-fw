@@ -30,12 +30,20 @@ plugins: [
 
 ## Credentials
 
-The CLI keeps its login under `~/.config/jira-cli`, and the plugin declares that folder in its `package.json` (`mercury.cliCredentials`) with the commands that set it up. Mercury runs as an Atlassian Service Account, created by an org admin in admin.atlassian.com (Directory → Service accounts, an OAuth 2.0 credential with the `read:jira-work`, `read:jira-user`, `write:jira-work` scopes; the [jira CLI's README](https://github.com/lucabro81/CLI-monorepo/tree/main/crates/jira#setup) has the steps). Set it up inside the app's container, pasting the credential's client id and secret when the CLI asks:
+The plugin acts as the person: every command runs with the Jira account of whoever Mercury is talking to, so they see and change exactly what that account can, and `currentUser()` in JQL is them. On the terminal (`mfw repl`) there's no person, and commands run as the app's Service Account.
+
+The CLI keeps every login under `~/.config/jira-cli` (one folder per person, next to the Service Account's), and the plugin declares that folder in its `package.json` (`mercury.cliCredentials`) with the commands that set it up. Two things are set up once, inside the app's container, pasting each credential's client id and secret when the CLI asks (the [jira CLI's README](https://github.com/lucabro81/CLI-monorepo/tree/main/crates/jira#setup) has the steps on Atlassian's side):
+
+- the **Service Account**, created by an org admin in admin.atlassian.com (Directory → Service accounts, an OAuth 2.0 credential with the `read:jira-work`, `read:jira-user`, `write:jira-work` scopes): what the terminal runs as;
+- the **3LO app** people log in through, from developer.atlassian.com (Resource-level, the same scopes, sharing enabled under Distribution), with `<HTTP_SURFACE_PUBLIC_URL>/login/callback` among its callback URLs.
 
 ```bash
 mfw credentials setup @mercury-fw/plugin-jira
+mfw credentials setup @mercury-fw/plugin-jira --user-app
 mfw credentials check @mercury-fw/plugin-jira
 ```
+
+People log in on their own: the first time someone asks for something in Jira, Mercury answers that they need to log in, and the [HTTP channel](../../channels/channel-http) shows them the link (it needs `HTTP_SURFACE_PUBLIC_URL`). After the consent they're sent back to Mercury and ask again; Mercury never falls back to the Service Account for them.
 
 Coming from a version before 0.5.0: the CLI is now 2.x, which keeps the Service Account and each person apart and refuses the old login folder, so the env file's `JIRA_CLI_CONFIG_TAR_B64` isn't read any more. Remove it, then run the setup above once.
 

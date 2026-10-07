@@ -20,12 +20,13 @@ It needs an auth provider next to it: [`@mercury-fw/auth-oidc`](../../auth/auth-
 |---|---|
 | `HTTP_SURFACE_PORT` | The port (default `4100`). |
 | `HTTP_SURFACE_CORS_ORIGIN` | The origin a browser UI calls from (default `*`). |
+| `HTTP_SURFACE_PUBLIC_URL` | The address people's browsers reach the surface at (e.g. `https://mercury.example.com`). With it, people log in here to the services plugins act on as them (see [`GET /login/callback`](#get-logincallback)); without it, nobody can. |
 
 ## API
 
 It's active whenever it's declared in `mercury.config.ts`'s `channels` with an auth provider; remove it there to turn the surface off. It listens on `HTTP_SURFACE_PORT` (default `4100`). Base URL `http://<host>:<port>`.
 
-**Authentication.** Every route except `GET /openapi.yaml` and the `OPTIONS` preflights needs `Authorization: Bearer <token>`, and the auth provider decides who the token belongs to. A missing or refused token gets `401` with `WWW-Authenticate: Bearer` before anything runs.
+**Authentication.** Every route except `GET /openapi.yaml`, `GET /login/callback` and the `OPTIONS` preflights needs `Authorization: Bearer <token>`, and the auth provider decides who the token belongs to. A missing or refused token gets `401` with `WWW-Authenticate: Bearer` before anything runs.
 
 **Conversations belong to whoever opened them.** The session key is `<caller id>:<conversationId>`, so the same `conversationId` sent by someone else is a conversation of their own, and a confirmation token staged in your conversation can't be confirmed from theirs. Each authenticated caller also gets their own episodic memory and wiki area, as on Google Chat.
 
@@ -60,6 +61,7 @@ Reasoning and answer text arrive as **incremental deltas** — never one finishe
 | `tool_finish` | `{ toolCallId, outcome }` | a tool call settles (`outcome`: `success` \| `failed` \| `pending`) |
 | `text` | `{ chunk }` | an answer-text delta |
 | `pending` | `{ command, token }` | a confirm-required action was staged; send `token` back to confirm it — as a later `/turn` `text`, or via `POST /confirm` |
+| `login` | `{ service, url }` | the caller isn't logged in to `service` yet, which a plugin acts on as them: show them `url` to open (the model never gets it) |
 | `final` | `{ text }` | the complete answer (also emitted for a token confirmation, with no model turn) |
 | `error` | `{ message }` | the turn failed mid-stream |
 
@@ -69,6 +71,10 @@ curl -N -X POST http://localhost:4100/turn \
   -H "authorization: Bearer $TOKEN" \
   -d '{"text":"Quante issue nel progetto KAN?","conversationId":"c1"}'
 ```
+
+## `GET /login/callback`
+
+Where a person comes back after logging in to a service a plugin acts on as them (Jira, Bitbucket): the `login` event's `url` sends them to the service, and the service sends their browser here with `code` and `state`. Mounted only with `HTTP_SURFACE_PUBLIC_URL`, at `<HTTP_SURFACE_PUBLIC_URL>/login/callback`, which is the URL to register as a callback on the service's app (the Atlassian 3LO app, the Bitbucket consumer people log in through). No bearer token: the browser has none here, and the `state` Mercury issued for that person, single-use and valid for ten minutes, is what ties the request to their login. Answers with a plain-text page saying how it went.
 
 ## `POST /confirm`
 

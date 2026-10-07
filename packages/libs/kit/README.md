@@ -17,9 +17,11 @@ A plugin whose CLI keeps its login in a folder under the home, reading it from t
 }
 ```
 
-or anywhere else under the home, with `{ "path": ".my-cli" }` instead of `folder` (relative to the home, inside it). Each command is a binary on the container's PATH followed by its arguments: `setup` sets up the identity the agent runs as and is required, `check` and `logout` (of that identity, or of one person with `--user <id>`) are optional.
+or anywhere else under the home, with `{ "path": ".my-cli" }` instead of `folder` (relative to the home, inside it). Each command is a binary on the container's PATH followed by its arguments: `setup` sets up the identity the agent runs as and is required, `userSetup` (the app people log in through, logging nobody in), `check` and `logout` (of that identity, or of one person with `--user <id>`) are optional.
 
 An app then runs `mfw credentials setup <plugin>`, which runs `setup` in a one-off container on the user's terminal, so the CLI asks for what it needs and writes its login straight onto a volume that keeps what the CLI writes back (a folder outside `~/.config` gets a link from its usual place to the volume). A CLI that authenticates any other way isn't covered by this, and neither is one that deletes its own folder and makes it again.
+
+A plugin also says whose identity its tools act with (`actsAs`). `"person"`: the person the turn is for, who logs in to the service through Mercury; the plugin contributes a `login` (`start` and `complete`, which `createCliPersonLogin` from `@mercury-fw/cli-engine` builds for a CLI with a two-step remote login), and its tools get the person and `requireLogin` in their context (`createCliTool` takes both, adds `--user` to every command and asks for the login when the CLI exits with code 3). `"mercury"`, or nothing declared: Mercury's own identity, whoever asks, which only someone allowed to make Mercury act as itself may use; that permission doesn't exist yet, so such a plugin is offered on the terminal only.
 
 A proper workflow for writing plugins, with an SDK on top of these contracts, is planned ([#27](https://github.com/lucabro81/mercury-fw/issues/27)).
 
