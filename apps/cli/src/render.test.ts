@@ -59,7 +59,7 @@ const ALWAYS = [
 ];
 
 describe("renderApp: files", () => {
-  // #144: no generated entrypoint, the core unpacks the CLI credentials
+  // #144: no generated entrypoint, the core links the CLI credentials
   // each plugin declares, so the files don't depend on the tool plugins.
   test("the same set of files whatever was chosen", () => {
     for (const choice of [EMPTY, HTTP, HTTP_JIRA, FULL]) {
@@ -180,9 +180,9 @@ describe("renderApp: .env.example", () => {
     expect(env).toContain("# --- google-chat\n");
   });
 
-  // #144: the credentials variable comes from the plugin's own declaration,
-  // written by mfw credentials set, not from the CLI's catalog.
-  test("no CLI credentials variable: mfw credentials set writes it", () => {
+  // #174: a CLI's login never travels in the env file: mfw credentials setup
+  // writes it onto the volume from inside the container.
+  test("no CLI credentials in the env file", () => {
     const env = renderApp(FULL).get(".env.example") ?? "";
     expect(env).not.toContain("CONFIG_TAR_B64");
     expect(env).not.toContain("# --- bitbucket");
@@ -305,8 +305,11 @@ describe("renderApp: README.md", () => {
       const readme = renderApp(choice).get("README.md") ?? "";
       const section = readme.slice(readme.indexOf("## CLI credentials"));
       expect(section).toStartWith("## CLI credentials\n\nSome tool plugins run a CLI. When that CLI keeps its login in a folder");
-      expect(section).toContain("\nmfw credentials set <plugin>\n");
-      expect(section).toContain("\nmfw credentials reset <plugin>\n");
+      expect(section).toContain("\nmfw credentials setup <plugin>\nmfw credentials check <plugin>\n");
+      expect(section).toContain("\nmfw credentials reset <plugin> [--user <key>]\n");
+      expect(section).toContain("every environment sets up its own");
+      expect(section).not.toContain("credentials set ");
+      expect(section).not.toContain("unpack");
       expect(section).toContain("a folder under \`~/.config\`, or a path anywhere under the home");
       expect(section).toContain("A CLI that authenticates any other way isn't covered by this, and nothing guarantees it works in Mercury;");
       for (const name of ["jira", "bitbucket", "atlassian"]) expect(section).not.toContain(name);
