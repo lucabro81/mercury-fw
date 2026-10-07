@@ -76,6 +76,8 @@ curl -N -X POST http://localhost:4100/turn \
 
 Where a person comes back after logging in to a service a plugin acts on as them (Jira, Bitbucket): the `login` event's `url` sends them to the service, and the service sends their browser here with `code` and `state`. Mounted only with `HTTP_SURFACE_PUBLIC_URL`, at `<HTTP_SURFACE_PUBLIC_URL>/login/callback`, which is the URL to register as a callback on the service's app (the Atlassian 3LO app, the Bitbucket consumer people log in through). No bearer token: the browser has none here, and the `state` Mercury issued for that person, single-use and valid for ten minutes, is what ties the request to their login. Answers with a plain-text page saying how it went.
 
+Whoever opens the link and accepts decides which account gets linked: a link belongs to the person it was shown to, and someone else accepting it would link their own account to that person's Mercury identity. A UI should say so next to the link. Checking the linked account against the person is [#179](https://github.com/lucabro81/mercury-fw/issues/179).
+
 ## `POST /confirm`
 
 Explicit alternative to re-sending a token as `/turn` `text`. Body `{ token, conversationId }`; returns `{ ok: true, resolved: true, text }` when the token was a pending confirmation, `{ ok: true, resolved: false }` otherwise. `400` if `token` or `conversationId` is missing, or the id has other characters than `/turn` accepts. Never invokes the model.
