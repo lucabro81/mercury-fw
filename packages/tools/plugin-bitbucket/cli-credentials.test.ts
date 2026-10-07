@@ -4,11 +4,17 @@ import pkg from "./package.json" with { type: "json" };
 
 /**
  * The plugin's CLI keeps its login in ~/.config/bitbucket-cli, and the plugin declares
- * it in its package.json: what `mfw credentials` and the core read to carry
- * that login into the container.
+ * it in its package.json with the commands that set it up, check it and log an
+ * identity out: what `mfw credentials` runs in the app's container.
  */
 describe("mercury.cliCredentials", () => {
-  test("declares the CLI's login folder", () => {
-    expect(readCliCredentials(pkg)).toEqual({ name: "bitbucket-cli", path: ".config/bitbucket-cli" });
+  test("declares the CLI's login folder and its commands", () => {
+    expect(readCliCredentials(pkg)).toEqual({
+      name: "bitbucket-cli",
+      path: ".config/bitbucket-cli",
+      setup: ["bitbucket", "init"],
+      check: ["bitbucket", "doctor"],
+      logout: ["bitbucket", "auth", "logout"],
+    });
   });
 });

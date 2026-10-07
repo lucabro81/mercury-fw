@@ -30,6 +30,13 @@ plugins: [
 
 ## Credentials
 
-The CLI keeps its login under `~/.config/jira-cli`, and the plugin declares that folder in its `package.json` (`mercury.cliCredentials`). Log in with the CLI's own setup (see [CLI-monorepo](https://github.com/lucabro81/CLI-monorepo)) on your machine, then hand the folder to the app with `mfw credentials set jira-cli`: it travels in the app's env file, and the app unpacks it onto its `cli-credentials` volume at the first start without that folder.
+The CLI keeps its login under `~/.config/jira-cli`, and the plugin declares that folder in its `package.json` (`mercury.cliCredentials`) with the commands that set it up. Mercury runs as an Atlassian Service Account, created by an org admin in admin.atlassian.com (Directory → Service accounts, an OAuth 2.0 credential with the `read:jira-work`, `read:jira-user`, `write:jira-work` scopes; the [jira CLI's README](https://github.com/lucabro81/CLI-monorepo/tree/main/crates/jira#setup) has the steps). Set it up inside the app's container, pasting the credential's client id and secret when the CLI asks:
+
+```bash
+mfw credentials setup @mercury-fw/plugin-jira
+mfw credentials check @mercury-fw/plugin-jira
+```
+
+Coming from a version before 0.5.0: the CLI is now 2.x, which keeps the Service Account and each person apart and refuses the old login folder, so the env file's `JIRA_CLI_CONFIG_TAR_B64` isn't read any more. Remove it, then run the setup above once.
 
 MIT

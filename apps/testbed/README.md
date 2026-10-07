@@ -49,10 +49,14 @@ cp .env.example .env
 
 Fill in `OLLAMA_MODEL`, `OLLAMA_HOST` when the endpoint isn't Ollama on this machine, and what each plugin asks for (`JIRA_SITE_URL` for Jira, for example).
 
-The login of a plugin's CLI goes in a `*_CONFIG_TAR_B64` variable, the CLI's config folder packed, which the app unpacks at its first start. Mind whose it is:
+The login of a plugin's CLI isn't in the env file: it's set up inside the app's container, onto the app's own credentials volume, with the plugin's declared setup (the CLI asks for what it needs):
 
-- `bunx mfw credentials set jira-cli` packs `~/.config/jira-cli` of this machine: the account you logged into the CLI with, which may be yours rather than the bot's. The app then acts as that account, so `currentUser()` is you, and a comment it writes is yours.
-- To use the same account as another app (the service account a deployed instance runs as), copy that app's line for the variable into this `.env`, or run `mfw credentials set jira-cli --print` where its config folder is and paste the line.
+```bash
+bunx mfw credentials setup @mercury-fw/plugin-jira
+bunx mfw credentials check @mercury-fw/plugin-jira
+```
+
+Use test credentials (a Service Account for this test bed, not a deployed instance's).
 
 With the HTTP channel and `static`, `AUTH_STATIC_TOKENS` holds the test tokens and who each one is. These are the ones `tests/http-auth.e2e.ts` and `tests/concurrency.e2e.ts` send, appended from the app's folder:
 

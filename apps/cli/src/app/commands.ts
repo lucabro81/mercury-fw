@@ -7,9 +7,9 @@
  */
 import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, join, relative, resolve } from "node:path";
-import { appCliCredentials, volumePath, type CliCredentials } from "@mercury-fw/utils";
-import { packCredentials, readServiceAccountKey, setEnvVar } from "./credentials.ts";
+import { join, relative, resolve } from "node:path";
+import { appCliCredentials, cliUserId, volumePath, type CliCredentials } from "@mercury-fw/utils";
+import { readServiceAccountKey, setEnvVar } from "./credentials.ts";
 import type { App } from "./find-app.ts";
 import { copyPacks, LOCAL_PACKS_DIR, readPacks, withLocalOverrides, withoutLocalOverrides } from "./local-packages.ts";
 import { findTests, loadTest } from "../e2e/load.ts";
@@ -128,38 +128,43 @@ export function appCommands(app: App, deps: AppDeps) {
       }
       return 0;
     },
-    /** Packs the plugin's CLI login folder (`from`, by default where the
-     * plugin declares it under the home) into its credentials variable,
-     * written into the app's env file, or printed with `print`. */
-    credentialsSet: async (plugin: string, { from, print }: { from?: string; print: boolean }) => {
-      const { name, path, variable } = credentialsOf(app, plugin);
-      const source = resolve(from ?? join(deps.home, path));
-      const value = await packCredentials(source, basename(path));
-      if (print) {
-        deps.print(`${variable}=${value}`);
-        return 0;
-      }
-      const envFile = join(app.dir, ".env");
-      setEnvVar(envFile, variable, value);
-      deps.print(`${variable} set in ${envFile}, from ${source}.`);
-      deps.print(
-        `The app unpacks it at its next start, if the volume has no ${name} folder yet; if it has one, run mfw credentials reset ${name} first.`,
-      );
-      return 0;
+    /** Runs the plugin's declared setup in a one-off container on the user's
+     * terminal (without `-T`, compose attaches a TTY whenever stdin is one),
+     * so the CLI asks what it needs and writes its login straight onto the
+     * credentials volume. */
+    credentialsSetup: async (plugin: string) => {
+      const declared = credentialsOf(app, plugin);
+      const code = await deps.run([...COMPOSE, "run", "--rm", "--no-deps", SERVICE, ...inContainer(declared, declared.setup)], {
+        cwd: app.dir,
+      });
+      if (code === 0 && declared.check !== undefined) deps.print(`Next: mfw credentials check ${declared.package}`);
+      return code;
     },
-    /** Deletes the plugin's CLI folder from the credentials volume once the
-     * user types the folder's name, so its variable is unpacked again at the
-     * next start. A wrong answer deletes nothing. */
-    credentialsReset: async (plugin: string) => {
-      const { name, path } = credentialsOf(app, plugin);
-      const answer = await deps.ask(
-        `This deletes the ${name} folder from the app's credentials volume, and any token the CLI refreshed since it was unpacked. Type the folder's name (${name}) to confirm: `,
-      );
-      if (answer.trim() !== name) {
-        deps.print("Not confirmed: nothing deleted.");
+    /** Runs the plugin's declared check in a one-off container. */
+    credentialsCheck: async (plugin: string) => {
+      const declared = credentialsOf(app, plugin);
+      if (declared.check === undefined) throw new Error(`${declared.package} declares no command to check its CLI's login.`);
+      return deps.run([...COMPOSE, "run", "--rm", "--no-deps", "-T", SERVICE, ...inContainer(declared, declared.check)], {
+        cwd: app.dir,
+      });
+    },
+    /** Runs the plugin's declared logout, of the service identity or of the
+     * person whose user key is `user`, once the user types the declared name.
+     * A wrong answer runs nothing. */
+    credentialsReset: async (plugin: string, { user }: { user?: string }) => {
+      const declared = credentialsOf(app, plugin);
+      if (declared.logout === undefined) throw new Error(`${declared.package} declares no command to log its CLI out.`);
+      const who =
+        user === undefined
+          ? `This logs the service identity of ${declared.package}'s CLI out: commands that run as it fail until mfw credentials setup ${declared.package}.`
+          : `This logs ${user} out of ${declared.package}'s CLI: they log in again the next time they need it.`;
+      const answer = await deps.ask(`${who} Type ${declared.name} to confirm: `);
+      if (answer.trim() !== declared.name) {
+        deps.print("Not confirmed: nobody logged out.");
         return 1;
       }
-      return stopped(SERVICE, [[...COMPOSE, "run", "--rm", "--no-deps", "-T", SERVICE, "rm", "-rf", `/home/mercury/${volumePath(path)}`]]);
+      const argv = user === undefined ? declared.logout : [...declared.logout, "--user", cliUserId(user)];
+      return deps.run([...COMPOSE, "run", "--rm", "--no-deps", "-T", SERVICE, ...inContainer(declared, argv)], { cwd: app.dir });
     },
     /** Writes the Google Chat channel's service account key (the JSON file
      * at `keyFile`) into the app's env file, and the Pub/Sub subscription when
@@ -274,6 +279,35 @@ export function appCommands(app: App, deps: AppDeps) {
     }
     return 0;
   }
+}
+
+/** Links `$2` (the home path) to `$1` (its place on the volume) the way the
+ * core does at startup, never replacing something else at `$2`, then runs the
+ * rest of the arguments. */
+const LINK_THEN_RUN = [
+  'mkdir -p "$1" "$(dirname "$2")" || exit 1',
+  'if [ -L "$2" ] && [ "$(readlink "$2")" = "$1" ]; then :',
+  'elif [ -e "$2" ] || [ -L "$2" ]; then echo "$2 is already there and is not a link to the credentials volume" >&2; exit 1',
+  'else ln -s "$1" "$2" || exit 1; fi',
+  'shift 2',
+  'exec "$@"',
+].join("\n");
+
+/** `argv` as the app's container runs it for `declared`: as it is for a
+ * login under ~/.config, the volume's mount; for one kept elsewhere in the
+ * home, after linking that path to the volume, as the core does at startup,
+ * since a one-off container doesn't start the app. */
+function inContainer(declared: CliCredentials, argv: string[]): string[] {
+  if (volumePath(declared.path) === declared.path) return argv;
+  return [
+    "sh",
+    "-c",
+    LINK_THEN_RUN,
+    "sh",
+    `/home/mercury/${volumePath(declared.path)}`,
+    `/home/mercury/${declared.path}`,
+    ...argv,
+  ];
 }
 
 /** The CLI credentials `plugin` names, by package or by folder, among those

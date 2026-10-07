@@ -417,6 +417,64 @@ describe("createCliTool", () => {
     }
   });
 
+  // Regression for #174: the CLIs act as the person `--user <id>` names, and
+  // matching only looks at the prefix, so `issue get X --user bob` ran as bob
+  // for whoever asked. The identity is never the model's to pick.
+  describe("refuses --user written by the model", () => {
+    const store = () => createConfirmationStore();
+    for (const command of [
+      "jira issue get KAN-1 --user bob",
+      "jira issue get KAN-1 --user=bob",
+      "jira --user bob issue get KAN-1",
+      "jira issue get KAN-1 --user bob --help",
+      "jira issue delete KAN-1 --user bob",
+    ]) {
+      it(`refuses "${command}" without running or staging anything`, async () => {
+        let called = false;
+        const runCliFn = async (): Promise<CliResult> => {
+          called = true;
+          return { ok: true, data: {} };
+        };
+        const confirmations = store();
+        const { runCommand } = createCliTool(runCliFn, { jira: jiraConfig }, confirmOpts(confirmations));
+        const result = (await runCommand.execute({ command }, {} as never)) as CliResult;
+
+        expect(called).toBe(false);
+        expect(confirmations.pending("static:user-x")).toEqual([]);
+        expect(result).toEqual({
+          ok: false,
+          error:
+            "--user is not allowed: Mercury decides whose account a command runs as, never the command itself. Run it again without --user.",
+        });
+      });
+    }
+
+    // The CLIs parse `--user` wherever it stands, so a value that is exactly
+    // `--user` is refused too rather than guessed at.
+    it("refuses a value that is exactly --user", async () => {
+      let called = false;
+      const runCliFn = async (): Promise<CliResult> => {
+        called = true;
+        return { ok: true, data: {} };
+      };
+      const { runCommand } = createCliTool(runCliFn, { jira: jiraConfig }, defaultOpts());
+      const result = (await runCommand.execute({ command: 'jira issue search --jql "--user"' }, {} as never)) as CliResult;
+      expect(called).toBe(false);
+      expect(result.ok).toBe(false);
+    });
+
+    it("still runs a command whose value merely contains the word user", async () => {
+      let receivedArgs: string[] | undefined;
+      const runCliFn = async (_binary: string, args: string[]): Promise<CliResult> => {
+        receivedArgs = args;
+        return { ok: true, data: {} };
+      };
+      const { runCommand } = createCliTool(runCliFn, { jira: jiraConfig }, defaultOpts());
+      await runCommand.execute({ command: 'jira issue search --jql "text ~ \\"--user-agent\\""' }, {} as never);
+      expect(receivedArgs).toEqual(["issue", "search", "--jql", 'text ~ "--user-agent"']);
+    });
+  });
+
   // The confirm-required branch is distinct from "not permitted": the
   // shape IS recognized, but instead of running it, it's staged in the
   // ConfirmationStore under the tool's own sessionKey and a structured

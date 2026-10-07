@@ -17,8 +17,9 @@
   - [`mfw memory list`](#mfw-memory-list)
   - [`mfw memory read <collection> [--limit N]`](#mfw-memory-read-collection---limit-n)
   - [`mfw reset <memory|wiki>`](#mfw-reset-memorywiki)
-  - [`mfw credentials set <plugin> [--from <dir>] [--print]`](#mfw-credentials-set-plugin---from-dir---print)
-  - [`mfw credentials reset <plugin>`](#mfw-credentials-reset-plugin)
+  - [`mfw credentials setup <plugin>`](#mfw-credentials-setup-plugin)
+  - [`mfw credentials check <plugin>`](#mfw-credentials-check-plugin)
+  - [`mfw credentials reset <plugin> [--user <key>]`](#mfw-credentials-reset-plugin---user-key)
   - [`mfw google-chat set-key <key-file> [--subscription <name>]`](#mfw-google-chat-set-key-key-file---subscription-name)
   - [`mfw local-packages <folder>` / `mfw local-packages --off`](#mfw-local-packages-folder--mfw-local-packages---off)
   - [`mfw e2e [tests...] [--repeat N]`](#mfw-e2e-tests---repeat-n)
@@ -185,24 +186,44 @@ mfw reset wiki
 
 Useful for clearing out test data; the other layer isn't touched.
 
-### `mfw credentials set <plugin> [--from <dir>] [--print]`
+### `mfw credentials setup <plugin>`
 
-Hands a plugin's CLI its login, for a plugin whose CLI keeps it in a folder under the home and reads it from there at runtime. The plugin declares that folder in its `package.json` (`mercury.cliCredentials`: `{ "folder": "jira-cli" }` for `~/.config/jira-cli`, the usual place, or `{ "path": ".aws" }` for anywhere else under the home), and `<plugin>` names it by the plugin's package or by what it declares; a name the app doesn't have is an error listing the ones it has. Log in with the CLI on your machine first, then this packs the folder (where the plugin declares it, or `--from` when it lives elsewhere on your machine) into a base64 tar.gz and writes it into the app's `.env` as a variable named after the declaration (`jira-cli` goes in `JIRA_CLI_CONFIG_TAR_B64`, `.aws` in `AWS_CONFIG_TAR_B64`), replacing an older value and leaving the other lines alone. The value is never printed; `--print` prints the whole line instead and leaves `.env` alone, for pasting it into another host's.
+Sets up a plugin's CLI login, for a plugin whose CLI keeps it in a folder under the home and reads it from there at runtime. The plugin declares that folder in its `package.json`, with the commands that set the login up, check it and log an identity out, each a binary on the container's PATH followed by its arguments:
 
-When the app starts, it unpacks the variable onto the credentials volume, but only if that CLI's folder isn't there yet: what the CLI writes back while running, like a refreshed token, stays on the volume across redeploys, and an older value in `.env` never overwrites it. The volume is mounted on `~/.config`; a folder declared elsewhere in the home lives on it under `~/.config/mercury-home`, and the app makes its usual place a link to it at every start. A CLI that authenticates any other way isn't covered by this, and neither is one that deletes its own folder and makes it again, since that replaces the link.
-
-```bash
-mfw credentials set jira-cli
-mfw credentials set @mercury-fw/plugin-bitbucket --from ~/work/bitbucket-login
-mfw credentials set jira-cli --print
+```json
+"mercury": {
+  "cliCredentials": {
+    "folder": "jira-cli",
+    "setup": ["jira", "init"],
+    "check": ["jira", "doctor"],
+    "logout": ["jira", "auth", "logout"]
+  }
+}
 ```
 
-### `mfw credentials reset <plugin>`
+`folder` is under `~/.config`, the usual place; `{ "path": ".aws" }` declares one anywhere else under the home. `setup` is required, `check` and `logout` aren't. `<plugin>` names the declaration by the plugin's package or by its folder; a name the app doesn't have is an error listing the ones it has.
 
-Deletes the plugin's CLI folder from the credentials volume, so the variable in `.env` is unpacked again at the next start: what to run after correcting a variable whose folder is already on the volume, since the app never touches an existing folder. It asks you to type the folder's name first, because a token the CLI refreshed on the volume goes too (and with a CLI that rotates its refresh token, the one in `.env` may no longer work). Once confirmed it stops the app, removes the folder in a one-off container of the app's own image, and starts the app again (`docker compose stop mercury`, `run --rm --no-deps -T mercury rm -rf …`, `up -d mercury`).
+`setup` runs the declared setup in a one-off container of the app (`docker compose run --rm --no-deps mercury jira init`) on your terminal, so the CLI asks you for what it needs and writes the login straight onto the credentials volume, mounted on `~/.config`. A login declared elsewhere in the home lives on the volume under `~/.config/mercury-home`, and its usual place is linked there first (the app makes the same link at every start). What the CLI writes back while running, like a refreshed token or a person's login, stays on the volume across redeploys. This sets up the identity Mercury itself runs as; people log in on their own, through Mercury. Nothing goes in the env file, and nothing is carried between machines: each environment sets up its own. A CLI that authenticates any other way isn't covered by this, and neither is one that deletes its own folder and makes it again, since that replaces the link.
+
+```bash
+mfw credentials setup @mercury-fw/plugin-jira
+```
+
+### `mfw credentials check <plugin>`
+
+Runs the check the plugin declares (the CLI's `doctor`, for the first-party plugins) in a one-off container, and exits with its code.
+
+```bash
+mfw credentials check jira-cli
+```
+
+### `mfw credentials reset <plugin> [--user <key>]`
+
+Runs the logout the plugin declares in a one-off container, after you type the name it's declared by (its folder). Without `--user` it logs out the identity Mercury runs as, which then needs `mfw credentials setup` again; with `--user` it logs out one person, by their user key (`<provider>:<id>`), who logs in again through Mercury the next time they need it. The CLI only forgets the login: the tokens aren't revoked at the service.
 
 ```bash
 mfw credentials reset jira-cli
+mfw credentials reset jira-cli --user oidc:312345678901234567
 ```
 
 ### `mfw google-chat set-key <key-file> [--subscription <name>]`

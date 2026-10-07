@@ -78,7 +78,7 @@ version and each chosen plugin at its latest on the registry, then runs
 `bun install` and commits the app to a new git repository (`finish.ts`;
 `--no-install`, `--no-git`, `--git-remote`, nothing pushed). Every other command operates an app from
 inside its folder (`app/`: `start`/`stop`/`restart`, `logs`, `repl`, `shell`,
-`vault`, `memory`, `reset`, `credentials set|reset`, `google-chat set-key`, `local-packages`, `e2e`), as `docker compose` calls (or env-file writes, or a REPL session driven through `/dump` for `e2e`); `mfw` is installed
+`vault`, `memory`, `reset`, `credentials setup|check|reset`, `google-chat set-key`, `local-packages`, `e2e`), as `docker compose` calls (or env-file writes, or a REPL session driven through `/dump` for `e2e`); `mfw` is installed
 globally (`bun add -g @mercury-fw/cli`, `mfw upgrade`); an app also gets the CLI as a
 devDependency at the framework's version, and inside an app a global `mfw` at another
 version hands the command over to it (`MFW_DEFERRED`), so the app's commands match its framework. No "plumbing" commands mirroring
@@ -121,7 +121,7 @@ mercury/                       # repo root
 │       └── typescript-config/     # the shared Bun tsconfig every workspace extends
 └── apps/
     ├── create-mercury-agent/     # what `bun create mercury-agent` runs: `mfw create`, nothing of its own
-    ├── cli/                   # @mercury-fw/cli — program.ts (the command line, commander), `mfw create <folder>`: catalog.ts (channels/auth providers/plugins it offers), render.ts (template + selection → files), write.ts, wizard.ts (@clack/prompts), finish.ts (install + first commit), template/*.tpl (static files, imported as text); app/ (find-app.ts, commands.ts: the commands that operate an app; credentials.ts: packing a CLI's config folder into its env variable; local-packages.ts); e2e/ (the e2e test format, runner, and the REPL and HTTP sessions behind `mfw e2e`, `@mercury-fw/cli/e2e`)
+    ├── cli/                   # @mercury-fw/cli — program.ts (the command line, commander), `mfw create <folder>`: catalog.ts (channels/auth providers/plugins it offers), render.ts (template + selection → files), write.ts, wizard.ts (@clack/prompts), finish.ts (install + first commit), template/*.tpl (static files, imported as text); app/ (find-app.ts, commands.ts: the commands that operate an app; credentials.ts: env-file writes and the service account key for google-chat set-key; local-packages.ts); e2e/ (the e2e test format, runner, and the REPL and HTTP sessions behind `mfw e2e`, `@mercury-fw/cli/e2e`)
     └── testbed/               # private: create.ts/pack.ts make apps under apps/ (ignored) on this repo's packed packages; tests/example.e2e.ts, a template; README.md, the procedure
 ```
 
@@ -152,7 +152,7 @@ packages/libs/core/
     │   ├── terminal.ts         # the REPL loop (stdin/stdout), driven by the app's repl.ts — a dev console, not a channel
     │   └── tool-log.ts         # terminal-only debug visibility helpers
     ├── identity/              # who sees what, decided in one place: the user key (`<provider>:<id>`), a person's vault area (`users/<key>/`, `personal/` to the model) and its access checks, the per-person channel reads, the startup migration of pre-key data
-    ├── credentials/           # unpacks each plugin-declared CLI login from the env file onto the volume (~/.config) at startup, linking one declared elsewhere in the home
+    ├── credentials/           # at startup, links each plugin-declared CLI login kept outside ~/.config to the credentials volume, and reports one not set up yet
     ├── memory/                # Layer 3 — episodic store (Qdrant)
     ├── wiki/                  # Layer 2 — vault init/read/write (common `curated/` + per-person `users/<key>/`) + vault-cli.ts (maintenance CLI, see Operational notes)
     └── cron/                  # idle-session scanner

@@ -16,6 +16,13 @@ plugins: [bitbucketPlugin],
 
 ## Credentials
 
-The CLI keeps its login under `~/.config/bitbucket-cli`, and the plugin declares that folder in its `package.json` (`mercury.cliCredentials`). Log in with the CLI's own setup (see [CLI-monorepo](https://github.com/lucabro81/CLI-monorepo)) on your machine, then hand the folder to the app with `mfw credentials set bitbucket-cli`: it travels in the app's env file, and the app unpacks it onto its `cli-credentials` volume at the first start without that folder.
+The CLI keeps its login under `~/.config/bitbucket-cli`, and the plugin declares that folder in its `package.json` (`mercury.cliCredentials`) with the commands that set it up. Mercury runs as a Bitbucket OAuth consumer of the workspace (the [bitbucket CLI's README](https://github.com/lucabro81/CLI-monorepo/tree/main/crates/bitbucket) has the steps). Set it up inside the app's container, pasting the consumer's key and secret when the CLI asks:
+
+```bash
+mfw credentials setup @mercury-fw/plugin-bitbucket
+mfw credentials check @mercury-fw/plugin-bitbucket
+```
+
+Coming from a version before 0.2.0: the CLI is now 2.x, which keeps the consumer and each person apart and refuses the old login folder, so the env file's `BITBUCKET_CLI_CONFIG_TAR_B64` isn't read any more. Remove it, then run the setup above once.
 
 MIT

@@ -14,9 +14,9 @@ export {
 } from "./cli-binary.ts";
 export {
   readCliCredentials,
-  credentialsVariable,
   appCliCredentials,
   volumePath,
+  cliUserId,
   type DeclaredCredentials,
   type CliCredentials,
   type AppCliCredentials,

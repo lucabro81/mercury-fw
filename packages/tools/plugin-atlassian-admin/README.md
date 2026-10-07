@@ -16,6 +16,15 @@ plugins: [atlassianAdminPlugin],
 
 ## Credentials
 
-The CLI keeps its login under `~/.config/atlassian-admin-cli`, and the plugin declares that folder in its `package.json` (`mercury.cliCredentials`). Log in with the CLI's own setup (see [CLI-monorepo](https://github.com/lucabro81/CLI-monorepo)) on your machine, then hand the folder to the app with `mfw credentials set atlassian-admin-cli`: it travels in the app's env file, and the app unpacks it onto its `cli-credentials` volume at the first start without that folder.
+The CLI keeps its login, an organization API key, under `~/.config/atlassian-admin-cli`, and the plugin declares that folder in its `package.json` (`mercury.cliCredentials`) with the commands that set it up. It's set up inside the app's container:
+
+```bash
+mfw credentials setup @mercury-fw/plugin-atlassian-admin
+mfw credentials check @mercury-fw/plugin-atlassian-admin
+```
+
+The pinned CLI doesn't prompt for the key yet (it refuses to, so the key never lands in scrollback, and only takes it as flags), so for now `setup` prints how to write it. Until it does, open a shell in the app's container with `mfw shell` and run `atlassian-admin init --api-key <KEY> --org-id <ORG_ID>` there.
+
+Coming from a version before 0.2.0: the env file's `ATLASSIAN_ADMIN_CLI_CONFIG_TAR_B64` isn't read any more. Remove it, then set the key up as above once.
 
 MIT

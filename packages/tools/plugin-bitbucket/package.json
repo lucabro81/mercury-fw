@@ -47,10 +47,13 @@
     "cliBinary": {
       "repo": "lucabro81/CLI-monorepo",
       "crate": "bitbucket",
-      "version": "0.6.0"
+      "version": "2.1.0"
     },
     "cliCredentials": {
-      "folder": "bitbucket-cli"
+      "folder": "bitbucket-cli",
+      "setup": ["bitbucket", "init"],
+      "check": ["bitbucket", "doctor"],
+      "logout": ["bitbucket", "auth", "logout"]
     }
   }
 }
