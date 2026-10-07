@@ -1,5 +1,13 @@
 # @mercury-fw/confirm-engine
 
+## 0.40.0
+
+### Patch Changes
+
+- Updated dependencies [0739f77]
+  - @mercury-fw/plugin-types@0.40.0
+  - @mercury-fw/channel-types@0.40.0
+
 ## 0.39.0
 
 ### Patch Changes
