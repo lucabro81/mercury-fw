@@ -189,6 +189,39 @@ describe("createTurnRunner", () => {
     expect(systems).toEqual(["SINGLE", "MULTI"]);
   });
 
+  // #176: a person is offered only the plugins acting as them, and their
+  // tools run as them; the terminal gets everything, run as the service.
+  test("a person's turn gets the people's prompt and tools for that person; the terminal gets the full prompt and no person", async () => {
+    const systems: string[] = [];
+    const persons: unknown[] = [];
+    const runner = createTurnRunner({
+      model: {} as any,
+      systemPrompts: { singleUser: "PEOPLE-SINGLE", multiUser: "PEOPLE-MULTI" },
+      serviceSystemPrompts: { singleUser: "ALL-SINGLE", multiUser: "ALL-MULTI" },
+      buildTools: (_sessionKey, _key, _cb, _finishCb, person) => {
+        persons.push(person);
+        return {};
+      },
+      getOrCreateHistory: () => fakeHistory(),
+      trackSession: () => {},
+      registerCaptureCallback: () => {},
+      maybeCapture: async () => {},
+      processToolCorrections: async () => {},
+      logStep: () => {},
+      runTurnFn: async (_history, _input, deps) => {
+        systems.push(deps.system);
+        return "reply";
+      },
+    });
+
+    await runner(baseTurn({ principal: verified("users/1") }), baseSink());
+    await runner(baseTurn({ principal: verified("users/1"), multiUser: true }), baseSink());
+    await runner(baseTurn({ principal: anonymous("terminal") }), baseSink());
+
+    expect(systems).toEqual(["PEOPLE-SINGLE", "PEOPLE-MULTI", "ALL-SINGLE"]);
+    expect(persons).toEqual([{ key: "google-chat:users/1" }, { key: "google-chat:users/1" }, null]);
+  });
+
   test("calls buildTools with the turn's sessionKey, the principal's user key, and the sink's onToolStart/onToolFinish", async () => {
     const calls: Array<[string, string, unknown, unknown]> = [];
     const onToolStart = () => {};

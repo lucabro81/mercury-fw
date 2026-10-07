@@ -128,13 +128,15 @@ export function appCommands(app: App, deps: AppDeps) {
       }
       return 0;
     },
-    /** Runs the plugin's declared setup in a one-off container on the user's
-     * terminal (without `-T`, compose attaches a TTY whenever stdin is one),
+    /** Runs the plugin's declared setup (with `userApp`, of the app people log
+     * in through) in a one-off container on the user's terminal (without `-T`, compose attaches a TTY whenever stdin is one),
      * so the CLI asks what it needs and writes its login straight onto the
      * credentials volume. */
-    credentialsSetup: async (plugin: string) => {
+    credentialsSetup: async (plugin: string, { userApp = false }: { userApp?: boolean } = {}) => {
       const declared = credentialsOf(app, plugin);
-      const code = await deps.run([...COMPOSE, "run", "--rm", "--no-deps", SERVICE, ...inContainer(declared, declared.setup)], {
+      const setup = userApp ? declared.userSetup : declared.setup;
+      if (setup === undefined) throw new Error(`${declared.package} declares no setup for an app people log in through: it doesn't act as the person.`);
+      const code = await deps.run([...COMPOSE, "run", "--rm", "--no-deps", SERVICE, ...inContainer(declared, setup)], {
         cwd: app.dir,
       });
       if (code === 0 && declared.check !== undefined) deps.print(`Next: mfw credentials check ${declared.package}`);

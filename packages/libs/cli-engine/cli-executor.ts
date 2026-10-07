@@ -25,6 +25,12 @@
 import type { CliResult } from "@mercury-fw/plugin-types";
 export type { CliResult };
 
+/** The exit code the CLIs Mercury's plugins run use when the identity a
+ * command runs as (the service, or the person `--user` names) has no login,
+ * or one that has to be made again: what tells it apart from any other
+ * failure. */
+export const CLI_NOT_LOGGED_IN_EXIT_CODE = 3;
+
 /**
  * Thin wrapper around `Bun.spawn` with both stdout and stderr piped.
  * Extracted into its own function (rather than calling `Bun.spawn`
@@ -43,7 +49,7 @@ function spawnPiped(binary: string, args: string[]) {
  *
  * Resolves to `{ ok: false, error }` — never rejects/throws — for the
  * binary not existing on `PATH` or a non-zero exit code (the error
- * includes the exit code and stderr). Success is exit code 0, full stop:
+ * includes the exit code and stderr, and `exitCode` carries the code). Success is exit code 0, full stop:
  * if stdout happens to be valid JSON it's parsed into `data`, otherwise
  * the raw trimmed text is `data` instead. Non-JSON stdout on a 0 exit is
  * not a parse failure — `--help` output is exactly this shape (plain
@@ -72,6 +78,7 @@ export async function runCli(
     return {
       ok: false,
       error: `${binary} exited with code ${exitCode}: ${stderr.trim()}`,
+      exitCode,
     };
   }
 

@@ -30,6 +30,13 @@ describe("runCli", () => {
   // observed live to send it into a confused, apologetic retry spiral.
   // Exit 0 is success regardless of whether stdout happens to be JSON;
   // non-JSON stdout is just plain-text data, not a parse error.
+  // #176: exit code 3 means the identity has to log in, which the caller
+  // tells apart from any other failure only by the code itself.
+  it("carries the exit code on a non-zero exit", async () => {
+    const result = await runCli("bun", ["-e", "console.error('not logged in'); process.exit(3)"]);
+    expect(result).toEqual({ ok: false, error: "bun exited with code 3: not logged in", exitCode: 3 });
+  });
+
   it("returns the raw text as data when stdout is not valid JSON but exit code is 0", async () => {
     const result = await runCli("bun", ["-e", "console.log('not json')"]);
     expect(result).toEqual({ ok: true, data: "not json" });

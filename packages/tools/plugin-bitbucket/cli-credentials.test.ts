@@ -13,6 +13,7 @@ describe("mercury.cliCredentials", () => {
       name: "bitbucket-cli",
       path: ".config/bitbucket-cli",
       setup: ["bitbucket", "init"],
+      userSetup: ["bitbucket", "init", "--user-app"],
       check: ["bitbucket", "doctor"],
       logout: ["bitbucket", "auth", "logout"],
     });

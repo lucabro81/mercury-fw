@@ -12,14 +12,18 @@
  * is unit-tested without standing up a socket. The read-only routes (4b) mount
  * alongside `/turn` here, driven by the injected `reads` getters.
  *
- * Every route but the OpenAPI document and the CORS preflights asks the
- * injected `authenticate` (the auth provider the app declares) who is calling
+ * `/login/callback` is where a person's browser comes back after logging in to
+ * a service a plugin acts on as them; the single-use state is its credential.
+ *
+ * Every route but the OpenAPI document, the login callback and the CORS
+ * preflights asks the injected `authenticate` (the auth provider the app declares) who is calling
  * before anything runs, and answers 401 when nobody is. A conversation belongs
  * to whoever opened it: the session key is `<principal.id>:<conversationId>`.
  * Confirm resolution is injected too (`confirm`/`resolveConfirmation`), so this
  * package never imports the app.
  */
 import {
+  detectLoginRequired,
   detectPendingConfirmation,
   PENDING_CONFIRMATION_NOTE,
   type HandleTurn,
@@ -27,6 +31,7 @@ import {
   type Authenticate,
   type ChannelHostReads,
   type ConfirmOutcome,
+  type LoginOutcome,
   type Principal,
 } from "@mercury-fw/channel-types";
 
@@ -188,6 +193,8 @@ export async function handleTurnRequest(req: Request, deps: TurnRequestDeps): Pr
         onStep: (step) => {
           const pending = detectPendingConfirmation(step);
           if (pending) send("pending", { command: pending.summary, token: pending.token });
+          const login = detectLoginRequired(step);
+          if (login) send("login", { service: login.service, url: login.url });
         },
         onUsage: () => {},
         finalize: async (finalText) => send("final", { text: finalText }),
@@ -274,6 +281,46 @@ export async function handleConfirmRequest(req: Request, deps: ConfirmRequestDep
     case "failed":
       return Response.json({ ok: true, resolved: true, text: `Confermato, ma l'esecuzione è fallita: ${outcome.error}` }, { headers: cors });
   }
+}
+
+/** Finishes a person's login, injected by the core (`ChannelLogins.complete`). */
+export type CompleteLoginFn = (state: string, code: string) => Promise<LoginOutcome>;
+
+/** A plain-text page for the person's browser, at the end of their login. */
+function loginPage(text: string, status: number): Response {
+  // The URL carried the code and the state: neither kept nor passed on.
+  return new Response(text, {
+    status,
+    headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store", "referrer-policy": "no-referrer" },
+  });
+}
+
+/**
+ * `GET /login/callback`: where the provider sends a person back after they log
+ * in, with `code` and `state` (or `error`, when they refused). Public: the
+ * person's browser carries no token here, and the single-use `state` the core
+ * issued for them is what ties the request to their login. Answers with a
+ * plain page telling them how it went.
+ */
+export async function handleLoginCallback(req: Request, deps: { complete: CompleteLoginFn }): Promise<Response> {
+  const params = new URL(req.url).searchParams;
+  const error = params.get("error");
+  if (error !== null) {
+    const reason = error.replace(/[^A-Za-z0-9_.-]/g, "").slice(0, 64);
+    return loginPage(`The login didn't happen (${reason}). Ask Mercury again for a new link.`, 400);
+  }
+  const code = params.get("code");
+  const state = params.get("state");
+  if (!code || !state) return loginPage("The login link came back without a code or a state. Ask Mercury again for a new link.", 400);
+  const outcome = await deps.complete(state, code);
+  return outcome.ok
+    ? loginPage(`You're logged in to ${outcome.service}. Go back to the conversation and ask again.`, 200)
+    : loginPage(outcome.error, 400);
+}
+
+/** The login callback route, mounted when the server can complete logins. */
+function loginRoutes(complete: CompleteLoginFn): Record<string, { GET: (req: Request) => Promise<Response> }> {
+  return { "/login/callback": { GET: (req) => handleLoginCallback(req, { complete }) } };
 }
 
 /** A single read route: its `GET` handler plus the shared `OPTIONS` preflight. */
@@ -363,6 +410,8 @@ export type HttpServerDeps = TurnRequestDeps & {
   reads?: ChannelHostReads;
   /** The `/confirm` endpoint's structured resolver, injected by the core. */
   resolveConfirmation: ResolveConfirmationFn;
+  /** Finishes people's logins; `/login/callback` is mounted only with it. */
+  completeLogin?: CompleteLoginFn;
 };
 
 /** Starts the HTTP surface: `POST /turn` (4a) plus the read-only routes (4b)
@@ -389,6 +438,7 @@ export function startHttpServer(deps: HttpServerDeps): ReturnType<typeof Bun.ser
       },
       "/openapi.yaml": { GET: () => openApiResponse(origin), OPTIONS: () => preflight(origin) },
       ...(deps.reads ? readRoutes(deps.reads, deps.authenticate, origin) : {}),
+      ...(deps.completeLogin ? loginRoutes(deps.completeLogin) : {}),
     },
     error: (err) =>
       Response.json(

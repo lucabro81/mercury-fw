@@ -18,12 +18,14 @@ import { join } from "node:path";
 /** What a plugin declares: `name` as it was declared (the folder, or the
  * path), which `mfw credentials` takes; `path` relative to the home; and the
  * commands, each a binary on the container's PATH and its arguments: `setup`
- * sets up the service identity, `check` reports on the login, `logout`
- * removes one identity's login (the service's, or a person's with `--user`). */
+ * sets up the service identity, `userSetup` the app people log in through
+ * (no person logged in), `check` reports on the login, `logout` removes one
+ * identity's login (the service's, or a person's with `--user`). */
 export type DeclaredCredentials = {
   name: string;
   path: string;
   setup: string[];
+  userSetup?: string[];
   check?: string[];
   logout?: string[];
 };
@@ -50,7 +52,7 @@ const BINARY = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const ELSEWHERE = ".config/mercury-home";
 
 const INVALID =
-  "invalid mercury.cliCredentials in package.json: expected { folder } with a single folder name under ~/.config, or { path } relative to the home and outside ~/.config, with setup (and optionally check, logout) as a binary name followed by its arguments, e.g. [\"jira\", \"init\"]";
+  "invalid mercury.cliCredentials in package.json: expected { folder } with a single folder name under ~/.config, or { path } relative to the home and outside ~/.config, with setup (and optionally userSetup, check, logout) as a binary name followed by its arguments, e.g. [\"jira\", \"init\"]";
 
 /** Whether `path` is a usable home-relative path for a login: inside the
  * home and outside `~/.config`, the volume, where a login is a `folder`. */
@@ -85,11 +87,15 @@ export function readCliCredentials(pkg: unknown): DeclaredCredentials | undefine
   if (!("cliCredentials" in mercury)) return undefined;
   const declared = (mercury as { cliCredentials?: unknown }).cliCredentials;
   if (typeof declared !== "object" || declared === null) throw new Error(INVALID);
-  const { folder, path, setup, check, logout } = declared as Record<string, unknown>;
-  if (!isCommand(setup) || (check !== undefined && !isCommand(check)) || (logout !== undefined && !isCommand(logout))) {
+  const { folder, path, setup, userSetup, check, logout } = declared as Record<string, unknown>;
+  const optional = { userSetup, check, logout };
+  if (!isCommand(setup) || Object.values(optional).some((c) => c !== undefined && !isCommand(c))) {
     throw new Error(INVALID);
   }
-  const commands = { setup, ...(check === undefined ? {} : { check }), ...(logout === undefined ? {} : { logout }) };
+  const commands: Pick<DeclaredCredentials, "setup" | "userSetup" | "check" | "logout"> = { setup };
+  for (const [field, command] of Object.entries(optional) as [keyof typeof optional, string[] | undefined][]) {
+    if (command !== undefined) commands[field] = command;
+  }
   if (folder !== undefined && path === undefined && typeof folder === "string" && FOLDER.test(folder)) {
     return { name: folder, path: `.config/${folder}`, ...commands };
   }

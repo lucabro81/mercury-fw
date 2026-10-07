@@ -13,6 +13,7 @@ describe("mercury.cliCredentials", () => {
       name: "jira-cli",
       path: ".config/jira-cli",
       setup: ["jira", "init"],
+      userSetup: ["jira", "init", "--user-app"],
       check: ["jira", "doctor"],
       logout: ["jira", "auth", "logout"],
     });

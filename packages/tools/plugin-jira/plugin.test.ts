@@ -1,6 +1,6 @@
 import { describe, it, expect } from "bun:test";
 import { PLUGIN_API_VERSION, type SessionToolContext } from "@mercury-fw/plugin-types";
-import { jiraPlugin, JIRA_ISSUE_LIST_SELECT } from "./index.ts";
+import { createJiraPlugin, jiraPlugin, JIRA_ISSUE_LIST_SELECT } from "./index.ts";
 
 /**
  * The Jira plugin's assembled module object — its static declaration (name,
@@ -14,7 +14,13 @@ import { jiraPlugin, JIRA_ISSUE_LIST_SELECT } from "./index.ts";
 const MODEL = {} as never; // build() only closes over the model; it never calls it
 const noLog = () => {};
 const ENV = { JIRA_SITE_URL: "https://example.atlassian.net" };
-const sctx: SessionToolContext = { sessionKey: "s", stageConfirmation: async () => "tok", stashDisplay: () => "d1" };
+const sctx: SessionToolContext = {
+  sessionKey: "s",
+  stageConfirmation: async () => "tok",
+  stashDisplay: () => "d1",
+  person: null,
+  requireLogin: async () => ({ ok: false, error: "x" }),
+};
 
 describe("jiraPlugin", () => {
   it("declares the jira name and a jira skill (not an always-on fragment)", () => {
@@ -40,6 +46,14 @@ describe("jiraPlugin", () => {
 
     it("gives the exact list select the extractor builds a list from", () => {
       expect(body).toContain(`--select ${JIRA_ISSUE_LIST_SELECT}`);
+    });
+
+    // #176: commands run as the person, so currentUser() is them, and the
+    // login link is the channel's to show, never the model's to write.
+    it("says currentUser() is the person, and leaves the login link to the channel", () => {
+      expect(body).not.toContain("NEVER use `assignee = currentUser()`");
+      expect(body).toContain("`currentUser()` in JQL is them");
+      expect(body).toContain("Never write a login link yourself");
     });
 
     it("tells the model to read issueCount instead of counting keys itself", () => {
@@ -88,6 +102,25 @@ describe("jiraPlugin", () => {
     const tools = c.sessionTools!(sctx, c.postProcess);
     expect(Object.keys(tools)).toEqual(["jiraCommand"]);
     expect(c.toolStatusDescribers!.jiraCommand!({ command: "jira issue search --jql X" })).toBe("esecuzione jira issue search");
+  });
+
+  // #176: Jira acts as the person the turn is for, logged in through Mercury.
+  it("acts as the person: runs their commands with --user, and asks for their login when Jira says they aren't logged in", async () => {
+    expect(jiraPlugin.actsAs).toBe("person");
+    const runs: string[][] = [];
+    const plugin = createJiraPlugin({
+      runCliFn: async (_binary, args) => {
+        runs.push(args);
+        return args[0] === "doctor" ? { ok: true, data: {} } : { ok: false, error: "jira exited with code 3: not logged in", exitCode: 3 };
+      },
+    });
+    const c = plugin.build!({ model: MODEL, env: ENV, log: noLog });
+    const login = { ok: false as const, loginRequired: true as const, service: "jira", authorizeUrl: "https://auth", error: "log in" };
+    const tool = c.sessionTools!({ ...sctx, person: { key: "static:alice" }, requireLogin: async () => login }, c.postProcess).jiraCommand!;
+    await tool.execute!({ command: "jira doctor" }, {} as never);
+    expect(runs).toEqual([["doctor", "--user", "static:alice"]]);
+    expect(await tool.execute!({ command: "jira issue get KAN-1 --select key" }, {} as never)).toEqual(login);
+    expect(typeof c.login?.start).toBe("function");
   });
 
   it("contributes no post-turn guard — the model-backed issue-list corrector is retired", () => {

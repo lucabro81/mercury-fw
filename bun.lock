@@ -141,6 +141,7 @@
       "version": "0.39.0",
       "dependencies": {
         "@mercury-fw/plugin-types": "workspace:*",
+        "@mercury-fw/utils": "workspace:*",
         "ai": "^7.0.126",
         "shell-quote": "^1.11.0",
         "zod": "^4.6.5",

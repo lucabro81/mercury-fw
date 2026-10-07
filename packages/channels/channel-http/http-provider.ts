@@ -10,7 +10,7 @@
  * (that stays with Google Chat). `stop` closes the socket on shutdown. Confirm is
  * injected (`confirm`/`resolveConfirmation`), so this package never imports the app.
  */
-import { startHttpServer, type ConfirmFn, type ResolveConfirmationFn } from "./http-server.ts";
+import { startHttpServer, type CompleteLoginFn, type ConfirmFn, type ResolveConfirmationFn } from "./http-server.ts";
 import type { Authenticate, Provider, HandleTurn, ChannelHostReads } from "@mercury-fw/channel-types";
 
 export type HttpProviderDeps = {
@@ -24,6 +24,9 @@ export type HttpProviderDeps = {
   authenticate: Authenticate;
   /** Allowed CORS origin echoed to a browser UI; defaults to `*` in the server. */
   corsOrigin?: string;
+  /** People's logins, when the surface has a public URL to be sent back to:
+   * the callback is offered (`accept`) once the server listens. */
+  logins?: { callbackUrl: string; accept: (callbackUrl: string) => void; complete: CompleteLoginFn };
 };
 
 export function createHttpProvider(deps: HttpProviderDeps): Provider & { stop(): Promise<void> } {
@@ -38,7 +41,9 @@ export function createHttpProvider(deps: HttpProviderDeps): Provider & { stop():
         reads: deps.reads,
         authenticate: deps.authenticate,
         corsOrigin: deps.corsOrigin,
+        completeLogin: deps.logins?.complete,
       });
+      deps.logins?.accept(deps.logins.callbackUrl);
     },
     async notify(): Promise<{ sessionKey: string }> {
       // No proactive push channel over HTTP (request/response only).

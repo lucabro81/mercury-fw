@@ -23,7 +23,7 @@ import type { LanguageModel, Tool } from "ai";
  * plugin's declared `apiVersion` and refuses a mismatch (fail-soft). A single
  * integer, bumped only on a breaking change to the shapes in this file.
  */
-export const PLUGIN_API_VERSION = 3;
+export const PLUGIN_API_VERSION = 4;
 
 /** A tool built with `ai`'s `tool()` and an `execute`: what the core's and the
  * plugins' tool factories return. Spelled out so their declarations name it
@@ -47,10 +47,13 @@ export type ToolDisplay = { type: string; items: unknown[] };
  * `data` is the model channel — the parsed JSON (or raw text) stdout the model
  * reasons on — and the optional `display` is the user channel (see
  * `ToolDisplay`), which never enters the model's context. On failure `error` is
- * a human/model-readable string. Mirrors `runCli`'s return — `@mercury-fw/cli-engine`
+ * a human/model-readable string, with the process's `exitCode` when it ran
+ * and exited non-zero. Mirrors `runCli`'s return — `@mercury-fw/cli-engine`
  * owns the runner, this owns the shape both sides agree on.
  */
-export type CliResult = { ok: true; data: unknown; display?: ToolDisplay } | { ok: false; error: string };
+export type CliResult =
+  | { ok: true; data: unknown; display?: ToolDisplay }
+  | { ok: false; error: string; exitCode?: number };
 
 /**
  * Deterministically transforms a `runCli` result. A plugin contributes at most
@@ -137,6 +140,38 @@ export type SessionToolContext = {
   sessionKey: string;
   stageConfirmation: StageConfirmation;
   stashDisplay: (artifact: string) => string;
+  /** Who the turn is for, by user key (`<provider>:<id>`), when it's a person;
+   * `null` on the terminal, where whoever types already holds the container
+   * and a plugin acts as its own service identity. */
+  person: { key: string } | null;
+  /** For a plugin acting as `person` whose service says that person isn't
+   * logged in: starts their login and returns what the tool hands back, a
+   * `loginRequired` result whose link the channel shows them, or an error
+   * when nothing can take a login. */
+  requireLogin: () => Promise<LoginRequired>;
+};
+
+/** What a tool returns when its person has to log in first. The channel shows
+ * `authorizeUrl` (see the channel contract's `detectLoginRequired`); the model
+ * only reads `error`, which never contains the link. */
+export type LoginRequired =
+  | { ok: false; loginRequired: true; service: string; authorizeUrl: string; error: string }
+  | { ok: false; error: string };
+
+/**
+ * How a plugin acting as `person` logs one in, for a person who isn't at the
+ * service's machine: `start` begins the login for `personKey` (a user key)
+ * with the link back to Mercury that the provider redirects to, and returns
+ * the link the person opens and the `state` the provider sends back with the
+ * code; `complete` finishes it with that code. The core keeps which person a
+ * `state` belongs to, so `complete` only ever runs for the person who started.
+ */
+export type PersonLogin = {
+  start: (
+    personKey: string,
+    callbackUrl: string,
+  ) => Promise<{ ok: true; authorizeUrl: string; state: string } | { ok: false; error: string }>;
+  complete: (personKey: string, code: string, state: string) => Promise<{ ok: true } | { ok: false; error: string }>;
 };
 
 /**
@@ -156,9 +191,11 @@ export type SessionToolContext = {
  *   tool call's input into the one-line status shown while it runs — so the core
  *   can label a plugin's tool without knowing it's a CLI.
  * - `postTurnGuards`: run over the model's finished text (see `PostTurnGuard`).
+ * - `login`: how a plugin acting as `person` logs one in (see `PersonLogin`).
  */
 export type PluginRuntimeContributions = {
   postProcess?: CliPostProcessor;
+  login?: PersonLogin;
   sessionTools?: (ctx: SessionToolContext, postProcess?: CliPostProcessor) => Record<string, Tool>;
   toolStatusDescribers?: Record<string, (input: unknown) => string>;
   postTurnGuards?: PostTurnGuard[];
@@ -273,6 +310,14 @@ export type PluginSurface = {
  * - `skills`: Agent-Skills the plugin contributes (see `Skill`); their
  *   descriptors go in the system prompt, their bodies load on demand.
  * - `surfaces`: reserved (see `PluginSurface`); absent for a plugin with none.
+ * - `actsAs`: whose identity the plugin's tools act with at the service they
+ *   reach. `"person"`: the person the turn is for, who logs in to it through
+ *   Mercury (the plugin contributes `login`). `"mercury"`: Mercury's own
+ *   service identity, whoever asks. Undeclared counts as `"mercury"`. A
+ *   `"mercury"` plugin is offered to people only once they hold the
+ *   permission to make Mercury act as itself, which doesn't exist yet: until
+ *   then it's offered on the terminal only, where its prompt fragment, skills
+ *   and tools stay.
  *
  * A plugin no longer carries a raw `cliConfig`: the core knows nothing about
  * CLIs. A CLI-based plugin owns its allowlist and, using `@mercury-fw/cli-engine`,
@@ -287,4 +332,5 @@ export type Plugin = {
   build?: (ctx: PluginRuntimeContext) => PluginRuntimeContributions;
   skills?: Skill[];
   surfaces?: PluginSurface[];
+  actsAs?: "person" | "mercury";
 };

@@ -475,6 +475,101 @@ describe("createCliTool", () => {
     });
   });
 
+  // #176: a plugin acting as the person runs every command as them.
+  describe("as the person the turn is for", () => {
+    /** A runCli that records the args of each run and answers with `result`. */
+    function recording(result: CliResult = { ok: true, data: {} }) {
+      const runs: string[][] = [];
+      const runCliFn = async (_binary: string, args: string[]): Promise<CliResult> => {
+        runs.push(args);
+        return result;
+      };
+      return { runs, runCliFn };
+    }
+
+    it("appends --user with the id the CLI knows the person by", async () => {
+      const r = recording();
+      const { runCommand } = createCliTool(r.runCliFn, { jira: jiraConfig }, { ...defaultOpts(), person: { key: "static:alice" } });
+      await runCommand.execute({ command: "jira issue get KAN-1 --select key" }, {} as never);
+      expect(r.runs).toEqual([["issue", "get", "KAN-1", "--select", "key", "--user", "static:alice"]]);
+    });
+
+    it("maps a key the CLIs would refuse through cliUserId", async () => {
+      const r = recording();
+      const { runCommand } = createCliTool(r.runCliFn, { jira: jiraConfig }, { ...defaultOpts(), person: { key: "oidc:Alice" } });
+      await runCommand.execute({ command: "jira doctor" }, {} as never);
+      expect(r.runs[0]?.slice(0, 2)).toEqual(["doctor", "--user"]);
+      expect(r.runs[0]?.[2]).toMatch(/^oidc:[0-9a-f]{32}$/);
+    });
+
+    it("runs a staged confirmation as the same person", async () => {
+      const r = recording();
+      const store = createConfirmationStore({ tokenFn: () => "TOK1" });
+      const { runCommand } = createCliTool(r.runCliFn, { jira: jiraConfig }, { ...confirmOpts(store), person: { key: "static:alice" } });
+      await runCommand.execute({ command: "jira issue delete KAN-1" }, {} as never);
+      expect(r.runs).toEqual([]);
+      await store.take("terminal", "static:user-x", "TOK1")?.run();
+      expect(r.runs).toEqual([["issue", "delete", "KAN-1", "--confirm", "--user", "static:alice"]]);
+    });
+
+    it("without a person (the terminal) runs as the service, without --user", async () => {
+      const r = recording();
+      const { runCommand } = createCliTool(r.runCliFn, { jira: jiraConfig }, { ...defaultOpts(), person: null });
+      await runCommand.execute({ command: "jira doctor" }, {} as never);
+      expect(r.runs).toEqual([["doctor"]]);
+    });
+
+    it("a person who isn't logged in (exit code 3) gets the login the tool asks for", async () => {
+      const r = recording({ ok: false, error: "jira exited with code 3: not logged in", exitCode: 3 });
+      let asked = 0;
+      const login = { ok: false as const, loginRequired: true as const, service: "jira", authorizeUrl: "https://x", error: "log in" };
+      const { runCommand } = createCliTool(r.runCliFn, { jira: jiraConfig }, {
+        ...defaultOpts(),
+        person: { key: "static:alice" },
+        requireLogin: async () => {
+          asked++;
+          return login;
+        },
+      });
+      expect(await runCommand.execute({ command: "jira issue get KAN-1" }, {} as never)).toEqual(login);
+      expect(asked).toBe(1);
+    });
+
+    // Review of #176: the link carries the login's state, the only credential
+    // of the public callback. The channel shows it; the model never sees it.
+    it("keeps the login link out of what the model sees, while execute's own return keeps it for the channel", async () => {
+      const r = recording({ ok: false, error: "jira exited with code 3: x", exitCode: 3 });
+      const login = { ok: false as const, loginRequired: true as const, service: "jira", authorizeUrl: "https://auth?state=s", error: "log in" };
+      const { runCommand } = createCliTool(r.runCliFn, { jira: jiraConfig }, {
+        ...defaultOpts(),
+        person: { key: "static:alice" },
+        requireLogin: async () => login,
+      });
+      const result = await runCommand.execute({ command: "jira doctor" }, {} as never);
+      expect(result).toEqual(login);
+      const modelOutput = await runCommand.toModelOutput?.({ toolCallId: "c", input: { command: "jira doctor" }, output: result } as never);
+      expect(modelOutput).toEqual({ type: "json", value: { ok: false, loginRequired: true, service: "jira", error: "log in" } });
+    });
+
+    it("any other failure, or the service not being logged in, is returned as it is", async () => {
+      for (const [person, exitCode] of [[{ key: "static:alice" }, 1], [null, 3]] as const) {
+        const failure: CliResult = { ok: false, error: `jira exited with code ${exitCode}: x`, exitCode };
+        const r = recording(failure);
+        let asked = 0;
+        const { runCommand } = createCliTool(r.runCliFn, { jira: jiraConfig }, {
+          ...defaultOpts(),
+          person,
+          requireLogin: async () => {
+            asked++;
+            return { ok: false, error: "x" };
+          },
+        });
+        expect(await runCommand.execute({ command: "jira doctor" }, {} as never)).toEqual(failure);
+        expect(asked).toBe(0);
+      }
+    });
+  });
+
   // The confirm-required branch is distinct from "not permitted": the
   // shape IS recognized, but instead of running it, it's staged in the
   // ConfirmationStore under the tool's own sessionKey and a structured

@@ -29,9 +29,9 @@ describe("httpChannel", () => {
   // A literal, not CHANNEL_API_VERSION: the import reports whatever contract
   // is installed, so an old channel next to a newer core would claim the new
   // version and be loaded. The literal is the contract this code was written for.
-  it("declares the http name at channel api version 3", () => {
+  it("declares the http name at channel api version 4", () => {
     expect(httpChannel.name).toBe("http");
-    expect(httpChannel.apiVersion).toBe(3);
+    expect(httpChannel.apiVersion).toBe(4);
   });
 
   it("builds a provider when confirm, resolveConfirmation, reads and authenticate are all present", () => {
@@ -39,6 +39,38 @@ describe("httpChannel", () => {
     expect(typeof provider?.start).toBe("function");
     expect(typeof provider?.notify).toBe("function");
     expect(typeof provider?.stop).toBe("function");
+  });
+
+  // #176: the provider can send a person back only to a URL it can reach.
+  // Review of #176: offered once the server listens, so a surface that failed
+  // to start never sends people to a callback nobody serves.
+  it("offers its login callback when it has a public URL, once it's listening", async () => {
+    for (const publicUrl of ["https://mercury.example", "https://mercury.example/"]) {
+      const accepted: string[] = [];
+      const provider = httpChannel.build(
+        fullCtx({
+          env: { HTTP_SURFACE_PUBLIC_URL: publicUrl, HTTP_SURFACE_PORT: "0" },
+          logins: { accept: (url) => accepted.push(url), complete: async () => ({ ok: true, service: "x" }) },
+        }),
+      )!;
+      expect(accepted).toEqual([]);
+      await provider.start(async () => {});
+      try {
+        expect(accepted).toEqual(["https://mercury.example/login/callback"]);
+      } finally {
+        await provider.stop?.();
+      }
+    }
+  });
+
+  it("offers no login callback without a public URL", async () => {
+    const accepted: string[] = [];
+    const provider = httpChannel.build(
+      fullCtx({ env: { HTTP_SURFACE_PORT: "0" }, logins: { accept: (url) => accepted.push(url), complete: async () => ({ ok: true, service: "x" }) } }),
+    )!;
+    await provider.start(async () => {});
+    await provider.stop?.();
+    expect(accepted).toEqual([]);
   });
 
   it("throws (loader isolates it) when resolveConfirmation is missing", () => {

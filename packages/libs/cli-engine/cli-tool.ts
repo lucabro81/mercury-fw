@@ -23,8 +23,9 @@
 import { tool, type JSONValue } from "ai";
 import { z } from "zod";
 import { parseCommand } from "./command-parser.ts";
-import type { runCli, CliResult } from "./cli-executor.ts";
-import type { StageConfirmation, ExecutableTool } from "@mercury-fw/plugin-types";
+import { CLI_NOT_LOGGED_IN_EXIT_CODE, type runCli, type CliResult } from "./cli-executor.ts";
+import type { StageConfirmation, ExecutableTool, LoginRequired } from "@mercury-fw/plugin-types";
+import { cliUserId } from "@mercury-fw/utils";
 
 // `CliPostProcessor` is part of the plugin contract (a plugin's `build()`
 // returns one) — it lives in `@mercury-fw/plugin-types` and is re-exported here
@@ -125,6 +126,15 @@ export function omitDisplayForModel(output: unknown): unknown {
   return rest;
 }
 
+/** Drops the link from a `loginRequired` result before it reaches the model:
+ * it carries the login's state, the only credential of the callback the
+ * person comes back to, so the channel shows it and the model never sees it. */
+function omitLoginLinkForModel(output: unknown): unknown {
+  if (typeof output !== "object" || output === null || (output as { loginRequired?: unknown }).loginRequired !== true) return output;
+  const { authorizeUrl: _url, ...rest } = output as Record<string, unknown>;
+  return rest;
+}
+
 /**
  * Builds the `runCommand` tool: the model writes a whole CLI invocation as
  * one string, `execute` parses it (`parseCommand`), checks the binary
@@ -163,8 +173,16 @@ export function createCliTool(
      * composition root. Optional: with none wired the inline `display` is left
      * untouched and no `displayRef` is minted. */
     stashDisplay?: (artifact: string) => string;
+    /** The person the turn is for (see `SessionToolContext.person`): every
+     * command runs as them, with `--user` and the id their CLI knows them by.
+     * Absent or `null`: the CLI's own service identity. */
+    person?: { key: string } | null;
+    /** What the tool hands back when the person's CLI says they aren't logged
+     * in (`CLI_NOT_LOGGED_IN_EXIT_CODE`): their login, started. */
+    requireLogin?: () => Promise<LoginRequired>;
   },
 ): { runCommand: ExecutableTool } {
+  const identity = opts.person ? ["--user", cliUserId(opts.person.key)] : [];
   // Anchor the example on a binary this tool actually runs rather than
   // a hardcoded one: a fixed `jira …` example misleads the model on an instance
   // without Jira. The concrete, CLI-specific example (real subcommand + flags)
@@ -218,7 +236,7 @@ export function createCliTool(
         // staged args run, regardless of whether the model remembered to
         // include it on the first attempt (observed live: it usually
         // doesn't).
-        const argsToStage = parsed.args.includes("--confirm") ? parsed.args : [...parsed.args, "--confirm"];
+        const argsToStage = [...(parsed.args.includes("--confirm") ? parsed.args : [...parsed.args, "--confirm"]), ...identity];
         // Stage the doing as an opaque thunk — the core confirmation subsystem
         // never learns this is a CLI command. `describe` (the normalized argv)
         // is the paper-trail text; `summary` on the result (the raw command the
@@ -236,7 +254,12 @@ export function createCliTool(
         };
       }
 
-      const result = await runCliFn(parsed.binary, parsed.args);
+      const result = await runCliFn(parsed.binary, [...parsed.args, ...identity]);
+      // The person has no login (or an expired one) with this CLI's service:
+      // nothing to retry, they log in first.
+      if (!result.ok && result.exitCode === CLI_NOT_LOGGED_IN_EXIT_CODE && opts.person && opts.requireLogin) {
+        return opts.requireLogin();
+      }
       const processed = opts.postProcess
         ? opts.postProcess({ binary: parsed.binary, args: parsed.args, prefix: match.prefix }, result)
         : result;
@@ -256,7 +279,7 @@ export function createCliTool(
       }
       return processed;
     },
-    toModelOutput: ({ output }) => ({ type: "json", value: omitDisplayForModel(output) as JSONValue }),
+    toModelOutput: ({ output }) => ({ type: "json", value: omitLoginLinkForModel(omitDisplayForModel(output)) as JSONValue }),
   });
 
   return { runCommand };

@@ -58,6 +58,7 @@ export const CATALOG: CatalogEntry[] = [
     env: [
       { name: "HTTP_SURFACE_PORT", comment: "Port of the HTTP surface", value: "4100" },
       { name: "HTTP_SURFACE_CORS_ORIGIN", comment: "Origin allowed to call the HTTP surface from a browser, if any" },
+      { name: "HTTP_SURFACE_PUBLIC_URL", comment: "Address people's browsers reach the HTTP surface at, for logging in to the services plugins act on as them" },
     ],
   },
   {

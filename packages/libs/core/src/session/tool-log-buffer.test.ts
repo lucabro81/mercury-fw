@@ -38,6 +38,17 @@ describe("recordStep / getToolLog", () => {
     expect(getToolLog({ owner: "static:carol" })).toEqual([]);
   });
 
+  // Review of #176: the log is read back by the model (recall_tool_calls), and
+  // a login link carries the state the public callback trusts.
+  it("never keeps a login link", () => {
+    recordStep("http", "s1", "static:alice", stepWithOneCall("jiraCommand", {
+      ok: false, loginRequired: true, service: "jira", authorizeUrl: "https://auth?state=secret", error: "log in",
+    }));
+    const [entry] = getToolLog({ owner: "static:alice" });
+    expect(entry?.output).not.toContain("secret");
+    expect(entry?.output).toContain("loginRequired");
+  });
+
   it("orders results most-recent-first", () => {
     recordStep("terminal", "terminal", "static:alice", stepWithOneCall("first", { ok: true }));
     recordStep("terminal", "terminal", "static:alice", stepWithOneCall("second", { ok: true }));

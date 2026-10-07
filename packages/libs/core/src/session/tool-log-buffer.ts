@@ -38,13 +38,21 @@ const MAX_CHARS = 2000;
 
 let logs = new Map<string, ToolLogEntry[]>();
 
+/** A tool's output without the link of a login it asked for: the link carries
+ * the state the login callback trusts, and the model reads this log back. */
+function withoutLoginLink(output: unknown): unknown {
+  if (typeof output !== "object" || output === null || (output as { loginRequired?: unknown }).loginRequired !== true) return output;
+  const { authorizeUrl: _url, ...rest } = output as Record<string, unknown>;
+  return rest;
+}
+
 /** Records every tool call in `step`, made in `sessionKey` during a turn of the person `owner`. */
 export function recordStep(channel: ToolLogChannel, sessionKey: string, owner: string, step: StepInfo): void {
   for (const call of step.toolCalls) {
     const result = step.toolResults.find((r) => r.toolCallId === call.toolCallId);
     const errorPart = step.content.find((p) => p.type === "tool-error" && p.toolCallId === call.toolCallId);
     const output = result
-      ? truncateForDisplay(result.output, MAX_CHARS)
+      ? truncateForDisplay(withoutLoginLink(result.output), MAX_CHARS)
       : errorPart
         ? `[error] ${truncateForDisplay(errorPart.error, MAX_CHARS)}`
         : "(none)";

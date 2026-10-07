@@ -22,7 +22,7 @@
  */
 import type { LanguageModel } from "ai";
 import { PLUGIN_API_VERSION } from "@mercury-fw/plugin-types";
-import type { Plugin, CliPostProcessor, PostTurnGuard, Skill, SessionToolContext } from "@mercury-fw/plugin-types";
+import type { Plugin, CliPostProcessor, PersonLogin, PostTurnGuard, Skill, SessionToolContext } from "@mercury-fw/plugin-types";
 import type { Tool } from "ai";
 
 /** One plugin's tool contribution, kept paired so the composition root can build
@@ -30,8 +30,21 @@ import type { Tool } from "ai";
  * formatter decorator wraps the post-processor after `build()` returns, so the
  * factory receives the final one at invocation rather than closing over it. */
 export interface SessionToolBundle {
+  /** The plugin's name: the service its login is for. */
+  name: string;
   build: (ctx: SessionToolContext, postProcess?: CliPostProcessor) => Record<string, Tool>;
   postProcess?: CliPostProcessor;
+  /** How the plugin logs a person in, when it acts as the person. */
+  login?: PersonLogin;
+}
+
+/** The part of what plugins contribute that's offered to a person: only the
+ * plugins acting as the person, since making Mercury act as itself needs a
+ * permission nobody can hold yet. */
+export interface PeopleContributions {
+  promptFragments: string[];
+  skills: Skill[];
+  sessionToolBundles: SessionToolBundle[];
 }
 
 /** What the loader hands back to the composition root, aggregated across every
@@ -47,6 +60,9 @@ export interface LoadedPlugins {
    * tool call's input into its status label. */
   toolStatusDescribers: Record<string, (input: unknown) => string>;
   postTurnGuards: PostTurnGuard[];
+  /** What a person's turn is offered (see `PeopleContributions`); the fields
+   * above are everything, what the terminal gets. */
+  forPeople: PeopleContributions;
   /** Names of the plugins that fully activated — for read-only introspection
    * (the manifest), since a plugin's tool is opaque and there's no central
    * config map to infer activation from anymore. */
@@ -123,6 +139,7 @@ export async function loadPlugins(plugins: Plugin[], ctx: PluginLoadContext): Pr
   const sessionToolBundles: SessionToolBundle[] = [];
   const toolStatusDescribers: Record<string, (input: unknown) => string> = {};
   const postTurnGuards: PostTurnGuard[] = [];
+  const forPeople: PeopleContributions = { promptFragments: [], skills: [], sessionToolBundles: [] };
 
   const { ordered, cyclic } = orderByDependencies(plugins);
   // A plugin caught in a cycle can't be ordered, so it can't load.
@@ -164,17 +181,24 @@ export async function loadPlugins(plugins: Plugin[], ctx: PluginLoadContext): Pr
       // as a unit — nothing of it lands unless all of it succeeds.
       const contributions = plugin.build ? plugin.build({ model: ctx.model, env: ctx.env, log: ctx.log }) : {};
 
-      if (plugin.systemPromptFragment !== undefined) {
-        promptFragments.push(plugin.systemPromptFragment);
+      const bundle: SessionToolBundle | undefined = contributions.sessionTools
+        ? {
+            name: plugin.name,
+            build: contributions.sessionTools,
+            ...(contributions.postProcess === undefined ? {} : { postProcess: contributions.postProcess }),
+            ...(contributions.login === undefined ? {} : { login: contributions.login }),
+          }
+        : undefined;
+      const views = plugin.actsAs === "person" ? [{ promptFragments, skills, sessionToolBundles }, forPeople] : [{ promptFragments, skills, sessionToolBundles }];
+      for (const view of views) {
+        if (plugin.systemPromptFragment !== undefined) view.promptFragments.push(plugin.systemPromptFragment);
+        if (plugin.skills !== undefined) view.skills.push(...plugin.skills);
+        if (bundle !== undefined) view.sessionToolBundles.push(bundle);
       }
-      if (plugin.skills !== undefined) {
-        skills.push(...plugin.skills);
-      }
-      if (contributions.sessionTools) {
-        sessionToolBundles.push({
-          build: contributions.sessionTools,
-          postProcess: contributions.postProcess,
-        });
+      if (plugin.actsAs !== "person") {
+        ctx.log(
+          `plugin "${plugin.name}" acts as Mercury itself: offered on the terminal only, until people can be allowed to make Mercury act as itself`,
+        );
       }
       if (contributions.toolStatusDescribers) {
         Object.assign(toolStatusDescribers, contributions.toolStatusDescribers);
@@ -190,5 +214,5 @@ export async function loadPlugins(plugins: Plugin[], ctx: PluginLoadContext): Pr
     }
   }
 
-  return { promptFragments, skills, sessionToolBundles, toolStatusDescribers, postTurnGuards, activated: [...activated] };
+  return { promptFragments, skills, sessionToolBundles, toolStatusDescribers, postTurnGuards, forPeople, activated: [...activated] };
 }

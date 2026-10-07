@@ -32,7 +32,13 @@ beforeEach(() => {
   installed("@mercury-fw/core", {});
   installed("@mercury-fw/plugin-jira", {
     mercury: {
-      cliCredentials: { folder: "jira-cli", setup: ["jira", "init"], check: ["jira", "doctor"], logout: ["jira", "auth", "logout"] },
+      cliCredentials: {
+        folder: "jira-cli",
+        setup: ["jira", "init"],
+        userSetup: ["jira", "init", "--user-app"],
+        check: ["jira", "doctor"],
+        logout: ["jira", "auth", "logout"],
+      },
     },
   });
   // Not in the CLI's catalog: the declaration alone is what makes it work. It
@@ -104,6 +110,21 @@ describe("credentials setup", () => {
       expect(f.printed).toEqual(["Next: mfw credentials check @mercury-fw/plugin-jira"]);
     },
   );
+
+  // #176: the app people log in through, set up without logging anyone in.
+  test("--user-app runs the declared setup of the people's app", async () => {
+    const f = fake();
+    expect(await appCommands(app, f.deps).credentialsSetup("jira-cli", { userApp: true })).toBe(0);
+    expect(f.runs).toEqual([[...RUN, "mercury", "jira", "init", "--user-app"]]);
+  });
+
+  test("--user-app on a plugin declaring no such setup says so, and runs nothing", async () => {
+    const f = fake();
+    await expect(appCommands(app, f.deps).credentialsSetup("acme-mercury-plugin", { userApp: true })).rejects.toThrow(
+      "acme-mercury-plugin declares no setup for an app people log in through: it doesn't act as the person.",
+    );
+    expect(f.runs).toEqual([]);
+  });
 
   test("a plugin outside the CLI's catalog works the same, through its declaration", async () => {
     const f = fake();

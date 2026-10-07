@@ -30,13 +30,18 @@ import { createSessionLock, type SessionLock } from "./session-lock.ts";
 
 export type TurnRunnerDeps = {
   model: LanguageModel;
-  /** Both variants, precomposed by the composition root; selected per turn by `turn.multiUser`. */
+  /** Both variants, precomposed by the composition root; selected per turn by `turn.multiUser`. What a person's turn is offered. */
   systemPrompts: { singleUser: string; multiUser: string };
+  /** The same for a turn nobody vouched for (the terminal), which is offered
+   * every plugin, run as the service; `systemPrompts` when absent. */
+  serviceSystemPrompts?: { singleUser: string; multiUser: string };
+  /** `person` is who the tools act as, `null` for a turn nobody vouched for. */
   buildTools: (
     sessionKey: string,
     key: string,
     onToolStart?: TurnSink["onToolStart"],
     onToolFinish?: TurnSink["onToolFinish"],
+    person?: { key: string } | null,
   ) => Record<string, Tool>;
   /**
    * `key` is the user key, forwarded (not interpreted here) so a provider's
@@ -136,6 +141,7 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
 
   async function runTurnLocked(turn: InboundTurn, sink: TurnSink): Promise<void> {
     const { key, tracked } = principalIds(turn.principal);
+    const prompts = tracked ? deps.systemPrompts : (deps.serviceSystemPrompts ?? deps.systemPrompts);
     if (tracked) {
       deps.trackSession(turn.sessionKey, key, (deps.now ?? Date.now)());
       deps.registerCaptureCallback(turn.sessionKey, sink.onToolStart, sink.onToolFinish);
@@ -158,8 +164,8 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
       history = await deps.getOrCreateHistory(turn.sessionKey, tracked, tracked ? key : undefined);
       const text = await (deps.runTurnFn ?? runTurn)(history, turn.text, {
         model: deps.model,
-        tools: deps.buildTools(turn.sessionKey, key, sink.onToolStart, sink.onToolFinish),
-        system: turn.multiUser ? deps.systemPrompts.multiUser : deps.systemPrompts.singleUser,
+        tools: deps.buildTools(turn.sessionKey, key, sink.onToolStart, sink.onToolFinish, tracked ? { key } : null),
+        system: turn.multiUser ? prompts.multiUser : prompts.singleUser,
         onTextChunk: sink.onTextChunk,
         onReasoningChunk: sink.onReasoningChunk,
         onReasoningEnd: sink.onReasoningEnd,

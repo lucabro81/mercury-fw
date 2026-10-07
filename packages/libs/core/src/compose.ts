@@ -68,6 +68,7 @@ import { findOrphanCuratedDocs } from "./wiki/orphan-detector.ts";
 import { listWikiFilesInRoots, readWikiFileInRoots, readIndexFile } from "./wiki/wiki-read.ts";
 import { createHostReads } from "./identity/host-reads.ts";
 import { bindConfirm } from "./identity/confirm-binding.ts";
+import { createPersonLogins } from "./identity/person-logins.ts";
 import { migrateMemoryToUserKeys, migrateVaultToUserAreas } from "./identity/migrate-layout.ts";
 import { runRawTriagePass, runIndexAndOrphanPass, runContradictionCheckPass } from "./wiki/self-review-runner.ts";
 import { startSelfReviewCron } from "./cron/self-review-cron.ts";
@@ -166,12 +167,23 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   const toolStatusDescribers: Record<string, (input: unknown) => string> = { ...loadedPlugins.toolStatusDescribers };
 
   // Two system prompts (1:1 and shared-space), both built from the fragments of
-  // whatever plugins actually loaded and from the instance's persona.
+  // whatever plugins actually loaded and from the instance's persona: a
+  // person's, from the plugins acting as the person only, and the terminal's,
+  // from every plugin.
   const { system, chatSystem } = buildSystemPrompts({
+    pluginFragments: loadedPlugins.forPeople.promptFragments,
+    skills: loadedPlugins.forPeople.skills,
+    persona: config.persona,
+  });
+  const serviceSystemPrompts = buildSystemPrompts({
     pluginFragments: loadedPlugins.promptFragments,
     skills: loadedPlugins.skills,
     persona: config.persona,
   });
+
+  // People's pending logins to the plugins' services, finished by the channel
+  // that receives the provider's redirect.
+  const personLogins = createPersonLogins({ log: (msg) => console.error(msg) });
 
   const histories = new Map<string, SessionHistory>();
   /**
@@ -343,12 +355,16 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   // memory and confirmations are theirs across spaces and conversations, so
   // it must not include the space. The turn runner derives it from the
   // turn's principal.
+  // `person` is who the plugins' tools act as: a person is offered only the
+  // plugins acting as the person, the terminal (`null`) every plugin.
   function buildTools(
     sessionKey: string,
     key: string,
     onToolStart?: TurnSink["onToolStart"],
     onToolFinish?: TurnSink["onToolFinish"],
+    person: { key: string } | null = null,
   ): Record<string, Tool> {
+    const offered = person ? loadedPlugins.forPeople : loadedPlugins;
     const sessionTools: Record<string, Tool> = {};
 
     // The session-scoped capabilities every CLI tool needs, bound to this turn:
@@ -368,13 +384,18 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
 
     // Each CLI-based plugin owns its tool (jiraCommand, …), built from its own
     // allowlist and post-processor. The core just invokes what they contributed.
-    for (const bundle of loadedPlugins.sessionToolBundles) {
-      Object.assign(sessionTools, bundle.build(sessionToolContext, bundle.postProcess));
+    for (const bundle of offered.sessionToolBundles) {
+      const { login } = bundle;
+      const requireLogin = async () =>
+        person && login
+          ? personLogins.require(bundle.name, login, person.key)
+          : { ok: false as const, error: `${bundle.name} says the user isn't logged in, and it has no way to log anyone in.` };
+      Object.assign(sessionTools, bundle.build({ ...sessionToolContext, person, requireLogin }, bundle.postProcess));
     }
 
     // `present` only makes sense alongside CLI tools: they are what produce the
-    // display artifacts it surfaces. An instance with no CLI tool never sees it.
-    const hasCliTool = loadedPlugins.sessionToolBundles.length > 0;
+    // display artifacts it surfaces. A turn with no CLI tool never sees it.
+    const hasCliTool = offered.sessionToolBundles.length > 0;
     if (hasCliTool) {
       Object.assign(sessionTools, createPresentTool({ sessionKey, store: displayStore }));
     }
@@ -388,8 +409,8 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
     // what was actually said in earlier conversations, beyond the live window.
     Object.assign(sessionTools, verbatimProvider.sessionTools!({ sessionKey, userId: key }));
     // read_skill only exists when a plugin contributed at least one skill.
-    if (loadedPlugins.skills.length > 0) {
-      Object.assign(sessionTools, createReadSkillTool(loadedPlugins.skills));
+    if (offered.skills.length > 0) {
+      Object.assign(sessionTools, createReadSkillTool(offered.skills));
     }
     return onToolStart ? withToolStartHook(sessionTools, onToolStart, toolStatusDescribers, onToolFinish) : sessionTools;
   }
@@ -430,6 +451,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
     sessionLock,
     model,
     systemPrompts: { singleUser: system, multiUser: chatSystem },
+    serviceSystemPrompts: { singleUser: serviceSystemPrompts.system, multiUser: serviceSystemPrompts.chatSystem },
     buildTools,
     // Post-turn guards contributed by whatever plugins loaded — the core runs
     // them without knowing what any does (see PostTurnGuard).
@@ -466,8 +488,8 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   const confirmDeps: ConfirmDeps = { store: confirmationStore, vaultPath: wikiVaultPath, writeConfirmationNoteFn: writeConfirmationNote };
 
   // The runtime context each channel's build() gets. The floor (confirm) plus
-  // HTTP's optional in-process capabilities (resolveConfirmation, reads and the
-  // declared auth provider), which can't come from env; a channel that doesn't
+  // HTTP's optional in-process capabilities (resolveConfirmation, reads, the
+  // declared auth provider and people's logins), which can't come from env; a channel that doesn't
   // need them ignores them.
   const channelRuntime: ChannelRuntimeContext = {
     env: process.env,
@@ -481,9 +503,17 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
       qdrant,
       collections: { verbatim: verbatimCollection, episodic: episodicCollection, semanticFacts: semanticFactsCollection },
       confirmationStore,
-      manifest: () => buildPluginManifest(plugins, loadedPlugins.activated, [], loadedPlugins.skills),
+      // What people are offered: a plugin acting as Mercury isn't advertised to them.
+      manifest: () =>
+        buildPluginManifest(
+          plugins.filter((p) => p.actsAs === "person"),
+          loadedPlugins.activated,
+          [],
+          loadedPlugins.forPeople.skills,
+        ),
       health: () => getSelfHealth({ qdrant, ollamaHost }),
     }),
+    logins: { accept: personLogins.accept, complete: personLogins.complete },
   };
 
   /** Starts the Layer-3 idle-capture and self-review crons; returns one stopper. */

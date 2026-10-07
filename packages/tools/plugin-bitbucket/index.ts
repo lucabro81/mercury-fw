@@ -11,7 +11,7 @@
  * `@mercury-fw/utils`) travel with the package.
  */
 import { PLUGIN_API_VERSION, type Plugin } from "@mercury-fw/plugin-types";
-import { runCli, createCliTool, parseCliConfig, createCliStatusDescriber } from "@mercury-fw/cli-engine";
+import { runCli, createCliTool, createCliPersonLogin, parseCliConfig, createCliStatusDescriber } from "@mercury-fw/cli-engine";
 import rawConfig from "./bitbucket.json";
 
 /** The raw, unvalidated allowlist object. The plugin validates it itself through
@@ -32,6 +32,9 @@ function commandOf(input: unknown): string | undefined {
 export const bitbucketPlugin: Plugin = {
   apiVersion: PLUGIN_API_VERSION,
   name: "bitbucket",
+  // Every command runs as the person the turn is for, logged in to Bitbucket
+  // through Mercury: they see what their own account can.
+  actsAs: "person",
   build: (ctx) => {
     // Schema-only validation — the pinned binary is co-shipped, so no
     // `--version` check (see the Jira plugin / `parseCliConfig`).
@@ -44,10 +47,15 @@ export const bitbucketPlugin: Plugin = {
     const describeCli = createCliStatusDescriber(configs, {});
 
     return {
+      // Bitbucket takes no redirect URI: the consumer people log in through
+      // has Mercury's callback as its own.
+      login: createCliPersonLogin(runCli, loaded.binary, { redirectUri: false }),
       sessionTools: (sctx) => {
         const { runCommand } = createCliTool(runCli, configs, {
           stageConfirmation: sctx.stageConfirmation,
           stashDisplay: sctx.stashDisplay,
+          person: sctx.person,
+          requireLogin: sctx.requireLogin,
         });
         return { bitbucketCommand: runCommand };
       },

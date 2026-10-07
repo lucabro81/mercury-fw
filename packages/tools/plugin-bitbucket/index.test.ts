@@ -13,12 +13,21 @@ const sctx: SessionToolContext = {
   sessionKey: "s",
   stageConfirmation: async () => "tok",
   stashDisplay: () => "d1",
+  person: null,
+  requireLogin: async () => ({ ok: false, error: "x" }),
 };
 
 describe("bitbucketPlugin", () => {
   it("declares the compatible apiVersion and the bitbucket name", () => {
     expect(bitbucketPlugin.apiVersion).toBe(PLUGIN_API_VERSION);
     expect(bitbucketPlugin.name).toBe("bitbucket");
+  });
+
+  // #176: Bitbucket acts as the person, who logs in through the consumer whose
+  // callback is Mercury's, so no redirect URI goes on the command line.
+  it("acts as the person and logs them in without a redirect URI", () => {
+    expect(bitbucketPlugin.actsAs).toBe("person");
+    expect(typeof bitbucketPlugin.build!({ model: {} as never, env: {}, log: () => {} }).login?.start).toBe("function");
   });
 
   it("contributes only its own tool — no prompt fragment, no surfaces, no post-processors, no guard", () => {

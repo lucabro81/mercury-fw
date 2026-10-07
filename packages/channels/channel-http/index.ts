@@ -6,11 +6,13 @@
  * is no runtime inert condition (unlike Google Chat's subscription): if it's
  * declared, it starts.
  *
- * `build` reads its port and CORS origin from `env` and takes the confirm
+ * `build` reads its port, CORS origin and public URL from `env` and takes the confirm
  * capabilities, the in-process reads and the app's auth provider from the
  * injected context (dependency inversion). Those are optional on the contract
  * but required here, so a context missing them throws — the loader isolates it
- * fail-soft, and without an auth provider the surface never opens.
+ * fail-soft, and without an auth provider the surface never opens. With a
+ * public URL (`HTTP_SURFACE_PUBLIC_URL`) it also takes people's logins: it
+ * mounts `<url>/login/callback` and, once it's listening, offers it to the core.
  */
 import type { ChannelPlugin } from "@mercury-fw/channel-types";
 import { createHttpProvider } from "./http-provider.ts";
@@ -20,7 +22,7 @@ export { createHttpProvider, type HttpProviderDeps } from "./http-provider.ts";
 export const httpChannel: ChannelPlugin = {
   // The contract this channel is written for, as a literal: importing
   // CHANNEL_API_VERSION would report whichever contract is installed.
-  apiVersion: 3,
+  apiVersion: 4,
   name: "http",
   build: (ctx) => {
     if (!ctx.resolveConfirmation || !ctx.reads) {
@@ -29,6 +31,10 @@ export const httpChannel: ChannelPlugin = {
     if (!ctx.authenticate) {
       throw new Error("http channel requires an auth provider (auth in mercury.config.ts)");
     }
+    // The provider sends a person back here after they log in, so it needs
+    // the address their browser reaches the surface at.
+    const publicUrl = ctx.env.HTTP_SURFACE_PUBLIC_URL?.trim().replace(/\/+$/, "");
+    const logins = publicUrl ? ctx.logins : undefined;
     return createHttpProvider({
       port: Number(ctx.env.HTTP_SURFACE_PORT ?? "4100"),
       corsOrigin: ctx.env.HTTP_SURFACE_CORS_ORIGIN ?? "*",
@@ -36,6 +42,7 @@ export const httpChannel: ChannelPlugin = {
       resolveConfirmation: ctx.resolveConfirmation,
       reads: ctx.reads,
       authenticate: ctx.authenticate,
+      ...(logins ? { logins: { callbackUrl: `${publicUrl}/login/callback`, accept: logins.accept, complete: logins.complete } } : {}),
     });
   },
 };
