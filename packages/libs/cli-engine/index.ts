@@ -7,12 +7,14 @@
  *
  * The core imports what it needs from here; a CLI-based plugin (Jira,
  * Bitbucket) rides on this one. Nothing here imports the app — its only
- * dependencies are `@mercury-fw/plugin-types` (the shared contract) and the
+ * dependencies are `@mercury-fw/plugin-types` (the shared contract),
+ * `@mercury-fw/utils` (the id a CLI knows a person by) and the
  * external `ai`/`zod`/`shell-quote` packages — so the mechanism is a self
  * contained unit that an instance with no CLI plugin never pulls in.
  */
 export { parseCommand, type ParsedCommand } from "./command-parser.ts";
-export { runCli, type CliResult } from "./cli-executor.ts";
+export { runCli, CLI_NOT_LOGGED_IN_EXIT_CODE, type CliResult } from "./cli-executor.ts";
+export { createCliPersonLogin } from "./person-login.ts";
 export {
   createCliTool,
   matchCommand,
