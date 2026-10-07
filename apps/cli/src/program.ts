@@ -236,10 +236,13 @@ Examples:
     .command("setup")
     .summary("sets up a CLI's login in the app's container")
     .description(
-      "Runs the setup the plugin declares for its CLI's service identity (the identity Mercury acts as), in a one-off container on your terminal: the CLI asks for what it needs, and its login lands on the credentials volume. People log in on their own later, through Mercury.",
+      "Runs the setup the plugin declares for its CLI's service identity (the identity Mercury acts as), in a one-off container on your terminal: the CLI asks for what it needs, and its login lands on the credentials volume. People log in on their own later, through Mercury: for a plugin acting as the person, --user-app sets up the app they log in through.",
     )
     .argument("<plugin>", "the plugin's package (@mercury-fw/plugin-jira) or its CLI's folder as declared (jira-cli)")
-    .action(async (plugin: string) => inApp((app) => app.credentialsSetup(plugin))());
+    .option("--user-app", "set up instead the app people log in through, for a plugin acting as the person (logs nobody in)")
+    .action(async (plugin: string, opts: { userApp?: boolean }) =>
+      inApp((app) => app.credentialsSetup(plugin, opts.userApp ? { userApp: true } : {}))(),
+    );
   credentials
     .command("check")
     .summary("checks a CLI's login")

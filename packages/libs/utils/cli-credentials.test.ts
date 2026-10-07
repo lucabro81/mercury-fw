@@ -56,6 +56,13 @@ describe("readCliCredentials", () => {
     });
   });
 
+  // #176: the app people log in through is set up apart, logging nobody in.
+  it("carries the declared setup of the people's app", () => {
+    expect(
+      readCliCredentials({ mercury: { cliCredentials: { folder: "x-cli", setup: ["x", "init"], userSetup: ["x", "init", "--user-app"] } } }),
+    ).toEqual({ name: "x-cli", path: ".config/x-cli", setup: ["x", "init"], userSetup: ["x", "init", "--user-app"] });
+  });
+
   it("rejects a declaration without setup, or with a command that isn't a binary and its arguments", () => {
     const bad: unknown[] = [undefined, [], "jira init", ["jira", 3], ["jira", ""], ["", "init"], ["/usr/bin/jira"], ["../jira"], ["-x"]];
     for (const setup of bad) {
@@ -63,7 +70,7 @@ describe("readCliCredentials", () => {
         /mercury\.cliCredentials/,
       );
     }
-    for (const field of ["check", "logout"]) {
+    for (const field of ["userSetup", "check", "logout"]) {
       for (const command of bad.slice(1)) {
         expect(
           () => readCliCredentials({ mercury: { cliCredentials: { folder: "x", setup: ["x", "init"], [field]: command } } }),
