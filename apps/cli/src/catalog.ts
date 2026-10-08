@@ -115,6 +115,13 @@ export const CATALOG: CatalogEntry[] = [
     exportName: "atlassianAdminPlugin",
     env: [],
   },
+  {
+    id: "zitadel",
+    kind: "tool",
+    package: "@mercury-fw/plugin-zitadel",
+    exportName: "zitadelPlugin",
+    env: [],
+  },
 ];
 
 /** The catalog entry of `kind` with `id`, or undefined when there is none. */

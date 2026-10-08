@@ -23,6 +23,7 @@ const versions: Record<string, string> = {
   "@mercury-fw/plugin-jira": "0.1.0",
   "@mercury-fw/plugin-bitbucket": "0.1.0",
   "@mercury-fw/plugin-atlassian-admin": "0.1.0",
+  "@mercury-fw/plugin-zitadel": "0.1.0",
 };
 
 const input = (over: Partial<RenderInput> = {}): RenderInput => ({
@@ -37,7 +38,7 @@ const input = (over: Partial<RenderInput> = {}): RenderInput => ({
 
 const EMPTY = input();
 const HTTP_JIRA = input({ channels: ["http"], plugins: ["jira"], auth: "static" });
-const FULL = input({ channels: ["google-chat", "http"], plugins: ["jira", "bitbucket", "atlassian-admin"], auth: "oidc" });
+const FULL = input({ channels: ["google-chat", "http"], plugins: ["jira", "bitbucket", "atlassian-admin", "zitadel"], auth: "oidc" });
 const HTTP = input({ channels: ["http"], auth: "static" });
 
 /** Every file the template always writes, whatever was chosen. */
@@ -107,7 +108,7 @@ describe("renderApp: mercury.config.ts", () => {
   });
 
   test("everything, in catalog order whatever order it was chosen in", () => {
-    const shuffled = input({ channels: ["http", "google-chat"], plugins: ["atlassian-admin", "jira", "bitbucket"], auth: "oidc" });
+    const shuffled = input({ channels: ["http", "google-chat"], plugins: ["zitadel", "atlassian-admin", "jira", "bitbucket"], auth: "oidc" });
     expect(renderApp(FULL).get("mercury.config.ts")).toBe(golden("full.mercury.config.ts"));
     expect(renderApp(shuffled).get("mercury.config.ts")).toBe(golden("full.mercury.config.ts"));
   });
@@ -146,6 +147,7 @@ describe("renderApp: package.json", () => {
       "@mercury-fw/plugin-atlassian-admin",
       "@mercury-fw/plugin-bitbucket",
       "@mercury-fw/plugin-jira",
+      "@mercury-fw/plugin-zitadel",
       "protobufjs",
     ]);
   });
@@ -337,7 +339,7 @@ describe("renderApp: validation", () => {
 
   test("rejects an unknown channel or plugin, naming the valid ids", () => {
     expect(() => renderApp(input({ channels: ["slack"] }))).toThrow("google-chat, http");
-    expect(() => renderApp(input({ plugins: ["http"] }))).toThrow("jira, bitbucket, atlassian-admin");
+    expect(() => renderApp(input({ plugins: ["http"] }))).toThrow("jira, bitbucket, atlassian-admin, zitadel");
   });
 
   // #37: the HTTP channel doesn't start without an auth provider, so an app

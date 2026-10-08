@@ -17,6 +17,7 @@ describe("CATALOG", () => {
       "tool:jira",
       "tool:bitbucket",
       "tool:atlassian-admin",
+      "tool:zitadel",
     ]);
   });
 
