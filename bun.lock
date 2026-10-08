@@ -263,6 +263,23 @@
         "@mercury-fw/utils": ">=0.24.0 <1.0.0",
       },
     },
+    "packages/tools/plugin-zitadel": {
+      "name": "@mercury-fw/plugin-zitadel",
+      "version": "0.0.0",
+      "devDependencies": {
+        "@mercury-fw/cli-engine": "workspace:*",
+        "@mercury-fw/plugin-types": "workspace:*",
+        "@mercury-fw/typescript-config": "*",
+        "@mercury-fw/utils": "workspace:*",
+        "@types/bun": "^1.4.2",
+        "typescript": "^6.0.3",
+      },
+      "peerDependencies": {
+        "@mercury-fw/cli-engine": ">=0.24.0 <1.0.0",
+        "@mercury-fw/plugin-types": ">=0.24.0 <1.0.0",
+        "@mercury-fw/utils": ">=0.24.0 <1.0.0",
+      },
+    },
     "packages/types/channel-types": {
       "name": "@mercury-fw/channel-types",
       "version": "0.40.0",
@@ -388,6 +405,8 @@
     "@mercury-fw/plugin-jira": ["@mercury-fw/plugin-jira@workspace:packages/tools/plugin-jira"],
 
     "@mercury-fw/plugin-types": ["@mercury-fw/plugin-types@workspace:packages/types/plugin-types"],
+
+    "@mercury-fw/plugin-zitadel": ["@mercury-fw/plugin-zitadel@workspace:packages/tools/plugin-zitadel"],
 
     "@mercury-fw/typescript-config": ["@mercury-fw/typescript-config@workspace:packages/config/typescript-config"],
 

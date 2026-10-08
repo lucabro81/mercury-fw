@@ -1,0 +1,74 @@
+{
+  "name": "@mercury-fw/plugin-zitadel",
+  "version": "0.0.0",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lucabro81/mercury-fw.git",
+    "directory": "packages/tools/plugin-zitadel"
+  },
+  "files": [
+    "*.ts",
+    "dist",
+    "zitadel.json",
+    "scripts",
+    "CHANGELOG.md",
+    "!**/*.test.ts"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "peerDependencies": {
+    "@mercury-fw/cli-engine": ">=0.24.0 <1.0.0",
+    "@mercury-fw/plugin-types": ">=0.24.0 <1.0.0",
+    "@mercury-fw/utils": ">=0.24.0 <1.0.0"
+  },
+  "devDependencies": {
+    "@mercury-fw/cli-engine": "workspace:*",
+    "@mercury-fw/plugin-types": "workspace:*",
+    "@mercury-fw/typescript-config": "*",
+    "@mercury-fw/utils": "workspace:*",
+    "@types/bun": "^1.4.2",
+    "typescript": "^6.0.3"
+  },
+  "exports": {
+    ".": {
+      "mercury-fw-source": "./index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./index.ts"
+    }
+  },
+  "scripts": {
+    "postinstall": "bun run scripts/install-zitadel-cli.ts",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
+  "mercury": {
+    "cliBinary": {
+      "repo": "lucabro81/CLI-monorepo",
+      "crate": "zitadel",
+      "version": "2.6.0"
+    },
+    "cliCredentials": {
+      "folder": "zitadel-cli",
+      "setup": [
+        "zitadel",
+        "init"
+      ],
+      "userSetup": [
+        "zitadel",
+        "init",
+        "--user-app"
+      ],
+      "check": [
+        "zitadel",
+        "doctor"
+      ],
+      "logout": [
+        "zitadel",
+        "auth",
+        "logout"
+      ]
+    }
+  }
+}

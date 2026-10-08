@@ -1,0 +1,16 @@
+{
+  "binary": "zitadel",
+  "commands": [
+    { "prefix": ["user", "search"], "confirm": false, "mutating": false },
+    { "prefix": ["user", "get"], "confirm": false, "mutating": false },
+    { "prefix": ["user", "authorizations"], "confirm": false, "mutating": false },
+    { "prefix": ["user", "idp-links"], "confirm": false, "mutating": false },
+    { "prefix": ["organization", "list"], "confirm": false, "mutating": false },
+    { "prefix": ["project", "list"], "confirm": false, "mutating": false },
+    { "prefix": ["doctor"], "confirm": false, "mutating": false },
+    { "prefix": ["auth", "whoami"], "confirm": false, "mutating": false }
+  ],
+  "globalFlags": [
+    { "flag": "--select", "takesValue": true }
+  ]
+}
