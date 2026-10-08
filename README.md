@@ -96,6 +96,7 @@ The first-party plugins, channels and auth providers, each with its own version:
 | [`@mercury-fw/plugin-jira`](packages/tools/plugin-jira) | Jira through the `jira` CLI: searches, issue changes, typed issue lists, and deletion only after confirmation. |
 | [`@mercury-fw/plugin-bitbucket`](packages/tools/plugin-bitbucket) | Bitbucket pull requests through the `bitbucket` CLI, read-only. |
 | [`@mercury-fw/plugin-atlassian-admin`](packages/tools/plugin-atlassian-admin) | User lookup in an Atlassian organization through the `atlassian-admin` CLI, read-only. |
+| [`@mercury-fw/plugin-zitadel`](packages/tools/plugin-zitadel) | ZITADEL users, their project roles and identity provider links, organizations and projects through the `zitadel` CLI, read-only, as the person. |
 | [`@mercury-fw/channel-google-chat`](packages/channels/channel-google-chat) | Google Chat, as a registered Chat app. |
 | [`@mercury-fw/channel-http`](packages/channels/channel-http) | An HTTP surface for a custom UI: streamed turns and read-only routes, for authenticated callers only. |
 | [`@mercury-fw/auth-oidc`](packages/auth/auth-oidc) | Who is calling the HTTP surface, from a token an OpenID Connect issuer (Zitadel, Google, Keycloak) signed. |

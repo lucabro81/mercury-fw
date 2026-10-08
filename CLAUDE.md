@@ -108,7 +108,8 @@ mercury/                       # repo root
 │   ├── tools/
 │   │   ├── plugin-jira/           # Jira plugin: allowlist, SKILL.md, issue-list extractor + the typed kinds of list it emits (JiraDisplays), pinned CLI binary
 │   │   ├── plugin-bitbucket/      # Bitbucket plugin: allowlist + pinned CLI binary (the minimal plugin shape)
-│   │   └── plugin-atlassian-admin/ # atlassian-admin plugin: allowlist + pinned CLI binary (read-only)
+│   │   ├── plugin-atlassian-admin/ # atlassian-admin plugin: allowlist + pinned CLI binary (read-only)
+│   │   └── plugin-zitadel/        # ZITADEL plugin: allowlist + pinned CLI binary (read-only, as the person)
 │   ├── formatters/
 │   │   └── formatter/             # @mercury-fw/formatter — applies an instance's per-kind rules to the lists a data plugin emits (formatterPlugin + formatter); holds no format of its own
 │   ├── libs/
