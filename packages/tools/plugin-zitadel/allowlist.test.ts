@@ -44,6 +44,12 @@ describe("@mercury-fw/plugin-zitadel allowlist", () => {
     expect(matchCommand(["auth", "logout"], zitadelConfig)).toEqual({ kind: "not-allowed" });
   });
 
+  it("refuses commands it doesn't list, and always allows --help", () => {
+    expect(matchCommand(["user", "create"], zitadelConfig)).toEqual({ kind: "not-allowed" });
+    expect(matchCommand(["project", "delete", "1"], zitadelConfig)).toEqual({ kind: "not-allowed" });
+    expect(matchCommand(["user", "search", "--help"], zitadelConfig)).toEqual(allowed([]));
+  });
+
   it("has no mutating or confirm-gated commands", () => {
     expect(zitadelConfig.allowedPrefixes.filter((c) => c.mutating)).toEqual([]);
     expect(zitadelConfig.allowedPrefixes.filter((c) => c.confirm)).toEqual([]);

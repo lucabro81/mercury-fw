@@ -50,6 +50,27 @@ describe("zitadelPlugin", () => {
     expect(calls).toEqual([{ binary: "zitadel", args: ["user", "get", "123", "--user", "static:alice"] }]);
   });
 
+  // On the terminal there's no person: the command runs as the service user.
+  it("runs a command without --user when there is no person", async () => {
+    const { plugin, calls } = recording();
+    const c = plugin.build!(buildCtx);
+    await c.sessionTools!(sctx(null), c.postProcess).zitadelCommand!.execute!({ command: "zitadel user get 123" }, {} as never);
+    expect(calls).toEqual([{ binary: "zitadel", args: ["user", "get", "123"] }]);
+  });
+
+  // Mercury decides whose account a command runs as: a --user the model wrote
+  // never reaches the CLI.
+  it("refuses a --user written by the model, without running anything", async () => {
+    const { plugin, calls } = recording();
+    const c = plugin.build!(buildCtx);
+    const result = await c.sessionTools!(sctx({ key: "static:alice" }), c.postProcess).zitadelCommand!.execute!(
+      { command: "zitadel user get 123 --user static:bob" },
+      {} as never,
+    );
+    expect(calls).toEqual([]);
+    expect(result).toMatchObject({ ok: false });
+  });
+
   // The Native app accepts several redirect URIs, so Mercury's callback goes on
   // the command line, as with Jira.
   it("logs the person in remotely with Mercury's callback as the redirect URI", async () => {
@@ -64,6 +85,15 @@ describe("zitadelPlugin", () => {
         binary: "zitadel",
         args: ["auth", "login", "--user", "static:alice", "--remote", "--redirect-uri", "https://mercury.example.com/login/callback"],
       },
+    ]);
+  });
+
+  it("finishes the person's login with the code and the state", async () => {
+    const { plugin, calls } = recording();
+    const result = await plugin.build!(buildCtx).login!.complete("static:alice", "the-code", "st");
+    expect(result).toEqual({ ok: true });
+    expect(calls).toEqual([
+      { binary: "zitadel", args: ["auth", "login", "--user", "static:alice", "--code", "the-code", "--state", "st"] },
     ]);
   });
 });

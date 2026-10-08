@@ -22,7 +22,7 @@ The plugin acts as the person: every command runs with the ZITADEL account of wh
 
 The CLI keeps every login under `~/.config/zitadel-cli` (one folder per person, next to the service user's), and the plugin declares that folder in its `package.json` (`mercury.cliCredentials`) with the commands that set it up. Two things are set up once, inside the app's container, answering what the CLI asks (the [zitadel CLI's README](https://github.com/lucabro81/CLI-monorepo/tree/main/crates/zitadel) has the steps on ZITADEL's side):
 
-- the service user the terminal runs as: the CLI asks for the instance URL and the service user's key JSON, pasted whole (hidden). `ORG_OWNER_VIEWER` on the organization is enough for every command the plugin allows;
+- the service user the terminal runs as: the CLI asks for the instance URL and the service user's key JSON, pasted whole (hidden). `ORG_OWNER_VIEWER` on the organization is enough to read users, their project roles and their identity provider links;
 - the Native app people log in through, with `<HTTP_SURFACE_PUBLIC_URL>/login/callback` among its redirect URIs: the CLI asks for its client id.
 
 ```bash
