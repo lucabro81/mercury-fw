@@ -12,6 +12,7 @@
     "dist",
     "zitadel.json",
     "scripts",
+    "skills",
     "CHANGELOG.md",
     "!**/*.test.ts"
   ],

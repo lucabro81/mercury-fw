@@ -31,6 +31,26 @@ describe("zitadelPlugin", () => {
     expect(zitadelPlugin.name).toBe("zitadel");
   });
 
+  // Without it the model learned the commands and their --select paths through
+  // --help and failed calls, about ten tool calls for "who am I" (seen live).
+  it("ships a zitadel skill naming the commands and the --select paths they need", () => {
+    expect(zitadelPlugin.skills).toHaveLength(1);
+    const skill = zitadelPlugin.skills![0]!;
+    expect(skill.name).toBe("zitadel");
+    expect(skill.description.length).toBeGreaterThan(0);
+    for (const text of [
+      "zitadelCommand",
+      "zitadel auth whoami",
+      "zitadel organization list --select result.id,result.name,result.state",
+      "zitadel project list --select projects.projectId,projects.name",
+      "zitadel user search --email-exact",
+      "zitadel user authorizations",
+      "zitadel user idp-links",
+    ]) {
+      expect(skill.body).toContain(text);
+    }
+  });
+
   it("acts as the person and contributes only its own tool", () => {
     expect(zitadelPlugin.actsAs).toBe("person");
     expect(zitadelPlugin.systemPromptFragment).toBeUndefined();
