@@ -241,7 +241,7 @@
     },
     "packages/tools/plugin-bitbucket": {
       "name": "@mercury-fw/plugin-bitbucket",
-      "version": "0.3.0",
+      "version": "0.3.1",
       "devDependencies": {
         "@mercury-fw/cli-engine": "workspace:*",
         "@mercury-fw/plugin-types": "workspace:*",
@@ -258,7 +258,7 @@
     },
     "packages/tools/plugin-jira": {
       "name": "@mercury-fw/plugin-jira",
-      "version": "0.6.0",
+      "version": "0.6.1",
       "dependencies": {
         "ai": "^7.0.126",
         "zod": "^4.6.5",
@@ -279,7 +279,7 @@
     },
     "packages/tools/plugin-zitadel": {
       "name": "@mercury-fw/plugin-zitadel",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "devDependencies": {
         "@mercury-fw/cli-engine": "workspace:*",
         "@mercury-fw/plugin-types": "workspace:*",
