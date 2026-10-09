@@ -38,31 +38,30 @@ export interface SessionToolBundle {
   login?: PersonLogin;
 }
 
-/** The part of what plugins contribute that's offered to a person: only the
- * plugins acting as the person, since making Mercury act as itself needs a
- * permission nobody can hold yet. */
-export interface PeopleContributions {
-  promptFragments: string[];
+/** One plugin that loaded: what it puts in front of the model, and whose
+ * identity it acts with, which decides who it's offered to (the core works
+ * that out per person, see `plugins/offering.ts`). A plugin that declares
+ * nothing acts as Mercury. */
+export interface LoadedPlugin {
+  name: string;
+  actsAs: "person" | "mercury";
+  promptFragment?: string;
   skills: Skill[];
-  sessionToolBundles: SessionToolBundle[];
+  /** Its tool factory, when it contributes tools; the composition root invokes
+   * it per turn with the session context (see `SessionToolBundle`). */
+  bundle?: SessionToolBundle;
 }
 
-/** What the loader hands back to the composition root, aggregated across every
- * plugin that loaded. The core knows nothing about CLIs: a plugin's tool is an
- * opaque `SessionToolBundle` it contributed, not a config the core assembles. */
+/** What the loader hands back to the composition root. The core knows nothing
+ * about CLIs: a plugin's tool is an opaque `SessionToolBundle` it contributed,
+ * not a config the core assembles. */
 export interface LoadedPlugins {
-  promptFragments: string[];
-  skills: Skill[];
-  /** Per-plugin tool factories + their post-processors; the composition root
-   * invokes each per turn with the session context (see `SessionToolBundle`). */
-  sessionToolBundles: SessionToolBundle[];
+  /** Every plugin that loaded, in load order. */
+  plugins: LoadedPlugin[];
   /** Merged across plugins, keyed by the tool name each contributes, turning a
    * tool call's input into its status label. */
   toolStatusDescribers: Record<string, (input: unknown) => string>;
   postTurnGuards: PostTurnGuard[];
-  /** What a person's turn is offered (see `PeopleContributions`); the fields
-   * above are everything, what the terminal gets. */
-  forPeople: PeopleContributions;
   /** Names of the plugins that fully activated — for read-only introspection
    * (the manifest), since a plugin's tool is opaque and there's no central
    * config map to infer activation from anymore. */
@@ -134,12 +133,9 @@ export function orderByDependencies(plugins: Plugin[]): { ordered: Plugin[]; cyc
  * or itself skipped) is skipped fail-soft too, transitively.
  */
 export async function loadPlugins(plugins: Plugin[], ctx: PluginLoadContext): Promise<LoadedPlugins> {
-  const promptFragments: string[] = [];
-  const skills: Skill[] = [];
-  const sessionToolBundles: SessionToolBundle[] = [];
+  const loaded: LoadedPlugin[] = [];
   const toolStatusDescribers: Record<string, (input: unknown) => string> = {};
   const postTurnGuards: PostTurnGuard[] = [];
-  const forPeople: PeopleContributions = { promptFragments: [], skills: [], sessionToolBundles: [] };
 
   const { ordered, cyclic } = orderByDependencies(plugins);
   // A plugin caught in a cycle can't be ordered, so it can't load.
@@ -189,15 +185,17 @@ export async function loadPlugins(plugins: Plugin[], ctx: PluginLoadContext): Pr
             ...(contributions.login === undefined ? {} : { login: contributions.login }),
           }
         : undefined;
-      const views = plugin.actsAs === "person" ? [{ promptFragments, skills, sessionToolBundles }, forPeople] : [{ promptFragments, skills, sessionToolBundles }];
-      for (const view of views) {
-        if (plugin.systemPromptFragment !== undefined) view.promptFragments.push(plugin.systemPromptFragment);
-        if (plugin.skills !== undefined) view.skills.push(...plugin.skills);
-        if (bundle !== undefined) view.sessionToolBundles.push(bundle);
-      }
-      if (plugin.actsAs !== "person") {
+      const actsAs = plugin.actsAs === "person" ? "person" : "mercury";
+      loaded.push({
+        name: plugin.name,
+        actsAs,
+        ...(plugin.systemPromptFragment === undefined ? {} : { promptFragment: plugin.systemPromptFragment }),
+        skills: [...(plugin.skills ?? [])],
+        ...(bundle === undefined ? {} : { bundle }),
+      });
+      if (actsAs === "mercury") {
         ctx.log(
-          `plugin "${plugin.name}" acts as Mercury itself: offered on the terminal only, until people can be allowed to make Mercury act as itself`,
+          `plugin "${plugin.name}" acts as Mercury itself: offered only to people holding mercury.act-as-self or mercury.act-as-self.${plugin.name}, and on the terminal`,
         );
       }
       if (contributions.toolStatusDescribers) {
@@ -214,5 +212,5 @@ export async function loadPlugins(plugins: Plugin[], ctx: PluginLoadContext): Pr
     }
   }
 
-  return { promptFragments, skills, sessionToolBundles, toolStatusDescribers, postTurnGuards, forPeople, activated: [...activated] };
+  return { plugins: loaded, toolStatusDescribers, postTurnGuards, activated: [...activated] };
 }
