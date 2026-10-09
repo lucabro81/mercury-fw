@@ -27,6 +27,7 @@
         "@mercury-fw/auth-static": "workspace:*",
         "@mercury-fw/channel-google-chat": "workspace:*",
         "@mercury-fw/channel-http": "workspace:*",
+        "@mercury-fw/directory-static": "workspace:*",
         "@mercury-fw/formatter": "workspace:*",
         "@mercury-fw/plugin-atlassian-admin": "workspace:*",
         "@mercury-fw/plugin-bitbucket": "workspace:*",
@@ -281,6 +282,7 @@
       "name": "@mercury-fw/plugin-zitadel",
       "version": "0.1.1",
       "devDependencies": {
+        "@mercury-fw/channel-types": "workspace:*",
         "@mercury-fw/cli-engine": "workspace:*",
         "@mercury-fw/plugin-types": "workspace:*",
         "@mercury-fw/typescript-config": "*",
@@ -289,6 +291,7 @@
         "typescript": "^6.0.3",
       },
       "peerDependencies": {
+        "@mercury-fw/channel-types": ">=0.42.0 <1.0.0",
         "@mercury-fw/cli-engine": ">=0.24.0 <1.0.0",
         "@mercury-fw/plugin-types": ">=0.24.0 <1.0.0",
         "@mercury-fw/utils": ">=0.24.0 <1.0.0",

@@ -67,6 +67,10 @@ function buildProgram(handlers: ProgramHandlers, result: { code: number }): Comm
       "--auth <id>",
       `the HTTP channel's auth provider, required with it: ${CATALOG.filter((e) => e.kind === "auth").map((e) => e.id).join(", ")}`,
     )
+    .option(
+      "--directory <id>",
+      `the user directory, who the people are and their roles: ${CATALOG.filter((e) => e.kind === "directory").map((e) => e.id).join(", ")} (default: none)`,
+    )
     .option("--git-remote <url>", "the repository's origin, taken as typed (default: none)")
     .option(
       "--local-packages <folder>",

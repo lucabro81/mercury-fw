@@ -17,6 +17,8 @@ export type CreateArgs = {
   plugins?: string[];
   /** The auth provider, which goes with the HTTP channel. */
   auth?: string;
+  /** The user directory. */
+  directory?: string;
   /** The repository's origin, taken as typed. */
   gitRemote?: string;
   /** A folder of packed tarballs the app installs instead of the registry's packages. */
@@ -36,6 +38,7 @@ export type CreateOptions = {
   channels?: string;
   plugins?: string;
   auth?: string;
+  directory?: string;
   gitRemote?: string;
   localPackages?: string;
   yes?: boolean;
@@ -59,6 +62,7 @@ export function toCreateArgs(folder: string, opts: CreateOptions): CreateArgs {
   if (opts.channels !== undefined) args.channels = list(opts.channels);
   if (opts.plugins !== undefined) args.plugins = list(opts.plugins);
   if (opts.auth !== undefined && opts.auth.trim() !== "") args.auth = opts.auth.trim();
+  if (opts.directory !== undefined && opts.directory.trim() !== "") args.directory = opts.directory.trim();
   if (opts.localPackages !== undefined) args.localPackages = opts.localPackages;
   // Blank is none, as in the wizard.
   if (opts.gitRemote !== undefined && opts.gitRemote.trim() !== "") args.gitRemote = opts.gitRemote.trim();

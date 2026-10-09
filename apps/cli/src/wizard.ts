@@ -19,6 +19,8 @@ export type Answers = {
   plugins: string[];
   /** The HTTP channel's auth provider, there exactly when that channel is. */
   auth?: string;
+  /** The user directory, when there's one. */
+  directory?: string;
   gitRemote?: string;
 };
 
@@ -87,6 +89,17 @@ export async function askAnswers(args: CreateArgs, dir: string): Promise<Answers
   }
   const plugins = await pick("tool", "Tool plugins (space to select)", args.plugins ?? []);
   if (plugins === undefined) return cancelled();
+  const NO_DIRECTORY = "";
+  const pickedDirectory = await p.select({
+    message: "User directory (who the people are and their roles; none: whoever the channel says, with no roles)",
+    options: [
+      { value: NO_DIRECTORY, label: "none" },
+      ...CATALOG.filter((e) => e.kind === "directory").map((e) => ({ value: e.id, label: e.id, hint: e.package })),
+    ],
+    initialValue: args.directory ?? NO_DIRECTORY,
+  });
+  if (p.isCancel(pickedDirectory)) return cancelled();
+  const directory = pickedDirectory === NO_DIRECTORY ? undefined : pickedDirectory;
   // Asked only when there will be a repository and the flag didn't say.
   let gitRemote = args.gitRemote;
   if (args.git && gitRemote === undefined) {
@@ -105,6 +118,7 @@ export async function askAnswers(args: CreateArgs, dir: string): Promise<Answers
       `Channels: ${channels.length > 0 ? channels.join(", ") : "none"}`,
       ...(auth !== undefined ? [`Auth: ${auth}`] : []),
       `Tool plugins: ${plugins.length > 0 ? plugins.join(", ") : "none"}`,
+      `Directory: ${directory ?? "none"}`,
       ...(args.git ? [`Origin: ${gitRemote ?? "none"}`] : []),
     ].join("\n"),
     "Summary",
@@ -118,6 +132,7 @@ export async function askAnswers(args: CreateArgs, dir: string): Promise<Answers
     channels,
     plugins,
     ...(auth !== undefined ? { auth } : {}),
+    ...(directory !== undefined ? { directory } : {}),
     ...(gitRemote !== undefined ? { gitRemote } : {}),
   };
 }

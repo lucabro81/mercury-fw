@@ -1,5 +1,5 @@
 /**
- * The channels, auth providers and tool plugins `mfw create` can put in a new app. Written
+ * The channels, auth providers, tool plugins and user directories `mfw create` can put in a new app. Written
  * by hand for now: once the packages are published, each plugin will describe
  * itself (kind, export, env vars) and this list goes away. `catalog.test.ts`
  * checks every entry against the real package until then.
@@ -9,13 +9,14 @@
  * example: `value` is the example value, empty when the deployer must fill it. */
 export type EnvVar = { name: string; comment: string; value?: string };
 
-/** A channel, auth provider or tool plugin the app can include. `id` is the
- * plugin's own `name` (what the logs and `dependsOn` call it), `exportName` the
- * value the app's config imports from `package`. An auth provider goes with the
- * HTTP channel, which doesn't start without one. */
+/** A channel, auth provider, tool plugin or user directory the app can include.
+ * `id` is the plugin's own `name` (what the logs and `dependsOn` call it; for a
+ * directory, the choice's name), `exportName` the value the app's config
+ * imports from `package`. An auth provider goes with the HTTP channel, which
+ * doesn't start without one; a directory goes with any channel. */
 export type CatalogEntry = {
   id: string;
-  kind: "channel" | "auth" | "tool";
+  kind: "channel" | "auth" | "tool" | "directory";
   package: string;
   exportName: string;
   env: EnvVar[];
@@ -121,6 +122,28 @@ export const CATALOG: CatalogEntry[] = [
     package: "@mercury-fw/plugin-zitadel",
     exportName: "zitadelPlugin",
     env: [],
+  },
+  {
+    id: "static",
+    kind: "directory",
+    package: "@mercury-fw/directory-static",
+    exportName: "staticDirectory",
+    env: [
+      {
+        name: "DIRECTORY_STATIC_PEOPLE",
+        comment:
+          'Required: the people, as JSON: [{"id": "alice", "roles": ["mercury.act-as-self"], "identities": ["static:alice"]}]',
+      },
+    ],
+  },
+  {
+    id: "zitadel",
+    kind: "directory",
+    package: "@mercury-fw/plugin-zitadel",
+    exportName: "zitadelDirectory",
+    env: [{ name: "ZITADEL_PROJECT_ID", comment: "Required: the ZITADEL project whose roles count" }],
+    // It calls the zitadel CLI, which the package downloads as it installs.
+    trusts: ["@mercury-fw/plugin-zitadel"],
   },
 ];
 

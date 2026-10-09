@@ -24,6 +24,7 @@ const versions: Record<string, string> = {
   "@mercury-fw/plugin-bitbucket": "0.1.0",
   "@mercury-fw/plugin-atlassian-admin": "0.1.0",
   "@mercury-fw/plugin-zitadel": "0.1.0",
+  "@mercury-fw/directory-static": "0.1.0",
 };
 
 const input = (over: Partial<RenderInput> = {}): RenderInput => ({
@@ -322,6 +323,52 @@ describe("renderApp: README.md", () => {
     const readme = renderApp(EMPTY).get("README.md") ?? "";
     expect(readme).toContain("Channels: none");
     expect(readme).toContain("Tool plugins: none");
+  });
+});
+
+// #188: the directory decides who the people are and their roles; it's
+// chosen on its own, with or without the HTTP channel.
+describe("renderApp: directory", () => {
+  test("the config declares it, imported from its package", () => {
+    const config = renderApp(input({ directory: "static" })).get("mercury.config.ts") ?? "";
+    expect(config).toContain('import { staticDirectory } from "@mercury-fw/directory-static";\n');
+    expect(config).toContain("  directory: staticDirectory,\n");
+  });
+
+  test("its variables go in the env example, its package in the dependencies", () => {
+    const app = renderApp(input({ directory: "zitadel" }));
+    expect(app.get(".env.example")).toContain("# --- zitadel directory\n");
+    expect(app.get(".env.example")).toContain("\nZITADEL_PROJECT_ID=\n");
+    expect(JSON.parse(app.get("package.json") ?? "").dependencies).toMatchObject({ "@mercury-fw/plugin-zitadel": "^0.1.0" });
+  });
+
+  // The ZITADEL directory calls the zitadel CLI, which plugin-zitadel downloads
+  // as it installs: Bun runs that only for a trusted package.
+  test("a directory that ships a CLI is trusted for its install, even without its tools", () => {
+    const pkg = JSON.parse(renderApp(input({ directory: "zitadel" })).get("package.json") ?? "");
+    expect(pkg.trustedDependencies).toEqual(["@mercury-fw/plugin-zitadel"]);
+  });
+
+  test("the zitadel tools and directory together: both declared, the package once", () => {
+    const app = renderApp(input({ plugins: ["zitadel"], directory: "zitadel" }));
+    const config = app.get("mercury.config.ts") ?? "";
+    expect(config).toContain("    zitadelPlugin,\n");
+    expect(config).toContain("  directory: zitadelDirectory,\n");
+    expect(JSON.parse(app.get("package.json") ?? "").trustedDependencies).toEqual(["@mercury-fw/plugin-zitadel"]);
+  });
+
+  test("the README says which directory", () => {
+    expect(renderApp(input({ directory: "static" })).get("README.md")).toContain("- Directory: static\n");
+  });
+
+  test("no directory: nothing about one", () => {
+    const app = renderApp(EMPTY);
+    expect(app.get("mercury.config.ts")).not.toContain("directory");
+    expect(app.get("README.md")).not.toContain("Directory:");
+  });
+
+  test("rejects an unknown directory, naming the valid ids", () => {
+    expect(() => renderApp(input({ directory: "ldap" }))).toThrow('Unknown directory "ldap" (valid: static, zitadel)');
   });
 });
 
