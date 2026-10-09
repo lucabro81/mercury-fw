@@ -197,6 +197,8 @@ export type ParsedMessageEvent = {
   space: string;
   sender: string;
   senderDisplayName: string | undefined;
+  /** The sender's email, which Google vouches for: a person's only, never a bot's. */
+  senderEmail: string | undefined;
   /**
    * True only when `space.type` is exactly `"DM"` (the Chat API's shape
    * for a private 1:1 space) — anything else, including a missing field,
@@ -211,8 +213,14 @@ export type ParsedCardClickEvent = {
   kind: "card-click";
   space: string;
   sender: string;
+  senderEmail: string | undefined;
   parameters: Record<string, string>;
 };
+
+/** The email Google vouches for on `sender`: a person's only (`HUMAN`), never a bot's or an unknown kind's. */
+function emailOf(sender: RawChatSender | undefined): string | undefined {
+  return typeof sender?.email === "string" && sender.email !== "" && sender.type === "HUMAN" ? sender.email : undefined;
+}
 
 /** Parses one decoded Pub/Sub event, or `null` if it isn't a kind this provider acts on. */
 export function parseChatEvent(raw: unknown): ParsedMessageEvent | ParsedCardClickEvent | null {
@@ -229,6 +237,7 @@ export function parseChatEvent(raw: unknown): ParsedMessageEvent | ParsedCardCli
       space: m.space.name,
       sender: m.sender.name,
       senderDisplayName: m.sender.displayName,
+      senderEmail: emailOf(m.sender),
       isDirectMessage: m.space.type === "DM",
     };
   }
@@ -241,12 +250,12 @@ export function parseChatEvent(raw: unknown): ParsedMessageEvent | ParsedCardCli
         parameters[p.key] = p.value;
       }
     }
-    return { kind: "card-click", space: event.space.name, sender: event.user.name, parameters };
+    return { kind: "card-click", space: event.space.name, sender: event.user.name, senderEmail: emailOf(event.user), parameters };
   }
   return null;
 }
 
-export type CardClickHandler = (params: Record<string, string>, space: string, sender: string) => Promise<void>;
+export type CardClickHandler = (params: Record<string, string>, space: string, sender: string, senderEmail?: string) => Promise<void>;
 
 export type GoogleChatProviderDeps = {
   credentials: ServiceAccountCredentials;
@@ -310,13 +319,17 @@ export function createGoogleChatProvider(deps: GoogleChatProviderDeps): GoogleCh
    */
   const onCardClick: CardClickHandler =
     deps.onCardClick ??
-    (async (params, space, sender) => {
+    (async (params, space, sender, senderEmail) => {
       const token = params.token;
       if (!token) {
         log(`[chat] card click with no token parameter`);
         return;
       }
-      const reply = await deps.confirm(token, deriveSessionKey(space, sender), { id: sender, provider: "google-chat" });
+      const reply = await deps.confirm(token, deriveSessionKey(space, sender), {
+        id: sender,
+        provider: "google-chat",
+        ...(senderEmail === undefined ? {} : { claims: { email: senderEmail } }),
+      });
       if (reply !== null) {
         log(`[chat:${space}] [out] ${reply}`);
         const sent = await sendMessageFn(space, reply, clientDeps);
@@ -483,6 +496,8 @@ export function createGoogleChatProvider(deps: GoogleChatProviderDeps): GoogleCh
       id: event.sender,
       provider: "google-chat",
       ...(event.senderDisplayName ? { displayName: event.senderDisplayName } : {}),
+      // A directory joins a Chat identity to a person on it (see the ZITADEL directory).
+      ...(event.senderEmail === undefined ? {} : { claims: { email: event.senderEmail } }),
     };
 
     const confirmReply = await deps.confirm(event.text, sessionKey, principal);
@@ -556,7 +571,7 @@ export function createGoogleChatProvider(deps: GoogleChatProviderDeps): GoogleCh
       if (parsed.kind === "message") {
         await processMessageEvent(parsed, handleTurn);
       } else {
-        await onCardClick(parsed.parameters, parsed.space, parsed.sender);
+        await onCardClick(parsed.parameters, parsed.space, parsed.sender, parsed.senderEmail);
       }
     } catch (err) {
       log(`[chat] event handling failed: ${String(err)}`);

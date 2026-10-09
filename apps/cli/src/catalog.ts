@@ -141,7 +141,10 @@ export const CATALOG: CatalogEntry[] = [
     kind: "directory",
     package: "@mercury-fw/plugin-zitadel",
     exportName: "zitadelDirectory",
-    env: [{ name: "ZITADEL_PROJECT_ID", comment: "Required: the ZITADEL project whose roles count" }],
+    env: [
+      { name: "ZITADEL_PROJECT_ID", comment: "Required: the ZITADEL project whose roles count" },
+      { name: "ZITADEL_GOOGLE_IDP_ID", comment: "Optional: the Google identity provider's id in ZITADEL, to recognise Google Chat senders" },
+    ],
     // It calls the zitadel CLI, which the package downloads as it installs.
     trusts: ["@mercury-fw/plugin-zitadel"],
   },
