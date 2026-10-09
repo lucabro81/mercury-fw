@@ -24,6 +24,8 @@ channels: [googleChatChannel],
 | `GOOGLE_CHAT_APP_CLIENT_EMAIL` | The service account the app authenticates as. |
 | `GOOGLE_CHAT_APP_PRIVATE_KEY` | That service account's private key, on one line with literal `\n` (step 5 writes it that way). |
 
+Each message reaches the core as `google-chat:users/<id>`, the sender's Chat user, with their email when Google vouches for it (a person's, never a bot's), which a user directory can join on: the ZITADEL directory of `@mercury-fw/plugin-zitadel` does.
+
 ## Table of contents
 
 - [Setting up the Chat app](#setting-up-the-chat-app)
