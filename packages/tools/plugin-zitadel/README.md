@@ -31,6 +31,28 @@ mfw credentials setup @mercury-fw/plugin-zitadel --user-app
 mfw credentials check @mercury-fw/plugin-zitadel
 ```
 
+## As the user directory
+
+The same package exports `zitadelDirectory`: ZITADEL decides who the people talking to Mercury are and what they may make it do, through the project's roles. Declare it next to the OIDC auth provider pointing at the same ZITADEL:
+
+```ts
+import { zitadelPlugin, zitadelDirectory } from "@mercury-fw/plugin-zitadel";
+import { oidcAuth } from "@mercury-fw/auth-oidc";
+
+auth: oidcAuth,
+directory: zitadelDirectory,
+```
+
+| Variable | |
+|---|---|
+| `ZITADEL_PROJECT_ID` | Required. The project whose roles count (`zitadel project list --select projects.projectId,projects.name` lists them). |
+
+It calls the CLI from code, never through the model, as the service user set up above, which only needs `ORG_OWNER_VIEWER` for this. Someone calling the HTTP surface with a ZITADEL token is the ZITADEL user the token's subject names: unknown (and refused, the instance being closed) when ZITADEL doesn't find them or they aren't active, otherwise known with the role keys of their active role assignments on the project. Their email is passed on only when ZITADEL verified it, and their key is `zitadel:<user id>`.
+
+The roles that mean something to Mercury are `mercury.act-as-self` (make Mercury act with its own identity, on every plugin) and `mercury.act-as-self.<plugin>` (on one); create them as roles of the project and assign them to people in ZITADEL's console (the user's **Role Assignments**). Any other role is for the app's `access.plugins`. An answer is kept for five minutes, so a role taken away stops counting within that time.
+
+Identities from other channels (a Google Chat user) aren't resolved yet: they're unknown to this directory.
+
 People log in on their own: the first time someone asks for something in ZITADEL, Mercury answers that they need to log in, and the [HTTP channel](../../channels/channel-http) shows them the link (it needs `HTTP_SURFACE_PUBLIC_URL`). Mercury never falls back to the service user for them.
 
 MIT
