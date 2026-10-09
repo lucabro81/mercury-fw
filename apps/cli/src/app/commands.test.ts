@@ -121,6 +121,14 @@ describe("vault and memory", () => {
     ]);
   });
 
+  test("identity passes its subcommand and arguments to the core's account links CLI", async () => {
+    const f = fake();
+    await appCommands(APP, f.deps).identity(["link", "google-chat:users/1", "oidc:3123"]);
+    expect(f.runs()).toEqual([
+      ["docker", "compose", "run", "--rm", "-T", "mercury", "bun", "node_modules/@mercury-fw/core/src/identity/links-cli.ts", "link", "google-chat:users/1", "oidc:3123"],
+    ]);
+  });
+
   test("memory passes its subcommand and arguments to the core's memory CLI", async () => {
     const f = fake();
     await appCommands(APP, f.deps).memory(["read", "episodic_memory", "--limit", "5"]);

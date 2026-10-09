@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from "bun:test";
-import { mkdtemp, rm, stat } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { initVault } from "./vault-init.ts";
@@ -73,5 +73,19 @@ describe("initVault", () => {
 
     const s = await stat(join(vaultPath, "README.md"));
     expect(s.isFile()).toBe(true);
+  });
+
+  // #190: Mercury's own files on the vault's volume (the account links) never
+  // land in the vault's git, whatever stages everything.
+  it("keeps .mercury/ out of the vault's git, once, through the repo's own exclude", async () => {
+    const vaultPath = await makeTempVaultPath();
+    await initVault(vaultPath);
+    await initVault(vaultPath);
+    const exclude = await readFile(join(vaultPath, ".git", "info", "exclude"), "utf8");
+    expect(exclude.split("\n").filter((l) => l === "/.mercury/")).toHaveLength(1);
+    await mkdir(join(vaultPath, ".mercury"), { recursive: true });
+    await writeFile(join(vaultPath, ".mercury", "identity-links.json"), "{}");
+    const proc = Bun.spawn(["git", "status", "--porcelain", "--ignored=no"], { cwd: vaultPath, stdout: "pipe" });
+    expect(await new Response(proc.stdout).text()).not.toContain(".mercury");
   });
 });

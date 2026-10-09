@@ -146,6 +146,45 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  /link:
+    post:
+      summary: A code for linking another account to the caller
+      description: >
+        A one-time code (`xxxx-xxxx-xxxx`, valid for ten minutes) the person
+        sends from another account, on any channel, twice: the first time
+        Mercury says whom the account would be linked to, the second time it
+        links it. From then on both accounts are one person. Only the caller
+        sees the code; the model never does.
+      responses:
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/NotAdmitted"
+        "503":
+          $ref: "#/components/responses/NotAdmitted"
+        "400":
+          description: No code for this caller, with the reason.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "200":
+          description: The code and when it expires.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, code, expiresAt]
+                properties:
+                  ok:
+                    type: boolean
+                    enum: [true]
+                  code:
+                    type: string
+                    pattern: "^[A-Za-z0-9]{4}-[A-Za-z0-9]{4}-[A-Za-z0-9]{4}$"
+                  expiresAt:
+                    type: string
+                    format: date-time
   /conversation:
     get:
       summary: A conversation's durable transcript

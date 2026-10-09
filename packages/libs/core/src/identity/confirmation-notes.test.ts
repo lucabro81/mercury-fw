@@ -115,4 +115,37 @@ describe("a confirmation's note, staged in a turn then confirmed from the channe
     const asAlice = bindConfirm(confirmDeps, async () => ({ ok: true, operator: false, person: { key: "people:alice", roles: [] } }));
     expect((await asAlice.resolveConfirmation(token, "s", chat)).status).toBe("ok");
   });
+
+  // Regression (#190): confirm refused anyone the core doesn't admit before
+  // checking the text was a token at all, so on Google Chat every message
+  // from an unknown sender came back as the refusal, and a link code never
+  // reached the core. Text that isn't a token isn't confirm's business.
+  it("leaves text that isn't a token to the turn, whoever sends it", async () => {
+    const store = createConfirmationStore();
+    const confirmDeps = { store, vaultPath: "/nowhere", writeConfirmationNoteFn: writeConfirmationNote };
+    let asked = 0;
+    const refused = bindConfirm(confirmDeps, async () => (asked++, { ok: false, reason: "unknown", message: "Ask for access." }));
+    const chat = { id: "users/1", provider: "google-chat" as const };
+    expect(await refused.confirm("a1b2-c3d4-e5f6", "s", chat)).toBeNull();
+    expect(await refused.confirm("hello", "s", chat)).toBeNull();
+    expect((await refused.resolveConfirmation("hello", "s", chat)).status).toBe("not-a-token");
+    expect(asked).toBe(0);
+  });
+
+  // #190: a link code arrives the way a token does, before the model, raw,
+  // from someone the core may not admit yet; confirm hands it to linking.
+  it("hands a link code to linking, with who sent it, whoever they are", async () => {
+    const store = createConfirmationStore();
+    const confirmDeps = { store, vaultPath: "/nowhere", writeConfirmationNoteFn: writeConfirmationNote };
+    const redeemed: Array<[string, string]> = [];
+    const bound = bindConfirm(
+      confirmDeps,
+      async () => ({ ok: false, reason: "unknown", message: "Ask for access." }),
+      async (principal, text) => (redeemed.push([`${principal.provider}:${principal.id}`, text]), "Linked."),
+    );
+    const chat = { id: "users/1", provider: "google-chat" as const };
+    expect(await bound.confirm("a1b2-c3d4-e5f6", "s", chat)).toBe("Linked.");
+    expect(redeemed).toEqual([["google-chat:users/1", "a1b2-c3d4-e5f6"]]);
+    expect(await bound.confirm("hello", "s", chat)).toBeNull();
+  });
 });

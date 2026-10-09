@@ -44,6 +44,7 @@ const SERVICE = "mercury";
  * bin whose file isn't there yet. The core moves in lockstep with this CLI. */
 export const VAULT_CLI = "node_modules/@mercury-fw/core/src/wiki/vault-cli.ts";
 export const MEMORY_CLI = "node_modules/@mercury-fw/core/src/memory/memory-cli.ts";
+export const IDENTITY_CLI = "node_modules/@mercury-fw/core/src/identity/links-cli.ts";
 
 /** What `mfw reset` can wipe: the compose service using the volume, the
  * volume's key in the compose file, and how to say what's lost. */
@@ -100,6 +101,8 @@ export function appCommands(app: App, deps: AppDeps) {
     vault: (args: string[]) => oneOff(["bun", VAULT_CLI, ...args]),
     /** `args` is the memory CLI's own command line (`list`, `read <collection>`, …). */
     memory: (args: string[]) => oneOff(["bun", MEMORY_CLI, ...args]),
+    /** `args` is the account links CLI's own command line (`links`, `link <identity> <owner>`, `unlink <identity>`). */
+    identity: (args: string[]) => oneOff(["bun", IDENTITY_CLI, ...args]),
     /** Deletes `target`'s volume once the user types the app's name, then
      * brings its service back up on an empty volume. The volume's real name
      * comes from the compose file, and a wrong answer deletes nothing. */

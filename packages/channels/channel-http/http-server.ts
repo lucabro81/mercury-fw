@@ -34,6 +34,7 @@ import {
   type LoginOutcome,
   type Principal,
   type Admission,
+  type ChannelLinking,
 } from "@mercury-fw/channel-types";
 
 /**
@@ -305,6 +306,33 @@ export async function handleConfirmRequest(req: Request, deps: ConfirmRequestDep
   }
 }
 
+export type LinkRequestDeps = {
+  authenticate: Authenticate;
+  admit?: AdmitFn;
+  /** Hands the caller a link code, injected by the core (`ctx.linking.start`). */
+  start: ChannelLinking["start"];
+  corsOrigin?: string;
+};
+
+/**
+ * `POST /link` — a one-time code for linking another account to the caller
+ * (the custom UI shows it). The person then sends it from the other account,
+ * on any channel. Nobody but the caller ever sees it, the model included, and
+ * it isn't cached. `400` with the core's reason when there's no code for them.
+ */
+export async function handleLinkRequest(req: Request, deps: LinkRequestDeps): Promise<Response> {
+  const origin = deps.corsOrigin ?? "*";
+  const principal = await caller(req, deps, origin);
+  if (principal instanceof Response) return principal;
+  const started = await deps.start(principal);
+  return Response.json(started, { status: started.ok ? 200 : 400, headers: { ...corsHeaders(origin), "cache-control": "no-store" } });
+}
+
+/** `POST /link` and its preflight, mounted when the core offers linking. */
+function linkRoutes(deps: LinkRequestDeps): Record<string, { POST: (req: Request) => Promise<Response>; OPTIONS: () => Response }> {
+  return { "/link": { POST: (req) => handleLinkRequest(req, deps), OPTIONS: () => preflight(deps.corsOrigin ?? "*") } };
+}
+
 /** Finishes a person's login, injected by the core (`ChannelLogins.complete`). */
 export type CompleteLoginFn = (state: string, code: string) => Promise<LoginOutcome>;
 
@@ -439,6 +467,8 @@ export type HttpServerDeps = TurnRequestDeps & {
   resolveConfirmation: ResolveConfirmationFn;
   /** Finishes people's logins; `/login/callback` is mounted only with it. */
   completeLogin?: CompleteLoginFn;
+  /** Linking another account to the caller; `/link` is mounted only with it. */
+  linking?: ChannelLinking;
 };
 
 /** Starts the HTTP surface: `POST /turn` (4a) plus the read-only routes (4b)
@@ -471,6 +501,7 @@ export function startHttpServer(deps: HttpServerDeps): ReturnType<typeof Bun.ser
       "/openapi.yaml": { GET: () => openApiResponse(origin), OPTIONS: () => preflight(origin) },
       ...(deps.reads ? readRoutes(deps.reads, deps.authenticate, origin, deps.admit) : {}),
       ...(deps.completeLogin ? loginRoutes(deps.completeLogin) : {}),
+      ...(deps.linking ? linkRoutes({ ...deps, start: deps.linking.start, corsOrigin: origin }) : {}),
     },
     error: (err) =>
       Response.json(

@@ -78,7 +78,7 @@ version and each chosen plugin at its latest on the registry, then runs
 `bun install` and commits the app to a new git repository (`finish.ts`;
 `--no-install`, `--no-git`, `--git-remote`, nothing pushed). Every other command operates an app from
 inside its folder (`app/`: `start`/`stop`/`restart`, `logs`, `repl`, `shell`,
-`vault`, `memory`, `reset`, `credentials setup|check|reset`, `google-chat set-key`, `local-packages`, `e2e`), as `docker compose` calls (or env-file writes, or a REPL session driven through `/dump` for `e2e`); `mfw` is installed
+`vault`, `memory`, `identity`, `reset`, `credentials setup|check|reset`, `google-chat set-key`, `local-packages`, `e2e`), as `docker compose` calls (or env-file writes, or a REPL session driven through `/dump` for `e2e`); `mfw` is installed
 globally (`bun add -g @mercury-fw/cli`, `mfw upgrade`); an app also gets the CLI as a
 devDependency at the framework's version, and inside an app a global `mfw` at another
 version hands the command over to it (`MFW_DEFERRED`), so the app's commands match its framework. No "plumbing" commands mirroring
@@ -155,7 +155,7 @@ packages/libs/core/
     │   ├── directory-loader.ts # builds the declared user directory; closed when it fails (nobody but the terminal is let in)
     │   ├── terminal.ts         # the REPL loop (stdin/stdout), driven by the app's repl.ts — a dev console, not a channel
     │   └── tool-log.ts         # terminal-only debug visibility helpers
-    ├── identity/              # who sees what, decided in one place: who a principal is (people.ts: the directory, cached, closed for unknown people by default, failing closed), the user key (`<provider>:<id>`), a person's vault area (`users/<key>/`, `personal/` to the model) and its access checks, the per-person channel reads, people's pending logins to the services plugins act on as them, the startup migration of pre-key data
+    ├── identity/              # who sees what, decided in one place: who a principal is (people.ts: account links first, then the directory, cached, closed for unknown people by default, failing closed), the account links Mercury owns (links.ts, a file on the vault's volume out of its git; linking.ts, the one-time code; links-cli.ts, behind `mfw identity`), the user key (`<provider>:<id>`), a person's vault area (`users/<key>/`, `personal/` to the model) and its access checks, the per-person channel reads, people's pending logins to the services plugins act on as them, the startup migration of pre-key data
     ├── credentials/           # at startup, links each plugin-declared CLI login kept outside ~/.config to the credentials volume, and reports one not set up yet
     ├── memory/                # Layer 3 — episodic store (Qdrant)
     ├── wiki/                  # Layer 2 — vault init/read/write (common `curated/` + per-person `users/<key>/`) + vault-cli.ts (maintenance CLI, see Operational notes)

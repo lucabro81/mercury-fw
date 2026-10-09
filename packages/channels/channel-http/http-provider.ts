@@ -11,7 +11,7 @@
  * injected (`confirm`/`resolveConfirmation`), so this package never imports the app.
  */
 import { startHttpServer, type AdmitFn, type CompleteLoginFn, type ConfirmFn, type ResolveConfirmationFn } from "./http-server.ts";
-import type { Authenticate, Provider, HandleTurn, ChannelHostReads } from "@mercury-fw/channel-types";
+import type { Authenticate, Provider, HandleTurn, ChannelHostReads, ChannelLinking } from "@mercury-fw/channel-types";
 
 export type HttpProviderDeps = {
   port: number;
@@ -29,6 +29,8 @@ export type HttpProviderDeps = {
   /** People's logins, when the surface has a public URL to be sent back to:
    * the callback is offered (`accept`) once the server listens. */
   logins?: { callbackUrl: string; accept: (callbackUrl: string) => void; complete: CompleteLoginFn };
+  /** Linking another account to the caller (`POST /link`). */
+  linking?: ChannelLinking;
 };
 
 export function createHttpProvider(deps: HttpProviderDeps): Provider & { stop(): Promise<void> } {
@@ -45,6 +47,7 @@ export function createHttpProvider(deps: HttpProviderDeps): Provider & { stop():
         ...(deps.admit === undefined ? {} : { admit: deps.admit }),
         corsOrigin: deps.corsOrigin,
         completeLogin: deps.logins?.complete,
+        ...(deps.linking === undefined ? {} : { linking: deps.linking }),
       });
       deps.logins?.accept(deps.logins.callbackUrl);
     },
