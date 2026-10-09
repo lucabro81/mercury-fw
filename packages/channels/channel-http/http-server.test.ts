@@ -1,5 +1,5 @@
 import { describe, it, expect } from "bun:test";
-import { handleTurnRequest, handleConfirmRequest, handleLoginCallback, openApiResponse, readRoutes, startHttpServer } from "./http-server.ts";
+import { handleTurnRequest, handleConfirmRequest, handleLinkRequest, handleLoginCallback, openApiResponse, readRoutes, startHttpServer } from "./http-server.ts";
 import type { Admission, Authenticate, HandleTurn, InboundTurn, TurnSink, ChannelHostReads, Principal } from "@mercury-fw/channel-types";
 import type { StepInfo } from "@mercury-fw/plugin-types";
 
@@ -752,6 +752,39 @@ describe("admission", () => {
       admit: async () => ({ ok: true }),
     });
     expect(res.status).toBe(200);
+  });
+});
+
+// #190: the custom UI shows the person a code to link another account with,
+// no model in between.
+describe("POST /link", () => {
+  const linkReq = () => new Request("http://x/link", { method: "POST" });
+
+  it("hands the caller a code, as the core gives it", async () => {
+    const asked: Principal[] = [];
+    const res = await handleLinkRequest(linkReq(), {
+      authenticate: asAlice,
+      start: async (p) => (asked.push(p), { ok: true, code: "a1b2-c3d4-e5f6", expiresAt: "2026-10-09T10:10:00.000Z" }),
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("access-control-allow-origin")).toBe("*");
+    expect(res.headers.get("cache-control")).toBe("no-store");
+    expect(await res.json()).toEqual({ ok: true, code: "a1b2-c3d4-e5f6", expiresAt: "2026-10-09T10:10:00.000Z" });
+    expect(asked).toEqual([ALICE]);
+  });
+
+  it("answers 400 with the core's reason when there's no code for the caller", async () => {
+    const res = await handleLinkRequest(linkReq(), { authenticate: asAlice, start: async () => ({ ok: false, error: "no" }) });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ ok: false, error: "no" });
+  });
+
+  it("refuses an unauthenticated or unadmitted caller without asking for a code", async () => {
+    let asked = 0;
+    const start = async () => (asked++, { ok: true as const, code: "x", expiresAt: "y" });
+    expect((await handleLinkRequest(linkReq(), { authenticate: refuse, start })).status).toBe(401);
+    expect((await handleLinkRequest(linkReq(), { authenticate: asAlice, admit: notAdmitted("unknown"), start })).status).toBe(403);
+    expect(asked).toBe(0);
   });
 });
 

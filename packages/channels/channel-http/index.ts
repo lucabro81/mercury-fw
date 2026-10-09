@@ -43,6 +43,7 @@ export const httpChannel: ChannelPlugin = {
       reads: ctx.reads,
       authenticate: ctx.authenticate,
       admit: ctx.admit,
+      ...(ctx.linking === undefined ? {} : { linking: ctx.linking }),
       ...(logins ? { logins: { callbackUrl: `${publicUrl}/login/callback`, accept: logins.accept, complete: logins.complete } } : {}),
     });
   },

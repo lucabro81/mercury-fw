@@ -78,6 +78,10 @@ Where a person comes back after logging in to a service a plugin acts on as them
 
 Whoever opens the link and accepts decides which account gets linked: a link belongs to the person it was shown to, and someone else accepting it would link their own account to that person's Mercury identity. A UI should say so next to the link. Checking the linked account against the person is [#179](https://github.com/lucabro81/mercury-fw/issues/179).
 
+## `POST /link`
+
+A code for linking another of the caller's accounts to them, for the UI to show: `{ ok: true, code, expiresAt }`, or `400` with the reason when there's none. The person sends the code from the other account, on any channel, twice: the first time Mercury says whom the account would be linked to, the second time it links it, and from then on both accounts are one person (one private area, the same roles). The code lasts ten minutes, works once, and only the caller sees it; the model never does.
+
 ## `POST /confirm`
 
 Explicit alternative to re-sending a token as `/turn` `text`. Body `{ token, conversationId }`; returns `{ ok: true, resolved: true, text }` when the token was a pending confirmation, `{ ok: true, resolved: false }` otherwise. `400` if `token` or `conversationId` is missing, or the id has other characters than `/turn` accepts. Never invokes the model.
