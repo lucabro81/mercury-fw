@@ -29,6 +29,7 @@ function answersFromFlags(args: CreateArgs, defaultName: string): Answers {
     channels: args.channels ?? [],
     plugins: args.plugins ?? [],
     ...(args.auth !== undefined ? { auth: args.auth } : {}),
+    ...(args.directory !== undefined ? { directory: args.directory } : {}),
     ...(args.gitRemote !== undefined ? { gitRemote: args.gitRemote } : {}),
   };
 }
@@ -127,7 +128,7 @@ async function create(args: CreateArgs, rawArgs: string[], relaunch: Relaunch, g
   const pairedByFlags = args.yes || (args.channels !== undefined && args.auth !== undefined);
   const early =
     targetError(dir) ??
-    selectionError(args.channels ?? [], args.plugins ?? [], args.auth) ??
+    selectionError(args.channels ?? [], args.plugins ?? [], args.auth, args.directory) ??
     (pairedByFlags ? pairingError(args.channels ?? [], args.auth) : undefined) ??
     remoteError(args);
   if (early !== undefined) {
@@ -138,9 +139,17 @@ async function create(args: CreateArgs, rawArgs: string[], relaunch: Relaunch, g
   if (answers === undefined) {
     return 1;
   }
-  const chosen = CATALOG.filter((e) =>
-    e.kind === "auth" ? e.id === answers.auth : (e.kind === "channel" ? answers.channels : answers.plugins).includes(e.id),
-  ).map((e) => e.package);
+  const chosen = [
+    ...new Set(
+      CATALOG.filter((e) =>
+        e.kind === "auth"
+          ? e.id === answers.auth
+          : e.kind === "directory"
+            ? e.id === answers.directory
+            : (e.kind === "channel" ? answers.channels : answers.plugins).includes(e.id),
+      ).map((e) => e.package),
+    ),
+  ];
   const versions = await appVersions(chosen, {
     registry: registryFrom(process.env.MFW_REGISTRY),
     ...(packs !== undefined ? { local: Object.fromEntries(packs.map((p) => [p.name, p.version])) } : {}),
@@ -162,7 +171,7 @@ async function create(args: CreateArgs, rawArgs: string[], relaunch: Relaunch, g
       ...(answers.gitRemote !== undefined ? { remote: answers.gitRemote } : {}),
       commitMessage: [
         `Scaffold with mfw create ${cliVersion()}`,
-        `Channels: ${none(answers.channels)}\nPlugins: ${none(answers.plugins)}${answers.auth !== undefined ? `\nAuth: ${answers.auth}` : ""}`,
+        `Channels: ${none(answers.channels)}\nPlugins: ${none(answers.plugins)}${answers.auth !== undefined ? `\nAuth: ${answers.auth}` : ""}${answers.directory !== undefined ? `\nDirectory: ${answers.directory}` : ""}`,
       ],
     },
     run,

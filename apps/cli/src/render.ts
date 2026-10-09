@@ -28,6 +28,8 @@ export type RenderInput = {
   plugins: string[];
   /** The HTTP channel's auth provider: required with it, refused without it. */
   auth?: string;
+  /** The user directory: who the people are and their roles. */
+  directory?: string;
   versions: Record<string, string>;
 };
 
@@ -66,18 +68,19 @@ export function renderApp(input: RenderInput): Map<string, string> {
   const channels = selected("channel", input.channels);
   const tools = selected("tool", input.plugins);
   const auth = selected("auth", input.auth === undefined ? [] : [input.auth])[0];
+  const directory = selected("directory", input.directory === undefined ? [] : [input.directory])[0];
   const assistantName = input.assistantName.trim();
 
   return new Map([
     [".dockerignore", dockerignore],
-    [".env.example", renderEnv(channels, auth, tools)],
+    [".env.example", renderEnv(channels, auth, tools, directory)],
     [".gitignore", gitignore],
     ["Dockerfile", dockerfile],
-    ["README.md", renderReadme(input.name, channels, auth, tools)],
+    ["README.md", renderReadme(input.name, channels, auth, tools, directory)],
     ["docker-compose.yml", renderCompose(input.name, channels.some((c) => c.id === "http"))],
     ["markdown.d.ts", markdownDts],
-    ["mercury.config.ts", renderConfig(channels, auth, tools)],
-    ["package.json", renderPackageJson(input.name, channels, auth, tools, input.versions)],
+    ["mercury.config.ts", renderConfig(channels, auth, tools, directory)],
+    ["package.json", renderPackageJson(input.name, channels, auth, tools, input.versions, directory)],
     ["persona/identity.md", `You are ${assistantName}, ${input.role.trim().replace(/\.+$/, "")}.\n`],
     // A replacer function, not a string: in a replacement string "$&" and the
     // like are patterns, and the name must land verbatim.
@@ -112,7 +115,8 @@ function validate(input: RenderInput): void {
   if (/[\r\n]/.test(input.assistantName) || /[\r\n]/.test(input.role)) {
     throw new Error("The assistant name and role must each be one line");
   }
-  const selection = selectionError(input.channels, input.plugins, input.auth) ?? pairingError(input.channels, input.auth);
+  const selection =
+    selectionError(input.channels, input.plugins, input.auth, input.directory) ?? pairingError(input.channels, input.auth);
   if (selection !== undefined) {
     throw new Error(selection);
   }
@@ -121,14 +125,15 @@ function validate(input: RenderInput): void {
 /** The ids of the catalog entries of `kind`. */
 const idsOf = (kind: CatalogEntry["kind"]): string[] => CATALOG.filter((e) => e.kind === kind).map((e) => e.id);
 
-/** Names the first channel, plugin or auth provider id the catalog doesn't
- * have, with the valid ones, or undefined when all are known. Shared with the
- * command, which checks the flags before asking anything. */
-export function selectionError(channels: string[], plugins: string[], auth?: string): string | undefined {
+/** Names the first channel, plugin, auth provider or directory id the catalog
+ * doesn't have, with the valid ones, or undefined when all are known. Shared
+ * with the command, which checks the flags before asking anything. */
+export function selectionError(channels: string[], plugins: string[], auth?: string, directory?: string): string | undefined {
   for (const [kind, ids, label] of [
     ["channel", channels, "channel"],
     ["tool", plugins, "plugin"],
     ["auth", auth === undefined ? [] : [auth], "auth provider"],
+    ["directory", directory === undefined ? [] : [directory], "directory"],
   ] as const) {
     const valid = idsOf(kind);
     const unknown = ids.find((id) => !valid.includes(id));
@@ -158,7 +163,12 @@ function selected(kind: CatalogEntry["kind"], ids: string[]): CatalogEntry[] {
 /** `mercury.config.ts`: imports, the formatter helpers of the plugins that have
  * any, then the config with each plugin (wrapped in the formatter when it has
  * starting rules) and channel. */
-function renderConfig(channels: CatalogEntry[], auth: CatalogEntry | undefined, tools: CatalogEntry[]): string {
+function renderConfig(
+  channels: CatalogEntry[],
+  auth: CatalogEntry | undefined,
+  tools: CatalogEntry[],
+  directory: CatalogEntry | undefined,
+): string {
   const withRules = tools.filter((t) => t.formatter);
   const imports = ['import { defineMercuryConfig } from "@mercury-fw/core";'];
   if (withRules.length > 0) {
@@ -168,7 +178,7 @@ function renderConfig(channels: CatalogEntry[], auth: CatalogEntry | undefined, 
     const names = t.formatter ? `${t.exportName}, type ${t.formatter.displaysType}` : t.exportName;
     imports.push(`import { ${names} } from "${t.package}";`);
   }
-  for (const c of [...channels, ...(auth ? [auth] : [])]) {
+  for (const c of [...channels, ...(auth ? [auth] : []), ...(directory ? [directory] : [])]) {
     imports.push(`import { ${c.exportName} } from "${c.package}";`);
   }
   imports.push('import identity from "./persona/identity.md" with { type: "text" };');
@@ -191,6 +201,7 @@ function renderConfig(channels: CatalogEntry[], auth: CatalogEntry | undefined, 
     plugins,
     channelList,
     ...(auth ? [`  auth: ${auth.exportName},`] : []),
+    ...(directory ? [`  directory: ${directory.exportName},`] : []),
     "});",
     "",
   ].join("\n");
@@ -213,15 +224,17 @@ function renderPluginEntry(t: CatalogEntry): string {
 
 /** `package.json`: the core, the formatter when a plugin is wrapped in it, the
  * chosen packages, and every tool plugin trusted to run its postinstall (it
- * downloads the plugin's CLI). */
+ * downloads the plugin's CLI), plus what a chosen entry says it needs trusted. */
 function renderPackageJson(
   name: string,
   channels: CatalogEntry[],
   auth: CatalogEntry | undefined,
   tools: CatalogEntry[],
   versions: Record<string, string>,
+  directory: CatalogEntry | undefined,
 ): string {
-  const packages = ["@mercury-fw/core", ...[...channels, ...(auth ? [auth] : []), ...tools].map((e) => e.package)];
+  const chosen = [...channels, ...(auth ? [auth] : []), ...tools, ...(directory ? [directory] : [])];
+  const packages = [...new Set(["@mercury-fw/core", ...chosen.map((e) => e.package)])];
   if (tools.some((t) => t.formatter)) {
     packages.push("@mercury-fw/formatter");
   }
@@ -248,7 +261,7 @@ function renderPackageJson(
     // hands the app's commands over to it.
     devDependencies: { "@mercury-fw/cli": `^${cli}`, "@types/bun": "^1.4.2", typescript: "^6.0.3" },
   };
-  const trusted = [...new Set([...tools.map((t) => t.package), ...[...channels, ...tools].flatMap((e) => e.trusts ?? [])])];
+  const trusted = [...new Set([...tools.map((t) => t.package), ...chosen.flatMap((e) => e.trusts ?? [])])];
   if (trusted.length > 0) {
     manifest.trustedDependencies = trusted.sort();
   }
@@ -257,12 +270,18 @@ function renderPackageJson(
 
 /** The env example: the core's variables, then a section per chosen entry
  * that reads any variable. */
-function renderEnv(channels: CatalogEntry[], auth: CatalogEntry | undefined, tools: CatalogEntry[]): string {
+function renderEnv(
+  channels: CatalogEntry[],
+  auth: CatalogEntry | undefined,
+  tools: CatalogEntry[],
+  directory: CatalogEntry | undefined,
+): string {
   const block = (vars: EnvVar[]) => vars.map((v) => `# ${v.comment}\n${v.name}=${v.value ?? ""}`).join("\n");
   const sections = [block(CORE_ENV)];
-  for (const entry of [...channels, ...(auth ? [auth] : []), ...tools]) {
+  for (const entry of [...channels, ...(auth ? [auth] : []), ...tools, ...(directory ? [directory] : [])]) {
     if (entry.env.length > 0) {
-      sections.push(`# --- ${entry.id}\n${block(entry.env)}`);
+      // A directory can share its id with a tool plugin of the same package.
+      sections.push(`# --- ${entry.id}${entry.kind === "directory" ? " directory" : ""}\n${block(entry.env)}`);
     }
   }
   return `${sections.join("\n\n")}\n`;
@@ -317,7 +336,13 @@ function renderCompose(name: string, hasHttp: boolean): string {
 }
 
 /** The app's README: what it was scaffolded with and how to run it. */
-function renderReadme(name: string, channels: CatalogEntry[], auth: CatalogEntry | undefined, tools: CatalogEntry[]): string {
+function renderReadme(
+  name: string,
+  channels: CatalogEntry[],
+  auth: CatalogEntry | undefined,
+  tools: CatalogEntry[],
+  directory: CatalogEntry | undefined,
+): string {
   const list = (entries: CatalogEntry[]) => (entries.length > 0 ? entries.map((e) => e.id).join(", ") : "none");
   return `# ${name}
 
@@ -325,7 +350,7 @@ A Mercury app, scaffolded by \`mfw create\`.
 
 - Channels: ${list(channels)}
 ${auth ? `- Auth: ${auth.id}\n` : ""}- Tool plugins: ${list(tools)}
-
+${directory ? `- Directory: ${directory.id}\n` : ""}
 ## Layout
 
 - \`mercury.config.ts\`: what the app is made of (tool plugins, channels, how their lists read) and the assistant's persona.

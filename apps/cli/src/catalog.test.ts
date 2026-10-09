@@ -18,6 +18,8 @@ describe("CATALOG", () => {
       "tool:bitbucket",
       "tool:atlassian-admin",
       "tool:zitadel",
+      "directory:static",
+      "directory:zitadel",
     ]);
   });
 
@@ -27,8 +29,9 @@ describe("CATALOG", () => {
       const exported = mod[entry.exportName];
       expect(exported, `${entry.package} has no export ${entry.exportName}`).toBeDefined();
       // The id is what the CLI calls a plugin, so it must be the name the
-      // plugin loads under (the logs and `dependsOn` use it).
-      expect(exported?.name).toBe(entry.id);
+      // plugin loads under (the logs and `dependsOn` use it). A directory's
+      // name prefixes its people's keys instead, so its id is the choice's.
+      if (entry.kind !== "directory") expect(exported?.name).toBe(entry.id);
     }
   });
 
@@ -46,6 +49,7 @@ describe("findEntry", () => {
     expect(findEntry("tool", "jira")?.package).toBe("@mercury-fw/plugin-jira");
     expect(findEntry("channel", "http")?.exportName).toBe("httpChannel");
     expect(findEntry("auth", "static")?.package).toBe("@mercury-fw/auth-static");
+    expect(findEntry("directory", "zitadel")?.exportName).toBe("zitadelDirectory");
   });
 
   test("returns undefined for an unknown id or the wrong kind", () => {
