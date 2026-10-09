@@ -16,6 +16,7 @@
   - [`mfw vault <command>`](#mfw-vault-command)
   - [`mfw memory list`](#mfw-memory-list)
   - [`mfw memory read <collection> [--limit N]`](#mfw-memory-read-collection---limit-n)
+  - [`mfw identity links`, `link`, `unlink`](#mfw-identity-links-link-unlink)
   - [`mfw reset <memory|wiki>`](#mfw-reset-memorywiki)
   - [`mfw credentials setup <plugin>`](#mfw-credentials-setup-plugin)
   - [`mfw credentials check <plugin>`](#mfw-credentials-check-plugin)
@@ -172,6 +173,16 @@ Prints a collection's points, each as its id followed by one line per payload fi
 ```bash
 mfw memory read episodic_memory
 mfw memory read semantic_facts --limit 5
+```
+
+### `mfw identity links`, `link`, `unlink`
+
+The links that make several accounts one person: one private area, one memory, the same roles. People link their own accounts with a code (the HTTP surface's `POST /link` gives one, they send it from the other account, twice); these are for the operator, in a one-off container, where nobody can be shown a code. Identities are written `<provider>:<id>`, as the channel or the auth provider vouches for them (`google-chat:users/123`, `oidc:3123`, `static:alice`). The running service applies a change within five minutes. Undoing a link gives the account back its own area, untouched.
+
+```bash
+mfw identity links
+mfw identity link google-chat:users/123 oidc:3123
+mfw identity unlink google-chat:users/123
 ```
 
 ### `mfw reset <memory|wiki>`
