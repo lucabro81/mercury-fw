@@ -5,7 +5,9 @@
  * (`detectPendingConfirmation`, `PENDING_CONFIRMATION_NOTE`, `NO_REPLY`), the
  * login a tool asks a person for (`detectLoginRequired`), and
  * the channel-plugin system (`ChannelPlugin`/`ChannelRuntimeContext`/
- * `CHANNEL_API_VERSION`). The stateful half of confirmation (`ConfirmationStore`,
+ * `CHANNEL_API_VERSION`), and the providers a config declares beside the
+ * channels: who is calling (`AuthPlugin`) and who that is to Mercury
+ * (`DirectoryPlugin`). The stateful half of confirmation (`ConfirmationStore`,
  * `tryConfirm`) stays in the core and reaches a channel via `ctx.confirm`.
  */
 import type { StepInfo } from "@mercury-fw/plugin-types";
@@ -60,14 +62,13 @@ export const NO_REPLY = "NO_REPLY";
 /** Who vouched for a principal's identity: the chat platform itself, an auth provider (`oidc`, `static`), or `none` = nobody did (the terminal): nothing identity-dependent treats it as a real person. */
 export type PrincipalProvider = "google-chat" | "oidc" | "static" | "none";
 
-/** The person behind a turn. The channel builds it; the core derives every per-person id from it. */
+/** Who is talking, as the channel knows them. The channel builds it; the core
+ * turns it into the person (see `Directory`) every per-person id derives from. */
 export type Principal = {
   /** Stable id for this person within `provider` (Google Chat: `users/<id>`). */
   id: string;
   provider: PrincipalProvider;
   displayName?: string;
-  /** Roles the provider granted, when it has any. */
-  roles?: string[];
   /** Raw claims the provider vouched for, when it has any. */
   claims?: Record<string, unknown>;
 };
@@ -158,8 +159,39 @@ export type AuthPlugin = {
   build: (ctx: { env: Record<string, string | undefined>; log: (msg: string) => void }) => Authenticate;
 };
 
+/** A person as a directory knows them: `id` is stable within the directory
+ * (the core keys the person on `<directory name>:<id>`), `roles` decide what
+ * they may make Mercury do. */
+export type DirectoryPerson = { id: string; displayName?: string; email?: string; roles: string[] };
+
+/** Turns whoever a channel says is talking into the person they are, or
+ * `null` when the directory doesn't know them. Throws when it can't tell
+ * (unreachable, misconfigured): the core then refuses, it never guesses. */
+export type Directory = { resolve: (principal: Principal) => Promise<DirectoryPerson | null> };
+
+/** Directory-plugin contract version: the core refuses a directory with a different `apiVersion`, and then identifies nobody. */
+export const DIRECTORY_API_VERSION = 1;
+
+/**
+ * A user directory, declared as `directory` in `mercury.config.ts`: the source
+ * of truth about who people are and their roles. `build` reads its own config
+ * from `env` and throws when it's missing, so a misconfigured directory leaves
+ * the instance closed to everyone but the terminal, never open. `name` prefixes
+ * the people's keys, so it can't be a principal provider's.
+ */
+export type DirectoryPlugin = {
+  apiVersion: number;
+  name: string;
+  build: (ctx: { env: Record<string, string | undefined>; log: (msg: string) => void }) => Directory;
+};
+
+/** Whether the core talks to `principal`: `unknown` when the directory doesn't
+ * know them and the instance is closed, `unavailable` when it couldn't tell.
+ * `message` is what to tell them. */
+export type Admission = { ok: true } | { ok: false; reason: "unknown" | "unavailable"; message: string };
+
 /** Channel-plugin contract version: the loader refuses a channel with a different `apiVersion` fail-soft, like the tool-plugin loader with `PLUGIN_API_VERSION`. Bumped only on a breaking change to this file's shapes. */
-export const CHANNEL_API_VERSION = 4;
+export const CHANNEL_API_VERSION = 5;
 
 /**
  * Structured outcome of resolving a confirmation token, distinguishing cases the
@@ -183,13 +215,14 @@ export type ConfirmOutcome =
  * Returns are `unknown`/primitive by design, to keep this contract free of any
  * domain types. Tokens are never exposed.
  *
- * Every getter but `manifest` and `health` takes the caller's `Principal` and
- * returns only what belongs to that person (the common wiki area included);
- * the channel authenticates, the core decides what the person can see.
+ * Every getter but `health` takes the caller's `Principal` and returns only
+ * what belongs to that person (the common wiki area included) and what they're
+ * offered (the manifest); the channel authenticates, the core decides what the
+ * person can see. For someone the core doesn't admit, a getter answers `null`.
  */
 export type ChannelHostReads = {
-  manifest: () => unknown;
-  pendingConfirmations: (principal: Principal) => unknown;
+  manifest: (principal: Principal) => Promise<unknown>;
+  pendingConfirmations: (principal: Principal) => Promise<unknown>;
   /** A conversation's durable verbatim transcript, chronological, paginated; empty unless `sessionKey` is one of the person's own. */
   conversation: (principal: Principal, sessionKey: string, limit: number, offset?: string) => Promise<unknown>;
   /** The person's conversations, most-recently-active first. */
@@ -200,7 +233,7 @@ export type ChannelHostReads = {
   wikiGrep: (principal: Principal, pattern: string) => Promise<unknown>;
   /** A page of the person's points in `collection`, or `null` when it isn't a collection kept per person. */
   memoryScroll: (principal: Principal, collection: string, limit: number, offset?: string) => Promise<unknown>;
-  toolLog: (principal: Principal) => unknown;
+  toolLog: (principal: Principal) => Promise<unknown>;
   health: () => Promise<unknown>;
 };
 
@@ -228,7 +261,7 @@ export type ChannelLogins = {
  * in its own `build()`. This is the dependency-inversion seam: the core injects
  * these, the channel imports none of them.
  *
- * `env`, `log` and `confirm` are the floor every channel relies on.
+ * `env`, `log`, `confirm` and `admit` are the floor every channel relies on.
  * `resolveConfirmation`, `reads`, `authenticate` and `logins` are optional in-process capabilities that
  * can't come from `env`: the core populates them, only a channel that needs them
  * (HTTP) reads them, the others ignore them.
@@ -247,6 +280,14 @@ export type ChannelRuntimeContext = {
    * token-shaped (see `resolveConfirmation`).
    */
   confirm: (token: string, sessionKey: string, principal: Principal) => Promise<string | null>;
+  /**
+   * Whether the core talks to `principal` at all (see `Admission`). A channel
+   * that authenticates its own callers checks it before anything else and
+   * answers with `message` when it's refused; the core checks again on every
+   * turn, confirmation and read, so a channel that doesn't still can't let
+   * anyone in.
+   */
+  admit: (principal: Principal) => Promise<Admission>;
   /** The structured sibling of `confirm` (see `ConfirmOutcome`), for a channel that branches on whether the token was accepted. */
   resolveConfirmation?: (token: string, sessionKey: string, principal: Principal) => Promise<ConfirmOutcome>;
   /** In-process introspection getters for a channel that exposes an API/UI. */
