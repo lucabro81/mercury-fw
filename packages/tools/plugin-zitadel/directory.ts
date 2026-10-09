@@ -52,7 +52,7 @@ export function createZitadelDirectory(deps: { runCliFn?: typeof runCli } = {}):
             "user.state,user.username,user.human.profile.displayName,user.human.email.email,user.human.email.isVerified",
           ]);
           if (!got.ok) {
-            if (/\(404\)/.test(got.error)) return null;
+            if (/no such resource \(404\)/.test(got.error)) return null;
             throw new Error(`zitadel user get failed: ${got.error}`);
           }
           const user = (typeof got.data === "object" && got.data !== null ? (got.data as UserGet).user : undefined);
@@ -71,7 +71,9 @@ export function createZitadelDirectory(deps: { runCliFn?: typeof runCli } = {}):
             "authorizations.roles.key,authorizations.state",
           ]);
           if (!granted.ok) throw new Error(`zitadel user authorizations failed: ${granted.error}`);
-          const authorizations = (granted.data as Authorizations | undefined)?.authorizations ?? [];
+          if (typeof granted.data !== "object" || granted.data === null) throw new Error("zitadel user authorizations printed no JSON");
+          // One project: a person has one role assignment on it, well within the CLI's page of 100.
+          const authorizations = (granted.data as Authorizations).authorizations ?? [];
           const roles = [
             ...new Set(
               authorizations

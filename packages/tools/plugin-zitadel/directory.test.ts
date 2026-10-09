@@ -114,6 +114,17 @@ describe("zitadelDirectory", () => {
       "zitadel user authorizations failed: ZITADEL rejected the access token (401)",
     );
     await expect(directoryWith({ get: { ok: true, data: "not json" } }).directory.resolve(person)).rejects.toThrow("zitadel user get printed no user");
+    // Not "no roles": something it can't read is a failure, not an answer.
+    await expect(directoryWith({ authorizations: { ok: true, data: "not json" } }).directory.resolve(person)).rejects.toThrow(
+      "zitadel user authorizations printed no JSON",
+    );
+  });
+
+  // Only ZITADEL saying the user doesn't exist is "unknown": a 404 from
+  // anything else (a wrong instance URL behind a proxy) is a failure.
+  it("takes only the CLI's own not-found as unknown", async () => {
+    const proxy404: CliResult = { ok: false, error: "the API answered (404): <html>Not Found</html>", exitCode: 1 };
+    await expect(directoryWith({ get: proxy404 }).directory.resolve(person)).rejects.toThrow("zitadel user get failed");
   });
 
   it("throws without the project whose roles count, so the instance stays closed", () => {
