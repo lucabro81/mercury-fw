@@ -8,7 +8,7 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { MEMORY_CLI, VAULT_CLI } from "./commands.ts";
+import { IDENTITY_CLI, MEMORY_CLI, VAULT_CLI } from "./commands.ts";
 
 const cliRoot = join(import.meta.dir, "..", "..");
 
@@ -16,6 +16,7 @@ describe("the core's maintenance CLIs, where mfw runs them", () => {
   test.each([
     ["vault", VAULT_CLI],
     ["memory", MEMORY_CLI],
+    ["identity", IDENTITY_CLI],
   ])("%s: %s exists", (_name, path) => {
     expect(path.startsWith("node_modules/@mercury-fw/core/")).toBe(true);
     expect(existsSync(join(cliRoot, path))).toBe(true);

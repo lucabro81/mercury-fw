@@ -218,6 +218,35 @@ Examples:
       inApp((app) => app.memory(["read", collection, ...(opts.limit === undefined ? [] : ["--limit", opts.limit])]))(),
     );
 
+  const identity = program
+    .command("identity")
+    .summary("the accounts linked to a person")
+    .description(
+      "Lists, makes and undoes the links that make several accounts one person (one private area, the same roles), in a one-off container. People link their own accounts with a code; this is for the operator, where nobody can be shown one.",
+    )
+    .helpCommand(false)
+    .addHelpText("after", INSIDE_AN_APP);
+  identity
+    .command("links")
+    .summary("the linked accounts")
+    .description("Lists every linked account and the account it belongs to.")
+    .action(async () => inApp((app) => app.identity(["links"]))());
+  identity
+    .command("link")
+    .summary("links an account to another")
+    .description(
+      "Makes <identity> the same person as <owner>, both as <provider>:<id> (e.g. google-chat:users/123, oidc:3123). The running service applies it within five minutes.",
+    )
+    .argument("<identity>", "the account to link")
+    .argument("<owner>", "the account it belongs to")
+    .action(async (account: string, owner: string) => inApp((app) => app.identity(["link", account, owner]))());
+  identity
+    .command("unlink")
+    .summary("undoes an account's link")
+    .description("Makes <identity> a person of its own again; what it had before being linked is still there.")
+    .argument("<identity>", "as mfw identity links prints it")
+    .action(async (account: string) => inApp((app) => app.identity(["unlink", account]))());
+
   program
     .command("reset")
     .summary("deletes memory or the wiki, after confirmation")
