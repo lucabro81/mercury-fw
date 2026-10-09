@@ -95,4 +95,24 @@ describe("a confirmation's note, staged in a turn then confirmed from the channe
     expect((await bindConfirm(confirmDeps).resolveConfirmation(token, "s", { id: "alice", provider: "oidc" })).status).toBe("not-found");
     expect((await bindConfirm(confirmDeps).resolveConfirmation(token, "s", alice)).status).toBe("ok");
   });
+
+  // #150: a token belongs to the person, as the directory identifies them,
+  // and someone the core won't talk to confirms nothing.
+  it("resolves a token as the person the caller is identified as, and refuses someone not admitted", async () => {
+    const vaultPath = await mkdtemp(join(tmpdir(), "mercury-confirm-notes-"));
+    tempDirs.push(vaultPath);
+    await initVault(vaultPath);
+    const store = createConfirmationStore();
+    const confirmDeps = { store, vaultPath, writeConfirmationNoteFn: writeConfirmationNote };
+    const stage = createStageConfirmation({ ...confirmDeps, sessionKey: "s", owner: "people:alice" });
+    const token = await stage({ describe: "x", run: async () => ({ ok: true, data: "done" }) });
+    const chat = { id: "users/1", provider: "google-chat" as const };
+
+    const refused = bindConfirm(confirmDeps, async () => ({ ok: false, reason: "unknown", message: "Ask for access." }));
+    expect(await refused.confirm(token, "s", chat)).toBe("Ask for access.");
+    expect((await refused.resolveConfirmation(token, "s", chat)).status).toBe("not-found");
+
+    const asAlice = bindConfirm(confirmDeps, async () => ({ ok: true, operator: false, person: { key: "people:alice", roles: [] } }));
+    expect((await asAlice.resolveConfirmation(token, "s", chat)).status).toBe("ok");
+  });
 });

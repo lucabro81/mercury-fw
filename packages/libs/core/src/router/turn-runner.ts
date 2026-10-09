@@ -24,11 +24,9 @@ export type { PostTurnGuard };
 import type { SessionHistory } from "../session/history.ts";
 import { recordStep } from "../session/tool-log-buffer.ts";
 import type { HandleTurn, InboundTurn, TurnSink } from "./provider.ts";
-import { createPeople, type Identified, type Person } from "../identity/people.ts";
+import { createPeople, type Identified, type TurnWho } from "../identity/people.ts";
+export type { TurnWho };
 import { createSessionLock, type SessionLock } from "./session-lock.ts";
-
-/** Who a turn is for, once identified: the person, and whether they're the operator (the terminal). */
-export type TurnWho = { person: Person; operator: boolean };
 
 export type TurnRunnerDeps = {
   model: LanguageModel;

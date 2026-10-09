@@ -19,6 +19,9 @@ import { userKey } from "./user-key.ts";
 /** A person as the core keeps them: the key every per-person store uses, and their roles. */
 export type Person = { key: string; displayName?: string; email?: string; roles: string[] };
 
+/** Who a turn or a read is for, once identified: the person, and whether they're the operator (the terminal). */
+export type TurnWho = { person: Person; operator: boolean };
+
 /** A principal identified: the person and whether they're the operator, or why the core won't talk to them. */
 export type Identified =
   | { ok: true; person: Person; operator: boolean }
