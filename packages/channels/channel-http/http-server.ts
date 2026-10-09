@@ -33,6 +33,7 @@ import {
   type ConfirmOutcome,
   type LoginOutcome,
   type Principal,
+  type Admission,
 } from "@mercury-fw/channel-types";
 
 /**
@@ -53,10 +54,14 @@ export type ConfirmFn = (token: string, sessionKey: string, principal: Principal
 /** The structured sibling of {@link ConfirmFn}, for the `/confirm` `resolved` flag. Injected by the core (`ctx.resolveConfirmation`). */
 export type ResolveConfirmationFn = (token: string, sessionKey: string, principal: Principal) => Promise<ConfirmOutcome>;
 
+/** Whether the core talks to an authenticated caller at all, injected by the core (`ctx.admit`); everyone when absent. */
+export type AdmitFn = (principal: Principal) => Promise<Admission>;
+
 export type TurnRequestDeps = {
   handleTurn: HandleTurn;
   /** Who is calling, injected from the app's auth provider; `null` = refused. */
   authenticate: Authenticate;
+  admit?: AdmitFn;
   /** Bare-token interception before the model, injected by the core. */
   confirm: ConfirmFn;
   /** Allowed CORS origin echoed back to a browser UI; defaults to `*`. */
@@ -95,6 +100,22 @@ function unauthorized(origin: string): Response {
   );
 }
 
+/** The core's refusal of an authenticated caller: 403 for someone it doesn't know, 503 when it couldn't tell, with what to tell them. */
+function notAdmitted(admission: Exclude<Admission, { ok: true }>, origin: string): Response {
+  return Response.json(
+    { ok: false, error: admission.message, reason: admission.reason },
+    { status: admission.reason === "unknown" ? 403 : 503, headers: corsHeaders(origin) },
+  );
+}
+
+/** The caller of `req`, authenticated and admitted, or the response refusing them. */
+async function caller(req: Request, deps: { authenticate: Authenticate; admit?: AdmitFn }, origin: string): Promise<Principal | Response> {
+  const principal = await deps.authenticate(req);
+  if (principal === null) return unauthorized(origin);
+  const admission = deps.admit ? await deps.admit(principal) : { ok: true as const };
+  return admission.ok ? principal : notAdmitted(admission, origin);
+}
+
 /** 204 preflight response for an `OPTIONS` request, carrying only CORS headers. */
 function preflight(origin: string): Response {
   return new Response(null, { status: 204, headers: corsHeaders(origin) });
@@ -127,8 +148,8 @@ export function openApiResponse(corsOrigin = "*"): Response {
 export async function handleTurnRequest(req: Request, deps: TurnRequestDeps): Promise<Response> {
   const origin = deps.corsOrigin ?? "*";
   const cors = corsHeaders(origin);
-  const principal = await deps.authenticate(req);
-  if (principal === null) return unauthorized(origin);
+  const principal = await caller(req, deps, origin);
+  if (principal instanceof Response) return principal;
   let body: { text?: unknown; conversationId?: unknown };
   try {
     body = (await req.json()) as typeof body;
@@ -236,6 +257,7 @@ export async function handleTurnRequest(req: Request, deps: TurnRequestDeps): Pr
 
 export type ConfirmRequestDeps = {
   authenticate: Authenticate;
+  admit?: AdmitFn;
   resolveConfirmation: ResolveConfirmationFn;
   corsOrigin?: string;
 };
@@ -255,8 +277,8 @@ export type ConfirmRequestDeps = {
 export async function handleConfirmRequest(req: Request, deps: ConfirmRequestDeps): Promise<Response> {
   const origin = deps.corsOrigin ?? "*";
   const cors = corsHeaders(origin);
-  const principal = await deps.authenticate(req);
-  if (principal === null) return unauthorized(origin);
+  const principal = await caller(req, deps, origin);
+  if (principal instanceof Response) return principal;
   let body: { token?: unknown; conversationId?: unknown };
   try {
     body = (await req.json()) as typeof body;
@@ -340,7 +362,12 @@ type ReadRoute = {
  * `json` JSON-encodes with the CORS headers merged in; `badRequest` does the
  * same for a 400.
  */
-export function readRoutes(reads: ChannelHostReads, authenticate: Authenticate, corsOrigin = "*"): Record<string, ReadRoute> {
+export function readRoutes(
+  reads: ChannelHostReads,
+  authenticate: Authenticate,
+  corsOrigin = "*",
+  admit?: AdmitFn,
+): Record<string, ReadRoute> {
   const cors = corsHeaders(corsOrigin);
   const json = (payload: object, status = 200): Response =>
     Response.json(payload, { status, headers: cors });
@@ -349,14 +376,14 @@ export function readRoutes(reads: ChannelHostReads, authenticate: Authenticate, 
   const options = () => preflight(corsOrigin);
   const route = (GET: (req: Request, principal: Principal) => Response | Promise<Response>): ReadRoute => ({
     GET: async (req) => {
-      const principal = await authenticate(req);
-      return principal === null ? unauthorized(corsOrigin) : GET(req, principal);
+      const principal = await caller(req, { authenticate, ...(admit === undefined ? {} : { admit }) }, corsOrigin);
+      return principal instanceof Response ? principal : GET(req, principal);
     },
     OPTIONS: options,
   });
   return {
-    "/manifest": route(() => json({ ok: true, manifest: reads.manifest() })),
-    "/confirmations": route((_req, principal) => json({ ok: true, pending: reads.pendingConfirmations(principal) })),
+    "/manifest": route(async (_req, principal) => json({ ok: true, manifest: await reads.manifest(principal) })),
+    "/confirmations": route(async (_req, principal) => json({ ok: true, pending: await reads.pendingConfirmations(principal) })),
     "/conversation": route(async (req, principal) => {
       const url = new URL(req.url);
       const id = url.searchParams.get("id");
@@ -379,7 +406,7 @@ export function readRoutes(reads: ChannelHostReads, authenticate: Authenticate, 
           .map((c) => ({ conversationId: c.sessionKey.slice(prefix.length), lastTimestamp: c.lastTimestamp, preview: c.preview })),
       });
     }),
-    "/tool-log": route((_req, principal) => json({ ok: true, entries: reads.toolLog(principal) })),
+    "/tool-log": route(async (_req, principal) => json({ ok: true, entries: await reads.toolLog(principal) })),
     "/health": route(async () => json({ ok: true, ...(await reads.health() as object) })),
     "/wiki/list": route(async (_req, principal) => json({ ok: true, files: await reads.wikiList(principal) })),
     "/wiki/read": route(async (req, principal) => {
@@ -433,11 +460,16 @@ export function startHttpServer(deps: HttpServerDeps): ReturnType<typeof Bun.ser
       "/turn": { POST: (req) => handleTurnRequest(req, deps), OPTIONS: () => preflight(origin) },
       "/confirm": {
         POST: (req) =>
-          handleConfirmRequest(req, { authenticate: deps.authenticate, resolveConfirmation: deps.resolveConfirmation, corsOrigin: origin }),
+          handleConfirmRequest(req, {
+            authenticate: deps.authenticate,
+            ...(deps.admit === undefined ? {} : { admit: deps.admit }),
+            resolveConfirmation: deps.resolveConfirmation,
+            corsOrigin: origin,
+          }),
         OPTIONS: () => preflight(origin),
       },
       "/openapi.yaml": { GET: () => openApiResponse(origin), OPTIONS: () => preflight(origin) },
-      ...(deps.reads ? readRoutes(deps.reads, deps.authenticate, origin) : {}),
+      ...(deps.reads ? readRoutes(deps.reads, deps.authenticate, origin, deps.admit) : {}),
       ...(deps.completeLogin ? loginRoutes(deps.completeLogin) : {}),
     },
     error: (err) =>

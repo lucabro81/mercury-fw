@@ -3,15 +3,15 @@ import { httpChannel } from "./index.ts";
 import type { ChannelRuntimeContext, ChannelHostReads } from "@mercury-fw/channel-types";
 
 const reads: ChannelHostReads = {
-  manifest: () => ({}),
-  pendingConfirmations: () => [],
+  manifest: async () => ({}),
+  pendingConfirmations: async () => [],
   conversation: async () => ({}),
   conversations: async () => ({}),
   wikiList: async () => [],
   wikiRead: async () => "",
   wikiGrep: async () => [],
   memoryScroll: async () => ({}),
-  toolLog: () => [],
+  toolLog: async () => [],
   health: async () => ({}),
 };
 
@@ -19,6 +19,7 @@ const fullCtx = (over: Partial<ChannelRuntimeContext> = {}): ChannelRuntimeConte
   env: {},
   log: () => {},
   confirm: async () => null,
+  admit: async () => ({ ok: true }),
   resolveConfirmation: async () => ({ status: "not-a-token" }),
   reads,
   authenticate: async () => null,
@@ -29,9 +30,9 @@ describe("httpChannel", () => {
   // A literal, not CHANNEL_API_VERSION: the import reports whatever contract
   // is installed, so an old channel next to a newer core would claim the new
   // version and be loaded. The literal is the contract this code was written for.
-  it("declares the http name at channel api version 4", () => {
+  it("declares the http name at channel api version 5", () => {
     expect(httpChannel.name).toBe("http");
-    expect(httpChannel.apiVersion).toBe(4);
+    expect(httpChannel.apiVersion).toBe(5);
   });
 
   it("builds a provider when confirm, resolveConfirmation, reads and authenticate are all present", () => {
