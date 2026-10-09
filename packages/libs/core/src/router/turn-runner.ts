@@ -44,9 +44,9 @@ export type TurnRunnerDeps = {
   buildTools: (
     sessionKey: string,
     key: string,
+    who: TurnWho,
     onToolStart?: TurnSink["onToolStart"],
     onToolFinish?: TurnSink["onToolFinish"],
-    who?: TurnWho,
   ) => Record<string, Tool>;
   /**
    * `key` is the user key, forwarded (not interpreted here) so a provider's
@@ -176,7 +176,7 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
       history = await deps.getOrCreateHistory(turn.sessionKey, tracked, tracked ? key : undefined);
       const text = await (deps.runTurnFn ?? runTurn)(history, turn.text, {
         model: deps.model,
-        tools: deps.buildTools(turn.sessionKey, key, sink.onToolStart, sink.onToolFinish, who),
+        tools: deps.buildTools(turn.sessionKey, key, who, sink.onToolStart, sink.onToolFinish),
         system: turn.multiUser ? prompts.multiUser : prompts.singleUser,
         onTextChunk: sink.onTextChunk,
         onReasoningChunk: sink.onReasoningChunk,

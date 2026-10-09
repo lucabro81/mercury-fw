@@ -7,10 +7,11 @@
  * the keys of people nobody resolved, or a `build()` that throws is logged and
  * yields `"failed"`, which makes the core refuse everyone but the terminal.
  */
-import { DIRECTORY_API_VERSION, type Directory, type DirectoryPlugin } from "@mercury-fw/channel-types";
+import { DIRECTORY_API_VERSION, type Directory, type DirectoryPlugin, type PrincipalProvider } from "@mercury-fw/channel-types";
 
-/** The principal providers whose `<provider>:<id>` keys a directory's `<name>:<id>` must never collide with. */
-const PRINCIPAL_PROVIDERS = new Set(["google-chat", "oidc", "static", "none"]);
+/** The principal providers whose `<provider>:<id>` keys a directory's `<name>:<id>` must never collide with.
+ * A record over the union, so a provider added to the contract fails the typecheck until it's listed here. */
+const PRINCIPAL_PROVIDERS: Record<PrincipalProvider, true> = { "google-chat": true, oidc: true, static: true, none: true };
 
 /** The built directory under its name, `"none"` when none is declared, `"failed"` when the declared one can't be used. */
 export function loadDirectory(
@@ -26,7 +27,7 @@ export function loadDirectory(
     );
     return "failed";
   }
-  if (PRINCIPAL_PROVIDERS.has(plugin.name)) {
+  if (Object.hasOwn(PRINCIPAL_PROVIDERS, plugin.name)) {
     ctx.log(`directory "${plugin.name}" not activated: its name is a channel identity's provider, so its people's keys could clash; ${closed}`);
     return "failed";
   }

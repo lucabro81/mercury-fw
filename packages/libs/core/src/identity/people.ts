@@ -14,7 +14,10 @@
  *   can't answer refuses everyone: identity fails closed.
  *
  * Answers are cached per principal for `ttlMs`, so a role revoked in the
- * directory stops counting within that time; failures aren't cached.
+ * directory stops counting within that time, and so does someone added to it
+ * after being told they're unknown; failures aren't cached. Expired answers
+ * are swept once the cache grows, so an open instance's many visitors don't
+ * pile up.
  */
 import type { Admission, Directory, Principal } from "@mercury-fw/channel-types";
 import { userKey } from "./user-key.ts";
@@ -38,6 +41,9 @@ export const UNAVAILABLE_MESSAGE = "I can't check who you are right now. Try aga
 
 /** The ttl of a directory answer: a revoked role stops counting within it. */
 export const DEFAULT_IDENTITY_TTL_MS = 5 * 60_000;
+
+/** Past this many cached answers, the expired ones are swept on the next insert. */
+const SWEEP_ABOVE = 1000;
 
 export type PeopleOptions = {
   /** The declared directory, built; `"none"` when the app declares none, `"failed"` when it declares one that didn't load. */
@@ -104,6 +110,9 @@ export function createPeople(opts: PeopleOptions) {
 
     const lookup = lookUp(principal, directory.name, directory.directory)
       .then((value) => {
+        if (cache.size >= SWEEP_ABOVE) {
+          for (const [k, entry] of cache) if (entry.expiresAt <= now()) cache.delete(k);
+        }
         cache.set(key, { value, expiresAt: now() + ttlMs });
         return value;
       })

@@ -129,6 +129,27 @@ describe("caching", () => {
     expect(calls).toEqual([0, 1000]);
   });
 
+  test("expired answers are swept once the cache grows, so visitors don't pile up", async () => {
+    let now = 0;
+    const calls: string[] = [];
+    const directory: Directory = {
+      resolve: async (p) => {
+        calls.push(p.id);
+        return null;
+      },
+    };
+    const people = createPeople({ directory: { name: "people", directory }, unknown: "allow", ttlMs: 10, now: () => now });
+    for (let i = 0; i < 1000; i++) await people.identify({ id: `v${i}`, provider: "static" });
+    now = 10;
+    await people.identify({ id: "late", provider: "static" });
+    // The early visitors' answers were swept: asking again goes back to the directory.
+    now = 11;
+    calls.length = 0;
+    await people.identify({ id: "v0", provider: "static" });
+    await people.identify({ id: "late", provider: "static" });
+    expect(calls).toEqual(["v0"]);
+  });
+
   test("an unknown answer is cached too", async () => {
     const { directory, calls } = directoryOf({});
     const people = createPeople({ directory: { name: "people", directory } });

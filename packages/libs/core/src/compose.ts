@@ -72,7 +72,8 @@ import { bindConfirm } from "./identity/confirm-binding.ts";
 import { createPersonLogins } from "./identity/person-logins.ts";
 import { createPeople, type TurnWho } from "./identity/people.ts";
 import { offeringFor, type Offering } from "./plugins/offering.ts";
-import { actingAsMercury, AS_MERCURY_SUFFIX } from "./plugins/act-as-mercury.ts";
+import { AS_MERCURY_SUFFIX } from "./plugins/act-as-mercury.ts";
+import { buildOfferedTools } from "./plugins/offered-tools.ts";
 import { migrateMemoryToUserKeys, migrateVaultToUserAreas } from "./identity/migrate-layout.ts";
 import { runRawTriagePass, runIndexAndOrphanPass, runContradictionCheckPass } from "./wiki/self-review-runner.ts";
 import { startSelfReviewCron } from "./cron/self-review-cron.ts";
@@ -381,9 +382,9 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   function buildTools(
     sessionKey: string,
     key: string,
+    who: TurnWho,
     onToolStart?: TurnSink["onToolStart"],
     onToolFinish?: TurnSink["onToolFinish"],
-    who: TurnWho = { person: { key, roles: [] }, operator: true },
   ): Record<string, Tool> {
     const offering = offeringOf(who);
     const sessionTools: Record<string, Tool> = {};
@@ -405,27 +406,13 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
 
     // Each CLI-based plugin owns its tool (jiraCommand, …), built from its own
     // allowlist and post-processor. The core just invokes what they contributed,
-    // as the person or as Mercury (no person) per the offering; acting as
-    // Mercury for a person, the tools say so and log who asked.
-    let hasCliTool = false;
-    for (const entry of offering.entries) {
-      const { bundle } = entry.plugin;
-      if (bundle === undefined) continue;
-      hasCliTool = true;
-      const person = entry.as === "person" ? { key: who.person.key } : null;
-      const { login } = bundle;
-      const requireLogin = async () =>
-        person && login
-          ? personLogins.require(bundle.name, login, person.key)
-          : { ok: false as const, error: `${bundle.name} says the user isn't logged in, and it has no way to log anyone in.` };
-      const tools = bundle.build({ ...sessionToolContext, person, requireLogin }, bundle.postProcess);
-      Object.assign(
-        sessionTools,
-        entry.as === "mercury" && !who.operator
-          ? actingAsMercury(tools, { plugin: bundle.name, personKey: who.person.key, rename: entry.variant, log: (msg) => console.error(msg) })
-          : tools,
-      );
-    }
+    // as the person or as Mercury per the offering (see plugins/offered-tools.ts).
+    const { tools: pluginTools, hasCliTool } = buildOfferedTools(offering, who, {
+      context: sessionToolContext,
+      requireLogin: (service, login, personKey) => personLogins.require(service, login, personKey),
+      log: (msg) => console.error(msg),
+    });
+    Object.assign(sessionTools, pluginTools);
 
     // `present` only makes sense alongside CLI tools: they are what produce the
     // display artifacts it surfaces. A turn with no CLI tool never sees it.

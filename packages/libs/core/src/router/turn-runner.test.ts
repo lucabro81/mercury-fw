@@ -201,7 +201,7 @@ describe("createTurnRunner", () => {
       systemPrompts: { singleUser: "UNUSED", multiUser: "UNUSED" },
       systemPromptsFor: (who) =>
         who.operator ? { singleUser: "OP-SINGLE", multiUser: "OP-MULTI" } : { singleUser: `${who.person.key}-SINGLE`, multiUser: `${who.person.key}-MULTI` },
-      buildTools: (_sessionKey, _key, _cb, _finishCb, who) => {
+      buildTools: (_sessionKey, _key, who) => {
         whos.push(who);
         return {};
       },
@@ -305,7 +305,7 @@ describe("createTurnRunner", () => {
     const runner = createTurnRunner({
       model: {} as any,
       systemPrompts: { singleUser: "s", multiUser: "m" },
-      buildTools: (sessionKey, key, cb, finishCb) => {
+      buildTools: (sessionKey, key, _who, cb, finishCb) => {
         calls.push([sessionKey, key, cb, finishCb]);
         return {};
       },
