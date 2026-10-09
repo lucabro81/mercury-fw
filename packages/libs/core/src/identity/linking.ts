@@ -105,6 +105,10 @@ export function createLinking(deps: { people: People; links: LinkStore; now?: ()
         return `This account belongs to someone else in the directory: it can't be linked to ${pending.ownerName}.`;
       }
 
+      // Others may have been linked to this account since its first send.
+      if (deps.links.owns(identity)) {
+        return `Other accounts are linked to this one: unlink them first, or link them to ${pending.ownerName} directly.`;
+      }
       try {
         deps.links.link(identity, pending.owner);
       } catch (err) {

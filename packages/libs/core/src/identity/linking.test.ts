@@ -115,6 +115,15 @@ describe("redeeming a code", () => {
     expect(links.map.get("google-chat:users/1")).toBeUndefined();
   });
 
+  test("an account others got linked to between its two sends isn't linked", async () => {
+    const { linking, links } = setup();
+    const code = await codeFor(linking, alice);
+    await linking.redeem(chat, code);
+    links.link("google-chat:users/9", { id: "users/1", provider: "google-chat" });
+    expect(await linking.redeem(chat, code)).toBe("Other accounts are linked to this one: unlink them first, or link them to Alice directly.");
+    expect(links.map.get("google-chat:users/1")).toBeUndefined();
+  });
+
   // Regression (#192 review): in a shared space someone else could read the
   // code and send it twice first; it now stays with the account that sent it
   // first.
