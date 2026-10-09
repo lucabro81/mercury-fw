@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import type { Directory, DirectoryPerson, Principal } from "@mercury-fw/channel-types";
-import { createPeople, UNAVAILABLE_MESSAGE, UNKNOWN_MESSAGE } from "./people.ts";
+import { createPeople, OPERATOR_PRINCIPAL, UNAVAILABLE_MESSAGE, UNKNOWN_MESSAGE } from "./people.ts";
 
 const alice: Principal = { id: "alice", provider: "static", displayName: "Alice" };
-const terminal: Principal = { id: "terminal", provider: "none" };
+const terminal = OPERATOR_PRINCIPAL;
 
 /** A directory answering from `people` (keyed by the principal's user key), counting its lookups. */
 function directoryOf(people: Record<string, DirectoryPerson>, fail = false) {
@@ -34,6 +34,20 @@ describe("identify without a directory", () => {
     const people = createPeople({ directory: "none" });
     expect(await people.identify(terminal)).toEqual({ ok: true, operator: true, person: { key: "none:terminal", roles: [] } });
   });
+});
+
+// The operator gets every plugin as Mercury and skips the directory: only the
+// core's own terminal can be it, never a principal a channel or an auth
+// provider built, whatever it claims.
+describe("the operator can't be forged", () => {
+  for (const directory of ["none", "failed"] as const) {
+    test(`a principal claiming "none" that isn't the terminal's is refused (directory: ${directory})`, async () => {
+      const logs: string[] = [];
+      const people = createPeople({ directory, unknown: "allow", log: (m) => logs.push(m) });
+      expect(await people.identify({ id: "terminal", provider: "none" })).toEqual({ ok: false, reason: "unknown", message: UNKNOWN_MESSAGE });
+      expect(logs).toEqual(['[identity] refused a principal claiming to be nobody\'s ("none:terminal"): only the terminal is the operator']);
+    });
+  }
 });
 
 describe("identify with a directory", () => {

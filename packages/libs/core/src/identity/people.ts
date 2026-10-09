@@ -3,7 +3,10 @@
  * talking (`Principal`); this turns it into the person every per-person store
  * keys on, with the roles that decide what they may make Mercury do.
  *
- * - The terminal (`none`) is the operator: whoever has the container's shell.
+ * - The terminal is the operator: whoever has the container's shell. Only the
+ *   core's own terminal principal (`OPERATOR_PRINCIPAL`, compared by identity)
+ *   is: any other principal claiming `none` is refused, so no channel or auth
+ *   provider can hand someone the operator's reach.
  * - Without a directory, the person is whoever the channel says, with no roles.
  * - With one, the directory decides: a person it knows is keyed on
  *   `<directory name>:<id>`; someone it doesn't is refused (a closed instance,
@@ -15,6 +18,9 @@
  */
 import type { Admission, Directory, Principal } from "@mercury-fw/channel-types";
 import { userKey } from "./user-key.ts";
+
+/** The terminal's principal, the only one the core takes as the operator. */
+export const OPERATOR_PRINCIPAL: Principal = Object.freeze({ id: "terminal", provider: "none" as const });
 
 /** A person as the core keeps them: the key every per-person store uses, and their roles. */
 export type Person = { key: string; displayName?: string; email?: string; roles: string[] };
@@ -81,7 +87,11 @@ export function createPeople(opts: PeopleOptions) {
   }
 
   async function identify(principal: Principal): Promise<Identified> {
-    if (principal.provider === "none") return { ok: true, operator: true, person: { key: userKey(principal), roles: [] } };
+    if (principal === OPERATOR_PRINCIPAL) return { ok: true, operator: true, person: { key: userKey(principal), roles: [] } };
+    if (principal.provider === "none") {
+      log(`[identity] refused a principal claiming to be nobody's ("${userKey(principal)}"): only the terminal is the operator`);
+      return { ok: false, reason: "unknown", message: unknownMessage };
+    }
     const { directory } = opts;
     if (directory === "none") return asTheChannelSays(principal);
     if (directory === "failed") return unavailable;

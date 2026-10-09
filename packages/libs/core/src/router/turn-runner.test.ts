@@ -3,6 +3,7 @@ import { createTurnRunner, type PostTurnGuard } from "./turn-runner.ts";
 import type { InboundTurn, TurnSink } from "./provider.ts";
 import type { Principal } from "@mercury-fw/channel-types";
 import { createSessionHistory, type SessionHistory } from "../session/history.ts";
+import { OPERATOR_PRINCIPAL } from "../identity/people.ts";
 import { createSessionLock } from "./session-lock.ts";
 import type { StepInfo } from "../session/step-info.ts";
 
@@ -22,9 +23,9 @@ function verified(id: string): Principal {
   return { id, provider: "google-chat" };
 }
 
-/** A principal nobody vouched for (terminal, unauthenticated HTTP): the turn is never tracked. */
-function anonymous(id: string): Principal {
-  return { id, provider: "none" };
+/** The terminal's principal, the operator: the turn is never tracked. */
+function anonymous(_id: string): Principal {
+  return OPERATOR_PRINCIPAL;
 }
 
 function baseTurn(overrides: Partial<InboundTurn> = {}): InboundTurn {
@@ -636,9 +637,9 @@ describe("createTurnRunner", () => {
     });
     const sink = baseSink();
 
-    await runner(baseTurn({ principal: anonymous("a\ud800") }), sink);
+    await runner(baseTurn({ principal: verified("a\ud800") }), sink);
 
-    expect(keys).toEqual(["none:a\ufffd"]);
+    expect(keys).toEqual(["google-chat:a\ufffd"]);
     expect(sink.finalized).toEqual(["reply"]);
   });
 
