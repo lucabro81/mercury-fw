@@ -78,6 +78,41 @@ describe("createLinkStore", () => {
     expect(logs).toEqual([`[identity] can't read the account links in ${path}, none applied: not JSON`]);
   });
 
+  // Regression (#192 review): writing over a file it couldn't read wiped
+  // every link in it.
+  test("refuses to change links while the file is unreadable, leaving it as it is", async () => {
+    const path = await tempPath();
+    await mkdir(join(path, ".."), { recursive: true });
+    await writeFile(path, "not json");
+    const store = createLinkStore({ path, log: () => {} });
+    expect(() => store.link("google-chat:users/1", alice)).toThrow(`the account links in ${path} can't be read: fix or remove the file first`);
+    expect(() => store.unlink("google-chat:users/1")).toThrow("can't be read");
+    expect(await readFile(path, "utf8")).toBe("not json");
+  });
+
+  test("skips an entry that isn't a link, keeping the others", async () => {
+    const path = await tempPath();
+    await mkdir(join(path, ".."), { recursive: true });
+    await writeFile(
+      path,
+      JSON.stringify({
+        version: 1,
+        links: {
+          "google-chat:users/1": { owner: { id: "alice", provider: "static" }, linkedAt: "x" },
+          "google-chat:users/2": { owner: "alice" },
+          "google-chat:users/3": { owner: { id: 3, provider: "static" } },
+        },
+      }),
+    );
+    const logs: string[] = [];
+    const store = createLinkStore({ path, log: (m) => logs.push(m) });
+    expect(store.list().map((l) => l.identity)).toEqual(["google-chat:users/1"]);
+    expect(logs).toEqual([
+      `[identity] skipped a malformed account link in ${path}: google-chat:users/2`,
+      `[identity] skipped a malformed account link in ${path}: google-chat:users/3`,
+    ]);
+  });
+
   test("an inherited key is never a link", async () => {
     const store = createLinkStore({ path: await tempPath() });
     expect(store.ownerOf("constructor")).toBeUndefined();

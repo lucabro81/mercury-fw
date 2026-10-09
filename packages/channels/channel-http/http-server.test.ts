@@ -817,6 +817,28 @@ describe("GET /wiki/read and /memory/scroll", () => {
 
 // The routes as Bun.serve mounts them, on a real socket.
 describe("startHttpServer", () => {
+  // #190: /link is there exactly when the core offers linking.
+  it("mounts /link only with linking, and serves it to an authenticated caller", async () => {
+    const base = {
+      port: 0,
+      handleTurn: async () => {},
+      confirm: async () => null,
+      resolveConfirmation: async () => ({ status: "not-a-token" as const }),
+      authenticate: asAlice,
+    };
+    const without = startHttpServer(base);
+    const withLinking = startHttpServer({ ...base, linking: { start: async () => ({ ok: true, code: "a1b2-c3d4-e5f6", expiresAt: "t" }) } });
+    try {
+      expect((await fetch(`http://localhost:${without.port}/link`, { method: "POST" })).status).toBe(404);
+      const res = await fetch(`http://localhost:${withLinking.port}/link`, { method: "POST" });
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ ok: true, code: "a1b2-c3d4-e5f6", expiresAt: "t" });
+    } finally {
+      without.stop(true);
+      withLinking.stop(true);
+    }
+  });
+
   it("serves /openapi.yaml to anyone and refuses everything else without a caller", async () => {
     const server = startHttpServer({
       port: 0,

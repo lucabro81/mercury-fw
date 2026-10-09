@@ -4,6 +4,9 @@
  * account, twice (`redeem`). The first time Mercury says whom the account
  * would be linked to, the second time links it, so someone handed another
  * person's code sees whose account they'd be joining before anything happens.
+ * A code belongs to the first account that sends it, so someone else reading
+ * it (in a shared space) can't use it once it's been sent; it's meant for a
+ * one-to-one conversation.
  *
  * A code is `xxxx-xxxx-xxxx` (a shape no confirmation token has), valid for ten
  * minutes, single-use, one per owner, and kept in memory: a restart only means
@@ -12,8 +15,9 @@
  * on one channel becomes the person they are on another.
  *
  * Rules: the operator never links or is linked; the owner stored is always an
- * account that isn't linked itself (no chains); an account the directory
- * already knows as someone else is never linked.
+ * account that isn't linked itself, and an account others are linked to isn't
+ * linked in turn (no chains); an account the directory already knows as
+ * someone else is never linked.
  */
 import type { Principal } from "@mercury-fw/channel-types";
 import type { LinkOwner, LinkStore } from "./links.ts";
@@ -79,6 +83,13 @@ export function createLinking(deps: { people: People; links: LinkStore; now?: ()
       if (identity === userKey(pending.owner)) return "That code is for linking another account to this one.";
       // The owner was linked to someone else after the code was made: linking to it now would chain.
       if (deps.links.ownerOf(userKey(pending.owner)) !== undefined) return INVALID;
+      // A code belongs to the first account that sends it: someone else who
+      // read it (a shared space) can't take the link over.
+      if (pending.redeemedBy !== undefined && pending.redeemedBy !== identity) return INVALID;
+      if (deps.links.owns(identity)) {
+        codes.delete(code);
+        return `Other accounts are linked to this one: unlink them first, or link them to ${pending.ownerName} directly.`;
+      }
       if (pending.redeemedBy !== identity) {
         pending.redeemedBy = identity;
         return `This will link this account to ${pending.ownerName}: from then on Mercury treats them as one person, with ${pending.ownerName}'s private area and roles. Send the same code again to confirm.`;
@@ -94,7 +105,12 @@ export function createLinking(deps: { people: People; links: LinkStore; now?: ()
         return `This account belongs to someone else in the directory: it can't be linked to ${pending.ownerName}.`;
       }
 
-      deps.links.link(identity, pending.owner);
+      try {
+        deps.links.link(identity, pending.owner);
+      } catch (err) {
+        log(`[identity] couldn't link ${identity}: ${err instanceof Error ? err.message : String(err)}`);
+        return "I can't link accounts right now. Ask whoever runs this assistant to check its logs.";
+      }
       deps.people.forget(principal);
       log(`[identity] linked ${identity} to ${userKey(pending.owner)}`);
       return `Linked: this account is now ${pending.ownerName}.`;

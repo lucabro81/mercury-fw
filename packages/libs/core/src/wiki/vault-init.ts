@@ -21,15 +21,16 @@ async function pathExists(path: string): Promise<boolean> {
   }
 }
 
-/**
- * Creates the vault's curated/users/raw subdirectories and git-inits the
- * vault if it isn't already a git repo. Safe to call on every startup:
- * pre-existing directories/content are left untouched, and re-running
- * `git init` on an already-initialized repo is a no-op.
- */
 /** Mercury's own files on the vault's volume, as a path the vault's git excludes. */
 const MERCURY_DIR = "/.mercury/";
 
+/**
+ * Creates the vault's curated/users/raw subdirectories and git-inits the
+ * vault if it isn't already a git repo, keeping `.mercury/` out of its git.
+ * Safe to call on every startup: pre-existing directories/content are left
+ * untouched, and re-running `git init` on an already-initialized repo is a
+ * no-op.
+ */
 export async function initVault(vaultPath: string): Promise<void> {
   for (const sub of SUBDIRS) {
     await mkdir(join(vaultPath, sub), { recursive: true });

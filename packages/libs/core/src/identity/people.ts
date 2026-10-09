@@ -71,6 +71,8 @@ export function createPeople(opts: PeopleOptions) {
   const unknownMessage = opts.unknownMessage ?? UNKNOWN_MESSAGE;
   const cache = new Map<string, { value: Identified; expiresAt: number }>();
   const inFlight = new Map<string, Promise<Identified>>();
+  /** Bumped by `forget`: a lookup started before keeps its answer to itself. */
+  const generation = new Map<string, number>();
 
   /** The person as the channel says, for an instance with no directory or an open one. */
   const asTheChannelSays = (principal: Principal): Identified => ({
@@ -130,8 +132,10 @@ export function createPeople(opts: PeopleOptions) {
     const pending = inFlight.get(key);
     if (pending) return pending;
 
-    const lookup = lookUp(subject, directory.name, directory.directory)
+    const started = generation.get(key) ?? 0;
+    const lookup: Promise<Identified> = lookUp(subject, directory.name, directory.directory)
       .then((value) => {
+        if ((generation.get(key) ?? 0) !== started) return value;
         if (cache.size >= SWEEP_ABOVE) {
           for (const [k, entry] of cache) if (entry.expiresAt <= now()) cache.delete(k);
         }
@@ -139,7 +143,9 @@ export function createPeople(opts: PeopleOptions) {
         return value;
       })
       .catch(failed(directory.name, key))
-      .finally(() => inFlight.delete(key));
+      .finally(() => {
+        if (inFlight.get(key) === lookup) inFlight.delete(key);
+      });
     inFlight.set(key, lookup);
     return lookup;
   }
@@ -157,7 +163,10 @@ export function createPeople(opts: PeopleOptions) {
     },
     /** Drops what's cached about `principal`, so a link made or removed counts at once. */
     forget: (principal: Principal): void => {
-      cache.delete(userKey(principal));
+      const key = userKey(principal);
+      cache.delete(key);
+      inFlight.delete(key);
+      generation.set(key, (generation.get(key) ?? 0) + 1);
     },
     /** Whether the core talks to `principal` at all: `identify` without the person. */
     admit: async (principal: Principal): Promise<Admission> => {

@@ -31,6 +31,15 @@ function parseIdentity(text: string): LinkOwner | undefined {
 
 /** Runs one command over `store`; returns the exit code. */
 export function runLinksCli(argv: string[], io: { store: LinkStore; out: (line: string) => void; err: (line: string) => void }): number {
+  try {
+    return run(argv, io);
+  } catch (e) {
+    io.err(e instanceof Error ? e.message : String(e));
+    return 1;
+  }
+}
+
+function run(argv: string[], io: { store: LinkStore; out: (line: string) => void; err: (line: string) => void }): number {
   const { store, out, err } = io;
   const [command, ...args] = argv;
   if (command === "links" && args.length === 0) {
@@ -54,6 +63,10 @@ export function runLinksCli(argv: string[], io: { store: LinkStore; out: (line: 
     }
     if (identity === ownerText) {
       err("An account can't be linked to itself.");
+      return 1;
+    }
+    if (store.owns(identity)) {
+      err(`Other accounts are linked to ${identity}: unlink them first, or link them to ${ownerText} directly.`);
       return 1;
     }
     const ownersOwner = store.ownerOf(ownerText);

@@ -80,7 +80,7 @@ Whoever opens the link and accepts decides which account gets linked: a link bel
 
 ## `POST /link`
 
-A code for linking another of the caller's accounts to them, for the UI to show: `{ ok: true, code, expiresAt }`, or `400` with the reason when there's none. The person sends the code from the other account, on any channel, twice: the first time Mercury says whom the account would be linked to, the second time it links it, and from then on both accounts are one person (one private area, the same roles). The code lasts ten minutes, works once, and only the caller sees it; the model never does.
+A code for linking another of the caller's accounts to them, for the UI to show: `{ ok: true, code, expiresAt }`, or `400` with the reason when there's none. The person sends the code from the other account, on any channel, twice: the first time Mercury says whom the account would be linked to, the second time it links it, and from then on both accounts are one person (one private area, the same roles). The code lasts ten minutes, works once, and only the caller sees it; the model never does. It belongs to the first account that sends it, so it should be sent in a one-to-one conversation, never in a shared space where someone else could send it first. Over HTTP only an account the instance already admits can send it (anyone else is refused before the turn), so an account a closed instance doesn't know links from a chat.
 
 ## `POST /confirm`
 

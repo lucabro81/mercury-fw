@@ -203,6 +203,7 @@ function linksOf(map: Record<string, { id: string; provider: Principal["provider
   return {
     ownerOf: (identity) => map[identity],
     link: (identity, owner) => void (map[identity] = { id: owner.id, provider: owner.provider }),
+    owns: (identity) => Object.values(map).some((o) => `${o.provider}:${o.id}` === identity),
     unlink: (identity) => delete map[identity],
     list: () => [],
   };
@@ -241,6 +242,30 @@ describe("identify with account links", () => {
     expect(await people.identify(chat)).toMatchObject({ person: { key: "google-chat:users/1" } });
     people.forget(chat);
     expect(await people.identify(chat)).toMatchObject({ person: { key: "people:alice" } });
+  });
+
+  // Regression (#192 review): forget didn't reach a lookup already under
+  // way, which then cached what it found before the link.
+  test("forget also drops a lookup under way: what it finds isn't kept", async () => {
+    const map: Record<string, { id: string; provider: Principal["provider"] }> = {};
+    let release: () => void = () => {};
+    const gate = new Promise<void>((r) => (release = r));
+    const calls: string[] = [];
+    const directory: Directory = {
+      resolve: async (p) => {
+        calls.push(`${p.provider}:${p.id}`);
+        if (calls.length === 1) await gate;
+        return { id: p.id, roles: [] };
+      },
+    };
+    const people = createPeople({ directory: { name: "people", directory }, links: linksOf(map) });
+    const before = people.identify(chat);
+    map["google-chat:users/1"] = { id: "alice", provider: "static" };
+    people.forget(chat);
+    release();
+    await before;
+    expect(await people.identify(chat)).toMatchObject({ person: { key: "people:alice" } });
+    expect(calls).toEqual(["google-chat:users/1", "static:alice"]);
   });
 
   // The link check itself asks who an account is on its own: a link must

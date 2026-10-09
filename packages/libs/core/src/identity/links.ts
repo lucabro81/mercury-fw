@@ -30,6 +30,8 @@ export type LinkStore = {
   ownerOf: (identity: string) => LinkOwner | undefined;
   /** Links `identity` to `owner`, moving it when it was linked to someone else. */
   link: (identity: string, owner: LinkOwner) => void;
+  /** Whether other accounts are linked to `identity`. */
+  owns: (identity: string) => boolean;
   /** Removes `identity`'s link; false when it had none. */
   unlink: (identity: string) => boolean;
   list: () => Array<{ identity: string; owner: LinkOwner; linkedAt: string }>;
@@ -40,13 +42,16 @@ export function createLinkStore(opts: { path: string; now?: () => Date; log?: (m
   const now = opts.now ?? (() => new Date());
   const log = opts.log ?? ((msg: string) => console.error(msg));
   let links = new Map<string, Link>();
-  /** The file's mtime when it was last read or written; undefined when there was none. */
-  let seen: number | undefined;
+  /** The file's mtime and size when it was last read or written; undefined when there was none. */
+  let seen: string | undefined;
+  /** Whether the file was there but couldn't be read: then nothing is written over it. */
+  let unreadable = false;
 
-  /** The file's mtime, or undefined when it doesn't exist. */
-  function mtime(): number | undefined {
+  /** The file's mtime and size, or undefined when it doesn't exist. */
+  function mtime(): string | undefined {
     try {
-      return statSync(path).mtimeMs;
+      const st = statSync(path);
+      return `${st.mtimeMs}:${st.size}`;
     } catch {
       return undefined;
     }
@@ -57,24 +62,39 @@ export function createLinkStore(opts: { path: string; now?: () => Date; log?: (m
     const current = mtime();
     if (current === seen) return;
     seen = current;
+    unreadable = false;
     if (current === undefined) {
       links = new Map();
       return;
     }
     try {
       const parsed = JSON.parse(readFileSync(path, "utf8")) as Partial<LinkFile>;
-      links = new Map(Object.entries(parsed.links ?? {}));
+      links = new Map();
+      for (const [identity, link] of Object.entries(parsed.links ?? {})) {
+        const owner = (link as Partial<Link> | undefined)?.owner as Partial<LinkOwner> | undefined;
+        if (typeof owner?.id !== "string" || typeof owner.provider !== "string") {
+          log(`[identity] skipped a malformed account link in ${path}: ${identity}`);
+          continue;
+        }
+        links.set(identity, { owner: { id: owner.id, provider: owner.provider }, linkedAt: String((link as Link).linkedAt ?? "") });
+      }
     } catch (err) {
       log(`[identity] can't read the account links in ${path}, none applied: ${err instanceof SyntaxError ? "not JSON" : String(err)}`);
       links = new Map();
+      unreadable = true;
     }
+  }
+
+  /** Throws when the file is there but couldn't be read, rather than write over what it holds. */
+  function refuseUnreadable(): void {
+    if (unreadable) throw new Error(`the account links in ${path} can't be read: fix or remove the file first`);
   }
 
   /** Writes every link, whole, through a temporary file renamed over the old one. */
   function save(): void {
     mkdirSync(dirname(path), { recursive: true });
     const file: LinkFile = { version: 1, links: Object.fromEntries(links) };
-    const temporary = `${path}.${process.pid}.tmp`;
+    const temporary = `${path}.${crypto.randomUUID()}.tmp`;
     writeFileSync(temporary, `${JSON.stringify(file, null, 2)}\n`);
     renameSync(temporary, path);
     seen = mtime();
@@ -87,11 +107,17 @@ export function createLinkStore(opts: { path: string; now?: () => Date; log?: (m
     },
     link: (identity, owner) => {
       fresh();
+      refuseUnreadable();
       links.set(identity, { owner: { id: owner.id, provider: owner.provider }, linkedAt: now().toISOString() });
       save();
     },
+    owns: (identity) => {
+      fresh();
+      return [...links.values()].some((link) => `${link.owner.provider}:${link.owner.id}` === identity);
+    },
     unlink: (identity) => {
       fresh();
+      refuseUnreadable();
       if (!links.delete(identity)) return false;
       save();
       return true;

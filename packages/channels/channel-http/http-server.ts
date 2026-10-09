@@ -306,7 +306,6 @@ export async function handleConfirmRequest(req: Request, deps: ConfirmRequestDep
   }
 }
 
-/** Finishes a person's login, injected by the core (`ChannelLogins.complete`). */
 export type LinkRequestDeps = {
   authenticate: Authenticate;
   admit?: AdmitFn;
@@ -334,6 +333,7 @@ function linkRoutes(deps: LinkRequestDeps): Record<string, { POST: (req: Request
   return { "/link": { POST: (req) => handleLinkRequest(req, deps), OPTIONS: () => preflight(deps.corsOrigin ?? "*") } };
 }
 
+/** Finishes a person's login, injected by the core (`ChannelLogins.complete`). */
 export type CompleteLoginFn = (state: string, code: string) => Promise<LoginOutcome>;
 
 /** A plain-text page for the person's browser, at the end of their login. */

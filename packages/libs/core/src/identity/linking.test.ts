@@ -14,6 +14,7 @@ function memoryLinks(): LinkStore & { map: Map<string, { id: string; provider: P
     map,
     ownerOf: (identity) => map.get(identity),
     link: (identity, owner) => void map.set(identity, { id: owner.id, provider: owner.provider }),
+    owns: (identity) => [...map.values()].some((o) => `${o.provider}:${o.id}` === identity),
     unlink: (identity) => map.delete(identity),
     list: () => [],
   };
@@ -104,17 +105,40 @@ describe("redeeming a code", () => {
     expect(links.map.size).toBe(0);
   });
 
-  // The confirmation is the account that redeemed it sending it again: a
-  // second account sending the code doesn't confirm the first one's link.
-  test("only the account that redeemed the code confirms it", async () => {
+  // Regression (#192 review): an account that other accounts are linked to,
+  // linked in turn, chained them; they'd stop being its person.
+  test("an account other accounts are linked to can't be linked in turn", async () => {
+    const { linking, links } = setup();
+    links.link("google-chat:users/9", { id: "users/1", provider: "google-chat" });
+    const code = await codeFor(linking, alice);
+    expect(await linking.redeem(chat, code)).toBe("Other accounts are linked to this one: unlink them first, or link them to Alice directly.");
+    expect(links.map.get("google-chat:users/1")).toBeUndefined();
+  });
+
+  // Regression (#192 review): in a shared space someone else could read the
+  // code and send it twice first; it now stays with the account that sent it
+  // first.
+  test("once an account sent a code, it's that account's: anyone else gets it refused", async () => {
     const { linking, links } = setup();
     const code = await codeFor(linking, alice);
     await linking.redeem(chat, code);
     const other = { id: "users/2", provider: "google-chat" as const };
-    expect(await linking.redeem(other, code)).toContain("This will link this account to Alice");
+    expect(await linking.redeem(other, code)).toContain("That code isn't valid");
+    expect(await linking.redeem(other, code)).toContain("That code isn't valid");
+    expect(await linking.redeem(chat, code)).toBe("Linked: this account is now Alice.");
+    expect([...links.map.keys()]).toEqual(["google-chat:users/1"]);
+  });
+
+  test("a directory that can't tell refuses the link, and the code is spent", async () => {
+    const opts = { directory: true, failing: false, people: { "static:alice": { id: "alice", displayName: "Alice", roles: [] } } };
+    const { linking, links } = setup(opts);
+    const code = await codeFor(linking, alice);
+    opts.failing = true;
+    await linking.redeem(chat, code);
+    expect(await linking.redeem(chat, code)).toBe("I can't check this account right now. Ask for a new code and try again in a few minutes.");
     expect(links.map.size).toBe(0);
-    expect(await linking.redeem(other, code)).toBe("Linked: this account is now Alice.");
-    expect([...links.map.keys()]).toEqual(["google-chat:users/2"]);
+    opts.failing = false;
+    expect(await linking.redeem(chat, code)).toContain("That code isn't valid");
   });
 
   test("a new code replaces the owner's previous one", async () => {

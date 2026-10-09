@@ -7,13 +7,14 @@ function harness(initial: Record<string, { id: string; provider: string }> = {})
   const store: LinkStore = {
     ownerOf: (identity) => map.get(identity) as never,
     link: (identity, owner) => void map.set(identity, { id: owner.id, provider: owner.provider }),
+    owns: (identity) => [...map.values()].some((o) => `${o.provider}:${o.id}` === identity),
     unlink: (identity) => map.delete(identity),
     list: () => [...map].map(([identity, owner]) => ({ identity, owner: owner as never, linkedAt: "2026-10-09T10:00:00.000Z" })),
   };
   const out: string[] = [];
   const err: string[] = [];
   const run = (...argv: string[]) => runLinksCli(argv, { store, out: (l) => out.push(l), err: (l) => err.push(l) });
-  return { map, run, out, err };
+  return { map, run, out, err, store };
 }
 
 describe("mfw identity", () => {
@@ -47,6 +48,14 @@ describe("mfw identity", () => {
       "An account can't be linked to itself.",
       "google-chat:users/1 is itself linked to static:alice: link static:bob to static:alice instead.",
     ]);
+  });
+
+  // Regression (#192 review): linking an account other accounts are linked
+  // to chained them.
+  test("link refuses an account other accounts are linked to", () => {
+    const h = harness({ "google-chat:users/1": { id: "alice", provider: "static" } });
+    expect(h.run("link", "static:alice", "oidc:3123")).toBe(1);
+    expect(h.err).toEqual(["Other accounts are linked to static:alice: unlink them first, or link them to oidc:3123 directly."]);
     expect([...h.map.keys()]).toEqual(["google-chat:users/1"]);
   });
 
@@ -63,6 +72,18 @@ describe("mfw identity", () => {
     expect(h.map.size).toBe(0);
     expect(h.run("unlink", "google-chat:users/1")).toBe(1);
     expect(h.err).toEqual(["google-chat:users/1 isn't linked."]);
+  });
+
+  test("a store that refuses to write is reported, not thrown", () => {
+    const h = harness();
+    const store = {
+      ...h.store,
+      link: () => {
+        throw new Error("the account links can't be read");
+      },
+    };
+    expect(runLinksCli(["link", "static:a", "static:b"], { store, out: () => {}, err: (l) => h.err.push(l) })).toBe(1);
+    expect(h.err).toEqual(["the account links can't be read"]);
   });
 
   test("anything else prints the usage", () => {
