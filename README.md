@@ -72,6 +72,8 @@ export default defineMercuryConfig({
 
 A plugin can hand the user a list (Jira does, for `issue search`), and how that list reads is the app's call: `formatterPlugin` wraps the plugin and `formatter` takes one rule per kind of list, the line for each item plus an optional text for an empty list. The kinds come typed from the plugin (`JiraDisplays`), so a kind it doesn't emit fails the typecheck, and a kind left without a rule isn't shown at all (the model still gets the data, and the log says which rule is missing).
 
+`directory` says who the people are and what they may do. Every channel brings an identity of its own (a Google Chat user, the subject of an OIDC token), and the directory turns it into one person with their roles, so someone reaching Mercury from two channels keeps one private area. Without a directory the person is whoever the channel says, with no roles; with one, the instance talks only to the people it knows (unless `access.unknown` is `"allow"`) and refuses everyone while the directory can't be reached. Plugins act as the person by default: the role `mercury.act-as-self` (or `mercury.act-as-self.<plugin>`) lets someone make Mercury act with its own identity, and `access.plugins` restricts a plugin to some roles.
+
 `persona` sets who the assistant is: `identity` opens the system prompt ("You are …") and `tone` closes it with the rules on how to answer. Both are plain strings, kept here in Markdown files imported as text, and a field left out falls back to Mercury's own. Everything between them, the rules tied to the tools, stays with the core.
 
 ## Packages
@@ -101,6 +103,7 @@ The first-party plugins, channels and auth providers, each with its own version:
 | [`@mercury-fw/channel-http`](packages/channels/channel-http) | An HTTP surface for a custom UI: streamed turns and read-only routes, for authenticated callers only. |
 | [`@mercury-fw/auth-oidc`](packages/auth/auth-oidc) | Who is calling the HTTP surface, from a token an OpenID Connect issuer (Zitadel, Google, Keycloak) signed. |
 | [`@mercury-fw/auth-static`](packages/auth/auth-static) | Who is calling the HTTP surface, from a fixed map of test tokens: for the test bed and e2e tests. |
+| [`@mercury-fw/directory-static`](packages/directories/directory-static) | Who the people are, their identities on each channel and their roles, from a list kept by hand. |
 
 ## Versions and compatibility
 

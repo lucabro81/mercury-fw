@@ -27,7 +27,7 @@ The CLI asks for the organization id and for the key, which it reads without ech
 
 ## Who can use it
 
-The key is the organization's, the same whoever asks: through it anyone could look up any account in the organization, profile and email included. So the plugin acts as Mercury itself, not as the person, and only someone allowed to make Mercury act as itself may use it. Mercury has no such permission yet, so for now the plugin is offered on the terminal only (`mfw repl`): people talking to Mercury on a channel don't see it, its skill included, and the startup log says so.
+The key is the organization's, the same whoever asks: through it anyone could look up any account in the organization, profile and email included. So the plugin acts as Mercury itself, not as the person, and only someone allowed to make Mercury act as itself may use it: a person holding the role `mercury.act-as-self.atlassian-admin` (or `mercury.act-as-self`, for every plugin) in the app's directory, and the terminal (`mfw repl`). Everyone else doesn't see it, its skill included, and every lookup made for someone is logged with who asked.
 
 Coming from a version before 0.2.0: the env file's `ATLASSIAN_ADMIN_CLI_CONFIG_TAR_B64` isn't read any more. Remove it, then set the key up as above once.
 
