@@ -11,8 +11,13 @@
  * on its own, which never gives anyone more than they had.
  */
 import { mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { dirname, resolve } from "node:path";
 import type { Principal } from "@mercury-fw/channel-types";
+
+/** Where the account links live on the vault's volume (`vault-init.ts` keeps `.mercury/` out of its git). */
+export function linksPath(vaultPath: string): string {
+  return resolve(vaultPath, ".mercury", "identity-links.json");
+}
 
 /** Who an identity belongs to: the owner's principal, as the core identifies it. */
 export type LinkOwner = Pick<Principal, "id" | "provider">;

@@ -71,7 +71,7 @@ import { createHostReads } from "./identity/host-reads.ts";
 import { bindConfirm } from "./identity/confirm-binding.ts";
 import { createPersonLogins } from "./identity/person-logins.ts";
 import { createPeople, type TurnWho } from "./identity/people.ts";
-import { createLinkStore } from "./identity/links.ts";
+import { createLinkStore, linksPath } from "./identity/links.ts";
 import { createLinking } from "./identity/linking.ts";
 import { offeringFor, type Offering } from "./plugins/offering.ts";
 import { AS_MERCURY_SUFFIX } from "./plugins/act-as-mercury.ts";
@@ -181,7 +181,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   // owner, then the declared directory decides, closed to anyone it doesn't
   // know unless the config opens it. The links live on the vault's volume,
   // where no model tool or HTTP read reaches.
-  const accountLinks = createLinkStore({ path: resolvePath(requireEnv("WIKI_VAULT_PATH"), ".mercury", "identity-links.json") });
+  const accountLinks = createLinkStore({ path: linksPath(requireEnv("WIKI_VAULT_PATH")) });
   const people = createPeople({
     links: accountLinks,
     directory: loadDirectory(config.directory, { env: process.env, log: (msg) => console.error(msg) }),
