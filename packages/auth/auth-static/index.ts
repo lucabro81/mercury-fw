@@ -4,7 +4,8 @@
  * users, so isolation between people can be checked), never a default: an app
  * gets it only by declaring `auth: staticAuth` in `mercury.config.ts`.
  *
- * `AUTH_STATIC_TOKENS` is JSON, `{"<token>": {"id": "alice", "displayName"?: "Alice", "roles"?: ["…"]}}`.
+ * `AUTH_STATIC_TOKENS` is JSON, `{"<token>": {"id": "alice", "displayName"?: "Alice"}}`:
+ * who is calling, nothing more (their roles come from the directory).
  * A missing or malformed map throws in `build`, so the channel that needs the
  * provider stays closed. Tokens are compared by their SHA-256 digests in
  * constant time, all of them on every request, and never appear in a message.
@@ -44,12 +45,13 @@ function parseTokens(raw: string | undefined): Entry[] {
     if (user.displayName !== undefined && typeof user.displayName !== "string") {
       throw new Error(`${ENV}: user "${user.id}" has a "displayName" that isn't a string`);
     }
-    if (user.roles !== undefined && !(Array.isArray(user.roles) && user.roles.every((r) => typeof r === "string"))) {
-      throw new Error(`${ENV}: user "${user.id}" has "roles" that aren't a list of strings`);
+    if (user.roles !== undefined) {
+      throw new Error(
+        `${ENV}: user "${user.id}" has "roles", which the auth provider no longer carries: declare them in the directory (e.g. @mercury-fw/directory-static)`,
+      );
     }
     const principal: Principal = { id: user.id, provider: "static" };
     if (user.displayName !== undefined) principal.displayName = user.displayName;
-    if (user.roles !== undefined) principal.roles = user.roles as string[];
     return { digest: digest(token), principal };
   });
 }

@@ -3,7 +3,7 @@ import { AUTH_API_VERSION } from "@mercury-fw/channel-types";
 import { staticAuth } from "./index.ts";
 
 const TOKENS = JSON.stringify({
-  "alice-token": { id: "alice", displayName: "Alice", roles: ["admin"] },
+  "alice-token": { id: "alice", displayName: "Alice" },
   "bob-token": { id: "bob" },
 });
 
@@ -29,7 +29,6 @@ describe("staticAuth", () => {
       id: "alice",
       provider: "static",
       displayName: "Alice",
-      roles: ["admin"],
     });
     expect(await authenticate(request("Bearer bob-token"))).toEqual({ id: "bob", provider: "static" });
   });
@@ -66,10 +65,16 @@ describe("staticAuth", () => {
     expect(() => build(JSON.stringify({ t: { id: "a", displayName: 3 } }))).toThrow(
       'AUTH_STATIC_TOKENS: user "a" has a "displayName" that isn\'t a string',
     );
-    expect(() => build(JSON.stringify({ t: { id: "a", roles: "admin" } }))).toThrow(
-      'AUTH_STATIC_TOKENS: user "a" has "roles" that aren\'t a list of strings',
-    );
+
     expect(() => build(JSON.stringify({ "": { id: "a" } }))).toThrow("AUTH_STATIC_TOKENS declares an empty token");
+  });
+
+  // #150: roles come from the directory now. A token map still carrying them
+  // would otherwise look like it grants something it no longer does.
+  it("refuses roles on a token's user, pointing at the directory", () => {
+    expect(() => build(JSON.stringify({ t: { id: "a", roles: ["admin"] } }))).toThrow(
+      'AUTH_STATIC_TOKENS: user "a" has "roles", which the auth provider no longer carries: declare them in the directory (e.g. @mercury-fw/directory-static)',
+    );
   });
 
   it("never puts a token in an error message", () => {
