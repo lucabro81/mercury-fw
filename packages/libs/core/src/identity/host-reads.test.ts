@@ -128,13 +128,44 @@ describe("createHostReads", () => {
     recordStep("http", "alice:c1", "static:alice", call("alice_tool"));
     recordStep("http", "bob:c1", "static:bob", call("bob_tool"));
 
-    expect((r.pendingConfirmations(alice) as Array<{ summary: string }>).map((p) => p.summary)).toEqual(["alice's"]);
-    expect((r.toolLog(alice) as ReturnType<typeof getToolLog>).map((e) => e.toolName)).toEqual(["alice_tool"]);
+    expect(((await r.pendingConfirmations(alice)) as Array<{ summary: string }>).map((p) => p.summary)).toEqual(["alice's"]);
+    expect(((await r.toolLog(alice)) as ReturnType<typeof getToolLog>).map((e) => e.toolName)).toEqual(["alice_tool"]);
   });
 
-  it("keeps the manifest and health global", async () => {
-    const { reads: r } = reads(await vault());
-    expect(r.manifest()).toEqual({ plugins: [] });
+  // #150: the manifest shows what the caller is offered, so it's built for them.
+  it("builds the manifest for whoever asks, and keeps health global", async () => {
+    const { reads: r } = reads(await vault(), { manifest: (who) => ({ for: who.person.key, operator: who.operator }) });
+    expect(await r.manifest(alice)).toEqual({ for: "static:alice", operator: false });
+    expect(await r.health()).toEqual({ up: true });
+  });
+
+  // #150: what's the caller's follows the person the directory says they are.
+  it("scopes every read to the person the caller is identified as", async () => {
+    const { reads: r, scrolls, confirmationStore } = reads(await vault(), {
+      identify: async () => ({ ok: true, operator: false, person: { key: "static:bob", roles: [] } }),
+    });
+    confirmationStore.stage("bob:c1", "static:bob", { describe: "bob's", run: async () => ({ ok: true, data: {} }) });
+    await r.conversations(alice, 20);
+    expect(scrolls[0]!.params).toMatchObject({ filter: { must: [{ key: "userId", match: { value: "static:bob" } }] } });
+    expect(await r.wikiList(alice)).toEqual(["curated/team.md", "personal/notes/b.md"]);
+    expect(((await r.pendingConfirmations(alice)) as Array<{ summary: string }>).map((p) => p.summary)).toEqual(["bob's"]);
+  });
+
+  // #150: someone the core won't talk to reads nothing, not even the common area.
+  it("answers null to every read but health for someone the core doesn't admit", async () => {
+    const { reads: r, scrolls } = reads(await vault(), {
+      identify: async () => ({ ok: false, reason: "unknown", message: "no" }),
+    });
+    expect(await r.manifest(alice)).toBeNull();
+    expect(await r.pendingConfirmations(alice)).toBeNull();
+    expect(await r.conversation(alice, "c", 10)).toBeNull();
+    expect(await r.conversations(alice, 10)).toBeNull();
+    expect(await r.wikiList(alice)).toBeNull();
+    expect(await r.wikiRead(alice, "curated/team.md")).toBeNull();
+    expect(await r.wikiGrep(alice, "team")).toBeNull();
+    expect(await r.memoryScroll(alice, "verbatim_archive", 10)).toBeNull();
+    expect(await r.toolLog(alice)).toBeNull();
+    expect(scrolls).toEqual([]);
     expect(await r.health()).toEqual({ up: true });
   });
 });

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "bun:test";
 import { handleTurnRequest, handleConfirmRequest, handleLoginCallback, openApiResponse, readRoutes, startHttpServer } from "./http-server.ts";
-import type { Authenticate, HandleTurn, InboundTurn, TurnSink, ChannelHostReads, Principal } from "@mercury-fw/channel-types";
+import type { Admission, Authenticate, HandleTurn, InboundTurn, TurnSink, ChannelHostReads, Principal } from "@mercury-fw/channel-types";
 import type { StepInfo } from "@mercury-fw/plugin-types";
 
 /**
@@ -19,6 +19,8 @@ const ALICE: Principal = { id: "alice", provider: "static", displayName: "Alice"
 const asAlice: Authenticate = async () => ALICE;
 /** An auth provider that refuses every request. */
 const refuse: Authenticate = async () => null;
+/** The core refusing whoever the auth provider vouched for: unknown to the directory, or the directory couldn't tell. */
+const notAdmitted = (reason: "unknown" | "unavailable") => async (): Promise<Admission> => ({ ok: false, reason, message: `refused (${reason})` });
 
 describe("handleTurnRequest", () => {
   it("streams reasoning, text and final events and passes an http InboundTurn keyed by conversationId", async () => {
@@ -569,15 +571,15 @@ describe("openApiResponse", () => {
 // this surface if it answers CORS preflight and echoes an allow-origin header.
 describe("CORS", () => {
   const reads: ChannelHostReads = {
-    manifest: () => ({ plugins: [] }),
-    pendingConfirmations: () => [],
+    manifest: async () => ({ plugins: [] }),
+    pendingConfirmations: async () => [],
     conversation: async () => ({ messages: [], nextOffset: null }),
     conversations: async () => ({ conversations: [] }),
     wikiList: async () => [],
     wikiRead: async () => "",
     wikiGrep: async () => [],
     memoryScroll: async () => ({ points: [] }),
-    toolLog: () => [],
+    toolLog: async () => [],
     health: async () => ({}),
   };
 
@@ -630,15 +632,15 @@ describe("CORS", () => {
 describe("authentication on the read routes", () => {
   const calls: Array<[string, unknown]> = [];
   const spyReads: ChannelHostReads = {
-    manifest: () => (calls.push(["manifest", undefined]), {}),
-    pendingConfirmations: (p) => (calls.push(["pendingConfirmations", p]), []),
+    manifest: async (p) => (calls.push(["manifest", p]), {}),
+    pendingConfirmations: async (p) => (calls.push(["pendingConfirmations", p]), []),
     conversation: async (p) => (calls.push(["conversation", p]), {}),
     conversations: async (p) => (calls.push(["conversations", p]), { conversations: [] }),
     wikiList: async (p) => (calls.push(["wikiList", p]), []),
     wikiRead: async (p) => (calls.push(["wikiRead", p]), ""),
     wikiGrep: async (p) => (calls.push(["wikiGrep", p]), []),
     memoryScroll: async (p) => (calls.push(["memoryScroll", p]), {}),
-    toolLog: (p) => (calls.push(["toolLog", p]), []),
+    toolLog: async (p) => (calls.push(["toolLog", p]), []),
     health: async () => (calls.push(["health", undefined]), {}),
   };
   /** A request every route accepts once authenticated (each required parameter present). */
@@ -666,7 +668,7 @@ describe("authentication on the read routes", () => {
       ["conversation", ALICE],
       ["conversations", ALICE],
       ["health", undefined],
-      ["manifest", undefined],
+      ["manifest", ALICE],
       ["memoryScroll", ALICE],
       ["pendingConfirmations", ALICE],
       ["toolLog", ALICE],
@@ -682,17 +684,88 @@ describe("authentication on the read routes", () => {
   });
 });
 
+// #150: an authenticated caller the core won't talk to (unknown to the
+// directory on a closed instance, or the directory couldn't tell) gets the
+// core's refusal on every route, and nothing behind it runs.
+describe("admission", () => {
+  it("refuses a turn with 403 for someone unknown, 503 when the directory can't tell, without running it", async () => {
+    for (const [reason, status] of [["unknown", 403], ["unavailable", 503]] as const) {
+      let ran = false;
+      const res = await handleTurnRequest(turnReq({ text: "hi", conversationId: "c" }), {
+        handleTurn: async () => {
+          ran = true;
+        },
+        confirm: async () => null,
+        authenticate: asAlice,
+        admit: notAdmitted(reason),
+      });
+      expect(res.status).toBe(status);
+      expect(res.headers.get("access-control-allow-origin")).toBe("*");
+      expect(await res.json()).toEqual({ ok: false, error: `refused (${reason})`, reason });
+      expect(ran).toBe(false);
+    }
+  });
+
+  it("refuses a confirmation without resolving it", async () => {
+    let resolved = false;
+    const res = await handleConfirmRequest(
+      new Request("http://x/confirm", { method: "POST", body: JSON.stringify({ token: "k9m2-x7q4", conversationId: "c" }) }),
+      {
+        authenticate: asAlice,
+        admit: notAdmitted("unknown"),
+        resolveConfirmation: async () => ((resolved = true), { status: "ok", data: {} }),
+      },
+    );
+    expect(res.status).toBe(403);
+    expect(resolved).toBe(false);
+  });
+
+  it("refuses every read route without calling its getter", async () => {
+    const calls: string[] = [];
+    const spy = (name: string) => async () => (calls.push(name), {});
+    const reads = {
+      manifest: spy("manifest"),
+      pendingConfirmations: spy("pendingConfirmations"),
+      conversation: spy("conversation"),
+      conversations: spy("conversations"),
+      wikiList: spy("wikiList"),
+      wikiRead: spy("wikiRead"),
+      wikiGrep: spy("wikiGrep"),
+      memoryScroll: spy("memoryScroll"),
+      toolLog: spy("toolLog"),
+      health: spy("health"),
+    } as ChannelHostReads;
+    for (const [path, route] of Object.entries(readRoutes(reads, asAlice, "*", notAdmitted("unknown")))) {
+      const res = await route.GET(new Request(`http://x${path}?id=c&path=a.md&pattern=x&collection=m`));
+      expect(res.status).toBe(403);
+    }
+    expect(calls).toEqual([]);
+  });
+
+  it("lets an admitted caller through", async () => {
+    const res = await handleTurnRequest(turnReq({ text: "hi", conversationId: "c" }), {
+      handleTurn: async (_t, sink) => {
+        await sink.finalize("ok");
+      },
+      confirm: async () => null,
+      authenticate: asAlice,
+      admit: async () => ({ ok: true }),
+    });
+    expect(res.status).toBe(200);
+  });
+});
+
 describe("GET /wiki/read and /memory/scroll", () => {
   const reads: ChannelHostReads = {
-    manifest: () => ({}),
-    pendingConfirmations: () => [],
+    manifest: async () => ({}),
+    pendingConfirmations: async () => [],
     conversation: async () => ({}),
     conversations: async () => ({ conversations: [] }),
     wikiList: async () => [],
     wikiRead: async () => null,
     wikiGrep: async () => [],
     memoryScroll: async () => null,
-    toolLog: () => [],
+    toolLog: async () => [],
     health: async () => ({}),
   };
 
@@ -719,15 +792,15 @@ describe("startHttpServer", () => {
       resolveConfirmation: async () => ({ status: "not-a-token" }),
       authenticate: refuse,
       reads: {
-        manifest: () => ({}),
-        pendingConfirmations: () => [],
+        manifest: async () => ({}),
+        pendingConfirmations: async () => [],
         conversation: async () => ({}),
         conversations: async () => ({}),
         wikiList: async () => [],
         wikiRead: async () => "",
         wikiGrep: async () => [],
         memoryScroll: async () => ({}),
-        toolLog: () => [],
+        toolLog: async () => [],
         health: async () => ({}),
       },
     });
@@ -747,15 +820,15 @@ describe("startHttpServer", () => {
 // A UI reloading a conversation reads its durable transcript back here.
 describe("GET /conversation", () => {
   const baseReads: ChannelHostReads = {
-    manifest: () => ({}),
-    pendingConfirmations: () => [],
+    manifest: async () => ({}),
+    pendingConfirmations: async () => [],
     conversation: async () => ({ messages: [], nextOffset: null }),
     conversations: async () => ({ conversations: [] }),
     wikiList: async () => [],
     wikiRead: async () => "",
     wikiGrep: async () => [],
     memoryScroll: async () => ({ points: [] }),
-    toolLog: () => [],
+    toolLog: async () => [],
     health: async () => ({}),
   };
 

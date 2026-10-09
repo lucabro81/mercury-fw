@@ -20,14 +20,20 @@ info:
     missing or refused one gets `401` with `WWW-Authenticate: Bearer`, before
     anything runs.
 
+    Then the core decides whether it talks to that person at all: someone the
+    app's directory doesn't know gets `403` (unless the app lets unknown people
+    in), and `503` when the directory can't be reached. Both carry
+    `{ ok: false, error, reason }`, `error` being what to tell them.
+
 
     ## What a caller sees
 
     Every read is scoped to the caller: their own conversations, pending
     confirmations, tool calls and memory, and the wiki as they see it, the
     team's common area (`curated/`) plus their own notes (`personal/`).
-    Someone else's data doesn't exist as far as a caller can tell. Only
-    `/manifest` and `/health` are the same for everyone.
+    Someone else's data doesn't exist as far as a caller can tell.
+    `/manifest` lists what the caller is offered, and only `/health` is the
+    same for everyone.
 
 
     ## Conversations
@@ -82,6 +88,10 @@ paths:
       responses:
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/NotAdmitted"
+        "503":
+          $ref: "#/components/responses/NotAdmitted"
         "200":
           description: >
             An SSE stream. Each event is one of the types in `TurnEvent`:
@@ -117,6 +127,10 @@ paths:
       responses:
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/NotAdmitted"
+        "503":
+          $ref: "#/components/responses/NotAdmitted"
         "200":
           description: >
             `resolved: true` (with the reply `text`) when the token was a pending
@@ -158,6 +172,10 @@ paths:
       responses:
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/NotAdmitted"
+        "503":
+          $ref: "#/components/responses/NotAdmitted"
         "200":
           description: The conversation's messages in chronological order; none when it isn't one of the caller's.
           content:
@@ -183,6 +201,10 @@ paths:
       responses:
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/NotAdmitted"
+        "503":
+          $ref: "#/components/responses/NotAdmitted"
         "200":
           description: The conversation list.
           content:
@@ -195,6 +217,10 @@ paths:
       responses:
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/NotAdmitted"
+        "503":
+          $ref: "#/components/responses/NotAdmitted"
         "200":
           description: Health snapshot.
           content:
@@ -203,10 +229,14 @@ paths:
                 type: object
   /manifest:
     get:
-      summary: The loaded plugins, tools and skills
+      summary: The plugins, tools and skills the caller is offered
       responses:
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/NotAdmitted"
+        "503":
+          $ref: "#/components/responses/NotAdmitted"
         "200":
           description: Plugin manifest.
           content:
@@ -219,6 +249,10 @@ paths:
       responses:
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/NotAdmitted"
+        "503":
+          $ref: "#/components/responses/NotAdmitted"
         "200":
           description: Pending confirmations.
           content:
@@ -231,6 +265,10 @@ paths:
       responses:
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/NotAdmitted"
+        "503":
+          $ref: "#/components/responses/NotAdmitted"
         "200":
           description: Tool log.
           content:
@@ -243,6 +281,10 @@ paths:
       responses:
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/NotAdmitted"
+        "503":
+          $ref: "#/components/responses/NotAdmitted"
         "200":
           description: File list.
           content:
@@ -262,6 +304,10 @@ paths:
       responses:
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/NotAdmitted"
+        "503":
+          $ref: "#/components/responses/NotAdmitted"
         "200":
           description: File content.
           content:
@@ -293,6 +339,10 @@ paths:
       responses:
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/NotAdmitted"
+        "503":
+          $ref: "#/components/responses/NotAdmitted"
         "200":
           description: Matches.
           content:
@@ -329,6 +379,10 @@ paths:
       responses:
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/NotAdmitted"
+        "503":
+          $ref: "#/components/responses/NotAdmitted"
         "200":
           description: A page of points.
           content:
@@ -396,6 +450,26 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/Error"
+    NotAdmitted:
+      description: >
+        An authenticated caller the core won't talk to: `403` when the app's
+        directory doesn't know them, `503` when it can't be reached. Nothing
+        behind the route runs.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [ok, error, reason]
+            properties:
+              ok:
+                type: boolean
+                enum: [false]
+              error:
+                type: string
+                description: What to tell the caller.
+              reason:
+                type: string
+                enum: [unknown, unavailable]
   schemas:
     TurnRequest:
       type: object

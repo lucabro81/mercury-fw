@@ -76,7 +76,7 @@ describe("oidcAuth", () => {
     const principal = await build()(request(`Bearer ${jwt}`));
     expect(principal).toMatchObject({ id: "312345", provider: "oidc", displayName: "Alice Rossi" });
     expect(principal?.claims).toMatchObject({ iss: issuer, aud: AUDIENCE, sub: "312345", email: "alice@example.com" });
-    expect(principal?.roles).toBeUndefined();
+    expect(principal).not.toHaveProperty("roles");
   });
 
   it("falls back to preferred_username, then email, for the display name, and omits it without either", async () => {

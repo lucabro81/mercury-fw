@@ -3,6 +3,7 @@ import { createTurnRunner, type PostTurnGuard } from "./turn-runner.ts";
 import type { InboundTurn, TurnSink } from "./provider.ts";
 import type { Principal } from "@mercury-fw/channel-types";
 import { createSessionHistory, type SessionHistory } from "../session/history.ts";
+import { OPERATOR_PRINCIPAL } from "../identity/people.ts";
 import { createSessionLock } from "./session-lock.ts";
 import type { StepInfo } from "../session/step-info.ts";
 
@@ -22,9 +23,9 @@ function verified(id: string): Principal {
   return { id, provider: "google-chat" };
 }
 
-/** A principal nobody vouched for (terminal, unauthenticated HTTP): the turn is never tracked. */
-function anonymous(id: string): Principal {
-  return { id, provider: "none" };
+/** The terminal's principal, the operator: the turn is never tracked. */
+function anonymous(_id: string): Principal {
+  return OPERATOR_PRINCIPAL;
 }
 
 function baseTurn(overrides: Partial<InboundTurn> = {}): InboundTurn {
@@ -189,17 +190,19 @@ describe("createTurnRunner", () => {
     expect(systems).toEqual(["SINGLE", "MULTI"]);
   });
 
-  // #176: a person is offered only the plugins acting as them, and their
-  // tools run as them; the terminal gets everything, run as the service.
-  test("a person's turn gets the people's prompt and tools for that person; the terminal gets the full prompt and no person", async () => {
+  // #176, #150: what a turn is offered follows who the person is (their
+  // prompt and tools), and the tools act for that person; the terminal is the
+  // operator.
+  test("the prompt and the tools follow the person the turn identifies, the terminal as the operator", async () => {
     const systems: string[] = [];
-    const persons: unknown[] = [];
+    const whos: unknown[] = [];
     const runner = createTurnRunner({
       model: {} as any,
-      systemPrompts: { singleUser: "PEOPLE-SINGLE", multiUser: "PEOPLE-MULTI" },
-      serviceSystemPrompts: { singleUser: "ALL-SINGLE", multiUser: "ALL-MULTI" },
-      buildTools: (_sessionKey, _key, _cb, _finishCb, person) => {
-        persons.push(person);
+      systemPrompts: { singleUser: "UNUSED", multiUser: "UNUSED" },
+      systemPromptsFor: (who) =>
+        who.operator ? { singleUser: "OP-SINGLE", multiUser: "OP-MULTI" } : { singleUser: `${who.person.key}-SINGLE`, multiUser: `${who.person.key}-MULTI` },
+      buildTools: (_sessionKey, _key, who) => {
+        whos.push(who);
         return {};
       },
       getOrCreateHistory: () => fakeHistory(),
@@ -218,9 +221,82 @@ describe("createTurnRunner", () => {
     await runner(baseTurn({ principal: verified("users/1"), multiUser: true }), baseSink());
     await runner(baseTurn({ principal: anonymous("terminal") }), baseSink());
 
-    expect(systems).toEqual(["PEOPLE-SINGLE", "PEOPLE-MULTI", "ALL-SINGLE"]);
-    expect(persons).toEqual([{ key: "google-chat:users/1" }, { key: "google-chat:users/1" }, null]);
+    expect(systems).toEqual(["google-chat:users/1-SINGLE", "google-chat:users/1-MULTI", "OP-SINGLE"]);
+    expect(whos).toEqual([
+      { operator: false, person: { key: "google-chat:users/1", roles: [] } },
+      { operator: false, person: { key: "google-chat:users/1", roles: [] } },
+      { operator: true, person: { key: "none:terminal", roles: [] } },
+    ]);
   });
+
+  // #150: the directory decides who the person is, and everything per person
+  // keys on that, not on the channel's own id.
+  test("keys the turn on the person the directory identifies", async () => {
+    const keys: Record<string, string[]> = { buildTools: [], track: [], record: [], verbatim: [] };
+    const step: StepInfo = { toolCalls: [], toolResults: [], content: [] };
+    const runner = createTurnRunner({
+      model: {} as any,
+      systemPrompts: { singleUser: "s", multiUser: "m" },
+      identify: async () => ({ ok: true, operator: false, person: { key: "people:alice", roles: ["r"] } }),
+      buildTools: (_sk, key) => {
+        keys.buildTools!.push(key);
+        return {};
+      },
+      getOrCreateHistory: () => fakeHistory(),
+      trackSession: (_sk, key) => keys.track!.push(key),
+      registerCaptureCallback: () => {},
+      maybeCapture: async () => {},
+      captureVerbatim: async (msg) => {
+        keys.verbatim!.push(msg.userId);
+      },
+      processToolCorrections: async () => {},
+      logStep: () => {},
+      recordStepFn: (_channel, _sk, owner) => keys.record!.push(owner),
+      runTurnFn: async (_history, _input, deps) => {
+        deps.onStepFinish?.(step);
+        return "reply";
+      },
+    });
+
+    await runner(baseTurn({ principal: verified("users/1") }), baseSink());
+
+    expect(keys).toEqual({
+      buildTools: ["people:alice"],
+      track: ["people:alice", "people:alice"],
+      record: ["people:alice"],
+      verbatim: ["people:alice", "people:alice"],
+    });
+  });
+
+  // #150: someone the core won't talk to (unknown on a closed instance, or a
+  // directory that can't tell) gets the refusal and nothing else: no model,
+  // no history, no capture, no tool corrections.
+  for (const reason of ["unknown", "unavailable"] as const) {
+    test(`a turn refused as ${reason} answers with the refusal and runs nothing`, async () => {
+      const ran: string[] = [];
+      const runner = createTurnRunner({
+        model: {} as any,
+        systemPrompts: { singleUser: "s", multiUser: "m" },
+        identify: async () => ({ ok: false, reason, message: `refused: ${reason}` }),
+        buildTools: () => (ran.push("buildTools"), {}),
+        getOrCreateHistory: () => (ran.push("history"), fakeHistory()),
+        trackSession: () => ran.push("track"),
+        registerCaptureCallback: () => ran.push("register"),
+        maybeCapture: async () => void ran.push("capture"),
+        captureVerbatim: async () => void ran.push("verbatim"),
+        processToolCorrections: async () => void ran.push("corrections"),
+        logStep: () => {},
+        runTurnFn: async () => (ran.push("model"), "reply"),
+      });
+      const sink = baseSink();
+
+      await runner(baseTurn({ principal: verified("users/1") }), sink);
+
+      expect(ran).toEqual([]);
+      expect(sink.finalized).toEqual([`refused: ${reason}`]);
+      expect(sink.disposed).toBe(true);
+    });
+  }
 
   test("calls buildTools with the turn's sessionKey, the principal's user key, and the sink's onToolStart/onToolFinish", async () => {
     const calls: Array<[string, string, unknown, unknown]> = [];
@@ -229,7 +305,7 @@ describe("createTurnRunner", () => {
     const runner = createTurnRunner({
       model: {} as any,
       systemPrompts: { singleUser: "s", multiUser: "m" },
-      buildTools: (sessionKey, key, cb, finishCb) => {
+      buildTools: (sessionKey, key, _who, cb, finishCb) => {
         calls.push([sessionKey, key, cb, finishCb]);
         return {};
       },
@@ -561,9 +637,9 @@ describe("createTurnRunner", () => {
     });
     const sink = baseSink();
 
-    await runner(baseTurn({ principal: anonymous("a\ud800") }), sink);
+    await runner(baseTurn({ principal: verified("a\ud800") }), sink);
 
-    expect(keys).toEqual(["none:a\ufffd"]);
+    expect(keys).toEqual(["google-chat:a\ufffd"]);
     expect(sink.finalized).toEqual(["reply"]);
   });
 

@@ -14,7 +14,7 @@ describe("userKey", () => {
   });
 
   it("ignores everything but provider and id", () => {
-    expect(userKey({ id: "alice", provider: "static", displayName: "Alice", roles: ["admin"] })).toBe("static:alice");
+    expect(userKey({ id: "alice", provider: "static", displayName: "Alice", claims: { email: "a@x" } })).toBe("static:alice");
   });
 
   it("replaces a lone surrogate, so encoding it later can't throw", () => {

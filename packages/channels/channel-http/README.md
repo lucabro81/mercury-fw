@@ -26,7 +26,7 @@ It needs an auth provider next to it: [`@mercury-fw/auth-oidc`](../../auth/auth-
 
 It's active whenever it's declared in `mercury.config.ts`'s `channels` with an auth provider; remove it there to turn the surface off. It listens on `HTTP_SURFACE_PORT` (default `4100`). Base URL `http://<host>:<port>`.
 
-**Authentication.** Every route except `GET /openapi.yaml`, `GET /login/callback` and the `OPTIONS` preflights needs `Authorization: Bearer <token>`, and the auth provider decides who the token belongs to. A missing or refused token gets `401` with `WWW-Authenticate: Bearer` before anything runs.
+**Authentication.** Every route except `GET /openapi.yaml`, `GET /login/callback` and the `OPTIONS` preflights needs `Authorization: Bearer <token>`, and the auth provider decides who the token belongs to. A missing or refused token gets `401` with `WWW-Authenticate: Bearer` before anything runs. Then the core decides whether it talks to that person at all: someone the app's directory doesn't know gets `403` (unless the app lets unknown people in), and `503` when the directory can't be reached, both with `{ ok: false, error, reason }`, where `error` is what to tell them.
 
 **Conversations belong to whoever opened them.** The session key is `<caller id>:<conversationId>`, so the same `conversationId` sent by someone else is a conversation of their own, and a confirmation token staged in your conversation can't be confirmed from theirs. Each authenticated caller also gets their own episodic memory and wiki area, as on Google Chat.
 
@@ -84,7 +84,7 @@ Explicit alternative to re-sending a token as `/turn` `text`. Body `{ token, con
 
 ## Read-only introspection
 
-All `GET`, all JSON, all reporting state already held in-process. They need an authenticated caller and show only what belongs to them: their conversations, confirmations, tool calls and memory, and the wiki as they see it (the team's `curated/` plus their own notes as `personal/`). Someone else's data doesn't exist as far as a caller can tell; only `/manifest` and `/health` are the same for everyone.
+All `GET`, all JSON, all reporting state already held in-process. They need an authenticated caller and show only what belongs to them: their conversations, confirmations, tool calls and memory, and the wiki as they see it (the team's `curated/` plus their own notes as `personal/`). Someone else's data doesn't exist as far as a caller can tell. `/manifest` lists what the caller is offered (a plugin acting as Mercury only for someone allowed to use it), and only `/health` is the same for everyone.
 
 | endpoint | `data` on success |
 |---|---|

@@ -19,5 +19,5 @@
 export { composeMercury, type ComposedApp, type ConfirmDeps } from "./src/compose.ts";
 export { loadChannels, type LoadedChannel } from "./src/router/channel-loader.ts";
 export { createTerminalProvider } from "./src/router/terminal-provider.ts";
-export { defineMercuryConfig, type MercuryConfig } from "./src/config/define-config.ts";
+export { defineMercuryConfig, type MercuryConfig, type MercuryAccess } from "./src/config/define-config.ts";
 export { DEFAULT_PERSONA_IDENTITY, DEFAULT_PERSONA_TONE, type Persona } from "./src/session/system-prompt.ts";

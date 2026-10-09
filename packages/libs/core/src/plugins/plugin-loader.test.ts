@@ -1,6 +1,6 @@
 import { describe, it, expect } from "bun:test";
 import { PLUGIN_API_VERSION, type Plugin } from "@mercury-fw/plugin-types";
-import { loadPlugins, type PluginLoadContext } from "./plugin-loader.ts";
+import { loadPlugins, type LoadedPlugins, type PluginLoadContext } from "./plugin-loader.ts";
 
 /**
  * The generic, fail-soft plugin loader — the mechanism the composition root
@@ -22,6 +22,11 @@ function plug(p: Partial<Plugin> & Pick<Plugin, "name">): Plugin {
   return { apiVersion: PLUGIN_API_VERSION, actsAs: "person", ...p };
 }
 
+/** Every loaded plugin's prompt fragment, skills and tool bundle, in load order. */
+const fragments = (l: LoadedPlugins) => l.plugins.flatMap((p) => (p.promptFragment === undefined ? [] : [p.promptFragment]));
+const skills = (l: LoadedPlugins) => l.plugins.flatMap((p) => p.skills);
+const bundles = (l: LoadedPlugins) => l.plugins.flatMap((p) => (p.bundle === undefined ? [] : [p.bundle]));
+
 function baseCtx(overrides: Partial<PluginLoadContext> = {}): PluginLoadContext {
   return {
     model: {} as never,
@@ -36,8 +41,8 @@ describe("loadPlugins", () => {
     const plugin = plug({ name: "jira", systemPromptFragment: "FRAG" });
     const loaded = await loadPlugins([plugin], baseCtx());
     expect(loaded.activated).toEqual(["jira"]);
-    expect(loaded.promptFragments).toEqual(["FRAG"]);
-    expect(loaded.sessionToolBundles).toEqual([]);
+    expect(fragments(loaded)).toEqual(["FRAG"]);
+    expect(bundles(loaded)).toEqual([]);
     expect(loaded.postTurnGuards).toEqual([]);
   });
 
@@ -47,7 +52,7 @@ describe("loadPlugins", () => {
     const guard = { statusLabel: "l", statusId: "g", shouldRun: () => true, run: async () => ({ text: "", outcome: "success" as const }) };
     const plugin = plug({ name: "jira", build: () => ({ postProcess: pp, sessionTools: factory, postTurnGuards: [guard] }) });
     const loaded = await loadPlugins([plugin], baseCtx());
-    expect(loaded.sessionToolBundles).toEqual([{ name: "jira", build: factory, postProcess: pp }]);
+    expect(bundles(loaded)).toEqual([{ name: "jira", build: factory, postProcess: pp }]);
     expect(loaded.postTurnGuards).toEqual([guard]);
   });
 
@@ -78,7 +83,7 @@ describe("loadPlugins", () => {
     const loaded = await loadPlugins([plugin], baseCtx());
     expect(built).toBe(true);
     expect(loaded.activated).toEqual(["jira"]);
-    expect(loaded.promptFragments).toEqual(["FRAG"]);
+    expect(fragments(loaded)).toEqual(["FRAG"]);
   });
 
   it("skips a plugin whose apiVersion is incompatible with this core — logs why, does not build it", async () => {
@@ -93,7 +98,7 @@ describe("loadPlugins", () => {
     const loaded = await loadPlugins([plugin], baseCtx({ log: (m) => logs.push(m) }));
     expect(built).toBe(false);
     expect(loaded.activated).toEqual([]);
-    expect(loaded.promptFragments).toEqual([]);
+    expect(fragments(loaded)).toEqual([]);
     expect(logs.some((l) => l.includes("jira") && l.includes("apiVersion") && l.includes("incompatible"))).toBe(true);
   });
 
@@ -103,7 +108,7 @@ describe("loadPlugins", () => {
     const good = plug({ name: "good", systemPromptFragment: "G" });
     const loaded = await loadPlugins([bad, good], baseCtx({ log: (m) => logs.push(m) }));
     expect(loaded.activated).toEqual(["good"]);
-    expect(loaded.promptFragments).toEqual(["G"]);
+    expect(fragments(loaded)).toEqual(["G"]);
     expect(logs.some((l) => l.includes("bad") && l.includes("failed to load") && l.includes("kaboom"))).toBe(true);
   });
 
@@ -116,8 +121,8 @@ describe("loadPlugins", () => {
     const p2 = plug({ name: "p2", systemPromptFragment: "F2", build: () => ({ sessionTools: fB, postTurnGuards: [gB] }) });
     const loaded = await loadPlugins([p1, p2], baseCtx());
     expect(loaded.activated).toEqual(["p1", "p2"]);
-    expect(loaded.promptFragments).toEqual(["F1", "F2"]);
-    expect(loaded.sessionToolBundles).toEqual([
+    expect(fragments(loaded)).toEqual(["F1", "F2"]);
+    expect(bundles(loaded)).toEqual([
       { name: "p1", build: fA },
       { name: "p2", build: fB },
     ]);
@@ -131,16 +136,17 @@ describe("loadPlugins", () => {
     const p2 = plug({ name: "p2", skills: [s2] });
     const plain = plug({ name: "plain" });
     const loaded = await loadPlugins([p1, plain, p2], baseCtx());
-    expect(loaded.skills).toEqual([s1, s2]);
+    expect(skills(loaded)).toEqual([s1, s2]);
   });
 });
 
-// #176: whose identity a plugin acts with decides who it's offered to.
-describe("loadPlugins: who each plugin is offered to", () => {
+// #176, #150: whose identity a plugin acts with decides who it's offered to,
+// which the core works out per person; the loader records it per plugin.
+describe("loadPlugins: whose identity each plugin acts with", () => {
   const login = { start: async () => ({ ok: false as const, error: "x" }), complete: async () => ({ ok: true as const }) };
   const tools = () => ({ t: {} as never });
 
-  it("offers a plugin acting as the person to people too, with its login", async () => {
+  it("records a plugin acting as the person with its fragment, skills and tools, login included", async () => {
     const plugin = plug({
       name: "jira",
       actsAs: "person",
@@ -149,27 +155,30 @@ describe("loadPlugins: who each plugin is offered to", () => {
       build: () => ({ sessionTools: tools, login }),
     });
     const loaded = await loadPlugins([plugin], baseCtx());
-    expect(loaded.sessionToolBundles).toEqual([{ name: "jira", build: tools, login }]);
-    expect(loaded.forPeople).toEqual({
-      promptFragments: ["FRAG"],
-      skills: [{ name: "jira", description: "d", body: "b" }],
-      sessionToolBundles: [{ name: "jira", build: tools, login }],
-    });
+    expect(loaded.plugins).toEqual([
+      {
+        name: "jira",
+        actsAs: "person",
+        promptFragment: "FRAG",
+        skills: [{ name: "jira", description: "d", body: "b" }],
+        bundle: { name: "jira", build: tools, login },
+      },
+    ]);
   });
 
-  it("keeps a plugin acting as Mercury, or declaring nothing, out of what people are offered, and says so once", async () => {
+  it("records a plugin acting as Mercury, or declaring nothing, as acting as Mercury, and says who gets it", async () => {
     const logs: string[] = [];
     const asMercury = plug({ name: "admin", actsAs: "mercury", systemPromptFragment: "ADMIN", build: () => ({ sessionTools: tools }) });
     const undeclared = plug({ name: "other", actsAs: undefined, skills: [{ name: "other", description: "d", body: "b" }] });
     const loaded = await loadPlugins([asMercury, undeclared], baseCtx({ log: (m) => logs.push(m) }));
     expect(loaded.activated).toEqual(["admin", "other"]);
-    expect(loaded.promptFragments).toEqual(["ADMIN"]);
-    expect(loaded.skills.map((s) => s.name)).toEqual(["other"]);
-    expect(loaded.sessionToolBundles.map((b) => b.name)).toEqual(["admin"]);
-    expect(loaded.forPeople).toEqual({ promptFragments: [], skills: [], sessionToolBundles: [] });
+    expect(loaded.plugins).toEqual([
+      { name: "admin", actsAs: "mercury", promptFragment: "ADMIN", skills: [], bundle: { name: "admin", build: tools } },
+      { name: "other", actsAs: "mercury", skills: [{ name: "other", description: "d", body: "b" }] },
+    ]);
     expect(logs).toEqual([
-      'plugin "admin" acts as Mercury itself: offered on the terminal only, until people can be allowed to make Mercury act as itself',
-      'plugin "other" acts as Mercury itself: offered on the terminal only, until people can be allowed to make Mercury act as itself',
+      'plugin "admin" acts as Mercury itself: offered only to people holding mercury.act-as-self or mercury.act-as-self.admin, and on the terminal',
+      'plugin "other" acts as Mercury itself: offered only to people holding mercury.act-as-self or mercury.act-as-self.other, and on the terminal',
     ]);
   });
 });

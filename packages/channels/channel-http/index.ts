@@ -22,7 +22,7 @@ export { createHttpProvider, type HttpProviderDeps } from "./http-provider.ts";
 export const httpChannel: ChannelPlugin = {
   // The contract this channel is written for, as a literal: importing
   // CHANNEL_API_VERSION would report whichever contract is installed.
-  apiVersion: 4,
+  apiVersion: 5,
   name: "http",
   build: (ctx) => {
     if (!ctx.resolveConfirmation || !ctx.reads) {
@@ -42,6 +42,7 @@ export const httpChannel: ChannelPlugin = {
       resolveConfirmation: ctx.resolveConfirmation,
       reads: ctx.reads,
       authenticate: ctx.authenticate,
+      admit: ctx.admit,
       ...(logins ? { logins: { callbackUrl: `${publicUrl}/login/callback`, accept: logins.accept, complete: logins.complete } } : {}),
     });
   },

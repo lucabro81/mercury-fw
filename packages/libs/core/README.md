@@ -10,7 +10,7 @@ bun create mercury-agent my-agent
 
 ## What it exports
 
-- `defineMercuryConfig(config)` types the app's `mercury.config.ts`: `plugins`, `channels`, `auth` (the provider that tells a channel like HTTP who is calling; HTTP doesn't start without one), `persona`.
+- `defineMercuryConfig(config)` types the app's `mercury.config.ts`: `plugins`, `channels`, `auth` (the provider that tells a channel like HTTP who is calling; HTTP doesn't start without one), `directory` (who that is to Mercury, with their roles; a closed instance for anyone it doesn't know), `access` (whether unknown people are let in, what they're told, and which roles a plugin is restricted to), `persona`.
 - `composeMercury(config)` builds the agent from that config and the environment, and returns what the entrypoints start: `handleTurn`, the declared channels with their runtime, and the background jobs (`startCrons`).
 - `loadChannels(channels, { runtime })` turns the declared channels into started providers, and `createTerminalProvider(...)` opens the dev REPL on `handleTurn`.
 - `DEFAULT_PERSONA_IDENTITY`, `DEFAULT_PERSONA_TONE` are the persona an app gets when its config sets none.

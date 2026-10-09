@@ -105,6 +105,8 @@ mercury/                       # repo root
 │   ├── auth/
 │   │   ├── auth-oidc/             # auth provider: verifies an OpenID Connect bearer token (issuer's JWKS via jose) into a Principal
 │   │   └── auth-static/           # auth provider: a fixed token→principal map from AUTH_STATIC_TOKENS, for the test bed and e2e
+│   ├── directories/
+│   │   └── directory-static/      # user directory: people, their channel identities and roles, from DIRECTORY_STATIC_PEOPLE
 │   ├── tools/
 │   │   ├── plugin-jira/           # Jira plugin: allowlist, SKILL.md, issue-list extractor + the typed kinds of list it emits (JiraDisplays), pinned CLI binary
 │   │   ├── plugin-bitbucket/      # Bitbucket plugin: allowlist + pinned CLI binary (the minimal plugin shape)
@@ -144,15 +146,16 @@ packages/libs/core/
     ├── session/               # Layer 1 history + summarizer + agent-turn loop
     ├── config/               # defineMercuryConfig + the MercuryConfig contract (plugins, channels, persona)
     ├── tools/                 # CLI executor + command parser/allowlist (cli-tool.ts) + config schema/loader/version-check
-    ├── plugins/               # generic fail-soft tool-plugin loader (plugin-loader.ts) + the formatter decorator
+    ├── plugins/               # generic fail-soft tool-plugin loader (plugin-loader.ts), what each person is offered (offering.ts: act-as-self, access.plugins) and the tools acting as Mercury for them (act-as-mercury.ts), the manifest
     ├── router/
     │   ├── turn-runner.ts      # shared per-turn driver every provider funnels through, one turn at a time per session
     │   ├── session-lock.ts     # the per-session queue the turn runner and the idle sweep share
     │   ├── channel-loader.ts   # generic fail-soft channel-plugin loader — turns the hand-listed channel set into started providers
     │   ├── auth-loader.ts      # builds the declared auth provider into the `authenticate` channels get; fail-soft and closed (no provider ⇒ HTTP doesn't start)
+    │   ├── directory-loader.ts # builds the declared user directory; closed when it fails (nobody but the terminal is let in)
     │   ├── terminal.ts         # the REPL loop (stdin/stdout), driven by the app's repl.ts — a dev console, not a channel
     │   └── tool-log.ts         # terminal-only debug visibility helpers
-    ├── identity/              # who sees what, decided in one place: the user key (`<provider>:<id>`), a person's vault area (`users/<key>/`, `personal/` to the model) and its access checks, the per-person channel reads, people's pending logins to the services plugins act on as them, the startup migration of pre-key data
+    ├── identity/              # who sees what, decided in one place: who a principal is (people.ts: the directory, cached, closed for unknown people by default, failing closed), the user key (`<provider>:<id>`), a person's vault area (`users/<key>/`, `personal/` to the model) and its access checks, the per-person channel reads, people's pending logins to the services plugins act on as them, the startup migration of pre-key data
     ├── credentials/           # at startup, links each plugin-declared CLI login kept outside ~/.config to the credentials volume, and reports one not set up yet
     ├── memory/                # Layer 3 — episodic store (Qdrant)
     ├── wiki/                  # Layer 2 — vault init/read/write (common `curated/` + per-person `users/<key>/`) + vault-cli.ts (maintenance CLI, see Operational notes)

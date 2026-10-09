@@ -16,6 +16,7 @@ function runtimeWith(logs: string[]): ChannelRuntimeContext {
     env: {},
     log: (msg) => logs.push(msg),
     confirm: async () => null,
+    admit: async () => ({ ok: true }),
   };
 }
 

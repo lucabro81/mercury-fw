@@ -140,9 +140,10 @@ export type SessionToolContext = {
   sessionKey: string;
   stageConfirmation: StageConfirmation;
   stashDisplay: (artifact: string) => string;
-  /** Who the turn is for, by user key (`<provider>:<id>`), when it's a person;
-   * `null` on the terminal, where whoever types already holds the container
-   * and a plugin acts as its own service identity. */
+  /** Whom the tools act for, by the person's key, when they act as the
+   * person; `null` when they act as the plugin's own service identity: on the
+   * terminal, where whoever types already holds the container, and for a
+   * person allowed to make Mercury act as itself. */
   person: { key: string } | null;
   /** For a plugin acting as `person` whose service says that person isn't
    * logged in: starts their login and returns what the tool hands back, a

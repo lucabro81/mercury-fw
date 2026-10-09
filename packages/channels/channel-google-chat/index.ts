@@ -22,7 +22,7 @@ function require(env: ChannelRuntimeContext["env"], name: string): string {
 export const googleChatChannel: ChannelPlugin = {
   // The contract this channel is written for, as a literal: importing
   // CHANNEL_API_VERSION would report whichever contract is installed.
-  apiVersion: 4,
+  apiVersion: 5,
   name: "google-chat",
   build: (ctx) => {
     // No subscription configured ⇒ this instance simply doesn't run Google Chat.
