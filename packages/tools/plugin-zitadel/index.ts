@@ -81,3 +81,5 @@ export function createZitadelPlugin(deps: { runCliFn?: typeof runCli } = {}): Pl
 }
 
 export const zitadelPlugin: Plugin = createZitadelPlugin();
+
+export { zitadelDirectory, createZitadelDirectory } from "./directory.ts";
