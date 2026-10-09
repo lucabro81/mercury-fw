@@ -18,7 +18,10 @@ const activeUser: CliResult = {
 };
 
 /** A directory over a fake CLI answering `user get` and `user authorizations`, recording each call. */
-function directoryWith(answers: { get?: CliResult; authorizations?: CliResult; search?: CliResult; links?: CliResult }, env: Record<string, string | undefined> = { ZITADEL_PROJECT_ID: "p1" }) {
+function directoryWith(
+  answers: { get?: CliResult; authorizations?: CliResult; search?: CliResult; links?: CliResult },
+  env: Record<string, string | undefined> = { ZITADEL_PROJECT_ID: "p1", ZITADEL_GOOGLE_IDP_ID: "g" },
+) {
   const calls: string[][] = [];
   const plugin = createZitadelDirectory({
     runCliFn: async (binary, args) => {
@@ -140,7 +143,6 @@ describe("zitadelDirectory", () => {
     for (const id of ["--help", "1 2", "", "abc"]) expect(await directory.resolve({ id, provider: "oidc" })).toBeNull();
     expect(calls).toEqual([]);
   });
-
 });
 
 // #190: a Google Chat sender is the ZITADEL user with their (verified) email,
@@ -151,14 +153,14 @@ describe("zitadelDirectory: Google Chat senders", () => {
   const sender = { id: `users/${CHAT_ID}`, provider: "google-chat" as const, claims: { email: "jane@example.com" } };
   const found = (users: object[]): CliResult => ({ ok: true, data: { result: users } });
   const jane = { userId: SUB, username: "jane.doe", state: "USER_STATE_ACTIVE", human: { profile: { displayName: "Jane Doe" }, email: { email: "jane@example.com", isVerified: true } } };
-  const linked = (...externalIds: string[]): CliResult => ({ ok: true, data: { result: externalIds.map((userId) => ({ idpId: "g", idpName: "Google", userId })) } });
+  const linked = (...externalIds: string[]): CliResult => ({ ok: true, data: { result: externalIds.map((userId) => ({ idpId: "g", userId })) } });
 
   it("resolves the user with that verified email whose Google link is the sender, with the project's roles", async () => {
     const { directory, calls } = directoryWith({ search: found([jane]), links: linked("999", CHAT_ID), authorizations: roles({ keys: ["mercury.act-as-self"] }) });
     expect(await directory.resolve(sender)).toEqual({ id: SUB, displayName: "Jane Doe", email: "jane@example.com", roles: ["mercury.act-as-self"] });
     expect(calls).toEqual([
       ["zitadel", "user", "search", "--email-exact", "jane@example.com", "--select", "result.userId,result.username,result.state,result.human.profile.displayName,result.human.email.email,result.human.email.isVerified"],
-      ["zitadel", "user", "idp-links", SUB, "--select", "result.userId"],
+      ["zitadel", "user", "idp-links", SUB, "--select", "result.idpId,result.userId"],
       ["zitadel", "user", "authorizations", SUB, "--project-id", "p1", "--state", "active", "--select", "authorizations.roles.key,authorizations.state"],
     ]);
   });
@@ -174,8 +176,26 @@ describe("zitadelDirectory: Google Chat senders", () => {
       { search: found([{ ...jane, human: { ...jane.human, email: { email: "other@example.com", isVerified: true } } }]) },
       { search: found([jane]), links: linked("999") },
       { search: found([jane]), links: { ok: true, data: { details: {} } } },
+      // The sender's id on another identity provider is another account.
+      { search: found([jane]), links: { ok: true, data: { result: [{ idpId: "github", userId: CHAT_ID }] } } },
+      // What goes on idp-links' command line is a ZITADEL user id, or nothing.
+      { search: found([{ ...jane, userId: "--help" }]), links: linked(CHAT_ID) },
+      { search: found([{ ...jane, userId: undefined }]), links: linked(CHAT_ID) },
     ];
     for (const answers of cases) expect(await directoryWith(answers).directory.resolve(sender)).toBeNull();
+  });
+
+  it("compares the email without regard to case", async () => {
+    const { directory } = directoryWith({ search: found([jane]), links: linked(CHAT_ID) });
+    expect(await directory.resolve({ ...sender, claims: { email: "Jane@Example.com" } })).toMatchObject({ id: SUB });
+  });
+
+  // Without the Google identity provider's id there's nothing to confirm the
+  // email against: Chat senders stay unknown, and ZITADEL isn't asked.
+  it("joins nobody from Chat without ZITADEL_GOOGLE_IDP_ID, and asks nothing", async () => {
+    const { directory, calls } = directoryWith({ search: found([jane]), links: linked(CHAT_ID) }, { ZITADEL_PROJECT_ID: "p1" });
+    expect(await directory.resolve(sender)).toBeNull();
+    expect(calls).toEqual([]);
   });
 
   it("doesn't ask about an email that couldn't be one, or a sender id that isn't a Google one", async () => {

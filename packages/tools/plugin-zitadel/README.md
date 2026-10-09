@@ -46,12 +46,13 @@ directory: zitadelDirectory,
 | Variable | |
 |---|---|
 | `ZITADEL_PROJECT_ID` | Required. The project whose roles count (`zitadel project list --select projects.projectId,projects.name` lists them). |
+| `ZITADEL_GOOGLE_IDP_ID` | Optional. The id ZITADEL gives the Google identity provider; `zitadel user idp-links <your user id> --select result.idpId,result.idpName` shows it for someone who signed in with Google. Without it, nobody is recognised from Google Chat. |
 
 It calls the CLI from code, never through the model, as the service user set up above, which only needs `ORG_OWNER_VIEWER` for this. Someone calling the HTTP surface with a ZITADEL token is the ZITADEL user the token's subject names: unknown (and refused, the instance being closed) when ZITADEL doesn't find them or they aren't active, otherwise known with the role keys of their active role assignments on the project. Their email is passed on only when ZITADEL verified it, and their key is `zitadel:<user id>`.
 
 The roles that mean something to Mercury are `mercury.act-as-self` (make Mercury act with its own identity, on every plugin) and `mercury.act-as-self.<plugin>` (on one); create them as roles of the project and assign them to people in ZITADEL's console (the user's **Role Assignments**). Any other role is for the app's `access.plugins`. An answer is kept for five minutes, so a role taken away stops counting within that time.
 
-A Google Chat sender is the ZITADEL user with the sender's email, as long as exactly one active user has it, verified, and that user's identity provider links include the sender's own Google account (Chat's `users/<id>` is the id ZITADEL stores for a Google link). The email alone is only the sender saying who they are; the link is ZITADEL confirming it's the same Google account. This needs Google set up as an identity provider in ZITADEL, and people having signed in through it at least once. Anyone else on Chat is unknown to this directory, and can link their Chat account to the one Mercury knows with a code (see the HTTP channel's `POST /link`).
+A Google Chat sender is the ZITADEL user with the sender's email, as long as exactly one user has it (an inactive duplicate is enough to leave them unknown), active, verified, and that user's links to the Google identity provider (`ZITADEL_GOOGLE_IDP_ID`) include the sender's own Google account (Chat's `users/<id>` is the id ZITADEL stores for a Google link). The email alone is only the sender saying who they are; the link is ZITADEL confirming it's the same Google account. This needs Google set up as an identity provider in ZITADEL, and people having signed in through it at least once. Anyone else on Chat is unknown to this directory, and can link their Chat account to the one Mercury knows with a code (see the HTTP channel's `POST /link`).
 
 Identities from other channels aren't resolved by this directory.
 

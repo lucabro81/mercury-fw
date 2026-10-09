@@ -6,7 +6,8 @@
  *
  * An OIDC subject is the user it names (the app's `auth-oidc` points at this
  * ZITADEL). A Google Chat sender is the one active user with the sender's
- * email, verified, whose IdP links hold that very Google account (Chat's
+ * email, verified, whose links to the Google identity provider
+ * (`ZITADEL_GOOGLE_IDP_ID`) hold that very Google account (Chat's
  * `users/<id>` is the id ZITADEL stores for the link): the email alone is the
  * sender saying who they are, the link is ZITADEL confirming it. Anything short
  * of that, and any other channel identity, is unknown; any CLI failure but a
@@ -16,6 +17,7 @@ import type { DirectoryPerson, DirectoryPlugin } from "@mercury-fw/channel-types
 import { runCli } from "@mercury-fw/cli-engine";
 
 const PROJECT_ENV = "ZITADEL_PROJECT_ID";
+const GOOGLE_IDP_ENV = "ZITADEL_GOOGLE_IDP_ID";
 
 /** A ZITADEL user id: digits only, so it's one argument that can't read as a flag. */
 const USER_ID = /^\d{1,32}$/;
@@ -27,7 +29,7 @@ type User = {
 };
 type UserGet = { user?: User };
 type UserSearch = { result?: Array<User & { userId?: string }> };
-type IdpLinks = { result?: Array<{ userId?: string }> };
+type IdpLinks = { result?: Array<{ idpId?: string; userId?: string }> };
 
 /** An email that is one argument and can't read as a flag. */
 const EMAIL = /^[^\s@-][^\s@]*@[^\s@]+$/;
@@ -45,6 +47,8 @@ export function createZitadelDirectory(deps: { runCliFn?: typeof runCli } = {}):
       const configured = ctx.env[PROJECT_ENV]?.trim();
       if (!configured) throw new Error(`${PROJECT_ENV} is not set: the ZITADEL project whose roles count`);
       const projectId: string = configured;
+      // The identity provider whose links confirm a Chat sender: Google's, as ZITADEL names it. Without it, nobody is joined from Chat.
+      const googleIdpId = ctx.env[GOOGLE_IDP_ENV]?.trim() || undefined;
 
       /** `args` run as the service user; throws naming the command when it fails or prints no JSON. */
       async function read(command: string, args: string[]): Promise<object> {
@@ -121,8 +125,8 @@ export function createZitadelDirectory(deps: { runCliFn?: typeof runCli } = {}):
         if (typeof user.userId !== "string" || !USER_ID.test(user.userId)) return null;
         if (user.state !== "USER_STATE_ACTIVE") return null;
         if (user.human?.email?.isVerified !== true || user.human.email.email?.toLowerCase() !== email.toLowerCase()) return null;
-        const links = (await read("idp-links", [user.userId, "--select", "result.userId"])) as IdpLinks;
-        if (!(links.result ?? []).some((link) => link.userId === googleId)) return null;
+        const links = (await read("idp-links", [user.userId, "--select", "result.idpId,result.userId"])) as IdpLinks;
+        if (!(links.result ?? []).some((link) => link.idpId === googleIdpId && link.userId === googleId)) return null;
         return personOf(user.userId, user);
       }
 
@@ -132,7 +136,7 @@ export function createZitadelDirectory(deps: { runCliFn?: typeof runCli } = {}):
           if (principal.provider === "google-chat") {
             const email = principal.claims?.email;
             const googleId = /^users\/(\d{1,32})$/.exec(principal.id)?.[1];
-            if (typeof email !== "string" || !EMAIL.test(email) || googleId === undefined) return null;
+            if (googleIdpId === undefined || typeof email !== "string" || !EMAIL.test(email) || googleId === undefined) return null;
             return byChatSender(email, googleId);
           }
           return null;

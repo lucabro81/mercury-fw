@@ -72,7 +72,7 @@ describe("parseChatEvent", () => {
         name: "spaces/X/messages/1",
         text: "hello",
         space: { name: "spaces/X" },
-        sender: { name: "users/42", displayName: "Luca", email: "luca@example.com" },
+        sender: { name: "users/42", displayName: "Luca", email: "luca@example.com", type: "HUMAN" },
         thread: { name: "spaces/X/threads/T1" },
       },
     };
@@ -89,14 +89,15 @@ describe("parseChatEvent", () => {
   });
 
   // #190: the sender's email is what a directory joins a Chat identity on.
-  // Google vouches for it only for a person; a bot's is left out.
+  // Google vouches for it only for a person; a bot's, or one of no stated
+  // kind, is left out.
   test("keeps the sender's email for a person only", () => {
     const event = (sender: object) => ({
       type: "MESSAGE",
       message: { name: "spaces/X/messages/1", text: "hi", space: { name: "spaces/X" }, sender: { name: "users/42", ...sender } },
     });
     expect(parseChatEvent(event({ email: "a@example.com", type: "HUMAN" }))).toMatchObject({ senderEmail: "a@example.com" });
-    expect(parseChatEvent(event({ email: "a@example.com" }))).toMatchObject({ senderEmail: "a@example.com" });
+    expect(parseChatEvent(event({ email: "a@example.com" }))).toMatchObject({ senderEmail: undefined });
     expect(parseChatEvent(event({ email: "bot@example.com", type: "BOT" }))).toMatchObject({ senderEmail: undefined });
     expect(parseChatEvent(event({ email: 3 }))).toMatchObject({ senderEmail: undefined });
   });

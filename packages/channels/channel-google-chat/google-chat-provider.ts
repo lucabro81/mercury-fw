@@ -217,9 +217,9 @@ export type ParsedCardClickEvent = {
   parameters: Record<string, string>;
 };
 
-/** The email Google vouches for on `sender`: a string, and not a bot's. */
+/** The email Google vouches for on `sender`: a person's only (`HUMAN`), never a bot's or an unknown kind's. */
 function emailOf(sender: RawChatSender | undefined): string | undefined {
-  return typeof sender?.email === "string" && sender.email !== "" && sender.type !== "BOT" ? sender.email : undefined;
+  return typeof sender?.email === "string" && sender.email !== "" && sender.type === "HUMAN" ? sender.email : undefined;
 }
 
 /** Parses one decoded Pub/Sub event, or `null` if it isn't a kind this provider acts on. */
