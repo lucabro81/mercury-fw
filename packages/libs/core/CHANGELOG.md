@@ -1,5 +1,15 @@
 # @mercury-fw/core
 
+## 0.44.1
+
+### Patch Changes
+
+- @mercury-fw/plugin-types@0.44.1
+- @mercury-fw/channel-types@0.44.1
+- @mercury-fw/cli-engine@0.44.1
+- @mercury-fw/confirm-engine@0.44.1
+- @mercury-fw/utils@0.44.1
+
 ## 0.44.0
 
 ### Minor Changes
