@@ -115,4 +115,20 @@ describe("a confirmation's note, staged in a turn then confirmed from the channe
     const asAlice = bindConfirm(confirmDeps, async () => ({ ok: true, operator: false, person: { key: "people:alice", roles: [] } }));
     expect((await asAlice.resolveConfirmation(token, "s", chat)).status).toBe("ok");
   });
+
+  // Regression (#190): confirm refused anyone the core doesn't admit before
+  // checking the text was a token at all, so on Google Chat every message
+  // from an unknown sender came back as the refusal, and a link code never
+  // reached the core. Text that isn't a token isn't confirm's business.
+  it("leaves text that isn't a token to the turn, whoever sends it", async () => {
+    const store = createConfirmationStore();
+    const confirmDeps = { store, vaultPath: "/nowhere", writeConfirmationNoteFn: writeConfirmationNote };
+    let asked = 0;
+    const refused = bindConfirm(confirmDeps, async () => (asked++, { ok: false, reason: "unknown", message: "Ask for access." }));
+    const chat = { id: "users/1", provider: "google-chat" as const };
+    expect(await refused.confirm("a1b2-c3d4-e5f6", "s", chat)).toBeNull();
+    expect(await refused.confirm("hello", "s", chat)).toBeNull();
+    expect((await refused.resolveConfirmation("hello", "s", chat)).status).toBe("not-a-token");
+    expect(asked).toBe(0);
+  });
 });
