@@ -13,6 +13,10 @@
  *   the default) or taken as the channel says (an open one). A directory that
  *   can't answer refuses everyone: identity fails closed.
  *
+ * An identity linked to another account (`links.ts`) is first replaced by
+ * that account's owner, so the directory, the instance being open or closed
+ * and everything after apply to the owner.
+ *
  * Answers are cached per principal for `ttlMs`, so a role revoked in the
  * directory stops counting within that time, and so does someone added to it
  * after being told they're unknown; failures aren't cached. Expired answers
@@ -21,6 +25,7 @@
  */
 import type { Admission, Directory, Principal } from "@mercury-fw/channel-types";
 import { userKey } from "./user-key.ts";
+import type { LinkStore } from "./links.ts";
 
 /** The terminal's principal, the only one the core takes as the operator. */
 export const OPERATOR_PRINCIPAL: Principal = Object.freeze({ id: "terminal", provider: "none" as const });
@@ -51,6 +56,8 @@ export type PeopleOptions = {
   /** What to do with someone the directory doesn't know (default `refuse`). */
   unknown?: "refuse" | "allow";
   unknownMessage?: string;
+  /** The account links Mercury owns; none when absent. */
+  links?: LinkStore;
   ttlMs?: number;
   now?: () => number;
   log?: (msg: string) => void;
@@ -92,14 +99,29 @@ export function createPeople(opts: PeopleOptions) {
     };
   }
 
-  async function identify(principal: Principal): Promise<Identified> {
+  /** The operator, or the refusal of anyone else claiming `none`; undefined for every other principal. */
+  function settledByProvider(principal: Principal): Identified | undefined {
     if (principal === OPERATOR_PRINCIPAL) return { ok: true, operator: true, person: { key: userKey(principal), roles: [] } };
     if (principal.provider === "none") {
       log(`[identity] refused a principal claiming to be nobody's ("${userKey(principal)}"): only the terminal is the operator`);
       return { ok: false, reason: "unknown", message: unknownMessage };
     }
+    return undefined;
+  }
+
+  /** Logs a directory failure and refuses as unavailable. */
+  const failed = (name: string, key: string) => (err: unknown): Identified => {
+    log(`[identity] directory "${name}" couldn't identify ${key}, refused: ${err instanceof Error ? err.message : String(err)}`);
+    return unavailable;
+  };
+
+  async function identify(principal: Principal): Promise<Identified> {
+    const settled = settledByProvider(principal);
+    if (settled) return settled;
+    const owner = opts.links?.ownerOf(userKey(principal));
+    const subject: Principal = owner ?? principal;
     const { directory } = opts;
-    if (directory === "none") return asTheChannelSays(principal);
+    if (directory === "none") return asTheChannelSays(subject);
     if (directory === "failed") return unavailable;
 
     const key = userKey(principal);
@@ -108,7 +130,7 @@ export function createPeople(opts: PeopleOptions) {
     const pending = inFlight.get(key);
     if (pending) return pending;
 
-    const lookup = lookUp(principal, directory.name, directory.directory)
+    const lookup = lookUp(subject, directory.name, directory.directory)
       .then((value) => {
         if (cache.size >= SWEEP_ABOVE) {
           for (const [k, entry] of cache) if (entry.expiresAt <= now()) cache.delete(k);
@@ -116,10 +138,7 @@ export function createPeople(opts: PeopleOptions) {
         cache.set(key, { value, expiresAt: now() + ttlMs });
         return value;
       })
-      .catch((err: unknown) => {
-        log(`[identity] directory "${directory.name}" couldn't identify ${key}, refused: ${err instanceof Error ? err.message : String(err)}`);
-        return unavailable;
-      })
+      .catch(failed(directory.name, key))
       .finally(() => inFlight.delete(key));
     inFlight.set(key, lookup);
     return lookup;
@@ -127,6 +146,19 @@ export function createPeople(opts: PeopleOptions) {
 
   return {
     identify,
+    /** Who `principal` is on its own, ignoring account links and the cache: what linking checks against. */
+    identifyUnlinked: async (principal: Principal): Promise<Identified> => {
+      const settled = settledByProvider(principal);
+      if (settled) return settled;
+      const { directory } = opts;
+      if (directory === "none") return asTheChannelSays(principal);
+      if (directory === "failed") return unavailable;
+      return lookUp(principal, directory.name, directory.directory).catch(failed(directory.name, userKey(principal)));
+    },
+    /** Drops what's cached about `principal`, so a link made or removed counts at once. */
+    forget: (principal: Principal): void => {
+      cache.delete(userKey(principal));
+    },
     /** Whether the core talks to `principal` at all: `identify` without the person. */
     admit: async (principal: Principal): Promise<Admission> => {
       const identified = await identify(principal);

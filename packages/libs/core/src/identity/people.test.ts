@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { Directory, DirectoryPerson, Principal } from "@mercury-fw/channel-types";
 import { createPeople, OPERATOR_PRINCIPAL, UNAVAILABLE_MESSAGE, UNKNOWN_MESSAGE } from "./people.ts";
+import type { LinkStore } from "./links.ts";
 
 const alice: Principal = { id: "alice", provider: "static", displayName: "Alice" };
 const terminal = OPERATOR_PRINCIPAL;
@@ -194,5 +195,64 @@ describe("admit", () => {
     const people = createPeople({ directory: { name: "people", directory } });
     expect(await people.admit(alice)).toEqual({ ok: true });
     expect(await people.admit({ id: "bob", provider: "static" })).toEqual({ ok: false, reason: "unknown", message: UNKNOWN_MESSAGE });
+  });
+});
+
+/** A link store over a fixed map from identity to owner. */
+function linksOf(map: Record<string, { id: string; provider: Principal["provider"] }>): LinkStore {
+  return {
+    ownerOf: (identity) => map[identity],
+    link: (identity, owner) => void (map[identity] = { id: owner.id, provider: owner.provider }),
+    unlink: (identity) => delete map[identity],
+    list: () => [],
+  };
+}
+
+// #190: an identity linked to another account is the person that account is.
+describe("identify with account links", () => {
+  const chat: Principal = { id: "users/1", provider: "google-chat", displayName: "Alice on Chat" };
+
+  test("without a directory, a linked identity is keyed on its owner", async () => {
+    const people = createPeople({ directory: "none", links: linksOf({ "google-chat:users/1": { id: "alice", provider: "static" } }) });
+    expect(await people.identify(chat)).toEqual({ ok: true, operator: false, person: { key: "static:alice", roles: [] } });
+  });
+
+  test("with a directory, the owner is who the directory resolves, roles included", async () => {
+    const { directory, calls } = directoryOf({ "static:alice": aliceInDirectory });
+    const people = createPeople({
+      directory: { name: "people", directory },
+      links: linksOf({ "google-chat:users/1": { id: "alice", provider: "static" } }),
+    });
+    expect(await people.identify(chat)).toMatchObject({ ok: true, person: { key: "people:alice", roles: ["mercury.act-as-self"] } });
+    expect(calls).toEqual(["static:alice"]);
+  });
+
+  test("an identity that isn't linked is itself", async () => {
+    const people = createPeople({ directory: "none", links: linksOf({}) });
+    expect(await people.identify(chat)).toMatchObject({ person: { key: "google-chat:users/1" } });
+  });
+
+  test("forget drops a cached answer, so a new link counts at once", async () => {
+    const map: Record<string, { id: string; provider: Principal["provider"] }> = {};
+    const { directory } = directoryOf({ "static:alice": aliceInDirectory });
+    const people = createPeople({ directory: { name: "people", directory }, links: linksOf(map), unknown: "allow" });
+    expect(await people.identify(chat)).toMatchObject({ person: { key: "google-chat:users/1" } });
+    map["google-chat:users/1"] = { id: "alice", provider: "static" };
+    expect(await people.identify(chat)).toMatchObject({ person: { key: "google-chat:users/1" } });
+    people.forget(chat);
+    expect(await people.identify(chat)).toMatchObject({ person: { key: "people:alice" } });
+  });
+
+  // The link check itself asks who an account is on its own: a link must
+  // never hide that the directory knows it as someone else.
+  test("identifyUnlinked ignores links and the cache", async () => {
+    const { directory, calls } = directoryOf({ "google-chat:users/1": { id: "carol", roles: [] } });
+    const people = createPeople({
+      directory: { name: "people", directory },
+      links: linksOf({ "google-chat:users/1": { id: "alice", provider: "static" } }),
+    });
+    expect(await people.identifyUnlinked(chat)).toMatchObject({ person: { key: "people:carol" } });
+    expect(await people.identifyUnlinked(chat)).toMatchObject({ person: { key: "people:carol" } });
+    expect(calls).toEqual(["google-chat:users/1", "google-chat:users/1"]);
   });
 });
