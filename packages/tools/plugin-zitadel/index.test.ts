@@ -88,7 +88,7 @@ describe("zitadelPlugin", () => {
       {} as never,
     );
     expect(calls).toEqual([]);
-    expect(result).toMatchObject({ ok: false });
+    expect(result).toMatchObject({ ok: false, error: expect.stringContaining("--user is not allowed") });
   });
 
   // The Native app accepts several redirect URIs, so Mercury's callback goes on

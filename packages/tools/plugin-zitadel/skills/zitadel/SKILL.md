@@ -11,11 +11,11 @@ HOW THE CLI PRINTS (read this first):
 - Never use `--select-all`: the commands below already name the useful paths.
 - Who the user is: `zitadel auth whoami` (prints in full: `user.id`, `user.userName`, `user.loginNames`, `user.human.profile`, `user.human.email`).
 - Organizations: `zitadel organization list --select result.id,result.name,result.state,result.primaryDomain`
-- Projects: `zitadel project list --select projects.projectId,projects.name,pagination.totalResult` (`--organization-id <id>` narrows it to one organization, `--name <text>` to a name).
-- A person by email: `zitadel user search --email-exact jane@example.com --select result.userId,result.username,result.state,result.human.profile.displayName,result.human.email.isVerified` (`--email <text>` and `--username <text>` match a fragment instead).
-- A person by id: `zitadel user get <user id> --select user.username,user.state,user.human.profile.displayName,user.human.email.email`
-- A person's project roles: `zitadel user authorizations <user id> --select authorizations.project.name,authorizations.roles.key,authorizations.state` (`--project-id <id>` for one project). The user id comes from `user search` or `auth whoami`, never from a name.
-- A person's linked identity providers (e.g. Google): `zitadel user idp-links <user id> --select result.idpName,result.userName`
+- Projects: `zitadel project list --select projects.projectId,projects.name,pagination.totalResult` (`--organization-id ORG_ID` narrows it to one organization, `--name TEXT` to a name).
+- A person by email: `zitadel user search --email-exact jane@example.com --select result.userId,result.username,result.state,result.human.profile.displayName,result.human.email.isVerified` (`--email TEXT` and `--username TEXT` match a fragment instead).
+- A person by id: `zitadel user get USER_ID --select user.username,user.state,user.human.profile.displayName,user.human.email.email`
+- A person's project roles: `zitadel user authorizations USER_ID --select authorizations.project.name,authorizations.roles.key,authorizations.state` (`--project-id PROJECT_ID` for one project). The user id comes from `user search` or `auth whoami`, never from a name.
+- A person's linked identity providers (e.g. Google): `zitadel user idp-links USER_ID --select result.idpName,result.userName`
 - An empty object `{}`, or a result with only `details` or `pagination`, means nothing matched or the user's account can't see it: say so, don't retry with other paths.
 
 DO:

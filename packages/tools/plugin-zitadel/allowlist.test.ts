@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll } from "bun:test";
 import { loadCliConfigFromObject, matchCommand, type CliConfig, type CliResult } from "@mercury-fw/cli-engine";
-import { zitadelCliConfig } from "./index.ts";
+import { parseCommand } from "@mercury-fw/cli-engine";
+import { zitadelCliConfig, zitadelPlugin } from "./index.ts";
 
 /**
  * Safety net for the ZITADEL plugin's real, checked-in allowlist
@@ -48,6 +49,18 @@ describe("@mercury-fw/plugin-zitadel allowlist", () => {
     expect(matchCommand(["user", "create"], zitadelConfig)).toEqual({ kind: "not-allowed" });
     expect(matchCommand(["project", "delete", "1"], zitadelConfig)).toEqual({ kind: "not-allowed" });
     expect(matchCommand(["user", "search", "--help"], zitadelConfig)).toEqual(allowed([]));
+  });
+
+  // A command the skill teaches but the allowlist refuses would send the model
+  // into failed calls: every one it names must pass, as written.
+  it("allows every command line the skill names", () => {
+    const lines = [...zitadelPlugin.skills![0]!.body.matchAll(/`(zitadel [^`]+)`/g)].map((m) => m[1]!);
+    expect(lines.length).toBeGreaterThan(5);
+    for (const line of lines) {
+      const parsed = parseCommand(line);
+      if (!parsed.ok) throw new Error(`skill command doesn't parse: ${line}`);
+      expect(matchCommand(parsed.args, zitadelConfig).kind, line).toBe("allowed");
+    }
   });
 
   it("has no mutating or confirm-gated commands", () => {
