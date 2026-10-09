@@ -11,6 +11,7 @@ import { formatterPlugin, formatter } from "@mercury-fw/formatter";
 import { jiraPlugin, type JiraDisplays } from "@mercury-fw/plugin-jira";
 import { bitbucketPlugin } from "@mercury-fw/plugin-bitbucket";
 import { atlassianAdminPlugin } from "@mercury-fw/plugin-atlassian-admin";
+import { zitadelPlugin } from "@mercury-fw/plugin-zitadel";
 import { googleChatChannel } from "@mercury-fw/channel-google-chat";
 import { httpChannel } from "@mercury-fw/channel-http";
 import { oidcAuth } from "@mercury-fw/auth-oidc";
@@ -34,6 +35,7 @@ export default defineMercuryConfig({
     ),
     bitbucketPlugin,
     atlassianAdminPlugin,
+    zitadelPlugin,
   ],
   channels: [googleChatChannel, httpChannel],
   auth: oidcAuth,
