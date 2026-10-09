@@ -48,7 +48,7 @@
     "cliBinary": {
       "repo": "lucabro81/CLI-monorepo",
       "crate": "zitadel",
-      "version": "2.6.0"
+      "version": "2.6.1"
     },
     "cliCredentials": {
       "folder": "zitadel-cli",
