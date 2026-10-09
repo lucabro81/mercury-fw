@@ -71,6 +71,8 @@ import { createHostReads } from "./identity/host-reads.ts";
 import { bindConfirm } from "./identity/confirm-binding.ts";
 import { createPersonLogins } from "./identity/person-logins.ts";
 import { createPeople, type TurnWho } from "./identity/people.ts";
+import { createLinkStore } from "./identity/links.ts";
+import { createLinking } from "./identity/linking.ts";
 import { offeringFor, type Offering } from "./plugins/offering.ts";
 import { AS_MERCURY_SUFFIX } from "./plugins/act-as-mercury.ts";
 import { buildOfferedTools } from "./plugins/offered-tools.ts";
@@ -175,14 +177,21 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
     toolStatusDescribers[`${name}${AS_MERCURY_SUFFIX}`] = describe;
   }
 
-  // Who a principal is to Mercury: the declared directory decides, closed to
-  // anyone it doesn't know unless the config opens it.
+  // Who a principal is to Mercury: an account linked to another is its
+  // owner, then the declared directory decides, closed to anyone it doesn't
+  // know unless the config opens it. The links live on the vault's volume,
+  // where no model tool or HTTP read reaches.
+  const accountLinks = createLinkStore({ path: resolvePath(requireEnv("WIKI_VAULT_PATH"), ".mercury", "identity-links.json") });
   const people = createPeople({
+    links: accountLinks,
     directory: loadDirectory(config.directory, { env: process.env, log: (msg) => console.error(msg) }),
     ...(config.access?.unknown === undefined ? {} : { unknown: config.access.unknown }),
     ...(config.access?.unknownMessage === undefined ? {} : { unknownMessage: config.access.unknownMessage }),
     log: (msg) => console.error(msg),
   });
+
+  // Linking a second account to a person, by a code (see identity/linking.ts).
+  const linking = createLinking({ people, links: accountLinks });
 
   // What a person is offered of the loaded plugins (see plugins/offering.ts).
   const offeringOf = (who: TurnWho): Offering =>
@@ -515,7 +524,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   const channelRuntime: ChannelRuntimeContext = {
     env: process.env,
     log: (msg) => console.error(msg),
-    ...bindConfirm(confirmDeps, people.identify),
+    ...bindConfirm(confirmDeps, people.identify, linking.redeem),
     admit: people.admit,
     authenticate: loadAuth(config.auth, { env: process.env, log: (msg) => console.error(msg) }),
     // Every read but health is scoped to the caller (see identity/host-reads.ts).
@@ -539,6 +548,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
       health: () => getSelfHealth({ qdrant, ollamaHost }),
     }),
     logins: { accept: personLogins.accept, complete: personLogins.complete },
+    linking: { start: linking.start },
   };
 
   /** Starts the Layer-3 idle-capture and self-review crons; returns one stopper. */

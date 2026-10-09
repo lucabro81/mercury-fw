@@ -254,6 +254,17 @@ export type ChannelLogins = {
   complete: (state: string, code: string) => Promise<LoginOutcome>;
 };
 
+/** A code the person sends from another account to link it to this one, or why there's none. */
+export type LinkStart = { ok: true; code: string; expiresAt: string } | { ok: false; error: string };
+
+/**
+ * Linking another account to a person, for a channel that can show them a
+ * code without the model in between (the HTTP surface): `start` hands the
+ * person `principal` is a one-time code. They send it from the other account,
+ * on any channel, where `confirm` takes it like a token.
+ */
+export type ChannelLinking = { start: (principal: Principal) => Promise<LinkStart> };
+
 /**
  * The minimal capabilities every channel gets from the core — the intersection
  * across terminal, HTTP and Google Chat, nothing channel-specific. Anything
@@ -277,7 +288,8 @@ export type ChannelRuntimeContext = {
    * and holds no state: staging and the store stay the core's. The token
    * resolves only for the `principal` who staged it, in the same session.
    * Returns the reply text to send back, or `null` when the input wasn't
-   * token-shaped (see `resolveConfirmation`).
+   * token-shaped (see `resolveConfirmation`). A link code (`xxxx-xxxx-xxxx`,
+   * see `ChannelLinking`) is taken here too, from whoever sends it.
    */
   confirm: (token: string, sessionKey: string, principal: Principal) => Promise<string | null>;
   /**
@@ -296,6 +308,8 @@ export type ChannelRuntimeContext = {
   authenticate?: Authenticate;
   /** People's logins to the plugins' services (see `ChannelLogins`). */
   logins?: ChannelLogins;
+  /** Linking another account to a person (see `ChannelLinking`). */
+  linking?: ChannelLinking;
 };
 
 /**

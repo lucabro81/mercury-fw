@@ -7,7 +7,7 @@
  * and the vault's own git repo exist, without disturbing whatever
  * content is already there.
  */
-import { mkdir, stat } from "node:fs/promises";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 const SUBDIRS = ["curated/design", "curated/standards", "curated/decisions", "users", "raw"];
@@ -27,6 +27,9 @@ async function pathExists(path: string): Promise<boolean> {
  * pre-existing directories/content are left untouched, and re-running
  * `git init` on an already-initialized repo is a no-op.
  */
+/** Mercury's own files on the vault's volume, as a path the vault's git excludes. */
+const MERCURY_DIR = "/.mercury/";
+
 export async function initVault(vaultPath: string): Promise<void> {
   for (const sub of SUBDIRS) {
     await mkdir(join(vaultPath, sub), { recursive: true });
@@ -39,5 +42,14 @@ export async function initVault(vaultPath: string): Promise<void> {
       const stderr = await new Response(proc.stderr).text();
       throw new Error(`git init failed in ${vaultPath}: ${stderr}`);
     }
+  }
+
+  // Mercury's own files on this volume (the account links) stay out of the
+  // vault's history, whatever stages everything.
+  const exclude = join(vaultPath, ".git", "info", "exclude");
+  const current = (await pathExists(exclude)) ? await readFile(exclude, "utf8") : "";
+  if (!current.split("\n").includes(MERCURY_DIR)) {
+    await mkdir(join(vaultPath, ".git", "info"), { recursive: true });
+    await writeFile(exclude, `${current}${current === "" || current.endsWith("\n") ? "" : "\n"}${MERCURY_DIR}\n`);
   }
 }

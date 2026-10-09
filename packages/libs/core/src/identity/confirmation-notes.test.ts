@@ -131,4 +131,21 @@ describe("a confirmation's note, staged in a turn then confirmed from the channe
     expect((await refused.resolveConfirmation("hello", "s", chat)).status).toBe("not-a-token");
     expect(asked).toBe(0);
   });
+
+  // #190: a link code arrives the way a token does, before the model, raw,
+  // from someone the core may not admit yet; confirm hands it to linking.
+  it("hands a link code to linking, with who sent it, whoever they are", async () => {
+    const store = createConfirmationStore();
+    const confirmDeps = { store, vaultPath: "/nowhere", writeConfirmationNoteFn: writeConfirmationNote };
+    const redeemed: Array<[string, string]> = [];
+    const bound = bindConfirm(
+      confirmDeps,
+      async () => ({ ok: false, reason: "unknown", message: "Ask for access." }),
+      async (principal, text) => (redeemed.push([`${principal.provider}:${principal.id}`, text]), "Linked."),
+    );
+    const chat = { id: "users/1", provider: "google-chat" as const };
+    expect(await bound.confirm("a1b2-c3d4-e5f6", "s", chat)).toBe("Linked.");
+    expect(redeemed).toEqual([["google-chat:users/1", "a1b2-c3d4-e5f6"]]);
+    expect(await bound.confirm("hello", "s", chat)).toBeNull();
+  });
 });
