@@ -83,8 +83,22 @@ describe("parseChatEvent", () => {
       space: "spaces/X",
       sender: "users/42",
       senderDisplayName: "Luca",
+      senderEmail: "luca@example.com",
       isDirectMessage: false,
     });
+  });
+
+  // #190: the sender's email is what a directory joins a Chat identity on.
+  // Google vouches for it only for a person; a bot's is left out.
+  test("keeps the sender's email for a person only", () => {
+    const event = (sender: object) => ({
+      type: "MESSAGE",
+      message: { name: "spaces/X/messages/1", text: "hi", space: { name: "spaces/X" }, sender: { name: "users/42", ...sender } },
+    });
+    expect(parseChatEvent(event({ email: "a@example.com", type: "HUMAN" }))).toMatchObject({ senderEmail: "a@example.com" });
+    expect(parseChatEvent(event({ email: "a@example.com" }))).toMatchObject({ senderEmail: "a@example.com" });
+    expect(parseChatEvent(event({ email: "bot@example.com", type: "BOT" }))).toMatchObject({ senderEmail: undefined });
+    expect(parseChatEvent(event({ email: 3 }))).toMatchObject({ senderEmail: undefined });
   });
 
   test("returns null for a MESSAGE event missing a required field", () => {
@@ -127,13 +141,14 @@ describe("parseChatEvent", () => {
     const raw = {
       type: "CARD_CLICKED",
       space: { name: "spaces/X" },
-      user: { name: "users/42" },
+      user: { name: "users/42", email: "luca@example.com", type: "HUMAN" },
       action: { parameters: [{ key: "token", value: "ABC123" }] },
     };
     expect(parseChatEvent(raw)).toEqual({
       kind: "card-click",
       space: "spaces/X",
       sender: "users/42",
+      senderEmail: "luca@example.com",
       parameters: { token: "ABC123" },
     });
   });
@@ -149,7 +164,7 @@ describe("parseChatEvent", () => {
 });
 
 function messageEvent(
-  overrides: Partial<{ text: string; messageName: string; space: string; spaceType: string; sender: string; senderDisplayName: string; thread: string }> = {},
+  overrides: Partial<{ text: string; messageName: string; space: string; spaceType: string; sender: string; senderDisplayName: string; senderEmail: string; thread: string }> = {},
 ) {
   return {
     type: "MESSAGE",
@@ -157,7 +172,12 @@ function messageEvent(
       name: overrides.messageName ?? "spaces/X/messages/1",
       text: overrides.text ?? "hello",
       space: { name: overrides.space ?? "spaces/X", type: overrides.spaceType },
-      sender: { name: overrides.sender ?? "users/42", displayName: overrides.senderDisplayName ?? "Luca" },
+      sender: {
+        name: overrides.sender ?? "users/42",
+        displayName: overrides.senderDisplayName ?? "Luca",
+        email: overrides.senderEmail ?? "luca@example.com",
+        type: "HUMAN",
+      },
       thread: { name: overrides.thread ?? "spaces/X/threads/T1" },
     },
   };
@@ -212,7 +232,7 @@ describe("createGoogleChatProvider — StreamingPull", () => {
       multiUser: true,
       text: "[Da: Luca]\nhello",
       sessionKey: "spaces/X:users/42",
-      principal: { id: "users/42", provider: "google-chat", displayName: "Luca" },
+      principal: { id: "users/42", provider: "google-chat", displayName: "Luca", claims: { email: "luca@example.com" } },
     });
     expect(capturedSink!.onTextChunk).toBeUndefined();
     expect(acked).toEqual(["a1"]);
@@ -227,7 +247,7 @@ describe("createGoogleChatProvider — StreamingPull", () => {
       capturedTurn = turn;
       await sink.finalize("risposta");
     });
-    sub.emit("message", fakeMessage(messageEvent({ senderDisplayName: "" }), []));
+    sub.emit("message", fakeMessage(messageEvent({ senderDisplayName: "", senderEmail: "" }), []));
     await new Promise((r) => setTimeout(r, 20));
 
     expect(capturedTurn?.principal).toEqual({ id: "users/42", provider: "google-chat" });
@@ -300,7 +320,9 @@ describe("createGoogleChatProvider — StreamingPull", () => {
     expect(handleTurnCalled).toBe(false);
     expect(sent).toEqual(['Confermato ed eseguito: {"deleted":true}']);
     // The sender as the core keys people: only they can confirm what they staged.
-    expect(confirmArgs).toEqual([[token, "spaces/X:users/42", { id: "users/42", provider: "google-chat", displayName: "Luca" }]]);
+    expect(confirmArgs).toEqual([
+      [token, "spaces/X:users/42", { id: "users/42", provider: "google-chat", displayName: "Luca", claims: { email: "luca@example.com" } }],
+    ]);
   });
 
   test("an event whose messageName was already sent by this provider is skipped (loop prevention)", async () => {
@@ -381,7 +403,12 @@ describe("createGoogleChatProvider — StreamingPull", () => {
     sub.emit(
       "message",
       fakeMessage(
-        { type: "CARD_CLICKED", space: { name: "spaces/X" }, user: { name: "users/42" }, action: { parameters: [{ key: "token", value: token }] } },
+        {
+          type: "CARD_CLICKED",
+          space: { name: "spaces/X" },
+          user: { name: "users/42", email: "luca@example.com", type: "HUMAN" },
+          action: { parameters: [{ key: "token", value: token }] },
+        },
         [],
       ),
     );
@@ -389,7 +416,7 @@ describe("createGoogleChatProvider — StreamingPull", () => {
 
     expect(sent).toEqual(['Confermato ed eseguito: {"deleted":true}']);
     // The sender as the core keys people: only they can confirm what they staged.
-    expect(confirmArgs).toEqual([[token, "spaces/X:users/42", { id: "users/42", provider: "google-chat" }]]);
+    expect(confirmArgs).toEqual([[token, "spaces/X:users/42", { id: "users/42", provider: "google-chat", claims: { email: "luca@example.com" } }]]);
   });
 
   test("clicking the confirm button forwards deps.confirm's canned error for an unknown/expired token", async () => {
