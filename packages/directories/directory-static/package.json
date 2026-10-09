@@ -1,0 +1,39 @@
+{
+  "name": "@mercury-fw/directory-static",
+  "version": "0.0.0",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lucabro81/mercury-fw.git",
+    "directory": "packages/directories/directory-static"
+  },
+  "files": [
+    "*.ts",
+    "dist",
+    "CHANGELOG.md",
+    "!**/*.test.ts"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "peerDependencies": {
+    "@mercury-fw/channel-types": ">=0.42.0 <1.0.0"
+  },
+  "devDependencies": {
+    "@mercury-fw/channel-types": "workspace:*",
+    "@mercury-fw/typescript-config": "*",
+    "@types/bun": "^1.4.2",
+    "typescript": "^6.0.3"
+  },
+  "exports": {
+    ".": {
+      "mercury-fw-source": "./index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./index.ts"
+    }
+  },
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  }
+}

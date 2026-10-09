@@ -125,6 +125,19 @@
       "name": "@mercury-fw/typescript-config",
       "version": "0.0.0",
     },
+    "packages/directories/directory-static": {
+      "name": "@mercury-fw/directory-static",
+      "version": "0.0.0",
+      "devDependencies": {
+        "@mercury-fw/channel-types": "workspace:*",
+        "@mercury-fw/typescript-config": "*",
+        "@types/bun": "^1.4.2",
+        "typescript": "^6.0.3",
+      },
+      "peerDependencies": {
+        "@mercury-fw/channel-types": ">=0.42.0 <1.0.0",
+      },
+    },
     "packages/formatters/formatter": {
       "name": "@mercury-fw/formatter",
       "version": "0.41.0",
@@ -394,6 +407,8 @@
     "@mercury-fw/confirm-engine": ["@mercury-fw/confirm-engine@workspace:packages/libs/confirm-engine"],
 
     "@mercury-fw/core": ["@mercury-fw/core@workspace:packages/libs/core"],
+
+    "@mercury-fw/directory-static": ["@mercury-fw/directory-static@workspace:packages/directories/directory-static"],
 
     "@mercury-fw/formatter": ["@mercury-fw/formatter@workspace:packages/formatters/formatter"],
 
