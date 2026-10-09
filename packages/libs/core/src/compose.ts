@@ -32,6 +32,7 @@ import { createSessionLock } from "./router/session-lock.ts";
 import { createSessionCapture } from "./session/session-capture.ts";
 import { createTurnRunner } from "./router/turn-runner.ts";
 import { loadAuth } from "./router/auth-loader.ts";
+import { loadDirectory } from "./router/directory-loader.ts";
 import type { TurnSink } from "./router/provider.ts";
 import type { HandleTurn, ChannelRuntimeContext, ChannelPlugin } from "@mercury-fw/channel-types";
 import {
@@ -69,6 +70,9 @@ import { listWikiFilesInRoots, readWikiFileInRoots, readIndexFile } from "./wiki
 import { createHostReads } from "./identity/host-reads.ts";
 import { bindConfirm } from "./identity/confirm-binding.ts";
 import { createPersonLogins } from "./identity/person-logins.ts";
+import { createPeople, type TurnWho } from "./identity/people.ts";
+import { offeringFor, type Offering } from "./plugins/offering.ts";
+import { actingAsMercury, AS_MERCURY_SUFFIX } from "./plugins/act-as-mercury.ts";
 import { migrateMemoryToUserKeys, migrateVaultToUserAreas } from "./identity/migrate-layout.ts";
 import { runRawTriagePass, runIndexAndOrphanPass, runContradictionCheckPass } from "./wiki/self-review-runner.ts";
 import { startSelfReviewCron } from "./cron/self-review-cron.ts";
@@ -163,23 +167,40 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   });
 
   // Status labels for the tool-start hook, keyed by tool name: each plugin's
-  // describer for its own tool (jiraCommand, …).
+  // describer for its own tool (jiraCommand, …), the same for its variant
+  // acting as Mercury.
   const toolStatusDescribers: Record<string, (input: unknown) => string> = { ...loadedPlugins.toolStatusDescribers };
+  for (const [name, describe] of Object.entries(loadedPlugins.toolStatusDescribers)) {
+    toolStatusDescribers[`${name}${AS_MERCURY_SUFFIX}`] = describe;
+  }
 
-  // Two system prompts (1:1 and shared-space), both built from the fragments of
-  // whatever plugins actually loaded and from the instance's persona: a
-  // person's, from the plugins acting as the person only, and the terminal's,
-  // from every plugin.
-  const { system, chatSystem } = buildSystemPrompts({
-    pluginFragments: loadedPlugins.forPeople.promptFragments,
-    skills: loadedPlugins.forPeople.skills,
-    persona: config.persona,
+  // Who a principal is to Mercury: the declared directory decides, closed to
+  // anyone it doesn't know unless the config opens it.
+  const people = createPeople({
+    directory: loadDirectory(config.directory, { env: process.env, log: (msg) => console.error(msg) }),
+    ...(config.access?.unknown === undefined ? {} : { unknown: config.access.unknown }),
+    ...(config.access?.unknownMessage === undefined ? {} : { unknownMessage: config.access.unknownMessage }),
+    log: (msg) => console.error(msg),
   });
-  const serviceSystemPrompts = buildSystemPrompts({
-    pluginFragments: loadedPlugins.promptFragments,
-    skills: loadedPlugins.skills,
-    persona: config.persona,
-  });
+
+  // What a person is offered of the loaded plugins (see plugins/offering.ts).
+  const offeringOf = (who: TurnWho): Offering =>
+    offeringFor(loadedPlugins.plugins, { roles: who.person.roles, operator: who.operator }, config.access?.plugins);
+
+  // The two system prompts (1:1 and shared-space) for an offering, built from
+  // the fragments and skills of the plugins it holds and the instance's
+  // persona, once per distinct offering.
+  const promptsByOffering = new Map<string, { singleUser: string; multiUser: string }>();
+  function systemPromptsFor(who: TurnWho): { singleUser: string; multiUser: string } {
+    const offering = offeringOf(who);
+    let prompts = promptsByOffering.get(offering.signature);
+    if (!prompts) {
+      const built = buildSystemPrompts({ pluginFragments: offering.promptFragments, skills: offering.skills, persona: config.persona });
+      prompts = { singleUser: built.system, multiUser: built.chatSystem };
+      promptsByOffering.set(offering.signature, prompts);
+    }
+    return prompts;
+  }
 
   // People's pending logins to the plugins' services, finished by the channel
   // that receives the provider's redirect.
@@ -351,20 +372,20 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
     }
   }
 
-  // `key` (the user key) is separate from `sessionKey`: a person's wiki area,
-  // memory and confirmations are theirs across spaces and conversations, so
-  // it must not include the space. The turn runner derives it from the
-  // turn's principal.
-  // `person` is who the plugins' tools act as: a person is offered only the
-  // plugins acting as the person, the terminal (`null`) every plugin.
+  // `key` (the person's key) is separate from `sessionKey`: a person's wiki
+  // area, memory and confirmations are theirs across spaces and
+  // conversations, so it must not include the space. The turn runner
+  // identifies the person from the turn's principal.
+  // `who` decides which plugins are offered and as whom their tools act:
+  // the person, or Mercury itself (see plugins/offering.ts).
   function buildTools(
     sessionKey: string,
     key: string,
     onToolStart?: TurnSink["onToolStart"],
     onToolFinish?: TurnSink["onToolFinish"],
-    person: { key: string } | null = null,
+    who: TurnWho = { person: { key, roles: [] }, operator: true },
   ): Record<string, Tool> {
-    const offered = person ? loadedPlugins.forPeople : loadedPlugins;
+    const offering = offeringOf(who);
     const sessionTools: Record<string, Tool> = {};
 
     // The session-scoped capabilities every CLI tool needs, bound to this turn:
@@ -383,19 +404,31 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
     };
 
     // Each CLI-based plugin owns its tool (jiraCommand, …), built from its own
-    // allowlist and post-processor. The core just invokes what they contributed.
-    for (const bundle of offered.sessionToolBundles) {
+    // allowlist and post-processor. The core just invokes what they contributed,
+    // as the person or as Mercury (no person) per the offering; acting as
+    // Mercury for a person, the tools say so and log who asked.
+    let hasCliTool = false;
+    for (const entry of offering.entries) {
+      const { bundle } = entry.plugin;
+      if (bundle === undefined) continue;
+      hasCliTool = true;
+      const person = entry.as === "person" ? { key: who.person.key } : null;
       const { login } = bundle;
       const requireLogin = async () =>
         person && login
           ? personLogins.require(bundle.name, login, person.key)
           : { ok: false as const, error: `${bundle.name} says the user isn't logged in, and it has no way to log anyone in.` };
-      Object.assign(sessionTools, bundle.build({ ...sessionToolContext, person, requireLogin }, bundle.postProcess));
+      const tools = bundle.build({ ...sessionToolContext, person, requireLogin }, bundle.postProcess);
+      Object.assign(
+        sessionTools,
+        entry.as === "mercury" && !who.operator
+          ? actingAsMercury(tools, { plugin: bundle.name, personKey: who.person.key, rename: entry.variant, log: (msg) => console.error(msg) })
+          : tools,
+      );
     }
 
     // `present` only makes sense alongside CLI tools: they are what produce the
     // display artifacts it surfaces. A turn with no CLI tool never sees it.
-    const hasCliTool = offered.sessionToolBundles.length > 0;
     if (hasCliTool) {
       Object.assign(sessionTools, createPresentTool({ sessionKey, store: displayStore }));
     }
@@ -408,9 +441,9 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
     // Verbatim archive recall, scoped to this person — lets the model resurface
     // what was actually said in earlier conversations, beyond the live window.
     Object.assign(sessionTools, verbatimProvider.sessionTools!({ sessionKey, userId: key }));
-    // read_skill only exists when a plugin contributed at least one skill.
-    if (offered.skills.length > 0) {
-      Object.assign(sessionTools, createReadSkillTool(offered.skills));
+    // read_skill only exists when a plugin offered contributed at least one skill.
+    if (offering.skills.length > 0) {
+      Object.assign(sessionTools, createReadSkillTool(offering.skills));
     }
     return onToolStart ? withToolStartHook(sessionTools, onToolStart, toolStatusDescribers, onToolFinish) : sessionTools;
   }
@@ -450,8 +483,9 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   const handleTurn = createTurnRunner({
     sessionLock,
     model,
-    systemPrompts: { singleUser: system, multiUser: chatSystem },
-    serviceSystemPrompts: { singleUser: serviceSystemPrompts.system, multiUser: serviceSystemPrompts.chatSystem },
+    systemPrompts: systemPromptsFor({ person: { key: "", roles: [] }, operator: false }),
+    systemPromptsFor,
+    identify: people.identify,
     buildTools,
     // Post-turn guards contributed by whatever plugins loaded — the core runs
     // them without knowing what any does (see PostTurnGuard).
@@ -494,23 +528,27 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   const channelRuntime: ChannelRuntimeContext = {
     env: process.env,
     log: (msg) => console.error(msg),
-    ...bindConfirm(confirmDeps),
+    ...bindConfirm(confirmDeps, people.identify),
+    admit: people.admit,
     authenticate: loadAuth(config.auth, { env: process.env, log: (msg) => console.error(msg) }),
-    // Every read but the manifest and health is scoped to the caller (see
-    // identity/host-reads.ts).
+    // Every read but health is scoped to the caller (see identity/host-reads.ts).
     reads: createHostReads({
+      identify: people.identify,
       vaultPath: wikiVaultPath,
       qdrant,
       collections: { verbatim: verbatimCollection, episodic: episodicCollection, semanticFacts: semanticFactsCollection },
       confirmationStore,
-      // What people are offered: a plugin acting as Mercury isn't advertised to them.
-      manifest: () =>
-        buildPluginManifest(
-          plugins.filter((p) => p.actsAs === "person"),
+      // What the caller is offered, nothing more.
+      manifest: (who) => {
+        const offering = offeringOf(who);
+        const offered = new Set(offering.entries.map((e) => e.plugin.name));
+        return buildPluginManifest(
+          plugins.filter((p) => offered.has(p.name)),
           loadedPlugins.activated,
           [],
-          loadedPlugins.forPeople.skills,
-        ),
+          offering.skills,
+        );
+      },
       health: () => getSelfHealth({ qdrant, ollamaHost }),
     }),
     logins: { accept: personLogins.accept, complete: personLogins.complete },
