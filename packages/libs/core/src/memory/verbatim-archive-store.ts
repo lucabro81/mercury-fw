@@ -210,10 +210,16 @@ export async function listVerbatimBySession(
 /** How many of a conversation's newest messages `listVerbatimTail` reads at most. */
 const TAIL_SCAN_LIMIT = 200;
 
-/** The end of a conversation, oldest first, and whether it reaches the conversation's first message. */
+/**
+ * The end of a conversation, oldest first, and whether it reaches the
+ * conversation's first message. `leftOutAt` is the timestamp of the newest
+ * archived message left out of it (absent when complete): what came before
+ * the tail, which a summary has to cover.
+ */
 export type VerbatimTail = {
-  messages: Array<{ role: "user" | "assistant"; content: string }>;
+  messages: Array<{ role: "user" | "assistant"; content: string; timestamp: string }>;
   complete: boolean;
+  leftOutAt?: string;
 };
 
 /**
@@ -255,7 +261,11 @@ export async function listVerbatimTail(
   }
   const chronological = taken.reverse();
   const firstUser = chronological.findIndex((m) => m.role === "user");
-  const messages = (firstUser === -1 ? [] : chronological.slice(firstUser)).map((m) => ({ role: m.role, content: m.content }));
+  const kept = firstUser === -1 ? [] : chronological.slice(firstUser);
+  const messages = kept.map((m) => ({ role: m.role, content: m.content, timestamp: m.timestamp }));
   const complete = result.points.length < TAIL_SCAN_LIMIT && messages.length === newestFirst.length;
-  return { messages, complete };
+  if (complete) return { messages, complete };
+  // Newest first, the first message not kept.
+  const leftOut = newestFirst[kept.length];
+  return leftOut === undefined ? { messages, complete } : { messages, complete, leftOutAt: leftOut.timestamp };
 }

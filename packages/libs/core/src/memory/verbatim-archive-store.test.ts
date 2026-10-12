@@ -520,10 +520,10 @@ describe("listVerbatimTail", () => {
     });
     expect(tail).toEqual({
       messages: [
-        { role: "user", content: "mi piace il verde" },
-        { role: "assistant", content: "ok" },
-        { role: "user", content: "colore?" },
-        { role: "assistant", content: "verde" },
+        { role: "user", content: "mi piace il verde", timestamp: "2026-10-12T10:00:00.000Z" },
+        { role: "assistant", content: "ok", timestamp: "2026-10-12T10:00:01.000Z" },
+        { role: "user", content: "colore?", timestamp: "2026-10-12T10:00:02.000Z" },
+        { role: "assistant", content: "verde", timestamp: "2026-10-12T10:00:03.000Z" },
       ],
       complete: true,
     });
@@ -536,12 +536,14 @@ describe("listVerbatimTail", () => {
     const tail = await listVerbatimTail(client, "verbatim_archive", { userId: "static:alice", sessionKey: "alice:conv-1", maxChars: 10 });
 
     // "bb" fits but is an assistant message: a tail never opens with one.
+    // What came before the tail ends with "bb", the newest message left out.
     expect(tail).toEqual({
       messages: [
-        { role: "user", content: "cccc" },
-        { role: "assistant", content: "dddd" },
+        { role: "user", content: "cccc", timestamp: "2026-10-12T10:00:02.000Z" },
+        { role: "assistant", content: "dddd", timestamp: "2026-10-12T10:00:03.000Z" },
       ],
       complete: false,
+      leftOutAt: "2026-10-12T10:00:01.000Z",
     });
   });
 
@@ -553,7 +555,11 @@ describe("listVerbatimTail", () => {
   });
 
   it("is empty when even the newest message doesn't fit, or nothing is archived", async () => {
-    expect(await listVerbatimTail(clientWith([msg("assistant", "troppo lungo", 1), msg("user", "a", 0)]), "verbatim_archive", { userId: "static:alice", sessionKey: "alice:conv-1", maxChars: 5 })).toEqual({ messages: [], complete: false });
+    expect(await listVerbatimTail(clientWith([msg("assistant", "troppo lungo", 1), msg("user", "a", 0)]), "verbatim_archive", { userId: "static:alice", sessionKey: "alice:conv-1", maxChars: 5 })).toEqual({
+      messages: [],
+      complete: false,
+      leftOutAt: "2026-10-12T10:00:01.000Z",
+    });
     expect(await listVerbatimTail(clientWith([]), "verbatim_archive", { userId: "static:alice", sessionKey: "alice:conv-1", maxChars: 5 })).toEqual({ messages: [], complete: true });
   });
 
@@ -563,7 +569,7 @@ describe("listVerbatimTail", () => {
       scroll: async () => ({ points: [{ id: "p1", payload: null }, { id: "p2", payload: msg("user", "ciao", 0) }] }),
     };
     expect(await listVerbatimTail(client, "verbatim_archive", { userId: "static:alice", sessionKey: "alice:conv-1", maxChars: 100 })).toEqual({
-      messages: [{ role: "user", content: "ciao" }],
+      messages: [{ role: "user", content: "ciao", timestamp: "2026-10-12T10:00:00.000Z" }],
       complete: true,
     });
   });

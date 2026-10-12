@@ -17,8 +17,8 @@ import type { VerbatimTail } from "../memory/verbatim-archive-store.ts";
 export type ResumeDeps = {
   /** The conversation's newest messages within `maxChars` (`listVerbatimTail`). */
   readTail: (query: { userId: string; sessionKey: string; maxChars: number }) => Promise<VerbatimTail>;
-  /** The conversation's episodic summaries, oldest first (`getEpisodicSummariesBySession`). */
-  readSummaries: (query: { userId: string; sessionKey: string }) => Promise<Array<{ summary: string }>>;
+  /** The conversation's episodic summaries with when each was written, oldest first (`getEpisodicSummariesBySession`). */
+  readSummaries: (query: { userId: string; sessionKey: string }) => Promise<Array<{ summary: string; timestamp: string }>>;
   log: (message: string) => void;
 };
 
@@ -43,18 +43,20 @@ export function resumeBudget(resume: { maxChars?: number } | undefined, instance
   return resume.maxChars ?? instanceMaxChars;
 }
 
-/** How much of the budget the summary of the older part may take at most. */
+/** How much of the budget a partial tail leaves to the summary of what came before it, at least. */
 const SUMMARY_SHARE = 4;
 
 const SUMMARY_SEPARATOR = "\n\n";
+
+type TailMessage = VerbatimTail["messages"][number];
 
 /**
  * The conversation `sessionKey` of the person `userId`, rebuilt within
  * `maxChars`, or undefined when there's nothing to resume (a budget of 0 or
  * less, nothing archived, or an archive that can't be read). A tail that
- * reaches the conversation's start comes back alone; otherwise the newest
- * summaries that fit a quarter of the budget lead it, and the tail keeps the
- * rest, still opening with what the person said.
+ * reaches the conversation's start comes back alone. Otherwise the tail keeps
+ * three quarters of the budget at most, still opening with what the person
+ * said, and the summaries of what came before it take what's left.
  */
 export async function resumeConversation(
   query: { userId: string; sessionKey: string; maxChars: number },
@@ -69,41 +71,66 @@ export async function resumeConversation(
     return undefined;
   }
 
+  let kept = tail.messages;
   let summary: string | undefined;
-  let messages = tail.messages;
   if (!tail.complete) {
-    summary = await olderPart(query, deps);
-    if (summary !== undefined) messages = trimToFit(messages, query.maxChars - summary.length);
+    const trimmed = trimToFit(tail, query.maxChars - Math.floor(query.maxChars / SUMMARY_SHARE));
+    kept = trimmed.messages;
+    const left = query.maxChars - kept.reduce((sum, m) => sum + m.content.length, 0);
+    summary = await summaryBefore(trimmed, left, query, deps);
   }
+  const messages: Message[] = kept.map((m) => ({ role: m.role, content: m.content }));
   if (messages.length === 0 && summary === undefined) return undefined;
 
   deps.log(`[memory] resumed ${query.sessionKey}: ${messages.length} messages, ${summary === undefined ? "no summary" : "summary"}`);
   return summary === undefined ? { messages } : { summary, messages };
 }
 
-/** The newest episodic summaries of the conversation that fit a quarter of the budget, joined oldest first; undefined when none fits or they can't be read. */
-async function olderPart(query: { userId: string; sessionKey: string; maxChars: number }, deps: ResumeDeps): Promise<string | undefined> {
-  let summaries: Array<{ summary: string }>;
+/**
+ * The summaries of what came before `tail`, joined oldest first, within
+ * `maxChars`; undefined when none fits or they can't be read. A summary
+ * covers what was said up to when it was written, so the ones written before
+ * the tail started qualify, plus the first one written after, only when the
+ * others stop short of what the tail left out: past that, a summary would
+ * repeat what the tail already holds. They're taken newest first and stop at
+ * the first that doesn't fit, so what comes back has no gap.
+ */
+async function summaryBefore(
+  tail: { messages: TailMessage[]; leftOutAt?: string },
+  maxChars: number,
+  query: { userId: string; sessionKey: string },
+  deps: ResumeDeps,
+): Promise<string | undefined> {
+  let summaries: Array<{ summary: string; timestamp: string }>;
   try {
     summaries = await deps.readSummaries({ userId: query.userId, sessionKey: query.sessionKey });
   } catch (err) {
     deps.log(`[memory] couldn't read the summaries of ${query.sessionKey}, it resumes without them: ${String(err)}`);
     return undefined;
   }
-  const budget = Math.floor(query.maxChars / SUMMARY_SHARE);
+  const tailStart = tail.messages[0]?.timestamp;
+  let eligible = summaries;
+  if (tailStart !== undefined) {
+    const after = summaries.findIndex((s) => s.timestamp > tailStart);
+    if (after !== -1) {
+      const covered = after > 0 && tail.leftOutAt !== undefined && summaries[after - 1]!.timestamp >= tail.leftOutAt;
+      eligible = summaries.slice(0, covered ? after : after + 1);
+    }
+  }
   const picked: string[] = [];
   let chars = 0;
-  for (const { summary } of [...summaries].reverse()) {
+  for (const { summary } of [...eligible].reverse()) {
     const cost = summary.length + (picked.length > 0 ? SUMMARY_SEPARATOR.length : 0);
-    if (chars + cost > budget) break;
+    if (chars + cost > maxChars) break;
     chars += cost;
     picked.unshift(summary);
   }
   return picked.length > 0 ? picked.join(SUMMARY_SEPARATOR) : undefined;
 }
 
-/** `messages` without their oldest ones until they fit `maxChars`, still opening with a user message. */
-function trimToFit(messages: Message[], maxChars: number): Message[] {
+/** `tail` without its oldest messages until it fits `maxChars`, still opening with a user message, and when the newest it left out was written. */
+function trimToFit(tail: VerbatimTail, maxChars: number): { messages: TailMessage[]; leftOutAt?: string } {
+  const messages = tail.messages;
   let start = 0;
   let chars = messages.reduce((sum, m) => sum + m.content.length, 0);
   while (start < messages.length && chars > maxChars) {
@@ -111,5 +138,6 @@ function trimToFit(messages: Message[], maxChars: number): Message[] {
     start += 1;
   }
   while (start < messages.length && messages[start]!.role !== "user") start += 1;
-  return messages.slice(start);
+  const leftOutAt = start > 0 ? messages[start - 1]!.timestamp : tail.leftOutAt;
+  return leftOutAt === undefined ? { messages: messages.slice(start) } : { messages: messages.slice(start), leftOutAt };
 }
