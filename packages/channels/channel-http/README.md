@@ -21,6 +21,7 @@ It needs an auth provider next to it: [`@mercury-fw/auth-oidc`](../../auth/auth-
 | `HTTP_SURFACE_PORT` | The port (default `4100`). |
 | `HTTP_SURFACE_CORS_ORIGIN` | The origin a browser UI calls from (default `*`). |
 | `HTTP_SURFACE_PUBLIC_URL` | The address people's browsers reach the surface at (e.g. `https://mercury.example.com`). With it, people log in here to the services plugins act on as them (see [`GET /login/callback`](#get-logincallback)); without it, nobody can. |
+| `HTTP_SURFACE_RESUME_MAX_CHARS` | How many characters of a reopened conversation come back to the model once Mercury has freed its history (default: the core's `SESSION_RESUME_MAX_CHARS`; `0` turns resuming off on this surface). See [how Mercury remembers a conversation](../../libs/core/README.md#how-mercury-remembers-a-conversation). |
 
 ## API
 
@@ -45,7 +46,7 @@ Runs one conversational turn; the reply streams back as Server-Sent Events.
 | field | type | required | description |
 |---|---|---|---|
 | `text` | string | yes | The user message. A bare confirmation token here confirms a staged action (see the `pending` event) without invoking the model. |
-| `conversationId` | string | no | Opaque, client-owned id that continues one of your conversations: letters, digits, `-` and `_`, up to 128 characters (a UUID fits) once surrounding whitespace is trimmed, `400` otherwise. Omitted ⇒ a fresh one-off session. |
+| `conversationId` | string | no | Opaque, client-owned id that continues one of your conversations: letters, digits, `-` and `_`, up to 128 characters (a UUID fits) once surrounding whitespace is trimmed, `400` otherwise. Sent again, however long after, it continues that conversation, rebuilt from the archive if Mercury had freed it (see `HTTP_SURFACE_RESUME_MAX_CHARS`). Omitted ⇒ a fresh one-off session that can't be continued. |
 
 **Responses**: `200 text/event-stream` (the events below); `400` if `text` is missing, the body isn't JSON, or `conversationId` has other characters than the ones above.
 

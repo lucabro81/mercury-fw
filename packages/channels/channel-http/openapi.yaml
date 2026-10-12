@@ -49,6 +49,13 @@ info:
     by the verbatim archive; they degrade to empty when the vector store is
     unreachable).
 
+    A conversation never ends: sent again with the same `conversationId`, a
+    turn continues it however long after. Mercury frees a conversation's
+    in-memory history once it has been idle a while; the next turn rebuilds
+    it from the archive (a summary of its older part and its newest messages,
+    within `HTTP_SURFACE_RESUME_MAX_CHARS`), so the model still knows what the
+    person sees on screen.
+
 
     ## Streaming and cancellation
 
@@ -520,7 +527,7 @@ components:
         conversationId:
           type: string
           pattern: "^[A-Za-z0-9_-]{1,128}$"
-          description: Opaque, client-owned; letters, digits, `-` and `_` (a UUID fits). Omit to start a fresh ephemeral conversation.
+          description: Opaque, client-owned; letters, digits, `-` and `_` (a UUID fits). Omit to start a fresh ephemeral conversation, which can't be continued.
     TurnEvent:
       type: object
       description: The shape carried by each SSE `data:` line, per event type.
