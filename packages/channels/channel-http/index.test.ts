@@ -74,6 +74,17 @@ describe("httpChannel", () => {
     expect(accepted).toEqual([]);
   });
 
+  it("reads HTTP_SURFACE_RESUME_MAX_CHARS, and doesn't start on anything but a whole number from 0 up", () => {
+    for (const ok of ["", " 0 ", "12000"]) {
+      expect(httpChannel.build(fullCtx({ env: { HTTP_SURFACE_RESUME_MAX_CHARS: ok } }))).toBeDefined();
+    }
+    for (const bad of ["-1", "1.5", "lots"]) {
+      expect(() => httpChannel.build(fullCtx({ env: { HTTP_SURFACE_RESUME_MAX_CHARS: bad } }))).toThrow(
+        `HTTP_SURFACE_RESUME_MAX_CHARS must be a whole number from 0 up, got "${bad}"`,
+      );
+    }
+  });
+
   it("throws (loader isolates it) when resolveConfirmation is missing", () => {
     expect(() => httpChannel.build(fullCtx({ resolveConfirmation: undefined }))).toThrow(/resolveConfirmation/);
   });

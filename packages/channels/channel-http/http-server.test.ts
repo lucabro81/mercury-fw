@@ -23,6 +23,24 @@ const refuse: Authenticate = async () => null;
 const notAdmitted = (reason: "unknown" | "unavailable") => async (): Promise<Admission> => ({ ok: false, reason, message: `refused (${reason})` });
 
 describe("handleTurnRequest", () => {
+  // #163: a conversation the client names is one it reopens, so the core
+  // rebuilds it from the archive once it let its history go.
+  it("marks a conversation the client names as resumable, with the surface's budget when it has one", async () => {
+    const seen: InboundTurn[] = [];
+    const handleTurn: HandleTurn = async (turn, sink) => {
+      seen.push(turn);
+      await sink.finalize("ok");
+    };
+    const base = { handleTurn, confirm: async () => null, authenticate: asAlice, newSessionKey: () => "fresh" };
+    await (await handleTurnRequest(turnReq({ text: "hi", conversationId: "conv-1" }), base)).text();
+    await (await handleTurnRequest(turnReq({ text: "hi", conversationId: "conv-1" }), { ...base, resumeMaxChars: 500 })).text();
+    await (await handleTurnRequest(turnReq({ text: "hi", conversationId: "conv-1" }), { ...base, resumeMaxChars: 0 })).text();
+    await (await handleTurnRequest(turnReq({ text: "hi" }), { ...base, resumeMaxChars: 500 })).text();
+    await (await handleTurnRequest(turnReq({ text: "hi", conversationId: "  " }), base)).text();
+    expect(seen.map((t) => t.resume)).toEqual([{}, { maxChars: 500 }, { maxChars: 0 }, undefined, undefined]);
+    expect(seen[3]?.sessionKey).toBe("alice:fresh");
+  });
+
   it("streams reasoning, text and final events and passes an http InboundTurn keyed by conversationId", async () => {
     let seen: InboundTurn | undefined;
     const handleTurn: HandleTurn = async (turn, sink) => {

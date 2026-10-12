@@ -31,6 +31,8 @@ export type HttpProviderDeps = {
   logins?: { callbackUrl: string; accept: (callbackUrl: string) => void; complete: CompleteLoginFn };
   /** Linking another account to the caller (`POST /link`). */
   linking?: ChannelLinking;
+  /** The surface's budget for a reopened conversation (`HTTP_SURFACE_RESUME_MAX_CHARS`). */
+  resumeMaxChars?: number;
 };
 
 export function createHttpProvider(deps: HttpProviderDeps): Provider & { stop(): Promise<void> } {
@@ -48,6 +50,7 @@ export function createHttpProvider(deps: HttpProviderDeps): Provider & { stop():
         corsOrigin: deps.corsOrigin,
         completeLogin: deps.logins?.complete,
         ...(deps.linking === undefined ? {} : { linking: deps.linking }),
+        ...(deps.resumeMaxChars === undefined ? {} : { resumeMaxChars: deps.resumeMaxChars }),
       });
       deps.logins?.accept(deps.logins.callbackUrl);
     },
