@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { resumeConversation, type ResumeDeps } from "./resume.ts";
+import { resumeConversation, resumeBudget, parseResumeMaxChars, DEFAULT_RESUME_MAX_CHARS, type ResumeDeps } from "./resume.ts";
+import { MAX_HISTORY_CHARS } from "./history.ts";
 import type { VerbatimTail } from "../memory/verbatim-archive-store.ts";
 
 const query = { userId: "zitadel:1", sessionKey: "1:conv-a", maxChars: 400 };
@@ -90,5 +91,29 @@ describe("resumeConversation", () => {
       log: (m) => logs.push(m),
     };
     expect(await resumeConversation(query, d)).toEqual({ messages: [user("x")] });
+  });
+});
+
+describe("the resume budget", () => {
+  test("defaults to half of what the history holds before compressing, and reads SESSION_RESUME_MAX_CHARS", () => {
+    expect(DEFAULT_RESUME_MAX_CHARS).toBe(MAX_HISTORY_CHARS / 2);
+    expect(parseResumeMaxChars(undefined)).toBe(DEFAULT_RESUME_MAX_CHARS);
+    expect(parseResumeMaxChars("")).toBe(DEFAULT_RESUME_MAX_CHARS);
+    expect(parseResumeMaxChars(" 12000 ")).toBe(12000);
+    expect(parseResumeMaxChars("0")).toBe(0);
+  });
+
+  test("anything but a whole number from 0 up is refused, naming the variable", () => {
+    for (const bad of ["-1", "1.5", "abc", "1e3"]) {
+      expect(() => parseResumeMaxChars(bad)).toThrow(`SESSION_RESUME_MAX_CHARS must be a whole number from 0 up, got "${bad}"`);
+    }
+  });
+
+  test("a turn without resume gets none; the channel's budget wins over the instance's", () => {
+    expect(resumeBudget(undefined, 30_000)).toBe(0);
+    expect(resumeBudget({}, 30_000)).toBe(30_000);
+    expect(resumeBudget({ maxChars: 500 }, 30_000)).toBe(500);
+    expect(resumeBudget({ maxChars: 0 }, 30_000)).toBe(0);
+    expect(resumeBudget({ maxChars: 500 }, 0)).toBe(500);
   });
 });

@@ -10,7 +10,7 @@
  * production), and everything here fails soft: this is enrichment, and a
  * conversation that can't be rebuilt starts as it always did.
  */
-import type { ResumedConversation, Message } from "./history.ts";
+import { MAX_HISTORY_CHARS, type ResumedConversation, type Message } from "./history.ts";
 import type { VerbatimTail } from "../memory/verbatim-archive-store.ts";
 
 /** What resuming reads, and where it says what it did. */
@@ -21,6 +21,27 @@ export type ResumeDeps = {
   readSummaries: (query: { userId: string; sessionKey: string }) => Promise<Array<{ summary: string }>>;
   log: (message: string) => void;
 };
+
+/** How much of a resumed conversation comes back by default: half of what the history holds before compressing, so a few turns fit before the first compression. */
+export const DEFAULT_RESUME_MAX_CHARS = MAX_HISTORY_CHARS / 2;
+
+/** `SESSION_RESUME_MAX_CHARS`: unset or empty is the default, otherwise a whole number from 0 up (0 turns resuming off); throws on anything else. */
+export function parseResumeMaxChars(text: string | undefined): number {
+  const trimmed = text?.trim() ?? "";
+  if (trimmed === "") return DEFAULT_RESUME_MAX_CHARS;
+  if (!/^\d+$/.test(trimmed)) throw new Error(`SESSION_RESUME_MAX_CHARS must be a whole number from 0 up, got "${trimmed}"`);
+  return Number(trimmed);
+}
+
+/**
+ * The budget for resuming a turn's conversation: 0 when the channel didn't
+ * mark it as one its client reopens; otherwise the channel's own, or else
+ * the instance's (`instanceMaxChars`).
+ */
+export function resumeBudget(resume: { maxChars?: number } | undefined, instanceMaxChars: number): number {
+  if (resume === undefined) return 0;
+  return resume.maxChars ?? instanceMaxChars;
+}
 
 /** How much of the budget the summary of the older part may take at most. */
 const SUMMARY_SHARE = 4;
