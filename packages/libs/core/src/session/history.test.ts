@@ -314,4 +314,86 @@ describe("createSessionHistory", () => {
       ]);
     });
   });
+
+  describe("resumed (#163)", () => {
+    const resumed = {
+      summary: "they said their favourite colour is green",
+      messages: [
+        { role: "user" as const, content: "and the car?" },
+        { role: "assistant" as const, content: "a red one" },
+      ],
+    };
+
+    it("leads the history with the resumed summary and messages, after the primer", () => {
+      const history = createSessionHistory(fakeSummarizer(), undefined, "primer", resumed);
+      expect(history.getMessages()).toEqual([
+        { role: "assistant", content: "Context from your last session: primer" },
+        { role: "assistant", content: "Earlier conversation summary: they said their favourite colour is green" },
+        { role: "user", content: "and the car?" },
+        { role: "assistant", content: "a red one" },
+      ]);
+    });
+
+    it("leaves the resumed part out of what's capturable, keeping what's new", async () => {
+      const history = createSessionHistory(fakeSummarizer(), undefined, "primer", resumed);
+      expect(history.getCapturable()).toEqual([{ role: "assistant", content: "Context from your last session: primer" }]);
+      await history.addUserMessage("and the bike?");
+      await history.addAssistantMessage("blue");
+      expect(history.getCapturable()).toEqual([
+        { role: "assistant", content: "Context from your last session: primer" },
+        { role: "user", content: "and the bike?" },
+        { role: "assistant", content: "blue" },
+      ]);
+    });
+
+    it("without a summary, only the messages are resumed", () => {
+      const history = createSessionHistory(fakeSummarizer(), undefined, undefined, { messages: resumed.messages });
+      expect(history.getMessages()).toEqual(resumed.messages);
+      expect(history.getCapturable()).toEqual([]);
+    });
+
+    it("a compression summarizes the resumed part too, but mirrors only what's new, and then everything is capturable", async () => {
+      const calls: Message[][] = [];
+      const mirrored: Message[][] = [];
+      const history = createSessionHistory(fakeSummarizer({ calls }), (batch) => mirrored.push(batch), undefined, resumed);
+      await history.addUserMessage("x".repeat(10));
+      await history.addAssistantMessage("y".repeat(10));
+      await history.addUserMessage("z".repeat(MAX_HISTORY_CHARS));
+
+      expect(calls).toEqual([
+        [
+          { role: "assistant", content: "Earlier conversation summary: they said their favourite colour is green" },
+          { role: "user", content: "and the car?" },
+          { role: "assistant", content: "a red one" },
+          { role: "user", content: "x".repeat(10) },
+          { role: "assistant", content: "y".repeat(10) },
+        ],
+      ]);
+      expect(mirrored).toEqual([
+        [
+          { role: "user", content: "x".repeat(10) },
+          { role: "assistant", content: "y".repeat(10) },
+        ],
+      ]);
+      expect(history.getCapturable()).toEqual(history.getMessages());
+    });
+
+    it("a compression over the resumed part alone mirrors nothing", async () => {
+      const mirrored: Message[][] = [];
+      const history = createSessionHistory(fakeSummarizer(), (batch) => mirrored.push(batch), undefined, resumed);
+      await history.addUserMessage("z".repeat(MAX_HISTORY_CHARS));
+      expect(mirrored).toEqual([]);
+      expect(history.getMessages()).toEqual([
+        { role: "assistant", content: "Earlier conversation summary: a summary" },
+        { role: "user", content: "z".repeat(MAX_HISTORY_CHARS) },
+      ]);
+      expect(history.getCapturable()).toEqual(history.getMessages());
+    });
+
+    it("without resumed, getCapturable is getMessages", async () => {
+      const history = createSessionHistory(fakeSummarizer(), undefined, "primer");
+      await history.addUserMessage("hi");
+      expect(history.getCapturable()).toEqual(history.getMessages());
+    });
+  });
 });

@@ -14,6 +14,7 @@ function fakeHistory(overrides: Partial<SessionHistory> = {}): SessionHistory {
     replaceLastAssistantMessage: () => {},
     getMessages: () => [],
     getCharCount: () => 0,
+    getCapturable: () => [],
     ...overrides,
   };
 }
