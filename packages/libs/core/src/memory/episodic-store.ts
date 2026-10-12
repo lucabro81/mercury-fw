@@ -54,8 +54,8 @@ export type QdrantClientLike = {
 
 /**
  * Creates `collectionName` (cosine distance, `vectorSize`-dim) if it
- * doesn't already exist, then ensures the `timestamp`/`userId` payload
- * indexes exist regardless — `getLastSessionEpisodicSummaries`'s
+ * doesn't already exist, then ensures the `timestamp`/`userId`/`sessionKey`
+ * payload indexes exist regardless — `getLastSessionEpisodicSummaries`'s
  * `order_by`/filter scroll queries fail with an HTTP 400 without them.
  * Idempotent either way (Qdrant no-ops re-creating an existing index), so
  * safe to call on every startup, including against a collection that
@@ -73,6 +73,8 @@ export async function ensureEpisodicCollection(
   if (client.createPayloadIndex) {
     await client.createPayloadIndex(collectionName, { field_name: "timestamp", field_schema: "datetime" });
     await client.createPayloadIndex(collectionName, { field_name: "userId", field_schema: "keyword" });
+    // For getEpisodicSummariesBySession's per-conversation filter.
+    await client.createPayloadIndex(collectionName, { field_name: "sessionKey", field_schema: "keyword" });
   }
 }
 
@@ -180,4 +182,34 @@ export async function getLastSessionEpisodicSummaries(
     limit: query.limit ?? DEFAULT_SESSION_LIMIT,
   });
   return session.points.map((p) => p.payload ?? null).filter(isEpisodicSummary);
+}
+
+/** How many summaries of one conversation `getEpisodicSummariesBySession` reads at most. */
+const SESSION_SUMMARIES_LIMIT = 100;
+
+/**
+ * The episodic summaries of one conversation (`sessionKey`) of the person
+ * `userId`, oldest first — what a resumed conversation knows of its part
+ * that no longer fits verbatim. Empty when the client can't scroll.
+ */
+export async function getEpisodicSummariesBySession(
+  client: QdrantClientLike,
+  collectionName: string,
+  query: { userId: string; sessionKey: string },
+): Promise<EpisodicSummary[]> {
+  if (!client.scroll) {
+    return [];
+  }
+  const result = await client.scroll(collectionName, {
+    filter: {
+      must: [
+        { key: "userId", match: { value: query.userId } },
+        { key: "sessionKey", match: { value: query.sessionKey } },
+      ],
+    },
+    order_by: { key: "timestamp", direction: "asc" },
+    limit: SESSION_SUMMARIES_LIMIT,
+    with_payload: true,
+  });
+  return result.points.map((p) => p.payload ?? null).filter(isEpisodicSummary);
 }

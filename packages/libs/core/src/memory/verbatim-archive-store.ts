@@ -206,3 +206,66 @@ export async function listVerbatimBySession(
     nextOffset: result.next_page_offset ?? null,
   };
 }
+
+/** How many of a conversation's newest messages `listVerbatimTail` reads at most. */
+const TAIL_SCAN_LIMIT = 200;
+
+/**
+ * The end of a conversation, oldest first, and whether it reaches the
+ * conversation's first message. `leftOutAt` is the timestamp of the newest
+ * archived message left out of it (absent when complete): what came before
+ * the tail, which a summary has to cover.
+ */
+export type VerbatimTail = {
+  messages: Array<{ role: "user" | "assistant"; content: string; timestamp: string }>;
+  complete: boolean;
+  leftOutAt?: string;
+};
+
+/**
+ * The newest messages of one conversation (`sessionKey`) of the person
+ * `userId` whose content fits `maxChars`, in chronological order — what a
+ * resumed conversation hands back to the model. Reads at most
+ * `TAIL_SCAN_LIMIT` messages, newest first, stops at the first one that
+ * doesn't fit, and drops leading assistant messages, so the tail always
+ * opens with what the person said. `complete` is true only when every
+ * message of the conversation made it in. Empty and incomplete when the
+ * client can't scroll.
+ */
+export async function listVerbatimTail(
+  client: QdrantClientLike,
+  collectionName: string,
+  query: { userId: string; sessionKey: string; maxChars: number },
+): Promise<VerbatimTail> {
+  if (!client.scroll) {
+    return { messages: [], complete: false };
+  }
+  const result = await client.scroll(collectionName, {
+    filter: {
+      must: [
+        { key: "userId", match: { value: query.userId } },
+        { key: "sessionKey", match: { value: query.sessionKey } },
+      ],
+    },
+    order_by: { key: "timestamp", direction: "desc" },
+    limit: TAIL_SCAN_LIMIT,
+    with_payload: true,
+  });
+  const newestFirst = result.points.map((p) => p.payload ?? null).filter(isVerbatimMessage);
+  const taken: VerbatimMessage[] = [];
+  let chars = 0;
+  for (const m of newestFirst) {
+    if (chars + m.content.length > query.maxChars) break;
+    chars += m.content.length;
+    taken.push(m);
+  }
+  const chronological = taken.reverse();
+  const firstUser = chronological.findIndex((m) => m.role === "user");
+  const kept = firstUser === -1 ? [] : chronological.slice(firstUser);
+  const messages = kept.map((m) => ({ role: m.role, content: m.content, timestamp: m.timestamp }));
+  const complete = result.points.length < TAIL_SCAN_LIMIT && messages.length === newestFirst.length;
+  if (complete) return { messages, complete };
+  // Newest first, the first message not kept.
+  const leftOut = newestFirst[kept.length];
+  return leftOut === undefined ? { messages, complete } : { messages, complete, leftOutAt: leftOut.timestamp };
+}

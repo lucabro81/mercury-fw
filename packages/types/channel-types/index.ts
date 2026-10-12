@@ -89,6 +89,15 @@ export type InboundTurn = {
   logPrefix: string;
   /** When set, aborting it cancels the in-flight turn. Only the HTTP surface supplies one today (client disconnect); other channels leave it undefined. */
   abortSignal?: AbortSignal;
+  /**
+   * Set when `sessionKey` names a conversation its client reopens whenever it
+   * wants (one of many a person keeps, as on HTTP), rather than a single
+   * running thread (as a Google Chat space): once the core has let go of its
+   * history, the next turn rebuilds it from the archive. `maxChars` is the
+   * channel's own budget for what comes back; absent, the core's
+   * (`SESSION_RESUME_MAX_CHARS`), and 0 turns resuming off.
+   */
+  resume?: { maxChars?: number };
 };
 
 /**

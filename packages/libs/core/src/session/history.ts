@@ -62,7 +62,18 @@ export type SessionHistory = {
    * lost track of something" from "the context is actually near full".
    */
   getCharCount(): number;
+  /**
+   * What `getMessages()` returns minus what a resumed conversation brought
+   * back (see `createSessionHistory`'s `resumed`): it's already in memory,
+   * so whatever mirrors this history to memory reads this instead, and a
+   * resumed conversation is never captured twice. The same as `getMessages()`
+   * once a compression folded the resumed part into a new summary.
+   */
+  getCapturable(): Message[];
 };
+
+/** What a resumed conversation brings back: the summary of its older part, if any, and its newest messages. */
+export type ResumedConversation = { summary?: string; messages: Message[] };
 
 /** Wraps a summary string as the synthetic leading message `getMessages()` prepends. */
 function summaryMessage(summary: string): Message {
@@ -108,14 +119,26 @@ function primerMessage(primer: string): Message {
  *   independent from `summary`: it's never included in the batch passed to
  *   `summarize`, so a real compression event can't paraphrase or drop it.
  *   Leads `getMessages()` for the whole life of this history.
+ * @param resumed - Optional, a conversation picked up again after its history
+ *   was dropped (see `session/resume.ts`): its summary becomes this history's
+ *   summary and its messages lead the raw window, so the model sees the
+ *   conversation as if it had never been closed. Both are already in memory:
+ *   `getCapturable()` and `onBeforeCompress` leave them out, while `summarize`
+ *   still gets them, so the first compression folds them into a summary of
+ *   the whole conversation.
  */
 export function createSessionHistory(
   summarize: (messages: Message[]) => Promise<string>,
   onBeforeCompress?: (messages: Message[]) => void,
   primer?: string,
+  resumed?: ResumedConversation,
 ): SessionHistory {
-  let rawMessages: Message[] = [];
-  let summary: string | null = null;
+  let rawMessages: Message[] = [...(resumed?.messages ?? [])];
+  let summary: string | null = resumed?.summary || null;
+  // How much of the history's head came back with `resumed`, until a
+  // compression folds it into a new summary.
+  let restoredCount = rawMessages.length;
+  let summaryRestored = summary !== null;
 
   async function add(message: Message): Promise<void> {
     rawMessages.push(message);
@@ -136,21 +159,30 @@ export function createSessionHistory(
         return;
       }
       const batch = summary ? [summaryMessage(summary), ...toCompress] : toCompress;
-      onBeforeCompress?.(batch);
+      // The resumed part is already in memory: mirror only what's new.
+      const mirrored = [...(summary && !summaryRestored ? [summaryMessage(summary)] : []), ...toCompress.slice(restoredCount)];
+      if (mirrored.length > 0) onBeforeCompress?.(mirrored);
       summary = await summarize(batch);
       rawMessages = retained;
+      restoredCount = Math.max(0, restoredCount - toCompress.length);
+      summaryRestored = false;
     }
   }
 
-  function getMessages(): Message[] {
+  /** The primer and summary messages that lead the history, the summary left out when it came back with `resumed`. */
+  function leadingMessages(withRestoredSummary: boolean): Message[] {
     const leading: Message[] = [];
     if (primer) {
       leading.push(primerMessage(primer));
     }
-    if (summary) {
+    if (summary && (withRestoredSummary || !summaryRestored)) {
       leading.push(summaryMessage(summary));
     }
-    return [...leading, ...rawMessages];
+    return leading;
+  }
+
+  function getMessages(): Message[] {
+    return [...leadingMessages(true), ...rawMessages];
   }
 
   return {
@@ -163,6 +195,7 @@ export function createSessionHistory(
       }
     },
     getMessages,
+    getCapturable: () => [...leadingMessages(false), ...rawMessages.slice(restoredCount)],
     getCharCount: () => getMessages().reduce((sum, m) => sum + m.content.length, 0),
   };
 }

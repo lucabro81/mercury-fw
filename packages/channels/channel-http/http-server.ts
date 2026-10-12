@@ -69,6 +69,8 @@ export type TurnRequestDeps = {
   corsOrigin?: string;
   /** Test seam for the ephemeral session key when the client sends no conversationId. */
   newSessionKey?: () => string;
+  /** How much of a reopened conversation comes back once the core let its history go (`HTTP_SURFACE_RESUME_MAX_CHARS`); absent, the core's own. */
+  resumeMaxChars?: number;
 };
 
 const SSE_HEADERS = {
@@ -161,10 +163,9 @@ export async function handleTurnRequest(req: Request, deps: TurnRequestDeps): Pr
     return Response.json({ ok: false, error: "missing text" }, { status: 400, headers: cors });
   }
   const text = body.text;
-  const conversationId =
-    typeof body.conversationId === "string" && body.conversationId.trim().length > 0
-      ? body.conversationId.trim()
-      : (deps.newSessionKey ?? (() => crypto.randomUUID()))();
+  // A conversation the client names is one it reopens; an ephemeral one never comes back.
+  const named = typeof body.conversationId === "string" && body.conversationId.trim().length > 0;
+  const conversationId = named ? (body.conversationId as string).trim() : (deps.newSessionKey ?? (() => crypto.randomUUID()))();
   if (!CONVERSATION_ID.test(conversationId)) {
     return Response.json({ ok: false, error: "invalid conversationId" }, { status: 400, headers: cors });
   }
@@ -234,6 +235,7 @@ export async function handleTurnRequest(req: Request, deps: TurnRequestDeps): Pr
             // The caller's id comes from the auth provider, unchecked here.
             logPrefix: `[http:${forLog(sessionKey)}] `,
             abortSignal: abort.signal,
+            ...(named ? { resume: deps.resumeMaxChars === undefined ? {} : { maxChars: deps.resumeMaxChars } } : {}),
           },
           sink,
         );

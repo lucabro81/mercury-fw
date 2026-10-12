@@ -35,6 +35,7 @@ export const httpChannel: ChannelPlugin = {
     // the address their browser reaches the surface at.
     const publicUrl = ctx.env.HTTP_SURFACE_PUBLIC_URL?.trim().replace(/\/+$/, "");
     const logins = publicUrl ? ctx.logins : undefined;
+    const resumeMaxChars = parseResumeMaxChars(ctx.env.HTTP_SURFACE_RESUME_MAX_CHARS);
     return createHttpProvider({
       port: Number(ctx.env.HTTP_SURFACE_PORT ?? "4100"),
       corsOrigin: ctx.env.HTTP_SURFACE_CORS_ORIGIN ?? "*",
@@ -44,7 +45,16 @@ export const httpChannel: ChannelPlugin = {
       authenticate: ctx.authenticate,
       admit: ctx.admit,
       ...(ctx.linking === undefined ? {} : { linking: ctx.linking }),
+      ...(resumeMaxChars === undefined ? {} : { resumeMaxChars }),
       ...(logins ? { logins: { callbackUrl: `${publicUrl}/login/callback`, accept: logins.accept, complete: logins.complete } } : {}),
     });
   },
 };
+
+/** `HTTP_SURFACE_RESUME_MAX_CHARS`: unset or empty leaves the core's budget, otherwise a whole number from 0 up (0 turns resuming off on this surface); throws on anything else. */
+function parseResumeMaxChars(text: string | undefined): number | undefined {
+  const trimmed = text?.trim() ?? "";
+  if (trimmed === "") return undefined;
+  if (!/^\d+$/.test(trimmed)) throw new Error(`HTTP_SURFACE_RESUME_MAX_CHARS must be a whole number from 0 up, got "${trimmed}"`);
+  return Number(trimmed);
+}

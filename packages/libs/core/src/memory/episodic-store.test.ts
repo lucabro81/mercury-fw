@@ -4,6 +4,7 @@ import {
   storeEpisodicSummary,
   searchEpisodicMemory,
   getLastSessionEpisodicSummaries,
+  getEpisodicSummariesBySession,
   type QdrantClientLike,
 } from "./episodic-store.ts";
 
@@ -51,7 +52,7 @@ describe("ensureEpisodicCollection", () => {
   // context primer ran — Qdrant requires an index for both. Observed live
   // twice (once per fresh Qdrant volume) before this fix; previously
   // worked around by hand via the REST API instead of in code.
-  it("creates the timestamp and userId payload indexes when creating a new collection", async () => {
+  it("creates the timestamp, userId and sessionKey payload indexes when creating a new collection", async () => {
     const indexCalls: Array<{ name: string; params: unknown }> = [];
     const client: QdrantClientLike = {
       getCollections: async () => ({ collections: [] }),
@@ -69,6 +70,7 @@ describe("ensureEpisodicCollection", () => {
     expect(indexCalls).toEqual([
       { name: "episodic_memory", params: { field_name: "timestamp", field_schema: "datetime" } },
       { name: "episodic_memory", params: { field_name: "userId", field_schema: "keyword" } },
+      { name: "episodic_memory", params: { field_name: "sessionKey", field_schema: "keyword" } },
     ]);
   });
 
@@ -90,7 +92,7 @@ describe("ensureEpisodicCollection", () => {
 
     await ensureEpisodicCollection(client, "episodic_memory", 768);
 
-    expect(indexCalls).toHaveLength(2);
+    expect(indexCalls).toHaveLength(3);
   });
 
   // createPayloadIndex is optional on QdrantClientLike (same reasoning as
@@ -503,5 +505,53 @@ describe("getLastSessionEpisodicSummaries", () => {
         timestamp: "2026-07-25T18:00:00.000Z",
       },
     ]);
+  });
+});
+
+describe("getEpisodicSummariesBySession", () => {
+  const entry = (summary: string, second: number) => ({
+    userId: "static:alice",
+    sessionKey: "alice:conv-1",
+    summary,
+    timestamp: `2026-10-12T10:00:0${second}.000Z`,
+  });
+
+  it("returns the summaries of one conversation of the person, oldest first", async () => {
+    let received: Record<string, unknown> | undefined;
+    const client: QdrantClientLike = {
+      getCollections: async () => ({ collections: [] }),
+      createCollection: async () => ({}),
+      upsert: async () => ({}),
+      query: async () => ({ points: [] }),
+      scroll: async (_collection, params) => {
+        received = params;
+        return { points: [{ id: "a", payload: entry("primo", 1) }, { id: "b", payload: null }, { id: "c", payload: entry("secondo", 2) }] };
+      },
+    };
+
+    const summaries = await getEpisodicSummariesBySession(client, "episodic_memory", { userId: "static:alice", sessionKey: "alice:conv-1" });
+
+    expect(received).toEqual({
+      filter: {
+        must: [
+          { key: "userId", match: { value: "static:alice" } },
+          { key: "sessionKey", match: { value: "alice:conv-1" } },
+        ],
+      },
+      order_by: { key: "timestamp", direction: "asc" },
+      limit: 100,
+      with_payload: true,
+    });
+    expect(summaries).toEqual([entry("primo", 1), entry("secondo", 2)]);
+  });
+
+  it("is empty when the client has no scroll support", async () => {
+    const client: QdrantClientLike = {
+      getCollections: async () => ({ collections: [] }),
+      createCollection: async () => ({}),
+      upsert: async () => ({}),
+      query: async () => ({ points: [] }),
+    };
+    expect(await getEpisodicSummariesBySession(client, "episodic_memory", { userId: "static:alice", sessionKey: "alice:conv-1" })).toEqual([]);
   });
 });

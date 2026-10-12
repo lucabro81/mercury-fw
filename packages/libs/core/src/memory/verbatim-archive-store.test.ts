@@ -5,6 +5,7 @@ import {
   searchVerbatim,
   listVerbatimBySession,
   listVerbatimSessions,
+  listVerbatimTail,
 } from "./verbatim-archive-store.ts";
 import type { QdrantClientLike } from "./episodic-store.ts";
 
@@ -474,5 +475,110 @@ describe("listVerbatimSessions", () => {
     };
 
     expect(await listVerbatimSessions(client, "verbatim_archive", { userId: "static:alice", limit: 10 })).toEqual({ conversations: [] });
+  });
+});
+
+describe("listVerbatimTail", () => {
+  const msg = (role: "user" | "assistant", content: string, second: number) => ({
+    userId: "static:alice",
+    sessionKey: "alice:conv-1",
+    role,
+    content,
+    timestamp: `2026-10-12T10:00:${String(second).padStart(2, "0")}.000Z`,
+  });
+
+  /** A client whose scroll hands back `newestFirst` (already newest first, as Qdrant would), recording the request. */
+  function clientWith(newestFirst: ReturnType<typeof msg>[], received: { params?: Record<string, unknown> } = {}): QdrantClientLike {
+    return {
+      getCollections: async () => ({ collections: [] }),
+      createCollection: async () => ({}),
+      upsert: async () => ({}),
+      query: async () => ({ points: [] }),
+      scroll: async (_collection, params) => {
+        received.params = params;
+        return { points: newestFirst.map((payload, i) => ({ id: `p${i}`, payload })) };
+      },
+    };
+  }
+
+  it("asks for the person's conversation newest first, and returns it in chronological order", async () => {
+    const received: { params?: Record<string, unknown> } = {};
+    const client = clientWith([msg("assistant", "verde", 3), msg("user", "colore?", 2), msg("assistant", "ok", 1), msg("user", "mi piace il verde", 0)], received);
+
+    const tail = await listVerbatimTail(client, "verbatim_archive", { userId: "static:alice", sessionKey: "alice:conv-1", maxChars: 1000 });
+
+    expect(received.params).toEqual({
+      filter: {
+        must: [
+          { key: "userId", match: { value: "static:alice" } },
+          { key: "sessionKey", match: { value: "alice:conv-1" } },
+        ],
+      },
+      order_by: { key: "timestamp", direction: "desc" },
+      limit: 200,
+      with_payload: true,
+    });
+    expect(tail).toEqual({
+      messages: [
+        { role: "user", content: "mi piace il verde", timestamp: "2026-10-12T10:00:00.000Z" },
+        { role: "assistant", content: "ok", timestamp: "2026-10-12T10:00:01.000Z" },
+        { role: "user", content: "colore?", timestamp: "2026-10-12T10:00:02.000Z" },
+        { role: "assistant", content: "verde", timestamp: "2026-10-12T10:00:03.000Z" },
+      ],
+      complete: true,
+    });
+  });
+
+  it("keeps only the newest messages that fit the budget, starting from a user message", async () => {
+    // Newest first: "dddd"(4) + "cccc"(4) fit 10, "bb"(2) would make 10 too, "aaaa" no longer fits.
+    const client = clientWith([msg("assistant", "dddd", 3), msg("user", "cccc", 2), msg("assistant", "bb", 1), msg("user", "aaaa", 0)]);
+
+    const tail = await listVerbatimTail(client, "verbatim_archive", { userId: "static:alice", sessionKey: "alice:conv-1", maxChars: 10 });
+
+    // "bb" fits but is an assistant message: a tail never opens with one.
+    // What came before the tail ends with "bb", the newest message left out.
+    expect(tail).toEqual({
+      messages: [
+        { role: "user", content: "cccc", timestamp: "2026-10-12T10:00:02.000Z" },
+        { role: "assistant", content: "dddd", timestamp: "2026-10-12T10:00:03.000Z" },
+      ],
+      complete: false,
+      leftOutAt: "2026-10-12T10:00:01.000Z",
+    });
+  });
+
+  it("is incomplete when the archive holds more than one scroll page of the conversation", async () => {
+    const many = Array.from({ length: 200 }, (_, i) => msg(i % 2 === 0 ? "assistant" : "user", "x", 59));
+    const tail = await listVerbatimTail(clientWith(many), "verbatim_archive", { userId: "static:alice", sessionKey: "alice:conv-1", maxChars: 10_000 });
+    expect(tail.complete).toBe(false);
+    expect(tail.messages[0]?.role).toBe("user");
+  });
+
+  it("is empty when even the newest message doesn't fit, or nothing is archived", async () => {
+    expect(await listVerbatimTail(clientWith([msg("assistant", "troppo lungo", 1), msg("user", "a", 0)]), "verbatim_archive", { userId: "static:alice", sessionKey: "alice:conv-1", maxChars: 5 })).toEqual({
+      messages: [],
+      complete: false,
+      leftOutAt: "2026-10-12T10:00:01.000Z",
+    });
+    expect(await listVerbatimTail(clientWith([]), "verbatim_archive", { userId: "static:alice", sessionKey: "alice:conv-1", maxChars: 5 })).toEqual({ messages: [], complete: true });
+  });
+
+  it("skips malformed points", async () => {
+    const client: QdrantClientLike = {
+      ...clientWith([]),
+      scroll: async () => ({ points: [{ id: "p1", payload: null }, { id: "p2", payload: msg("user", "ciao", 0) }] }),
+    };
+    expect(await listVerbatimTail(client, "verbatim_archive", { userId: "static:alice", sessionKey: "alice:conv-1", maxChars: 100 })).toEqual({
+      messages: [{ role: "user", content: "ciao", timestamp: "2026-10-12T10:00:00.000Z" }],
+      complete: true,
+    });
+  });
+
+  it("is empty when the client has no scroll support", async () => {
+    const { scroll: _scroll, ...noScroll } = clientWith([]);
+    expect(await listVerbatimTail(noScroll, "verbatim_archive", { userId: "static:alice", sessionKey: "alice:conv-1", maxChars: 100 })).toEqual({
+      messages: [],
+      complete: false,
+    });
   });
 });

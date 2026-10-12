@@ -22,11 +22,12 @@ import { createPresentTool } from "./tools/present-tool.ts";
 import { loadPlugins } from "./plugins/plugin-loader.ts";
 import { materializeCliCredentials } from "./credentials/materialize.ts";
 import type { MercuryConfig } from "./config/define-config.ts";
-import { createSessionHistory, type SessionHistory, type Message } from "./session/history.ts";
+import { createSessionHistory, type SessionHistory, type Message, type ResumedConversation } from "./session/history.ts";
 import { createSummarizer } from "./session/summarizer.ts";
 import { createEpisodicSummarizer } from "./session/episodic-summarizer.ts";
 import { createSemanticFactExtractor } from "./session/semantic-fact-extractor.ts";
 import { buildContextPrimer } from "./session/context-primer.ts";
+import { resumeConversation, resumeBudget, parseResumeMaxChars } from "./session/resume.ts";
 import { buildSystemPrompts } from "./session/system-prompt.ts";
 import { createSessionLock } from "./router/session-lock.ts";
 import { createSessionCapture } from "./session/session-capture.ts";
@@ -55,8 +56,9 @@ import {
   ensureEpisodicCollection,
   storeEpisodicSummary,
   getLastSessionEpisodicSummaries,
+  getEpisodicSummariesBySession,
 } from "./memory/episodic-store.ts";
-import { ensureVerbatimCollection } from "./memory/verbatim-archive-store.ts";
+import { ensureVerbatimCollection, listVerbatimTail } from "./memory/verbatim-archive-store.ts";
 import { createVerbatimArchiveProvider } from "./memory/memory-provider.ts";
 import { ensureSemanticFactsCollection, storeSemanticFact, searchSemanticFactsByTopic } from "./memory/semantic-facts-store.ts";
 import { ensureToolCorrectionsCollection, storeToolCorrection, searchToolCorrectionsByTopic } from "./memory/tool-corrections-store.ts";
@@ -223,7 +225,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
    * meaningful for sessions it tracks (a real per-user identity); an
    * identity-less channel omits it.
    */
-  function getOrCreateHistory(key: string, trackForCapture = false, primer?: string): SessionHistory {
+  function getOrCreateHistory(key: string, trackForCapture = false, primer?: string, resumed?: ResumedConversation): SessionHistory {
     let history = histories.get(key);
     if (!history) {
       history = createSessionHistory(
@@ -232,6 +234,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
           ? (messages) => sessionCapture.onCompress(key, messages)
           : undefined,
         primer,
+        resumed,
       );
       histories.set(key, history);
     }
@@ -256,6 +259,9 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   const verbatimCollection = process.env.QDRANT_VERBATIM_COLLECTION ?? "verbatim_archive";
   const verbatimVectorSize = Number(process.env.QDRANT_VERBATIM_VECTOR_SIZE ?? "768");
   const verbatimProvider = createVerbatimArchiveProvider({ client: qdrant, collectionName: verbatimCollection, embed });
+  // How much of a resumed conversation comes back, when its channel sets no
+  // budget of its own (see session/resume.ts).
+  const resumeMaxChars = parseResumeMaxChars(process.env.SESSION_RESUME_MAX_CHARS);
 
   // Semantic consolidation (D-22/D-34): a separate Qdrant collection from
   // episodic memory above — one point per extracted {topic, value} candidate,
@@ -486,8 +492,17 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
     // Post-turn guards contributed by whatever plugins loaded — the core runs
     // them without knowing what any does (see PostTurnGuard).
     postTurnGuards: loadedPlugins.postTurnGuards,
-    getOrCreateHistory: async (key, trackForCapture, userId) => {
+    getOrCreateHistory: async (key, trackForCapture, userId, resume) => {
       if (trackForCapture && userId && !histories.has(key)) {
+        // A conversation its client reopens comes back from the archive (#163).
+        const resumed = await resumeConversation(
+          { userId, sessionKey: key, maxChars: resumeBudget(resume, resumeMaxChars) },
+          {
+            readTail: (q) => listVerbatimTail(qdrant, verbatimCollection, q),
+            readSummaries: (q) => getEpisodicSummariesBySession(qdrant, episodicCollection, q),
+            log: (msg) => console.error(msg),
+          },
+        );
         const primer = await buildContextPrimer(userId, {
           vaultPath: wikiVaultPath,
           getLastSessionEntries: (uid) => getLastSessionEpisodicSummaries(qdrant, episodicCollection, { userId: uid }),
@@ -496,7 +511,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
           readIndexFileFn: readIndexFile,
           log: (msg) => console.error(`[memory] ${msg}`),
         });
-        return getOrCreateHistory(key, trackForCapture, primer);
+        return getOrCreateHistory(key, trackForCapture, primer, resumed);
       }
       return getOrCreateHistory(key, trackForCapture);
     },
@@ -505,7 +520,8 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
       idleScanner.touch(key, at);
     },
     registerCaptureCallback: (key, onToolStart, onToolFinish) => sessionCapture.registerCallbacks(key, { onToolStart, onToolFinish }),
-    maybeCapture: (key, history) => sessionCapture.maybeCapture(key, history.getMessages()),
+    // What a resumed conversation brought back is already in memory.
+    maybeCapture: (key, history) => sessionCapture.maybeCapture(key, history.getCapturable()),
     captureVerbatim: verbatimProvider.captureExchange,
     processToolCorrections,
     logStep,
@@ -562,7 +578,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
           if (!history || !userId) {
             return undefined;
           }
-          return { key, userId, messages: history.getMessages() };
+          return { key, userId, messages: history.getCapturable() };
         },
         closeSession: (key) => {
           histories.delete(key);
