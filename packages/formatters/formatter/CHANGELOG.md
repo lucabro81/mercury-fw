@@ -1,5 +1,11 @@
 # @mercury-fw/formatter
 
+## 0.45.0
+
+### Patch Changes
+
+- @mercury-fw/plugin-types@0.45.0
+
 ## 0.44.1
 
 ### Patch Changes
