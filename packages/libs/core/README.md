@@ -30,6 +30,32 @@ A scaffolded app's `src/index.ts` (the service) and `src/repl.ts` (the REPL) are
 
 Qdrant being unreachable degrades memory, it doesn't stop the agent.
 
+## How Mercury remembers a conversation
+
+A language model remembers nothing between one answer and the next. Every time it answers, it gets the whole conversation again as text, from the first message to the last, and reads it from scratch. That text has a size limit, the model's context window, so a long conversation can't be handed over forever as it is.
+
+Mercury keeps four things for every conversation:
+
+- **the history**, the conversation as the model gets it, kept in memory while the conversation is active;
+- **its summary**: when the history grows past about 60,000 characters, its older part is replaced by a summary written by the model, and the conversation goes on from the summary plus the recent messages (this is called compaction);
+- **the archive**, every message word for word, kept in the vector store (Qdrant) and never summarized: it's what a UI shows when it reopens a conversation, and what the model can search when it needs an exact quote;
+- **the long-term memory**: short summaries of what was said, which Mercury uses in later conversations to remember the person.
+
+The history lives in the process's memory, so Mercury frees it once a conversation has been quiet for a while (`SESSION_IDLE_TIMEOUT_MS`, 30 minutes by default). Before freeing it, it writes its summary to the long-term memory.
+
+What happens next depends on the channel:
+
+- **On a channel with a single stream of messages**, like a Google Chat space, a quiet stretch closes the conversation. The next message starts a new one, with a reminder of the last one at the top.
+- **On a channel where one person keeps many conversations and reopens them whenever they want**, like the HTTP surface behind a web chat, a conversation never ends. Freeing the history only empties a cache: the next message rebuilds it from the archive, as a compaction would, with the summaries of the older part and the newest messages word for word. To the model, and to the person, it's the conversation that was on screen. Whatever comes back is already in the long-term memory, so it's never summarized there twice.
+
+| Variable | |
+|---|---|
+| `SESSION_IDLE_TIMEOUT_MS` | How long a quiet conversation keeps its history in memory (default 30 minutes). Lower it to free memory sooner. A reopened conversation on HTTP doesn't notice. |
+| `SESSION_RESUME_MAX_CHARS` | How many characters of a reopened conversation come back to the model (default 30,000). Raise it to give the model more of the past, at the cost of a longer prompt on every answer, which a small model or slow hardware pays for. `0` turns resuming off where the channel doesn't set its own. |
+| `HTTP_SURFACE_RESUME_MAX_CHARS` | The same, for the HTTP surface only; see [its README](../../channels/channel-http/README.md). |
+
+An example. Someone writes "my favourite colour is green" in a web chat and closes the tab. An hour later Mercury has freed that conversation. When they open it again and ask "what's my favourite colour?", Mercury reads the end of the conversation from the archive, puts it back in front of the model, and the answer is "green", as if no time had passed.
+
 ## Who sees what
 
 The core keeps one identity per person, `<provider>:<id>` (`google-chat:users/42`, `oidc:<sub>`), so two providers issuing the same id are still two people. Memory, the conversation archive, the tool log and pending confirmations are kept per person, and a confirmation can only be confirmed by whoever staged it.
