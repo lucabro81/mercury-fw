@@ -6,7 +6,7 @@
 ---
 
 - A conversation reopened on the HTTP surface after Mercury freed its history comes back to the model: the summaries of its older part plus its newest messages from the archive, within a budget.
-- What a resumed conversation brings back is never captured to long-term memory a second time.
+- What a resumed conversation brings back isn't captured to long-term memory again, only the new messages are.
 - `SESSION_RESUME_MAX_CHARS` sets how much comes back (default 30000, `0` turns it off); `HTTP_SURFACE_RESUME_MAX_CHARS` sets it for the HTTP surface only.
 - `InboundTurn.resume` lets a channel mark a conversation its client reopens.
 - The episodic collection gets a `sessionKey` index.

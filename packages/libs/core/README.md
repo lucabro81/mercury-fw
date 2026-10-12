@@ -46,7 +46,7 @@ The history lives in the process's memory, so Mercury frees it once a conversati
 What happens next depends on the channel:
 
 - **On a channel with a single stream of messages**, like a Google Chat space, a quiet stretch closes the conversation. The next message starts a new one, with a reminder of the last one at the top.
-- **On a channel where one person keeps many conversations and reopens them whenever they want**, like the HTTP surface behind a web chat, a conversation never ends. Freeing the history only empties a cache: the next message rebuilds it from the archive, as a compaction would, with the summaries of the older part and the newest messages word for word. To the model, and to the person, it's the conversation that was on screen. Whatever comes back is already in the long-term memory, so it's never summarized there twice.
+- **On a channel where one person keeps many conversations and reopens them whenever they want**, like the HTTP surface behind a web chat, a conversation never ends. Freeing the history only empties a cache: the next message rebuilds it from the archive, as a compaction would, with the summaries of the older part and the newest messages word for word. To the model, and to the person, it's the conversation that was on screen. Whatever comes back is already in the long-term memory, so only the new messages go there.
 
 | Variable | |
 |---|---|
