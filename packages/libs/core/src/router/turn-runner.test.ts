@@ -62,6 +62,30 @@ function baseSink(overrides: Partial<TurnSink> = {}): TurnSink & { disposed: boo
 }
 
 describe("createTurnRunner", () => {
+  // #163: a channel marks a conversation its client reopens; the history is
+  // rebuilt from the archive only for those, and only for a tracked person.
+  test("hands the turn's resume to getOrCreateHistory for a tracked turn only", async () => {
+    const seen: unknown[][] = [];
+    const runner = createTurnRunner({
+      model: {} as any,
+      systemPrompts: { singleUser: "single", multiUser: "multi" },
+      buildTools: () => ({}),
+      getOrCreateHistory: (...args: unknown[]) => (seen.push(args), fakeHistory()),
+      trackSession: () => {},
+      registerCaptureCallback: () => {},
+      maybeCapture: async () => {},
+      processToolCorrections: async () => {},
+      logStep: () => {},
+      runTurnFn: async () => "reply",
+    });
+
+    await runner(baseTurn({ principal: verified("u1"), resume: { maxChars: 500 } }), baseSink());
+    await runner(baseTurn({ principal: verified("u1"), sessionKey: "session-2" }), baseSink());
+    await runner(baseTurn({ sessionKey: "session-3", resume: {} }), baseSink());
+
+    expect(seen.map((args) => args[3])).toEqual([{ maxChars: 500 }, undefined, undefined]);
+  });
+
   test("forwards sink.onTextChunk into runTurn's deps when the sink defines it", async () => {
     let receivedOnTextChunk: unknown;
     const runner = createTurnRunner({

@@ -53,8 +53,15 @@ export type TurnRunnerDeps = {
    * own closure can decide whether to seed a first-ever session with a
    * context primer (see `src/session/context-primer.ts`); `undefined` when
    * nobody vouched for the person, since a primer needs a real identity.
+   * `resume` is the turn's own (`InboundTurn.resume`), for a tracked turn
+   * only: a history created for it is rebuilt from the archive.
    */
-  getOrCreateHistory: (sessionKey: string, trackForCapture: boolean, key: string | undefined) => Promise<SessionHistory> | SessionHistory;
+  getOrCreateHistory: (
+    sessionKey: string,
+    trackForCapture: boolean,
+    key: string | undefined,
+    resume?: InboundTurn["resume"],
+  ) => Promise<SessionHistory> | SessionHistory;
   /** Layer-3 session tracking (sessionUsers map + idle scanner touch). Only for turns whose person a provider vouched for. */
   trackSession: (sessionKey: string, key: string, at: number) => void;
   /** Refreshes this turn's tool-status callbacks for out-of-band capture messages. */
@@ -173,7 +180,7 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
       // already scheduled when the sink was constructed keeps running
       // otherwise, firing on its own 60s schedule regardless of whether
       // the turn itself already failed and was reported.
-      history = await deps.getOrCreateHistory(turn.sessionKey, tracked, tracked ? key : undefined);
+      history = await deps.getOrCreateHistory(turn.sessionKey, tracked, tracked ? key : undefined, tracked ? turn.resume : undefined);
       const text = await (deps.runTurnFn ?? runTurn)(history, turn.text, {
         model: deps.model,
         tools: deps.buildTools(turn.sessionKey, key, who, sink.onToolStart, sink.onToolFinish),
