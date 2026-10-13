@@ -12,9 +12,9 @@ import type { runCli } from "./cli-executor.ts";
 
 /**
  * Builds `binary`'s `PersonLogin`. `redirectUri`: whether the CLI takes the
- * callback as `--redirect-uri` (jira, confluence, zitadel), or the provider
- * always sends the person back to the one callback registered on the app
- * (bitbucket), in which case that has to be Mercury's.
+ * callback as `--redirect-uri` (jira, confluence, zitadel, bitbucket), or the
+ * provider always sends the person back to the one callback registered on the
+ * app, in which case that has to be Mercury's.
  */
 export function createCliPersonLogin(
   runCliFn: typeof runCli,

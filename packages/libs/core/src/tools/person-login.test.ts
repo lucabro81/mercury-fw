@@ -33,9 +33,9 @@ describe("createCliPersonLogin", () => {
     ]);
   });
 
-  it("leaves the redirect URI out for a CLI whose provider takes it from the app (bitbucket)", async () => {
+  it("leaves the redirect URI out for a CLI whose provider takes it from the app", async () => {
     const f = fake({ ok: true, data: { authorize_url: "https://auth/x", state: "st-1" } });
-    await createCliPersonLogin(f.runCliFn, "bitbucket", { redirectUri: false }).start("static:alice", "https://cb");
+    await createCliPersonLogin(f.runCliFn, "acme", { redirectUri: false }).start("static:alice", "https://cb");
     expect(f.runs[0]?.args).toEqual(["auth", "login", "--user", "static:alice", "--remote"]);
   });
 
