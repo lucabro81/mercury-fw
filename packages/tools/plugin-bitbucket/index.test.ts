@@ -1,6 +1,6 @@
 import { describe, it, expect } from "bun:test";
 import { PLUGIN_API_VERSION, type SessionToolContext } from "@mercury-fw/plugin-types";
-import { bitbucketPlugin } from "./index.ts";
+import { bitbucketPlugin, createBitbucketPlugin } from "./index.ts";
 
 /**
  * Bitbucket is the second plugin and the validation that the `Plugin` contract
@@ -23,11 +23,36 @@ describe("bitbucketPlugin", () => {
     expect(bitbucketPlugin.name).toBe("bitbucket");
   });
 
-  // #176: Bitbucket acts as the person, who logs in through the consumer whose
-  // callback is Mercury's, so no redirect URI goes on the command line.
-  it("acts as the person and logs them in without a redirect URI", () => {
+  it("acts as the person", () => {
     expect(bitbucketPlugin.actsAs).toBe("person");
-    expect(typeof bitbucketPlugin.build!({ model: {} as never, env: {}, log: () => {} }).login?.start).toBe("function");
+  });
+
+  // #205: a consumer with several callbacks refuses a link without
+  // redirect_uri, so the login names Mercury's callback.
+  it("starts the person's login with Mercury's callback as the redirect URI, and finishes it with the code and the state", async () => {
+    const calls: { binary: string; args: string[] }[] = [];
+    const plugin = createBitbucketPlugin({
+      runCliFn: async (binary, args) => {
+        calls.push({ binary, args });
+        return args.includes("--remote")
+          ? { ok: true, data: { authorize_url: "https://bitbucket.org/site/oauth2/authorize?x", state: "st" } }
+          : { ok: true, data: {} };
+      },
+    });
+    const login = plugin.build!({ model: {} as never, env: {}, log: () => {} }).login!;
+    expect(await login.start("static:alice", "https://mercury.example.com/login/callback")).toEqual({
+      ok: true,
+      authorizeUrl: "https://bitbucket.org/site/oauth2/authorize?x",
+      state: "st",
+    });
+    expect(await login.complete("static:alice", "the-code", "st")).toEqual({ ok: true });
+    expect(calls).toEqual([
+      {
+        binary: "bitbucket",
+        args: ["auth", "login", "--user", "static:alice", "--remote", "--redirect-uri", "https://mercury.example.com/login/callback"],
+      },
+      { binary: "bitbucket", args: ["auth", "login", "--user", "static:alice", "--code", "the-code", "--state", "st"] },
+    ]);
   });
 
   it("contributes only its own tool — no prompt fragment, no surfaces, no post-processors, no guard", () => {
