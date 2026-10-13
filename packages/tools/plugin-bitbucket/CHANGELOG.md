@@ -1,5 +1,12 @@
 # @mercury-fw/plugin-bitbucket
 
+## 0.4.0
+
+### Minor Changes
+
+- 3f31ecf: - A person's login names Mercury's callback as the redirect URI, so the consumer people log in through can have other callback URLs too (Bitbucket refused the link otherwise).
+  - The bitbucket CLI is pinned to 2.4.0.
+
 ## 0.3.1
 
 ### Patch Changes
