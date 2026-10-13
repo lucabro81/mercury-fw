@@ -21,7 +21,7 @@ The plugin acts as the person: every command runs with the Bitbucket account of 
 The CLI keeps every login under `~/.config/bitbucket-cli` (one folder per person, next to the consumer's), and the plugin declares that folder in its `package.json` (`mercury.cliCredentials`) with the commands that set it up. Two consumers are set up once, inside the app's container, pasting each one's key and secret when the CLI asks (the [bitbucket CLI's README](https://github.com/lucabro81/CLI-monorepo/tree/main/crates/bitbucket) has the steps on Bitbucket's side):
 
 - the consumer the terminal runs as;
-- the consumer people log in through, whose callback URL is `<HTTP_SURFACE_PUBLIC_URL>/login/callback`: Bitbucket takes no redirect URI, so it always sends the person back to that one.
+- the consumer people log in through, with `<HTTP_SURFACE_PUBLIC_URL>/login/callback` among its callback URLs: Mercury's login link names that one, so the consumer can keep others (a local one, say).
 
 ```bash
 mfw credentials setup @mercury-fw/plugin-bitbucket

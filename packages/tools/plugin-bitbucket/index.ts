@@ -29,42 +29,49 @@ function commandOf(input: unknown): string | undefined {
   return undefined;
 }
 
-export const bitbucketPlugin: Plugin = {
-  apiVersion: PLUGIN_API_VERSION,
-  name: "bitbucket",
-  // Every command runs as the person the turn is for, logged in to Bitbucket
-  // through Mercury: they see what their own account can.
-  actsAs: "person",
-  build: (ctx) => {
-    // Schema-only validation — the pinned binary is co-shipped, so no
-    // `--version` check (see the Jira plugin / `parseCliConfig`).
-    const loaded = parseCliConfig(bitbucketCliConfig);
-    if (!loaded.ok) {
-      ctx.log(`bitbucket allowlist failed to load, bitbucket tool not contributed: ${loaded.reason}`);
-      return {};
-    }
-    const configs = { [loaded.binary]: loaded.config };
-    const describeCli = createCliStatusDescriber(configs, {});
+/** Builds the plugin. `runCliFn` is injectable for tests; the default spawns the
+ * pinned binary. */
+export function createBitbucketPlugin(deps: { runCliFn?: typeof runCli } = {}): Plugin {
+  const runCliFn = deps.runCliFn ?? runCli;
+  return {
+    apiVersion: PLUGIN_API_VERSION,
+    name: "bitbucket",
+    // Every command runs as the person the turn is for, logged in to Bitbucket
+    // through Mercury: they see what their own account can.
+    actsAs: "person",
+    build: (ctx) => {
+      // Schema-only validation — the pinned binary is co-shipped, so no
+      // `--version` check (see the Jira plugin / `parseCliConfig`).
+      const loaded = parseCliConfig(bitbucketCliConfig);
+      if (!loaded.ok) {
+        ctx.log(`bitbucket allowlist failed to load, bitbucket tool not contributed: ${loaded.reason}`);
+        return {};
+      }
+      const configs = { [loaded.binary]: loaded.config };
+      const describeCli = createCliStatusDescriber(configs, {});
 
-    return {
-      // Bitbucket takes no redirect URI: the consumer people log in through
-      // has Mercury's callback as its own.
-      login: createCliPersonLogin(runCli, loaded.binary, { redirectUri: false }),
-      sessionTools: (sctx) => {
-        const { runCommand } = createCliTool(runCli, configs, {
-          stageConfirmation: sctx.stageConfirmation,
-          stashDisplay: sctx.stashDisplay,
-          person: sctx.person,
-          requireLogin: sctx.requireLogin,
-        });
-        return { bitbucketCommand: runCommand };
-      },
-      toolStatusDescribers: {
-        bitbucketCommand: (input) => {
-          const command = commandOf(input);
-          return command !== undefined ? describeCli(command) : "esecuzione di un comando";
+      return {
+        // The consumer people log in through has Mercury's callback among its
+        // callbacks, and the login names it.
+        login: createCliPersonLogin(runCliFn, loaded.binary, { redirectUri: true }),
+        sessionTools: (sctx) => {
+          const { runCommand } = createCliTool(runCliFn, configs, {
+            stageConfirmation: sctx.stageConfirmation,
+            stashDisplay: sctx.stashDisplay,
+            person: sctx.person,
+            requireLogin: sctx.requireLogin,
+          });
+          return { bitbucketCommand: runCommand };
         },
-      },
-    };
-  },
-};
+        toolStatusDescribers: {
+          bitbucketCommand: (input) => {
+            const command = commandOf(input);
+            return command !== undefined ? describeCli(command) : "esecuzione di un comando";
+          },
+        },
+      };
+    },
+  };
+}
+
+export const bitbucketPlugin: Plugin = createBitbucketPlugin();
