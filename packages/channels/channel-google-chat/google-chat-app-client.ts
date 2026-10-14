@@ -171,17 +171,22 @@ export type ChatCardSection = {
 };
 export type ChatCard = { header?: { title: string }; sections: ChatCardSection[] };
 
-/** Posts `card` as a Cards v2 message to `space`. Returns the created message's `name`, same shape as `sendMessage`. */
+/**
+ * Posts `card` as a Cards v2 message to `space`. Returns the created message's
+ * `name`, same shape as `sendMessage`. With `privateViewer` (`users/<id>`) only
+ * that user and the app see it, in a space anyone else is in too.
+ */
 export async function sendCard(
   space: string,
   card: ChatCard,
   deps: { tokenSource: TokenSource; fetchFn?: FetchFn },
+  options: { privateViewer?: string } = {},
 ): Promise<{ name: string }> {
-  const data = (await callChatApi(
-    `${space}/messages`,
-    { method: "POST", body: { cardsV2: [{ cardId: "card", card }] } },
-    deps,
-  )) as { name: string };
+  const body = {
+    cardsV2: [{ cardId: "card", card }],
+    ...(options.privateViewer === undefined ? {} : { privateMessageViewer: { name: options.privateViewer } }),
+  };
+  const data = (await callChatApi(`${space}/messages`, { method: "POST", body }, deps)) as { name: string };
   return { name: data.name };
 }
 

@@ -131,6 +131,20 @@ describe("sendCard", () => {
     expect(result).toEqual({ name: "spaces/X/messages/2" });
     expect(capturedBody).toEqual({ cardsV2: [{ cardId: "card", card }] });
   });
+
+  test("with a private viewer, the message is visible to that user only", async () => {
+    let capturedBody: any;
+    const fetchFn: FetchFn = (async (_url: any, init: any) => {
+      capturedBody = JSON.parse(init.body);
+      return new Response(JSON.stringify({ name: "spaces/X/messages/3" }), { status: 200 });
+    }) as any;
+
+    const card = { sections: [{ widgets: [{ textParagraph: { text: "x" } }] }] };
+    const result = await sendCard("spaces/X", card, { tokenSource: fakeTokenSource(), fetchFn }, { privateViewer: "users/42" });
+
+    expect(result).toEqual({ name: "spaces/X/messages/3" });
+    expect(capturedBody).toEqual({ cardsV2: [{ cardId: "card", card }], privateMessageViewer: { name: "users/42" } });
+  });
 });
 
 describe("updateCard", () => {

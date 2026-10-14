@@ -32,9 +32,12 @@ import {
 import { openSubscription, type PubSubSubscription, type StreamMessage } from "./google-chat-pubsub-stream.ts";
 import { splitForSendLimit } from "./google-chat-message-buffer.ts";
 import {
+  detectLoginRequired,
   detectPendingConfirmation,
+  loginLinkText,
   PENDING_CONFIRMATION_NOTE,
   NO_REPLY,
+  type LoginRequest,
   type PendingConfirmation,
   type ToolOutcome,
   type Provider,
@@ -70,6 +73,13 @@ function buildConfirmCard(pending: PendingConfirmation): ChatCard {
         ],
       },
     ],
+  };
+}
+
+/** The card that shows a person the link to log in to a service a plugin acts on as them: one button that opens it. */
+function buildLoginCard(login: LoginRequest): ChatCard {
+  return {
+    sections: [{ widgets: [{ buttonList: { buttons: [{ text: loginLinkText(login), onClick: { openLink: { url: login.url } } }] } }] }],
   };
 }
 
@@ -338,8 +348,12 @@ export function createGoogleChatProvider(deps: GoogleChatProviderDeps): GoogleCh
     });
   let activeSubscription: PubSubSubscription | undefined;
 
-  /** Per-turn output sink — same responsibilities as the retired `ChatStreamer`, rebuilt against the new client. */
-  function createSink(space: string): TurnSink {
+  /**
+   * Per-turn output sink — same responsibilities as the retired `ChatStreamer`,
+   * rebuilt against the new client. `viewer` is the person the turn is for;
+   * outside a direct message, what only they may see is sent to them alone.
+   */
+  function createSink(space: string, viewer: { user: string; isDirectMessage: boolean }): TurnSink {
     let chain: Promise<void> = Promise.resolve();
 
     function enqueue(fn: () => Promise<void>): void {
@@ -376,6 +390,9 @@ export function createGoogleChatProvider(deps: GoogleChatProviderDeps): GoogleCh
     // the same turn (e.g. after a tool call) always gets its own new card,
     // never reuses this one.
     let receivingCardName: string | undefined;
+
+    // A tool asking again in the same turn hands back the same pending login.
+    const shownLogins = new Set<string>();
     enqueue(async () => {
       log(`[chat:${space}] [out] receiving card`);
       const sent = await sendCardFn(space, buildReceivingCard(), clientDeps);
@@ -470,6 +487,16 @@ export function createGoogleChatProvider(deps: GoogleChatProviderDeps): GoogleCh
             sentMessageNames.add(sent.name);
           });
         }
+        const login = detectLoginRequired(step);
+        if (login && !shownLogins.has(login.url)) {
+          shownLogins.add(login.url);
+          enqueue(async () => {
+            log(`[chat:${space}] [out] login card: ${login.service}`);
+            const options = viewer.isDirectMessage ? undefined : { privateViewer: viewer.user };
+            const sent = await sendCardFn(space, buildLoginCard(login), clientDeps, options);
+            sentMessageNames.add(sent.name);
+          });
+        }
       },
       finalize: async (finalText: string) => {
         const trimmed = finalText.trim();
@@ -520,7 +547,7 @@ export function createGoogleChatProvider(deps: GoogleChatProviderDeps): GoogleCh
 
     busySessions.add(sessionKey);
     try {
-      const sink = createSink(event.space);
+      const sink = createSink(event.space, { user: event.sender, isDirectMessage: event.isDirectMessage });
       await handleTurn(
         {
           channel: "google-chat",
