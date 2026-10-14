@@ -1197,8 +1197,13 @@ describe("createSink — login card", () => {
   // Anyone else in the space who opened the link would log their own account
   // in as the person who asked.
   test("in a space, the login card is visible only to the person who asked", async () => {
-    const cards = await cardsSentFor(messageEvent({ spaceType: "SPACE", sender: "users/42" }), (sink) => sink.onStep?.(loginStep()));
-    expect(cards).toEqual([{ space: "spaces/X", card: expectedCard, options: { privateViewer: "users/42" } }]);
+    const cards = await cardsSentFor(messageEvent({ spaceType: "SPACE", sender: "users/99" }), (sink) => sink.onStep?.(loginStep()));
+    expect(cards).toEqual([{ space: "spaces/X", card: expectedCard, options: { privateViewer: "users/99" } }]);
+  });
+
+  test("in an unnamed group chat, too, the login card is visible only to the person who asked", async () => {
+    const cards = await cardsSentFor(messageEvent({ spaceType: "GROUP_CHAT", sender: "users/99" }), (sink) => sink.onStep?.(loginStep()));
+    expect(cards).toEqual([{ space: "spaces/X", card: expectedCard, options: { privateViewer: "users/99" } }]);
   });
 
   test("the same link asked for again in the same turn is shown once", async () => {
