@@ -3,7 +3,7 @@
  * (`Provider`/`InboundTurn`/`TurnSink`/`HandleTurn`/`Notifier`), the pure
  * confirmation pieces a channel uses to build its own UI
  * (`detectPendingConfirmation`, `PENDING_CONFIRMATION_NOTE`, `NO_REPLY`), the
- * login a tool asks a person for (`detectLoginRequired`), and
+ * login a tool asks a person for (`detectLoginRequired`, `loginLinkText`), and
  * the channel-plugin system (`ChannelPlugin`/`ChannelRuntimeContext`/
  * `CHANNEL_API_VERSION`), and the providers a config declares beside the
  * channels: who is calling (`AuthPlugin`) and who that is to Mercury
@@ -42,6 +42,8 @@ export type LoginRequest = { service: string; url: string };
  * Returns the first login a tool asked for in `step` (its result carries
  * `loginRequired` and the link), or `null`. A channel shows the link to the
  * person itself: the model is never handed it, so it can't mangle or leak it.
+ * Only to that person, never where someone else can see it: whoever opens the
+ * link logs their own account in as the person who asked.
  */
 export function detectLoginRequired(step: StepInfo): LoginRequest | null {
   for (const call of step.toolCalls) {
@@ -51,6 +53,11 @@ export function detectLoginRequired(step: StepInfo): LoginRequest | null {
     return { service: typeof output.service === "string" ? output.service : "", url: output.authorizeUrl };
   }
   return null;
+}
+
+/** The words a channel puts on a login link (a button, a link text), so every channel says it the same way. */
+export function loginLinkText(login: LoginRequest): string {
+  return login.service === "" ? "Accedi al servizio" : `Accedi a ${login.service}`;
 }
 
 /** Text shown when a turn ends with no text because it staged an action: stands in for the answer, not model-generated (no token to leak). Every channel suppresses it and shows its own confirm UI. */
