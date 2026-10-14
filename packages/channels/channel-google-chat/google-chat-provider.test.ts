@@ -1149,3 +1149,99 @@ describe("createSink — reasoning card", () => {
     ]);
   });
 });
+
+describe("createSink — login card", () => {
+  const LOGIN_URL = "https://auth.example/authorize?state=s1";
+
+  /** A step whose tool asked the person to log in to Jira, with `url` as the link. */
+  function loginStep(url = LOGIN_URL, toolCallId = "1") {
+    return {
+      toolCalls: [{ toolCallId, toolName: "jiraCommand", input: { command: "jira issue list" } }],
+      toolResults: [{ toolCallId, toolName: "jiraCommand", output: { ok: false, loginRequired: true, service: "jira", authorizeUrl: url, error: "log in" } }],
+      content: [],
+    };
+  }
+
+  const expectedCard = {
+    sections: [{ widgets: [{ buttonList: { buttons: [{ text: "Accedi a jira", onClick: { openLink: { url: LOGIN_URL } } }] } }] }],
+  };
+
+  /** Runs one turn for `event` whose handler calls `turn`, and returns every card sent with its options. */
+  async function cardsSentFor(event: unknown, turn: (sink: TurnSink) => void) {
+    const sent: Array<{ space: string; card: unknown; options: unknown }> = [];
+    const sub = fakeSubscription();
+    const provider = createGoogleChatProvider(
+      baseDeps({
+        subscriptionFn: () => sub as any,
+        sendCardFn: async (space, card, _deps, options) => {
+          sent.push({ space, card, options });
+          return { name: `spaces/X/messages/card${sent.length}` };
+        },
+      }),
+    );
+    await provider.start(async (_turn, sink) => {
+      turn(sink);
+      await sink.finalize("Accedi a Jira con il link che ti è stato mostrato.");
+    });
+    sub.emit("message", fakeMessage(event, []));
+    await new Promise((r) => setTimeout(r, 20));
+    // sent[0] is the turn's own immediate "Stato" card.
+    return sent.slice(1);
+  }
+
+  test("in a direct message, a login step sends a card with a button that opens the link", async () => {
+    const cards = await cardsSentFor(messageEvent({ spaceType: "DM" }), (sink) => sink.onStep?.(loginStep()));
+    expect(cards).toEqual([{ space: "spaces/X", card: expectedCard, options: undefined }]);
+  });
+
+  // Anyone else in the space who opened the link would log their own account
+  // in as the person who asked.
+  test("in a space, the login card is visible only to the person who asked", async () => {
+    const cards = await cardsSentFor(messageEvent({ spaceType: "SPACE", sender: "users/42" }), (sink) => sink.onStep?.(loginStep()));
+    expect(cards).toEqual([{ space: "spaces/X", card: expectedCard, options: { privateViewer: "users/42" } }]);
+  });
+
+  test("the same link asked for again in the same turn is shown once", async () => {
+    const cards = await cardsSentFor(messageEvent({ spaceType: "DM" }), (sink) => {
+      sink.onStep?.(loginStep(LOGIN_URL, "1"));
+      sink.onStep?.(loginStep(LOGIN_URL, "2"));
+    });
+    expect(cards).toHaveLength(1);
+  });
+
+  test("a step that asks for no login sends no login card", async () => {
+    const cards = await cardsSentFor(messageEvent({ spaceType: "DM" }), (sink) =>
+      sink.onStep?.({
+        toolCalls: [{ toolCallId: "1", toolName: "jiraCommand", input: { command: "jira issue list" } }],
+        toolResults: [{ toolCallId: "1", toolName: "jiraCommand", output: { ok: true, data: [] } }],
+        content: [],
+      }),
+    );
+    expect(cards).toEqual([]);
+  });
+
+  test("a step that both stages a confirmation and asks for a login sends both cards", async () => {
+    const cards = await cardsSentFor(messageEvent({ spaceType: "DM" }), (sink) =>
+      sink.onStep?.({
+        toolCalls: [
+          { toolCallId: "1", toolName: "jiraCommand", input: { command: "jira issue delete KAN-1 --confirm" } },
+          { toolCallId: "2", toolName: "bitbucketCommand", input: { command: "bitbucket pr list" } },
+        ],
+        toolResults: [
+          { toolCallId: "1", toolName: "jiraCommand", output: { ok: false, pendingConfirmation: true, token: "TOK1", summary: "jira issue delete KAN-1 --confirm" } },
+          {
+            toolCallId: "2",
+            toolName: "bitbucketCommand",
+            output: { ok: false, loginRequired: true, service: "bitbucket", authorizeUrl: "https://bb.example/authorize", error: "log in" },
+          },
+        ],
+        content: [],
+      }),
+    );
+    expect(cards).toHaveLength(2);
+    expect(JSON.stringify(cards[0]!.card)).toContain("TOK1");
+    expect(cards[1]!.card).toEqual({
+      sections: [{ widgets: [{ buttonList: { buttons: [{ text: "Accedi a bitbucket", onClick: { openLink: { url: "https://bb.example/authorize" } } }] } }] }],
+    });
+  });
+});
