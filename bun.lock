@@ -65,7 +65,7 @@
     },
     "packages/auth/auth-oidc": {
       "name": "@mercury-fw/auth-oidc",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "dependencies": {
         "jose": "^6.2.12",
       },
@@ -81,7 +81,7 @@
     },
     "packages/auth/auth-static": {
       "name": "@mercury-fw/auth-static",
-      "version": "0.2.0",
+      "version": "0.2.1",
       "devDependencies": {
         "@mercury-fw/channel-types": "workspace:*",
         "@mercury-fw/typescript-config": "*",
@@ -110,7 +110,7 @@
     },
     "packages/channels/channel-http": {
       "name": "@mercury-fw/channel-http",
-      "version": "0.8.0",
+      "version": "0.8.1",
       "devDependencies": {
         "@mercury-fw/channel-types": "workspace:*",
         "@mercury-fw/plugin-types": "workspace:*",
@@ -128,7 +128,7 @@
     },
     "packages/directories/directory-static": {
       "name": "@mercury-fw/directory-static",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "devDependencies": {
         "@mercury-fw/channel-types": "workspace:*",
         "@mercury-fw/typescript-config": "*",
@@ -225,7 +225,7 @@
     },
     "packages/tools/plugin-atlassian-admin": {
       "name": "@mercury-fw/plugin-atlassian-admin",
-      "version": "0.3.1",
+      "version": "0.3.2",
       "devDependencies": {
         "@mercury-fw/cli-engine": "workspace:*",
         "@mercury-fw/plugin-types": "workspace:*",
@@ -242,7 +242,7 @@
     },
     "packages/tools/plugin-bitbucket": {
       "name": "@mercury-fw/plugin-bitbucket",
-      "version": "0.4.0",
+      "version": "0.4.1",
       "devDependencies": {
         "@mercury-fw/cli-engine": "workspace:*",
         "@mercury-fw/plugin-types": "workspace:*",
@@ -259,7 +259,7 @@
     },
     "packages/tools/plugin-jira": {
       "name": "@mercury-fw/plugin-jira",
-      "version": "0.6.1",
+      "version": "0.6.2",
       "dependencies": {
         "ai": "^7.0.126",
         "zod": "^4.6.5",
@@ -280,7 +280,7 @@
     },
     "packages/tools/plugin-zitadel": {
       "name": "@mercury-fw/plugin-zitadel",
-      "version": "0.3.0",
+      "version": "0.3.1",
       "devDependencies": {
         "@mercury-fw/channel-types": "workspace:*",
         "@mercury-fw/cli-engine": "workspace:*",
