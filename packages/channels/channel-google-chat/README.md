@@ -26,6 +26,8 @@ channels: [googleChatChannel],
 
 Each message reaches the core as `google-chat:users/<id>`, the sender's Chat user, with their email when Google vouches for it (a person's, never a bot's), which a user directory can join on: the ZITADEL directory of `@mercury-fw/plugin-zitadel` does.
 
+When a plugin that acts as the person (Jira, Bitbucket) needs them to log in, the channel sends a card with a button that opens the service's login, visible only to that person: in a direct message the space is already theirs, in a shared space the card is a private message to whoever asked, since anyone else opening it would log their own account in as them. The service sends the browser back to the HTTP channel's `/login/callback`, so the app needs [`@mercury-fw/channel-http`](https://www.npmjs.com/package/@mercury-fw/channel-http) with `HTTP_SURFACE_PUBLIC_URL` too; without it Mercury answers that nobody can log in on this instance.
+
 ## Table of contents
 
 - [Setting up the Chat app](#setting-up-the-chat-app)
