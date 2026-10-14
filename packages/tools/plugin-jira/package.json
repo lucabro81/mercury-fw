@@ -1,6 +1,6 @@
 {
   "name": "@mercury-fw/plugin-jira",
-  "version": "0.6.1",
+  "version": "0.6.2",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -64,9 +64,9 @@
     "zod": "^4.6.5"
   },
   "peerDependencies": {
-    "@mercury-fw/cli-engine": ">=0.24.0 <1.0.0",
-    "@mercury-fw/plugin-types": ">=0.24.0 <1.0.0",
-    "@mercury-fw/utils": ">=0.24.0 <1.0.0"
+    "@mercury-fw/cli-engine": ">=0.45.0 <1.0.0",
+    "@mercury-fw/plugin-types": ">=0.45.0 <1.0.0",
+    "@mercury-fw/utils": ">=0.45.0 <1.0.0"
   },
   "devDependencies": {
     "@mercury-fw/cli-engine": "workspace:*",

@@ -1,5 +1,11 @@
 # @mercury-fw/auth-static
 
+## 0.2.1
+
+### Patch Changes
+
+- 70a4900: - Needs the `@mercury-fw/*` framework packages at 0.45.0 or later: the earlier floor let an app install versions missing what this package imports.
+
 ## 0.2.0
 
 ### Minor Changes

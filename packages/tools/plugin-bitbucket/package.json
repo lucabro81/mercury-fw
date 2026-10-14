@@ -1,6 +1,6 @@
 {
   "name": "@mercury-fw/plugin-bitbucket",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -19,9 +19,9 @@
     "access": "public"
   },
   "peerDependencies": {
-    "@mercury-fw/cli-engine": ">=0.24.0 <1.0.0",
-    "@mercury-fw/plugin-types": ">=0.24.0 <1.0.0",
-    "@mercury-fw/utils": ">=0.24.0 <1.0.0"
+    "@mercury-fw/cli-engine": ">=0.45.0 <1.0.0",
+    "@mercury-fw/plugin-types": ">=0.45.0 <1.0.0",
+    "@mercury-fw/utils": ">=0.45.0 <1.0.0"
   },
   "devDependencies": {
     "@mercury-fw/cli-engine": "workspace:*",
