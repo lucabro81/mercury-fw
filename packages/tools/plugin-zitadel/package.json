@@ -20,10 +20,10 @@
     "access": "public"
   },
   "peerDependencies": {
-    "@mercury-fw/channel-types": ">=0.42.0 <1.0.0",
-    "@mercury-fw/cli-engine": ">=0.24.0 <1.0.0",
-    "@mercury-fw/plugin-types": ">=0.24.0 <1.0.0",
-    "@mercury-fw/utils": ">=0.24.0 <1.0.0"
+    "@mercury-fw/channel-types": ">=0.45.0 <1.0.0",
+    "@mercury-fw/cli-engine": ">=0.45.0 <1.0.0",
+    "@mercury-fw/plugin-types": ">=0.45.0 <1.0.0",
+    "@mercury-fw/utils": ">=0.45.0 <1.0.0"
   },
   "devDependencies": {
     "@mercury-fw/channel-types": "workspace:*",
