@@ -33,6 +33,8 @@ export type HttpProviderDeps = {
   linking?: ChannelLinking;
   /** The surface's budget for a reopened conversation (`HTTP_SURFACE_RESUME_MAX_CHARS`). */
   resumeMaxChars?: number;
+  /** What the pages people read call the assistant. */
+  assistantName?: string;
 };
 
 export function createHttpProvider(deps: HttpProviderDeps): Provider & { stop(): Promise<void> } {
@@ -51,6 +53,7 @@ export function createHttpProvider(deps: HttpProviderDeps): Provider & { stop():
         completeLogin: deps.logins?.complete,
         ...(deps.linking === undefined ? {} : { linking: deps.linking }),
         ...(deps.resumeMaxChars === undefined ? {} : { resumeMaxChars: deps.resumeMaxChars }),
+        ...(deps.assistantName === undefined ? {} : { assistantName: deps.assistantName }),
       });
       deps.logins?.accept(deps.logins.callbackUrl);
     },

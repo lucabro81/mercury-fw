@@ -46,6 +46,7 @@ export const httpChannel: ChannelPlugin = {
       admit: ctx.admit,
       ...(ctx.linking === undefined ? {} : { linking: ctx.linking }),
       ...(resumeMaxChars === undefined ? {} : { resumeMaxChars }),
+      ...(ctx.assistantName === undefined ? {} : { assistantName: ctx.assistantName }),
       ...(logins ? { logins: { callbackUrl: `${publicUrl}/login/callback`, accept: logins.accept, complete: logins.complete } } : {}),
     });
   },
