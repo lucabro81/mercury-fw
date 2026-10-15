@@ -81,7 +81,7 @@ function asShown(m: VerbatimMessage): VerbatimMessage {
  * only displays has none, and what goes back to the model leaves it out.
  */
 function said(m: VerbatimMessage): boolean {
-  return m.content !== "";
+  return m.content.trim() !== "";
 }
 
 /** `m` as the model said it, for whatever hands it back to the model: no displays. */
@@ -101,7 +101,7 @@ export async function appendVerbatimMessage(
   embed: (text: string) => Promise<number[]>,
   entry: VerbatimMessage,
 ): Promise<void> {
-  const vector = await embed(entry.content !== "" ? entry.content : shownText(entry.content, entry.displays));
+  const vector = await embed(entry.content.trim() !== "" ? entry.content : shownText(entry.content, entry.displays));
   await client.upsert(collectionName, {
     points: [
       {

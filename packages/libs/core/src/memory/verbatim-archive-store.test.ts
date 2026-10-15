@@ -731,6 +731,22 @@ describe("the displays a turn showed", () => {
     });
   });
 
+  it("an answer of blank space with displays counts as only displays", async () => {
+    const tail = await listVerbatimTail(clientWith([{ ...answer, content: " \n " }, question]), "verbatim_archive", {
+      userId: "static:alice",
+      sessionKey: "conv-1",
+      maxChars: 10_000,
+    });
+    expect(tail.messages).toEqual([{ role: "user", content: "Quali issue ho?", timestamp: question.timestamp }]);
+
+    const embedded: string[] = [];
+    await appendVerbatimMessage(clientWith([]), "verbatim_archive", async (text) => (embedded.push(text), [1]), {
+      ...answer,
+      content: " ",
+    });
+    expect(embedded).toEqual([` \n\n${LIST}`]);
+  });
+
   it("searchVerbatim leaves out an answer that was only displays", async () => {
     const results = await searchVerbatim(
       clientWith([{ ...answer, content: "" }, question]),
