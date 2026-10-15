@@ -33,7 +33,7 @@ export function assistantNameOf(persona: { name?: string } | undefined): string 
   const name = persona.name.trim();
   if (name.length === 0) throw new Error("persona.name is empty");
   if (name.length > MAX_NAME_LENGTH) throw new Error(`persona.name is longer than ${MAX_NAME_LENGTH} characters`);
-  if (/[\u0000-\u001f\u007f]/.test(name)) throw new Error("persona.name has a line break or another control character");
+  if (/[\u0000-\u001f\u007f\u0085\u2028\u2029]/.test(name)) throw new Error("persona.name has a line break or another control character");
   if (name.includes(ASSISTANT_PLACEHOLDER)) throw new Error(`persona.name holds ${ASSISTANT_PLACEHOLDER} itself`);
   return name;
 }
