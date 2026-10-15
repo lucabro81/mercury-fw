@@ -992,3 +992,112 @@ describe("GET /conversation", () => {
     });
   });
 });
+
+// #216: right after someone signs in, a UI asks the assistant to speak first,
+// and asks who the caller is to the core.
+describe("an opening turn", () => {
+  it("hands the core an opening with no text, on the named conversation, without trying it as a token", async () => {
+    const seen: InboundTurn[] = [];
+    let confirmed = false;
+    const handleTurn: HandleTurn = async (turn, sink) => {
+      seen.push(turn);
+      await sink.finalize("Ciao! Come vuoi che ti chiami?");
+    };
+    const res = await handleTurnRequest(turnReq({ opening: true, conversationId: "conv-1" }), {
+      handleTurn,
+      confirm: async () => ((confirmed = true), "confirmed"),
+      authenticate: asAlice,
+    });
+    expect(await res.text()).toContain('event: final\ndata: {"text":"Ciao! Come vuoi che ti chiami?"}');
+    expect(confirmed).toBe(false);
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toMatchObject({ opening: true, text: "", sessionKey: "alice:conv-1", resume: {} });
+  });
+
+  it("streams an empty final when the core has nothing to say", async () => {
+    const handleTurn: HandleTurn = async (_turn, sink) => sink.finalize("");
+    const res = await handleTurnRequest(turnReq({ opening: true, conversationId: "conv-1" }), {
+      handleTurn,
+      confirm: async () => null,
+      authenticate: asAlice,
+    });
+    expect(await res.text()).toBe('event: final\ndata: {"text":""}\n\n');
+  });
+
+  it("needs a conversation to open, and runs nothing without one", async () => {
+    let called = false;
+    for (const body of [{ opening: true }, { opening: true, conversationId: "  " }]) {
+      const res = await handleTurnRequest(turnReq(body), {
+        handleTurn: async () => {
+          called = true;
+        },
+        confirm: async () => null,
+        authenticate: asAlice,
+      });
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({ ok: false, error: "an opening needs a conversationId" });
+    }
+    expect(called).toBe(false);
+  });
+
+  it("is refused to a caller nobody vouches for", async () => {
+    const res = await handleTurnRequest(turnReq({ opening: true, conversationId: "c" }), {
+      handleTurn: async () => {},
+      confirm: async () => null,
+      authenticate: refuse,
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it("is only an opening when it says opening: true", async () => {
+    const res = await handleTurnRequest(turnReq({ opening: "yes", conversationId: "c" }), {
+      handleTurn: async () => {},
+      confirm: async () => null,
+      authenticate: asAlice,
+    });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ ok: false, error: "missing text" });
+  });
+});
+
+describe("GET /me", () => {
+  const base: ChannelHostReads = {
+    manifest: async () => ({}),
+    pendingConfirmations: async () => [],
+    conversation: async () => ({}),
+    conversations: async () => ({ conversations: [] }),
+    wikiList: async () => [],
+    wikiRead: async () => null,
+    wikiGrep: async () => [],
+    memoryScroll: async () => null,
+    toolLog: async () => [],
+    health: async () => ({}),
+  };
+
+  it("answers how the caller asked to be called, or null", async () => {
+    for (const name of ["Luca", null]) {
+      const seen: Principal[] = [];
+      const route = readRoutes({ ...base, me: async (p) => (seen.push(p), { name }) }, asAlice)["/me"]!;
+      const res = await route.GET(new Request("http://x/me"));
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ ok: true, name });
+      expect(seen).toEqual([ALICE]);
+    }
+  });
+
+  it("is refused to a caller nobody vouches for", async () => {
+    const res = await readRoutes({ ...base, me: async () => ({ name: "x" }) }, refuse)["/me"]!.GET(new Request("http://x/me"));
+    expect(res.status).toBe(401);
+  });
+
+  // Review of #216: the core answers null for someone it no longer admits, and
+  // the reply lost its `name` key; a UI checking `name === null` skipped the opening.
+  it("always carries name, null when the core answers nothing for the caller", async () => {
+    const res = await readRoutes({ ...base, me: async () => null }, asAlice)["/me"]!.GET(new Request("http://x/me"));
+    expect(await res.json()).toEqual({ ok: true, name: null });
+  });
+
+  it("isn't there on a core that can't say", () => {
+    expect(readRoutes(base, asAlice)["/me"]).toBeUndefined();
+  });
+});

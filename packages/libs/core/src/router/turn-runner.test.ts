@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { createTurnRunner, type PostTurnGuard } from "./turn-runner.ts";
+import { createTurnRunner, OPENING_CUE, OPENING_NOTE, PREFERRED_NAME_NOTE, type PostTurnGuard } from "./turn-runner.ts";
 import type { InboundTurn, TurnSink } from "./provider.ts";
 import type { Principal } from "@mercury-fw/channel-types";
 import { createSessionHistory, type SessionHistory } from "../session/history.ts";
@@ -1395,5 +1395,116 @@ describe("createTurnRunner", () => {
       await runner(baseTurn({ principal: verified("u1") }), baseSink());
       expect(touches).toEqual([1_000, 5_000]);
     });
+  });
+});
+
+// #216: how a person wants to be called reaches the prompt on every one-to-one
+// turn, and the first time Mercury knows nothing about them it speaks first,
+// asking. An opening for someone it already knows says nothing at all.
+describe("createTurnRunner: preferred name and opening turn", () => {
+  function setup(opts: { names?: Record<string, string> } = {}) {
+    const calls: Array<{ text: string; system: string }> = [];
+    const histories: string[] = [];
+    const captured: Array<{ role: string; content: string }> = [];
+    const runner = createTurnRunner({
+      model: {} as any,
+      systemPrompts: { singleUser: "single", multiUser: "multi" },
+      buildTools: () => ({}),
+      getOrCreateHistory: (sessionKey: string) => (histories.push(sessionKey), fakeHistory()),
+      trackSession: () => {},
+      registerCaptureCallback: () => {},
+      maybeCapture: async () => {},
+      processToolCorrections: async () => {},
+      logStep: () => {},
+      captureVerbatim: async (msg) => {
+        captured.push({ role: msg.role, content: msg.content });
+      },
+      preferredName: (key) => opts.names?.[key],
+      runTurnFn: async (_history, text, deps) => {
+        calls.push({ text, system: deps.system });
+        return "Ciao! Come vuoi che ti chiami?";
+      },
+    });
+    return { runner, calls, histories, captured };
+  }
+
+  test("a known name is appended to the one-to-one prompt", async () => {
+    const { runner, calls } = setup({ names: { "google-chat:u1": "Luca" } });
+    await runner(baseTurn({ principal: verified("u1") }), baseSink());
+    expect(calls).toEqual([{ text: "hello", system: `single\n\n${PREFERRED_NAME_NOTE("Luca")}` }]);
+  });
+
+  test("no name, a normal turn: the prompt is left as it is, nobody is asked anything", async () => {
+    const { runner, calls } = setup();
+    await runner(baseTurn({ principal: verified("u1") }), baseSink());
+    expect(calls).toEqual([{ text: "hello", system: "single" }]);
+  });
+
+  test("a shared space never gets one person's name", async () => {
+    const { runner, calls } = setup({ names: { "google-chat:u1": "Luca" } });
+    await runner(baseTurn({ principal: verified("u1"), multiUser: true }), baseSink());
+    expect(calls).toEqual([{ text: "hello", system: "multi" }]);
+  });
+
+  test("an opening for someone without a name runs on the cue and archives only the greeting", async () => {
+    const { runner, calls, captured } = setup();
+    const sink = baseSink();
+    await runner(baseTurn({ principal: verified("u1"), opening: true, text: "" }), sink);
+    expect(calls).toEqual([{ text: OPENING_CUE, system: `single\n\n${OPENING_NOTE}` }]);
+    expect(sink.finalized).toEqual(["Ciao! Come vuoi che ti chiami?"]);
+    expect(captured).toEqual([{ role: "assistant", content: "Ciao! Come vuoi che ti chiami?" }]);
+  });
+
+  test("an opening for someone with a name says nothing: no model, no history, nothing archived", async () => {
+    const { runner, calls, histories, captured } = setup({ names: { "google-chat:u1": "Luca" } });
+    const sink = baseSink();
+    await runner(baseTurn({ principal: verified("u1"), opening: true, text: "" }), sink);
+    expect(calls).toEqual([]);
+    expect(histories).toEqual([]);
+    expect(captured).toEqual([]);
+    expect(sink.finalized).toEqual([""]);
+    expect(sink.disposed).toBe(true);
+  });
+
+  test("an opening in a shared space says nothing", async () => {
+    const { runner, calls, histories } = setup();
+    const sink = baseSink();
+    await runner(baseTurn({ principal: verified("u1"), opening: true, text: "", multiUser: true }), sink);
+    expect(calls).toEqual([]);
+    expect(histories).toEqual([]);
+    expect(sink.finalized).toEqual([""]);
+  });
+
+  test("an opening that fails releases the sink and archives nothing", async () => {
+    const captured: unknown[] = [];
+    const runner = createTurnRunner({
+      model: {} as any,
+      systemPrompts: { singleUser: "single", multiUser: "multi" },
+      buildTools: () => ({}),
+      getOrCreateHistory: () => fakeHistory(),
+      trackSession: () => {},
+      registerCaptureCallback: () => {},
+      maybeCapture: async () => {},
+      processToolCorrections: async () => {},
+      logStep: () => {},
+      captureVerbatim: async (msg) => {
+        captured.push(msg);
+      },
+      preferredName: () => undefined,
+      runTurnFn: async () => {
+        throw new Error("model down");
+      },
+    });
+    const sink = baseSink();
+    await expect(runner(baseTurn({ principal: verified("u1"), opening: true, text: "" }), sink)).rejects.toThrow("model down");
+    expect(sink.disposed).toBe(true);
+    expect(sink.finalized).toEqual([]);
+    expect(captured).toEqual([]);
+  });
+
+  test("the opening note overrides the tone's rules against introducing itself and asking", () => {
+    expect(OPENING_NOTE).toContain("set_preferred_name");
+    expect(OPENING_NOTE).toContain("overrides");
+    expect(PREFERRED_NAME_NOTE("Luca")).toContain("Luca");
   });
 });

@@ -73,6 +73,8 @@ import { listWikiFilesInRoots, readWikiFileInRoots, readIndexFile } from "./wiki
 import { createHostReads } from "./identity/host-reads.ts";
 import { bindConfirm } from "./identity/confirm-binding.ts";
 import { createPersonLogins } from "./identity/person-logins.ts";
+import { createProfileStore, profilesPath } from "./identity/profiles.ts";
+import { createProfileTools } from "./identity/profile-tools.ts";
 import { createPeople, type TurnWho } from "./identity/people.ts";
 import { createLinkStore, linksPath } from "./identity/links.ts";
 import { createLinking } from "./identity/linking.ts";
@@ -190,6 +192,8 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   // know unless the config opens it. The links live on the vault's volume,
   // where no model tool or HTTP read reaches.
   const accountLinks = createLinkStore({ path: linksPath(requireEnv("WIKI_VAULT_PATH")) });
+  // How each person wants to be called, kept next to the links.
+  const profiles = createProfileStore({ path: profilesPath(requireEnv("WIKI_VAULT_PATH")) });
   const people = createPeople({
     links: accountLinks,
     directory: loadDirectory(config.directory, { env: process.env, log: (msg) => console.error(msg) }),
@@ -445,6 +449,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
       sessionTools,
       createWikiTools({ vaultPath: wikiVaultPath, key, stageConfirmation: sessionToolContext.stageConfirmation }),
     );
+    Object.assign(sessionTools, createProfileTools({ store: profiles, key }));
     Object.assign(sessionTools, createToolLogRecallTool({ sessionKey, owner: key }));
     // Verbatim archive recall, scoped to this person — lets the model resurface
     // what was actually said in earlier conversations, beyond the live window.
@@ -495,6 +500,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
     model,
     systemPrompts: systemPromptsFor({ person: { key: "", roles: [] }, operator: false }),
     systemPromptsFor,
+    preferredName: (key) => profiles.nameOf(key),
     identify: people.identify,
     buildTools,
     // Post-turn guards contributed by whatever plugins loaded — the core runs
@@ -570,6 +576,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
         );
       },
       health: () => getSelfHealth({ qdrant, ollamaHost }),
+      preferredName: (key) => profiles.nameOf(key),
     }),
     logins: { accept: personLogins.accept, complete: personLogins.complete },
     linking: { start: linking.start },

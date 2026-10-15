@@ -85,7 +85,11 @@ paths:
         Runs one model turn and streams the result as `text/event-stream`. If
         `text` is a pending confirmation token it is resolved deterministically
         without ever consulting the model. Close the connection to cancel an
-        in-flight turn.
+        in-flight turn. With `opening: true` and no `text`, the assistant
+        speaks first in the conversation named (right after someone signs
+        in): it does only for someone it doesn't know the name of, asking how
+        to call them, and otherwise the stream carries a single `final` with
+        an empty text.
       requestBody:
         required: true
         content:
@@ -113,7 +117,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/TurnEvent"
         "400":
-          description: Missing/invalid body, or a conversationId with characters outside the allowed ones.
+          description: Missing/invalid body, an opening without a conversationId, or a conversationId with characters outside the allowed ones.
           content:
             application/json:
               schema:
@@ -305,6 +309,32 @@ paths:
             application/json:
               schema:
                 type: object
+  /me:
+    get:
+      summary: Who the caller is to the assistant
+      description: >
+        How the caller asked to be called, `null` when they never said: a UI
+        asks for an opening turn after a sign-in only then. Not there on an
+        older core, which can't say.
+      responses:
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/NotAdmitted"
+        "503":
+          $ref: "#/components/responses/NotAdmitted"
+        "200":
+          description: The caller's name, or null.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, name]
+                properties:
+                  ok:
+                    type: boolean
+                  name:
+                    type: [string, "null"]
   /tool-log:
     get:
       summary: The tool calls made in the caller's recent turns
@@ -519,11 +549,14 @@ components:
   schemas:
     TurnRequest:
       type: object
-      required: [text]
       properties:
         text:
           type: string
-          description: The user's message, or a bare confirmation token.
+          description: The user's message, or a bare confirmation token. Required, unless `opening` is true.
+        opening:
+          type: boolean
+          enum: [true]
+          description: The assistant speaks first in `conversationId`, which is then required; `text` is ignored.
         conversationId:
           type: string
           pattern: "^[A-Za-z0-9_-]{1,128}$"

@@ -97,6 +97,15 @@ describe("buildSystemPrompt wiki writing rules", () => {
   });
 });
 
+// #216: the name a person wants to be called by is a setting the model saves.
+describe("buildSystemPrompt preferred name", () => {
+  it("says when to save how the person wants to be called", () => {
+    expect(buildSystemPrompt({ pluginFragments: [], skills: [], multiUserChannel: false })).toContain(
+      "You have access to the set_preferred_name tool.\nDO:\n- When the person tells you how they want to be called, now or in any later conversation, save it with set_preferred_name.",
+    );
+  });
+});
+
 /**
  * The persona is the instance's: its identity replaces the opening line and its
  * tone replaces the closing block, each in the slot the default occupies, and
