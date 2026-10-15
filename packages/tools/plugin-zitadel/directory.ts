@@ -6,8 +6,8 @@
  *
  * An OIDC subject is the user it names, from the auth provider that points at
  * this ZITADEL: `oidc` unless `ZITADEL_AUTH_PROVIDER` names another
- * (`oidc-<name>`, when the instance accepts several issuers). A Google Chat sender is the one active user with the sender's
- * email, verified, whose links to the Google identity provider
+ * (`oidc-<name>`, when the instance accepts several issuers). A Google Chat
+ * sender is the one active user with the sender's email, verified, whose links to the Google identity provider
  * (`ZITADEL_GOOGLE_IDP_ID`) hold that very Google account (Chat's
  * `users/<id>` is the id ZITADEL stores for the link): the email alone is the
  * sender saying who they are, the link is ZITADEL confirming it. Anything short
