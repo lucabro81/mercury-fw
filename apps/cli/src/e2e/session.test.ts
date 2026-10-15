@@ -71,16 +71,37 @@ describe("openReplSession", () => {
   });
 
   // #131: the first turn waited for the REPL to start, so its seconds
-  // counted the container's startup too.
+  // counted the container's startup too. Opening resolves only once the
+  // first prompt is out: checked on a stand-in whose prompt the test releases,
+  // so no wall-clock time is involved.
   test("opening waits for the REPL's first prompt: a turn's time is its own", async () => {
-    writeFileSync(fakeRepl.replace(".ts", "-slow-start.ts"), `await new Promise((r) => setTimeout(r, 1500));\nawait import(${JSON.stringify(fakeRepl)});\n`);
-    const opened = Date.now();
-    const session = await openReplSession({ argv: ["bun", fakeRepl.replace(".ts", "-slow-start.ts")], cwd: dir, hostDir: dir, replDir: dir, name: "s1", timeoutMs: 10_000 });
-    expect(Date.now() - opened).toBeGreaterThanOrEqual(1500);
-    const sent = Date.now();
-    await session.turn("hello");
-    expect(Date.now() - sent).toBeLessThan(1000);
-    await session.close();
+    const encoder = new TextEncoder();
+    let printPrompt = () => {};
+    const stdout = new ReadableStream<Uint8Array>({
+      start: (controller) => {
+        controller.enqueue(encoder.encode("starting the container…\n"));
+        printPrompt = () => controller.enqueue(encoder.encode("> "));
+      },
+    });
+    const spawn = () => ({
+      stdin: { write: () => {}, flush: () => {}, end: () => {} },
+      stdout,
+      stderr: new ReadableStream<Uint8Array>({ start: (c) => c.close() }),
+      exited: new Promise<number>(() => {}),
+      kill: () => {},
+    });
+    let opened = false;
+    const opening = openReplSession({ argv: ["repl"], cwd: dir, hostDir: dir, replDir: dir, name: "s1", timeoutMs: 10_000, spawn }).then(
+      (session) => {
+        opened = true;
+        return session;
+      },
+    );
+    await new Promise((r) => setTimeout(r, 50));
+    expect(opened).toBe(false);
+    printPrompt();
+    await opening;
+    expect(opened).toBe(true);
   });
 
   test("a REPL that never starts: opening fails with its exit code and stderr", async () => {
