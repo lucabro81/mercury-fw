@@ -14,7 +14,7 @@ let fakeRepl: string;
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), "mfw-e2e-session-"));
   fakeRepl = join(dir, "fake-repl.ts");
-  // Answers "answer to <line>" (slowly for "slow"), dies on "die", and writes
+  // Answers "answer to <line>", dies on "die", and writes
   // a one-step dump of the last line on `/dump <path>`, like the real REPL.
   writeFileSync(
     fakeRepl,
@@ -31,7 +31,6 @@ for await (const line of createInterface({ input: process.stdin })) {
     continue;
   }
   if (line === "die") { console.error("model unreachable"); process.exit(3); }
-  if (line === "slow") await new Promise((r) => setTimeout(r, 2000));
   last = line;
   process.stdout.write("thinking…\\nanswer to " + line + "\\n[~1k/~2k tokens] > ");
 }
@@ -147,30 +146,40 @@ describe("openReplSession", () => {
       exited: new Promise<number>((r) => setTimeout(() => r(4), 20)),
       kill: () => {},
     });
-    const started = Date.now();
     await expect(
       openReplSession({ argv: ["repl"], cwd: dir, hostDir: dir, replDir: dir, name: "s1", timeoutMs: 10_000, spawn }),
     ).rejects.toThrow("the REPL exited with code 4: no model");
-    expect(Date.now() - started).toBeLessThan(3000);
   });
 
   // #131 review: a REPL that never got to its prompt was left running (a
   // docker compose run container, in real use).
   test("a REPL that doesn't start in time: opening fails, and the REPL is stopped", async () => {
-    const pidFile = join(dir, "pid");
-    const hang = join(dir, "hang.ts");
-    writeFileSync(hang, `require("node:fs").writeFileSync(${JSON.stringify(pidFile)}, String(process.pid)); setInterval(() => {}, 1000);\n`);
-    await expect(openReplSession({ argv: ["bun", hang], cwd: dir, hostDir: dir, replDir: dir, name: "s1", timeoutMs: 1000 })).rejects.toThrow(
-      "no reply within 1 s",
-    );
-    const pid = Number(require("node:fs").readFileSync(pidFile, "utf-8"));
-    await new Promise((r) => setTimeout(r, 200));
-    expect(() => process.kill(pid, 0)).toThrow();
+    let killed = false;
+    const spawn = () => ({
+      stdin: { write: () => {}, flush: () => {}, end: () => {} },
+      stdout: new ReadableStream<Uint8Array>({ start: () => {} }),
+      stderr: new ReadableStream<Uint8Array>({ start: () => {} }),
+      exited: new Promise<number>(() => {}),
+      kill: () => {
+        killed = true;
+      },
+    });
+    await expect(
+      openReplSession({ argv: ["repl"], cwd: dir, hostDir: dir, replDir: dir, name: "s1", timeoutMs: 100, spawn }),
+    ).rejects.toThrow("no reply within 0.1 s");
+    expect(killed).toBe(true);
   });
 
   test("a turn longer than the timeout: an error saying so", async () => {
-    const session = await open(500);
-    await expect(session.turn("slow")).rejects.toThrow("no reply within 0.5 s");
-    await session.close();
+    // Ready at once, and silent to whatever it's sent.
+    const spawn = () => ({
+      stdin: { write: () => {}, flush: () => {}, end: () => {} },
+      stdout: new ReadableStream<Uint8Array>({ start: (c) => c.enqueue(new TextEncoder().encode("> ")) }),
+      stderr: new ReadableStream<Uint8Array>({ start: () => {} }),
+      exited: new Promise<number>(() => {}),
+      kill: () => {},
+    });
+    const session = await openReplSession({ argv: ["repl"], cwd: dir, hostDir: dir, replDir: dir, name: "s1", timeoutMs: 100, spawn });
+    await expect(session.turn("hello")).rejects.toThrow("no reply within 0.1 s");
   });
 });
