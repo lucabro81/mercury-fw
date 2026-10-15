@@ -45,10 +45,11 @@ Runs one conversational turn; the reply streams back as Server-Sent Events.
 
 | field | type | required | description |
 |---|---|---|---|
-| `text` | string | yes | The user message. A bare confirmation token here confirms a staged action (see the `pending` event) without invoking the model. |
+| `text` | string | yes, unless `opening` | The user message. A bare confirmation token here confirms a staged action (see the `pending` event) without invoking the model. |
+| `opening` | `true` | no | The assistant speaks first, before the person writes anything: what a UI asks right after someone signs in, when `GET /me` says the assistant doesn't know their name. It introduces itself and asks how to call them, and saves the answer once they give it. For someone it already knows, the stream is a single `final` with an empty text. Needs `conversationId`; `text` is ignored. |
 | `conversationId` | string | no | Opaque, client-owned id that continues one of your conversations: letters, digits, `-` and `_`, up to 128 characters (a UUID fits) once surrounding whitespace is trimmed, `400` otherwise. Sent again, however long after, it continues that conversation, rebuilt from the archive if Mercury had freed it (see `HTTP_SURFACE_RESUME_MAX_CHARS`). Omitted ⇒ a fresh one-off session that can't be continued. |
 
-**Responses**: `200 text/event-stream` (the events below); `400` if `text` is missing, the body isn't JSON, or `conversationId` has other characters than the ones above.
+**Responses**: `200 text/event-stream` (the events below); `400` if `text` is missing, an opening has no `conversationId`, the body isn't JSON, or `conversationId` has other characters than the ones above.
 
 Reasoning and answer text arrive as **incremental deltas** — never one finished block — so a UI renders them live; treat the `final` event as the authoritative text. **To cancel** a turn (e.g. a generation that's diverging), close the connection: Mercury aborts the in-flight generation.
 
@@ -97,6 +98,7 @@ All `GET`, all JSON, all reporting state already held in-process. They need an a
 | `GET /conversations?limit=<n>` | `{ conversations: [{ conversationId, lastTimestamp, preview }] }` — your conversations, most-recently-active first |
 | `GET /manifest` | `{ manifest: { coreApiVersion, plugins: [{ name, apiVersion, active, skills, hasBuild, customStatus }], activeClis, skills } }` |
 | `GET /confirmations` | `{ pending: [{ sessionKey, summary, expiresAt }] }` — your pending confirmations; tokens are deliberately never included |
+| `GET /me` | `{ name }` — how you asked the assistant to call you, `null` when you never said; not there on a core older than this channel |
 | `GET /tool-log` | `{ entries: [...] }` — the tool calls of your recent turns |
 | `GET /health` | `{ uptimeSeconds, memory, qdrantReachable, ollamaReachable }` |
 | `GET /wiki/list` | `{ files: [...] }` — `curated/...` and `personal/...` paths |

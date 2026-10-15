@@ -147,24 +147,33 @@ export function openApiResponse(corsOrigin = "*"): Response {
  * one-on-one (`multiUser: false`). No `conversationId` means a fresh ephemeral
  * session. Never throws: a refused caller is a 401, a bad body a 400, a
  * mid-turn failure an `error` event on the stream.
+ *
+ * `{ opening: true, conversationId }`, with no `text`, asks the assistant to
+ * speak first in that conversation (right after someone signs in): the core
+ * decides whether it has anything to say, and a `final` with an empty text
+ * means it hasn't.
  */
 export async function handleTurnRequest(req: Request, deps: TurnRequestDeps): Promise<Response> {
   const origin = deps.corsOrigin ?? "*";
   const cors = corsHeaders(origin);
   const principal = await caller(req, deps, origin);
   if (principal instanceof Response) return principal;
-  let body: { text?: unknown; conversationId?: unknown };
+  let body: { text?: unknown; conversationId?: unknown; opening?: unknown };
   try {
     body = (await req.json()) as typeof body;
   } catch {
     return Response.json({ ok: false, error: "body must be JSON" }, { status: 400, headers: cors });
   }
-  if (typeof body.text !== "string" || body.text.trim().length === 0) {
-    return Response.json({ ok: false, error: "missing text" }, { status: 400, headers: cors });
-  }
-  const text = body.text;
+  const opening = body.opening === true;
   // A conversation the client names is one it reopens; an ephemeral one never comes back.
   const named = typeof body.conversationId === "string" && body.conversationId.trim().length > 0;
+  if (opening && !named) {
+    return Response.json({ ok: false, error: "an opening needs a conversationId" }, { status: 400, headers: cors });
+  }
+  if (!opening && (typeof body.text !== "string" || body.text.trim().length === 0)) {
+    return Response.json({ ok: false, error: "missing text" }, { status: 400, headers: cors });
+  }
+  const text = opening ? "" : (body.text as string);
   const conversationId = named ? (body.conversationId as string).trim() : (deps.newSessionKey ?? (() => crypto.randomUUID()))();
   if (!CONVERSATION_ID.test(conversationId)) {
     return Response.json({ ok: false, error: "invalid conversationId" }, { status: 400, headers: cors });
@@ -198,7 +207,7 @@ export async function handleTurnRequest(req: Request, deps: TurnRequestDeps): Pr
 
       // Same deterministic interception as every other channel — a
       // previously-approved mutation must never depend on the model.
-      const confirmReply = await deps.confirm(text, sessionKey, principal);
+      const confirmReply = opening ? null : await deps.confirm(text, sessionKey, principal);
       if (confirmReply !== null) {
         send("final", { text: confirmReply });
         close();
@@ -236,6 +245,7 @@ export async function handleTurnRequest(req: Request, deps: TurnRequestDeps): Pr
             logPrefix: `[http:${forLog(sessionKey)}] `,
             abortSignal: abort.signal,
             ...(named ? { resume: deps.resumeMaxChars === undefined ? {} : { maxChars: deps.resumeMaxChars } } : {}),
+            ...(opening ? { opening: true as const } : {}),
           },
           sink,
         );
@@ -449,6 +459,10 @@ export function readRoutes(
       });
     }),
     "/tool-log": route(async (_req, principal) => json({ ok: true, entries: await reads.toolLog(principal) })),
+    // Who the caller is to the core, on a core that can say.
+    ...(reads.me === undefined
+      ? {}
+      : { "/me": route(async (_req, principal) => json({ ok: true, ...((await reads.me!(principal)) as object) })) }),
     "/health": route(async () => json({ ok: true, ...(await reads.health() as object) })),
     "/wiki/list": route(async (_req, principal) => json({ ok: true, files: await reads.wikiList(principal) })),
     "/wiki/read": route(async (req, principal) => {
