@@ -265,6 +265,8 @@ export type ChannelHostReads = {
   memoryScroll: (principal: Principal, collection: string, limit: number, offset?: string) => Promise<unknown>;
   toolLog: (principal: Principal) => Promise<unknown>;
   health: () => Promise<unknown>;
+  /** Who the caller is to the core: `{ name }`, how they asked to be called, `null` when they never said. Absent on an older core. */
+  me?: (principal: Principal) => Promise<unknown>;
 };
 
 /** How finishing a login came out: the service the person is now logged in to, or why not. */

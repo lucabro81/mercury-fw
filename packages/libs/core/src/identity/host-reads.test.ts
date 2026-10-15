@@ -169,3 +169,30 @@ describe("createHostReads", () => {
     expect(await r.health()).toEqual({ up: true });
   });
 });
+
+// #216: a UI asks who the caller is to Mercury, to know whether to let the
+// assistant speak first.
+describe("createHostReads: me", () => {
+  it("answers how the caller asked to be called, or null when they never said", async () => {
+    const names: Record<string, string> = { "static:alice": "Luca" };
+    const { reads: r } = reads(await vault(), { preferredName: (key) => names[key] });
+    expect(await r.me!(alice)).toEqual({ name: "Luca" });
+    expect(await r.me!(bob)).toEqual({ name: null });
+  });
+
+  it("answers for the person the core identifies, not the raw principal", async () => {
+    const { reads: r } = reads(await vault(), {
+      preferredName: (key) => (key === "static:bob" ? "Bob" : undefined),
+      identify: async () => ({ ok: true, operator: false, person: { key: "static:bob", roles: [] } }),
+    });
+    expect(await r.me!(alice)).toEqual({ name: "Bob" });
+  });
+
+  it("answers null for someone the core doesn't admit", async () => {
+    const { reads: r } = reads(await vault(), {
+      preferredName: () => "Luca",
+      identify: async () => ({ ok: false, reason: "unknown", message: "no" }),
+    });
+    expect(await r.me!(alice)).toBeNull();
+  });
+});

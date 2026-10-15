@@ -576,6 +576,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
         );
       },
       health: () => getSelfHealth({ qdrant, ollamaHost }),
+      preferredName: (key) => profiles.nameOf(key),
     }),
     logins: { accept: personLogins.accept, complete: personLogins.complete },
     linking: { start: linking.start },
