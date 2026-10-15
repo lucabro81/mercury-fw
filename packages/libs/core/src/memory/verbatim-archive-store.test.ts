@@ -715,6 +715,43 @@ describe("the displays a turn showed", () => {
     expect(results).toEqual([rest]);
   });
 
+  // A displays-only answer has no words of the model's own: what goes back to
+  // the model leaves it out, as before such answers were archived, rather than
+  // hand it an empty assistant message.
+  it("listVerbatimTail leaves out an answer that was only displays", async () => {
+    const tail = await listVerbatimTail(clientWith([{ ...answer, content: "" }, question]), "verbatim_archive", {
+      userId: "static:alice",
+      sessionKey: "conv-1",
+      maxChars: 10_000,
+    });
+
+    expect(tail).toEqual({
+      messages: [{ role: "user", content: "Quali issue ho?", timestamp: question.timestamp }],
+      complete: true,
+    });
+  });
+
+  it("searchVerbatim leaves out an answer that was only displays", async () => {
+    const results = await searchVerbatim(
+      clientWith([{ ...answer, content: "" }, question]),
+      "verbatim_archive",
+      async () => [1],
+      { userId: "static:alice", queryText: "issue" },
+    );
+
+    expect(results).toEqual([question]);
+  });
+
+  it("listVerbatimSessions cuts the preview of what was shown at 120 characters", async () => {
+    const long = "x".repeat(200);
+    const result = await listVerbatimSessions(clientWith([{ ...answer, content: "Ecco:", displays: [long] }]), "verbatim_archive", {
+      userId: "static:alice",
+      limit: 10,
+    });
+
+    expect(result.conversations[0]?.preview).toBe(`${`Ecco:\n\n${long}`.slice(0, 120)}…`);
+  });
+
   it("reads a message without displays, archived before them, as it was", async () => {
     const result = await listVerbatimBySession(clientWith([question]), "verbatim_archive", {
       userId: "static:alice",

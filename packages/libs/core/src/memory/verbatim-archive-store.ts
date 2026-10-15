@@ -76,6 +76,14 @@ function asShown(m: VerbatimMessage): VerbatimMessage {
   return displays === undefined ? rest : { ...rest, content: shownText(m.content, displays) };
 }
 
+/**
+ * Whether `m` has words of the model's own (or the person's). An answer that was
+ * only displays has none, and what goes back to the model leaves it out.
+ */
+function said(m: VerbatimMessage): boolean {
+  return m.content !== "";
+}
+
 /** `m` as the model said it, for whatever hands it back to the model: no displays. */
 function asSaid(m: VerbatimMessage): VerbatimMessage {
   const { displays: _displays, ...rest } = m;
@@ -125,8 +133,9 @@ function isVerbatimMessage(payload: Record<string, unknown> | null): payload is 
  * The verbatim messages for a specific user most relevant to `queryText`
  * — e.g. "what did we say about KAN-1 last week". Filtered by `userId` so
  * one user's transcript never leaks into another's. Only reads; returns
- * the messages as the model said them (no displays: this goes back to the
- * model), ordering left to the caller (each carries its own `timestamp`).
+ * the messages as the model said them (no displays, and no answer that was
+ * only displays: this goes back to the model), ordering left to the caller
+ * (each carries its own `timestamp`).
  */
 export async function searchVerbatim(
   client: QdrantClientLike,
@@ -141,7 +150,7 @@ export async function searchVerbatim(
     limit: query.limit ?? DEFAULT_SEARCH_LIMIT,
     with_payload: true,
   });
-  return results.points.map((r) => r.payload ?? null).filter(isVerbatimMessage).map(asSaid);
+  return results.points.map((r) => r.payload ?? null).filter(isVerbatimMessage).filter(said).map(asSaid);
 }
 
 /**
@@ -263,7 +272,8 @@ export type VerbatimTail = {
  * `userId` whose content fits `maxChars`, in chronological order — what a
  * resumed conversation hands back to the model. Reads at most
  * `TAIL_SCAN_LIMIT` messages, newest first, stops at the first one that
- * doesn't fit, and drops leading assistant messages, so the tail always
+ * doesn't fit, leaves out answers that were only displays (no words to hand
+ * back), and drops leading assistant messages, so the tail always
  * opens with what the person said. `complete` is true only when every
  * message of the conversation made it in. Empty and incomplete when the
  * client can't scroll.
@@ -287,7 +297,7 @@ export async function listVerbatimTail(
     limit: TAIL_SCAN_LIMIT,
     with_payload: true,
   });
-  const newestFirst = result.points.map((p) => p.payload ?? null).filter(isVerbatimMessage);
+  const newestFirst = result.points.map((p) => p.payload ?? null).filter(isVerbatimMessage).filter(said);
   const taken: VerbatimMessage[] = [];
   let chars = 0;
   for (const m of newestFirst) {
