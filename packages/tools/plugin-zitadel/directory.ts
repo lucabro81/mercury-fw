@@ -4,8 +4,9 @@
  * service user, from code and never from the model. A role granted or revoked
  * in ZITADEL's console decides what the person may make Mercury do.
  *
- * An OIDC subject is the user it names (the app's `auth-oidc` points at this
- * ZITADEL). A Google Chat sender is the one active user with the sender's
+ * An OIDC subject is the user it names, from the auth provider that points at
+ * this ZITADEL: `oidc` unless `ZITADEL_AUTH_PROVIDER` names another
+ * (`oidc-<name>`, when the instance accepts several issuers). A Google Chat sender is the one active user with the sender's
  * email, verified, whose links to the Google identity provider
  * (`ZITADEL_GOOGLE_IDP_ID`) hold that very Google account (Chat's
  * `users/<id>` is the id ZITADEL stores for the link): the email alone is the
@@ -18,6 +19,7 @@ import { runCli } from "@mercury-fw/cli-engine";
 
 const PROJECT_ENV = "ZITADEL_PROJECT_ID";
 const GOOGLE_IDP_ENV = "ZITADEL_GOOGLE_IDP_ID";
+const AUTH_PROVIDER_ENV = "ZITADEL_AUTH_PROVIDER";
 
 /** A ZITADEL user id: digits only, so it's one argument that can't read as a flag. */
 const USER_ID = /^\d{1,32}$/;
@@ -49,6 +51,8 @@ export function createZitadelDirectory(deps: { runCliFn?: typeof runCli } = {}):
       const projectId: string = configured;
       // The identity provider whose links confirm a Chat sender: Google's, as ZITADEL names it. Without it, nobody is joined from Chat.
       const googleIdpId = ctx.env[GOOGLE_IDP_ENV]?.trim() || undefined;
+      // The auth provider whose subjects are this ZITADEL's users; another issuer's are someone else's.
+      const authProvider = ctx.env[AUTH_PROVIDER_ENV]?.trim() || "oidc";
 
       /** `args` run as the service user; throws naming the command when it fails or prints no JSON. */
       async function read(command: string, args: string[]): Promise<object> {
@@ -132,7 +136,7 @@ export function createZitadelDirectory(deps: { runCliFn?: typeof runCli } = {}):
 
       return {
         resolve: async (principal): Promise<DirectoryPerson | null> => {
-          if (principal.provider === "oidc") return USER_ID.test(principal.id) ? bySubject(principal.id) : null;
+          if (principal.provider === authProvider) return USER_ID.test(principal.id) ? bySubject(principal.id) : null;
           if (principal.provider === "google-chat") {
             const email = principal.claims?.email;
             const googleId = /^users\/(\d{1,32})$/.exec(principal.id)?.[1];

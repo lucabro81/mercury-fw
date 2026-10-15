@@ -148,6 +148,29 @@ describe("zitadelDirectory", () => {
 // #190: a Google Chat sender is the ZITADEL user with their (verified) email,
 // whose Google link is that very sender: checked live, the Chat id is the id
 // ZITADEL stores for the link.
+// #199: with several OIDC providers on one instance, only ZITADEL's subjects
+// are ZITADEL users. Another issuer's (Google's) are numeric too, and would be
+// looked up as if they were.
+describe("zitadelDirectory: which auth provider is ZITADEL", () => {
+  it("takes the provider named by ZITADEL_AUTH_PROVIDER, and no other OIDC provider's subjects", async () => {
+    const { directory, calls } = directoryWith(
+      { authorizations: roles({ keys: ["dev"] }) },
+      { ZITADEL_PROJECT_ID: "p1", ZITADEL_AUTH_PROVIDER: "oidc-company" },
+    );
+    expect(await directory.resolve({ id: SUB, provider: "oidc" })).toBeNull();
+    expect(calls).toEqual([]);
+    expect(await directory.resolve({ id: SUB, provider: "oidc-company" })).toMatchObject({ id: SUB, roles: ["dev"] });
+  });
+
+  it("is the unnamed oidc provider when ZITADEL_AUTH_PROVIDER is unset or blank", async () => {
+    for (const env of [{ ZITADEL_PROJECT_ID: "p1" }, { ZITADEL_PROJECT_ID: "p1", ZITADEL_AUTH_PROVIDER: " " }]) {
+      const { directory } = directoryWith({}, env);
+      expect(await directory.resolve({ id: SUB, provider: "oidc" })).toMatchObject({ id: SUB });
+      expect(await directory.resolve({ id: SUB, provider: "oidc-company" })).toBeNull();
+    }
+  });
+});
+
 describe("zitadelDirectory: Google Chat senders", () => {
   const CHAT_ID = "100203105076128909015";
   const sender = { id: `users/${CHAT_ID}`, provider: "google-chat" as const, claims: { email: "jane@example.com" } };
