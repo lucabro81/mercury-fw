@@ -9,12 +9,12 @@
 import type { Tool } from "ai";
 import { truncateForDisplay } from "../router/tool-log.ts";
 
-/** Appended to the name of a tool's variant acting as Mercury. */
-export const AS_MERCURY_SUFFIX = "AsMercury";
+/** Appended to the name of a tool's variant acting as Mercury: the assistant acting as itself, to the model. */
+export const AS_SELF_SUFFIX = "AsSelf";
 
 /** Prefixed to the description of every tool acting as Mercury for a person (model-facing). */
-export const AS_MERCURY_NOTE =
-  "Runs with Mercury's own service identity, not the user's account: use it only when the user explicitly asks Mercury to act as itself.";
+export const AS_SELF_NOTE =
+  "Runs with your own service identity, not the user's account: use it only when the user explicitly asks you to act as yourself.";
 
 /** How much of a call's input the accountability log keeps. */
 const MAX_LOGGED_INPUT = 500;
@@ -27,9 +27,9 @@ export function actingAsMercury(
   const out: Record<string, Tool> = {};
   for (const [name, tool] of Object.entries(tools)) {
     const { execute } = tool;
-    out[opts.rename ? `${name}${AS_MERCURY_SUFFIX}` : name] = {
+    out[opts.rename ? `${name}${AS_SELF_SUFFIX}` : name] = {
       ...tool,
-      description: `${AS_MERCURY_NOTE}${tool.description === undefined ? "" : ` ${tool.description}`}`,
+      description: `${AS_SELF_NOTE}${tool.description === undefined ? "" : ` ${tool.description}`}`,
       ...(execute === undefined
         ? {}
         : {

@@ -76,7 +76,7 @@ import { createPeople, type TurnWho } from "./identity/people.ts";
 import { createLinkStore, linksPath } from "./identity/links.ts";
 import { createLinking } from "./identity/linking.ts";
 import { offeringFor, type Offering } from "./plugins/offering.ts";
-import { AS_MERCURY_SUFFIX } from "./plugins/act-as-mercury.ts";
+import { AS_SELF_SUFFIX } from "./plugins/act-as-mercury.ts";
 import { buildOfferedTools } from "./plugins/offered-tools.ts";
 import { migrateMemoryToUserKeys, migrateVaultToUserAreas } from "./identity/migrate-layout.ts";
 import { runRawTriagePass, runIndexAndOrphanPass, runContradictionCheckPass } from "./wiki/self-review-runner.ts";
@@ -176,7 +176,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   // acting as Mercury.
   const toolStatusDescribers: Record<string, (input: unknown) => string> = { ...loadedPlugins.toolStatusDescribers };
   for (const [name, describe] of Object.entries(loadedPlugins.toolStatusDescribers)) {
-    toolStatusDescribers[`${name}${AS_MERCURY_SUFFIX}`] = describe;
+    toolStatusDescribers[`${name}${AS_SELF_SUFFIX}`] = describe;
   }
 
   // Who a principal is to Mercury: an account linked to another is its

@@ -37,7 +37,7 @@ const SYSTEM_PROMPT =
   "Extract stable, recurring facts about the user from this conversation, choosing the topic only " +
   'among these four: "team", "role", "preferred-language", "tools-used". Each fact is a {topic, value} ' +
   'pair: "value" is what was stated or clearly implied for that topic. Don\'t extract the user\'s ' +
-  "identity or name: Mercury already tracks it separately. Don't extract details of a single task that " +
+  "identity or name: it is already kept separately. Don't extract details of a single task that " +
   "only hold for this session, only things plausibly still true later. Return an empty array if nothing " +
   "qualifies under the allowed topics.";
 

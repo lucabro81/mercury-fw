@@ -61,7 +61,7 @@ export function createWikiTools(
     description:
       "List every wiki document you can see: curated/ (the team's common knowledge) and personal/, the notes kept " +
       "for the person you're talking to (personal/notes/ is what you wrote for them, personal/inferred/ what " +
-      "Mercury learned about them). Nobody else's notes are ever listed.",
+      "you learned about them). Nobody else's notes are ever listed.",
     inputSchema: z.object({}),
     execute: async () => {
       const files = await listVisible(scope);
