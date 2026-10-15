@@ -14,7 +14,7 @@ channels: [httpChannel],
 auth: oidcAuth,
 ```
 
-It needs an auth provider next to it: [`@mercury-fw/auth-oidc`](../../auth/auth-oidc) for real users, [`@mercury-fw/auth-static`](../../auth/auth-static) for the test bed and e2e tests. Without one, or with one that fails to load, the channel doesn't start and the log says why.
+It needs an auth provider next to it, or several (`auth: [a, b]`, tried in order): [`@mercury-fw/auth-oidc`](../../auth/auth-oidc) for real users, [`@mercury-fw/auth-static`](../../auth/auth-static) for the test bed and e2e tests. Without one, or when none of them loads, the channel doesn't start and the log says why.
 
 | Variable | |
 |---|---|
@@ -27,7 +27,7 @@ It needs an auth provider next to it: [`@mercury-fw/auth-oidc`](../../auth/auth-
 
 It's active whenever it's declared in `mercury.config.ts`'s `channels` with an auth provider; remove it there to turn the surface off. It listens on `HTTP_SURFACE_PORT` (default `4100`). Base URL `http://<host>:<port>`.
 
-**Authentication.** Every route except `GET /openapi.yaml`, `GET /login/callback` and the `OPTIONS` preflights needs `Authorization: Bearer <token>`, and the auth provider decides who the token belongs to. A missing or refused token gets `401` with `WWW-Authenticate: Bearer` before anything runs. Then the core decides whether it talks to that person at all: someone the app's directory doesn't know gets `403` (unless the app lets unknown people in), and `503` when the directory can't be reached, both with `{ ok: false, error, reason }`, where `error` is what to tell them.
+**Authentication.** Every route except `GET /openapi.yaml`, `GET /login/callback` and the `OPTIONS` preflights needs `Authorization: Bearer <token>`, and the auth providers decide who the token belongs to: the first that recognizes it. A missing or refused token gets `401` with `WWW-Authenticate: Bearer` before anything runs. Then the core decides whether it talks to that person at all: someone the app's directory doesn't know gets `403` (unless the app lets unknown people in), and `503` when the directory can't be reached, both with `{ ok: false, error, reason }`, where `error` is what to tell them.
 
 **Conversations belong to whoever opened them.** The session key is `<caller id>:<conversationId>`, so the same `conversationId` sent by someone else is a conversation of their own, and a confirmation token staged in your conversation can't be confirmed from theirs. Each authenticated caller also gets their own episodic memory and wiki area, as on Google Chat.
 
