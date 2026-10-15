@@ -20,7 +20,7 @@ function memoryLinks(): LinkStore & { map: Map<string, { id: string; provider: P
   };
 }
 
-function setup(opts: { people?: Record<string, DirectoryPerson>; directory?: boolean; failing?: boolean } = {}) {
+function setup(opts: { people?: Record<string, DirectoryPerson>; directory?: boolean; failing?: boolean; assistantName?: string } = {}) {
   let now = 0;
   const links = memoryLinks();
   const directory: Directory = {
@@ -35,7 +35,7 @@ function setup(opts: { people?: Record<string, DirectoryPerson>; directory?: boo
     log: () => {},
   });
   const logs: string[] = [];
-  const linking = createLinking({ people, links, now: () => now, log: (m) => logs.push(m) });
+  const linking = createLinking({ people, links, now: () => now, log: (m) => logs.push(m), ...(opts.assistantName === undefined ? {} : { assistantName: opts.assistantName }) });
   return { linking, links, people, logs, tick: (ms: number) => (now += ms) };
 }
 
@@ -81,6 +81,11 @@ describe("redeeming a code", () => {
     expect(links.map.size).toBe(0);
     expect(await linking.redeem(chat, ` ${code} `)).toBe("Linked: this account is now Alice.");
     expect(links.map.get("google-chat:users/1")).toEqual({ id: "alice", provider: "static" });
+    // #222: the reply names the assistant as the app calls it.
+    const named = setup({ assistantName: "Poc" });
+    expect(await named.linking.redeem(chat, await codeFor(named.linking, alice))).toBe(
+      "This will link this account to Alice: from then on Poc treats them as one person, with Alice's private area and roles. Send the same code again to confirm.",
+    );
     expect(await people.identify(chat)).toMatchObject({ person: { key: "static:alice" } });
     expect(logs).toEqual(["[identity] linked google-chat:users/1 to static:alice"]);
   });

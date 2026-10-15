@@ -13,6 +13,7 @@
  */
 import type { LoginRequired, PersonLogin } from "@mercury-fw/plugin-types";
 import type { LoginOutcome } from "@mercury-fw/channel-types";
+import { DEFAULT_ASSISTANT_NAME } from "../session/assistant-name.ts";
 
 type Pending = { service: string; login: PersonLogin; personKey: string; expiresAt: number; result: LoginRequired };
 
@@ -30,7 +31,8 @@ export function createPersonLogins({
   now = Date.now,
   ttlMs = 10 * 60_000,
   log = (message: string) => console.error(message),
-}: { now?: () => number; ttlMs?: number; log?: (message: string) => void } = {}): PersonLogins {
+  assistantName = DEFAULT_ASSISTANT_NAME,
+}: { now?: () => number; ttlMs?: number; log?: (message: string) => void; assistantName?: string } = {}): PersonLogins {
   let callbackUrl: string | undefined;
   const pending = new Map<string, Pending>();
   // Starts in flight, by person and service, so tool calls asking at once share one.
@@ -67,7 +69,7 @@ export function createPersonLogins({
       if (callbackUrl === undefined) {
         return {
           ok: false,
-          error: `The user isn't logged in to ${service}, and nothing on this Mercury instance can take a login (the HTTP channel does once HTTP_SURFACE_PUBLIC_URL is set). Tell the user.`,
+          error: `The user isn't logged in to ${service}, and nothing on this instance can take a login (the HTTP channel does once HTTP_SURFACE_PUBLIC_URL is set). Tell the user.`,
         };
       }
       prune();
@@ -85,12 +87,12 @@ export function createPersonLogins({
       const p = pending.get(state);
       pending.delete(state);
       if (p === undefined || p.expiresAt <= now()) {
-        return { ok: false, error: "This login link has expired or was already used: ask Mercury again for a new one." };
+        return { ok: false, error: `This login link has expired or was already used: ask ${assistantName} again for a new one.` };
       }
       const done = await p.login.complete(p.personKey, code, state);
       if (done.ok) return { ok: true, service: p.service };
       log(`[login] ${p.service} login of ${p.personKey} failed: ${done.error}`);
-      return { ok: false, error: `The ${p.service} login didn't go through. Ask Mercury again for a new link.` };
+      return { ok: false, error: `The ${p.service} login didn't go through. Ask ${assistantName} again for a new link.` };
     },
   };
 }
