@@ -1,5 +1,16 @@
 # @mercury-fw/core
 
+## 0.49.1
+
+### Patch Changes
+
+- 5d3bfdf: - The opening greeting asks for the person's name in words a model can't turn around: a small model had asked "how would I like you to call me?".
+  - @mercury-fw/plugin-types@0.49.1
+  - @mercury-fw/channel-types@0.49.1
+  - @mercury-fw/cli-engine@0.49.1
+  - @mercury-fw/confirm-engine@0.49.1
+  - @mercury-fw/utils@0.49.1
+
 ## 0.49.0
 
 ### Minor Changes
