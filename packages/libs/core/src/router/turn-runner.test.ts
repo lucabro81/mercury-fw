@@ -1128,12 +1128,11 @@ describe("createTurnRunner", () => {
       expect(captured.find((m) => m.role === "assistant")?.content).toBe("rewritten");
     });
 
-    // The archive holds the verbatim user<->model exchange only. Surfaced
-    // `present` displays are formatting-layer artifacts (like tool results,
-    // excluded by design), so the captured assistant text must be the model's
-    // own words, without the appended display block.
-    test("excludes surfaced present() displays from the captured assistant text", async () => {
-      const captured: Array<{ role: string; content: string }> = [];
+    // The archived `content` is the model's own words, what goes back to the
+    // model. The surfaced `present` displays travel next to it (#215: a
+    // reopened conversation lost the lists the person had seen).
+    test("archives surfaced present() displays next to the model's own text, not in it", async () => {
+      const captured: Array<{ sessionKey: string; userId: string; role: string; content: string; displays?: string[] }> = [];
       const sink = baseSink();
       const runner = createTurnRunner({
         model: {} as any,
@@ -1147,17 +1146,47 @@ describe("createTurnRunner", () => {
         logStep: () => {},
         takeSurfacedDisplays: () => ["MER-1\nhttps://x"],
         captureVerbatim: async (msg) => {
-          captured.push({ role: msg.role, content: msg.content });
+          captured.push(msg);
         },
         runTurnFn: async () => "Here you go.",
       });
 
       await runner(baseTurn({ principal: verified("u1") }), sink);
 
-      // what the user saw includes the display...
       expect(sink.finalized).toEqual(["Here you go.\n\nMER-1\nhttps://x"]);
-      // ...but the archived assistant message is the model's own words only
-      expect(captured.find((m) => m.role === "assistant")?.content).toBe("Here you go.");
+      expect(captured.find((m) => m.role === "assistant")).toEqual({
+        sessionKey: expect.any(String),
+        userId: expect.any(String),
+        role: "assistant",
+        content: "Here you go.",
+        displays: ["MER-1\nhttps://x"],
+      });
+    });
+
+    test("archives a turn whose answer is only surfaced displays", async () => {
+      const captured: Array<{ role: string; content: string; displays?: string[] }> = [];
+      const sink = baseSink();
+      const runner = createTurnRunner({
+        model: {} as any,
+        systemPrompts: { singleUser: "s", multiUser: "m" },
+        buildTools: () => ({}),
+        getOrCreateHistory: () => fakeHistory(),
+        trackSession: () => {},
+        registerCaptureCallback: () => {},
+        maybeCapture: async () => {},
+        processToolCorrections: async () => {},
+        logStep: () => {},
+        takeSurfacedDisplays: () => ["MER-1\nhttps://x"],
+        captureVerbatim: async (msg) => {
+          captured.push({ role: msg.role, content: msg.content, displays: msg.displays });
+        },
+        runTurnFn: async () => "",
+      });
+
+      await runner(baseTurn({ principal: verified("u1") }), sink);
+
+      expect(sink.finalized).toEqual(["MER-1\nhttps://x"]);
+      expect(captured.find((m) => m.role === "assistant")).toEqual({ role: "assistant", content: "", displays: ["MER-1\nhttps://x"] });
     });
 
     // Fail-soft: the archive is pure enrichment (principle #3). A failure

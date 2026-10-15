@@ -6,6 +6,7 @@ import {
   listVerbatimBySession,
   listVerbatimSessions,
   listVerbatimTail,
+  shownText,
 } from "./verbatim-archive-store.ts";
 import type { QdrantClientLike } from "./episodic-store.ts";
 
@@ -580,5 +581,200 @@ describe("listVerbatimTail", () => {
       messages: [],
       complete: false,
     });
+  });
+});
+
+// #215: the archive kept only the model's answer, so a reopened conversation
+// lost the lists (`present` displays) the person had seen with it.
+describe("the displays a turn showed", () => {
+  const LIST = "KAN-1 [In corso] Login\nhttps://example.atlassian.net/browse/KAN-1";
+  const answer = {
+    userId: "static:alice",
+    sessionKey: "conv-1",
+    role: "assistant" as const,
+    content: "Ecco le tue issue:",
+    displays: [LIST],
+    timestamp: "2026-10-15T10:00:01.000Z",
+  };
+  const question = {
+    userId: "static:alice",
+    sessionKey: "conv-1",
+    role: "user" as const,
+    content: "Quali issue ho?",
+    timestamp: "2026-10-15T10:00:00.000Z",
+  };
+
+  /** A client whose scroll and query hand back `payloads` as points. */
+  function clientWith(payloads: Array<Record<string, unknown>>): QdrantClientLike {
+    const points = payloads.map((payload, i) => ({ id: `p${i}`, score: 1, payload }));
+    return {
+      getCollections: async () => ({ collections: [] }),
+      createCollection: async () => ({}),
+      upsert: async () => ({}),
+      query: async () => ({ points }),
+      scroll: async () => ({ points, next_page_offset: null }),
+    };
+  }
+
+  describe("shownText", () => {
+    it("joins the answer and the displays with a blank line, as the turn's final text", () => {
+      expect(shownText("Ecco le tue issue:", ["A", "B"])).toBe("Ecco le tue issue:\n\nA\n\nB");
+    });
+
+    it("is the displays alone when the answer is empty", () => {
+      expect(shownText("", ["A"])).toBe("A");
+    });
+
+    it("is the answer alone without displays", () => {
+      expect(shownText("ciao", undefined)).toBe("ciao");
+      expect(shownText("ciao", [])).toBe("ciao");
+    });
+
+    it("skips empty parts", () => {
+      expect(shownText("ciao", ["", "A"])).toBe("ciao\n\nA");
+    });
+  });
+
+  describe("appendVerbatimMessage", () => {
+    it("keeps the displays in the payload and embeds the answer", async () => {
+      let point: { vector: number[]; payload: Record<string, unknown> } | undefined;
+      const client: QdrantClientLike = {
+        ...clientWith([]),
+        upsert: async (_collection, params) => {
+          point = params.points[0] as typeof point;
+          return {};
+        },
+      };
+      const embedded: string[] = [];
+      const embed = async (text: string) => {
+        embedded.push(text);
+        return [1];
+      };
+
+      await appendVerbatimMessage(client, "verbatim_archive", embed, answer);
+
+      expect(point?.payload).toEqual(answer);
+      expect(embedded).toEqual(["Ecco le tue issue:"]);
+    });
+
+    it("embeds what was shown when the answer is empty", async () => {
+      const embedded: string[] = [];
+      const embed = async (text: string) => {
+        embedded.push(text);
+        return [1];
+      };
+
+      await appendVerbatimMessage(clientWith([]), "verbatim_archive", embed, { ...answer, content: "" });
+
+      expect(embedded).toEqual([LIST]);
+    });
+  });
+
+  it("listVerbatimBySession serves each message as it was shown, without a separate displays field", async () => {
+    const result = await listVerbatimBySession(clientWith([question, answer]), "verbatim_archive", {
+      userId: "static:alice",
+      sessionKey: "conv-1",
+      limit: 50,
+    });
+
+    const { displays: _displays, ...rest } = answer;
+    expect(result.messages).toEqual([question, { ...rest, content: `Ecco le tue issue:\n\n${LIST}` }]);
+  });
+
+  it("listVerbatimSessions previews what was shown", async () => {
+    const result = await listVerbatimSessions(clientWith([{ ...answer, content: "" }]), "verbatim_archive", {
+      userId: "static:alice",
+      limit: 10,
+    });
+
+    expect(result.conversations).toEqual([
+      { sessionKey: "conv-1", lastTimestamp: answer.timestamp, preview: "KAN-1 [In corso] Login\nhttps://example.atlassian.net/browse/KAN-1" },
+    ]);
+  });
+
+  it("listVerbatimTail, what goes back to the model, keeps the answer only", async () => {
+    const tail = await listVerbatimTail(clientWith([answer, question]), "verbatim_archive", {
+      userId: "static:alice",
+      sessionKey: "conv-1",
+      maxChars: 10_000,
+    });
+
+    expect(tail.messages).toEqual([
+      { role: "user", content: "Quali issue ho?", timestamp: question.timestamp },
+      { role: "assistant", content: "Ecco le tue issue:", timestamp: answer.timestamp },
+    ]);
+  });
+
+  it("searchVerbatim, what recall_verbatim hands the model, keeps the answer only", async () => {
+    const results = await searchVerbatim(clientWith([answer]), "verbatim_archive", async () => [1], {
+      userId: "static:alice",
+      queryText: "issue",
+    });
+
+    const { displays: _displays, ...rest } = answer;
+    expect(results).toEqual([rest]);
+  });
+
+  // A displays-only answer has no words of the model's own: what goes back to
+  // the model leaves it out, as before such answers were archived, rather than
+  // hand it an empty assistant message.
+  it("listVerbatimTail leaves out an answer that was only displays", async () => {
+    const tail = await listVerbatimTail(clientWith([{ ...answer, content: "" }, question]), "verbatim_archive", {
+      userId: "static:alice",
+      sessionKey: "conv-1",
+      maxChars: 10_000,
+    });
+
+    expect(tail).toEqual({
+      messages: [{ role: "user", content: "Quali issue ho?", timestamp: question.timestamp }],
+      complete: true,
+    });
+  });
+
+  it("an answer of blank space with displays counts as only displays", async () => {
+    const tail = await listVerbatimTail(clientWith([{ ...answer, content: " \n " }, question]), "verbatim_archive", {
+      userId: "static:alice",
+      sessionKey: "conv-1",
+      maxChars: 10_000,
+    });
+    expect(tail.messages).toEqual([{ role: "user", content: "Quali issue ho?", timestamp: question.timestamp }]);
+
+    const embedded: string[] = [];
+    await appendVerbatimMessage(clientWith([]), "verbatim_archive", async (text) => (embedded.push(text), [1]), {
+      ...answer,
+      content: " ",
+    });
+    expect(embedded).toEqual([` \n\n${LIST}`]);
+  });
+
+  it("searchVerbatim leaves out an answer that was only displays", async () => {
+    const results = await searchVerbatim(
+      clientWith([{ ...answer, content: "" }, question]),
+      "verbatim_archive",
+      async () => [1],
+      { userId: "static:alice", queryText: "issue" },
+    );
+
+    expect(results).toEqual([question]);
+  });
+
+  it("listVerbatimSessions cuts the preview of what was shown at 120 characters", async () => {
+    const long = "x".repeat(200);
+    const result = await listVerbatimSessions(clientWith([{ ...answer, content: "Ecco:", displays: [long] }]), "verbatim_archive", {
+      userId: "static:alice",
+      limit: 10,
+    });
+
+    expect(result.conversations[0]?.preview).toBe(`${`Ecco:\n\n${long}`.slice(0, 120)}…`);
+  });
+
+  it("reads a message without displays, archived before them, as it was", async () => {
+    const result = await listVerbatimBySession(clientWith([question]), "verbatim_archive", {
+      userId: "static:alice",
+      sessionKey: "conv-1",
+      limit: 50,
+    });
+
+    expect(result.messages).toEqual([question]);
   });
 });

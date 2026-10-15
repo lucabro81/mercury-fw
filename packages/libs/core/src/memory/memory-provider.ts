@@ -12,15 +12,19 @@
  */
 import { tool, type Tool } from "ai";
 import { z } from "zod";
-import { appendVerbatimMessage, searchVerbatim } from "./verbatim-archive-store.ts";
+import { appendVerbatimMessage, searchVerbatim, shownText } from "./verbatim-archive-store.ts";
 import type { QdrantClientLike } from "./episodic-store.ts";
 
-/** One side of an exchange to archive — the provider stamps its own durable timestamp. */
+/**
+ * One side of an exchange to archive — the provider stamps its own durable
+ * timestamp. `displays` are what the turn showed after the answer, if anything.
+ */
 export type VerbatimExchange = {
   userId: string;
   sessionKey: string;
   role: "user" | "assistant";
   content: string;
+  displays?: string[];
 };
 
 /** Per-turn identity a provider's recall tools are scoped to. `userId` is what makes recall cross-session. */
@@ -65,7 +69,7 @@ export function createVerbatimArchiveProvider(deps: VerbatimArchiveProviderDeps)
       // An empty/whitespace-only message (e.g. a present()-only turn with no
       // prose) has nothing to archive — skip it rather than store a
       // meaningless point and embed an empty string.
-      if (exchange.content.trim() === "") {
+      if (shownText(exchange.content, exchange.displays).trim() === "") {
         return;
       }
       await appendVerbatimMessage(deps.client, deps.collectionName, deps.embed, {
