@@ -85,5 +85,9 @@ describe("createProfileStore", () => {
     const store = createProfileStore({ path, log: () => {} });
     expect(store.nameOf("static:alice")).toBeUndefined();
     expect(store.nameOf("static:bob")).toBe("Bob");
+    // Review of #216: a later write kept only what it understood, and the
+    // malformed entry (someone's to fix by hand) was gone.
+    store.setName("static:carol", "Carol");
+    expect(JSON.parse(await readFile(path, "utf8")).people["static:alice"]).toEqual({ name: 42 });
   });
 });

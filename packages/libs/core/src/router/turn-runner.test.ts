@@ -1475,6 +1475,33 @@ describe("createTurnRunner: preferred name and opening turn", () => {
     expect(sink.finalized).toEqual([""]);
   });
 
+  test("an opening that fails releases the sink and archives nothing", async () => {
+    const captured: unknown[] = [];
+    const runner = createTurnRunner({
+      model: {} as any,
+      systemPrompts: { singleUser: "single", multiUser: "multi" },
+      buildTools: () => ({}),
+      getOrCreateHistory: () => fakeHistory(),
+      trackSession: () => {},
+      registerCaptureCallback: () => {},
+      maybeCapture: async () => {},
+      processToolCorrections: async () => {},
+      logStep: () => {},
+      captureVerbatim: async (msg) => {
+        captured.push(msg);
+      },
+      preferredName: () => undefined,
+      runTurnFn: async () => {
+        throw new Error("model down");
+      },
+    });
+    const sink = baseSink();
+    await expect(runner(baseTurn({ principal: verified("u1"), opening: true, text: "" }), sink)).rejects.toThrow("model down");
+    expect(sink.disposed).toBe(true);
+    expect(sink.finalized).toEqual([]);
+    expect(captured).toEqual([]);
+  });
+
   test("the opening note overrides the tone's rules against introducing itself and asking", () => {
     expect(OPENING_NOTE).toContain("set_preferred_name");
     expect(OPENING_NOTE).toContain("overrides");

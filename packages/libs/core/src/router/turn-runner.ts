@@ -39,7 +39,12 @@ export const OPENING_NOTE =
   "Introduce yourself briefly, in your own words, and ask how they'd like to be called; when they answer, save it with set_preferred_name. " +
   "This overrides any instruction not to introduce yourself or not to ask questions.";
 
-/** What an opening turn hands the model as the person's message: the history always opens with one (Ollama refuses a chat without), and it's never archived. */
+/**
+ * What an opening turn hands the model as the person's message: the history
+ * always opens with one (Ollama refuses a chat without). It stays out of the
+ * verbatim archive, so no transcript shows it; the in-context history keeps it,
+ * so a summary of the conversation may mention it was opened, which is true.
+ */
 export const OPENING_CUE = "(The person has just opened the conversation and hasn't written anything yet.)";
 
 export type TurnRunnerDeps = {

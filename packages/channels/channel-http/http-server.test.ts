@@ -1090,6 +1090,13 @@ describe("GET /me", () => {
     expect(res.status).toBe(401);
   });
 
+  // Review of #216: the core answers null for someone it no longer admits, and
+  // the reply lost its `name` key; a UI checking `name === null` skipped the opening.
+  it("always carries name, null when the core answers nothing for the caller", async () => {
+    const res = await readRoutes({ ...base, me: async () => null }, asAlice)["/me"]!.GET(new Request("http://x/me"));
+    expect(await res.json()).toEqual({ ok: true, name: null });
+  });
+
   it("isn't there on a core that can't say", () => {
     expect(readRoutes(base, asAlice)["/me"]).toBeUndefined();
   });

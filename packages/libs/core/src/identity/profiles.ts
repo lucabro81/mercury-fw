@@ -43,6 +43,8 @@ export function createProfileStore(opts: { path: string; now?: () => Date; log?:
   const now = opts.now ?? (() => new Date());
   const log = opts.log ?? ((msg: string) => console.error(msg));
   let people = new Map<string, Profile>();
+  /** Entries the file holds but that aren't usable, written back as they are for someone to fix. */
+  let malformed = new Map<string, unknown>();
   /** The file's mtime and size when it was last read or written; undefined when there was none. */
   let seen: string | undefined;
   /** Whether the file was there but couldn't be read: then nothing is written over it. */
@@ -65,6 +67,7 @@ export function createProfileStore(opts: { path: string; now?: () => Date; log?:
     seen = current;
     unreadable = false;
     people = new Map();
+    malformed = new Map();
     if (current === undefined) return;
     try {
       const parsed = JSON.parse(readFileSync(path, "utf8")) as Partial<ProfileFile>;
@@ -72,6 +75,7 @@ export function createProfileStore(opts: { path: string; now?: () => Date; log?:
         const name = (profile as Partial<Profile> | undefined)?.name;
         if (typeof name !== "string" || nameError(name.trim()) !== undefined) {
           log(`[identity] skipped a malformed profile in ${path}: ${key}`);
+          malformed.set(key, profile);
           continue;
         }
         people.set(key, { name: name.trim(), updatedAt: String((profile as Profile).updatedAt ?? "") });
@@ -86,7 +90,7 @@ export function createProfileStore(opts: { path: string; now?: () => Date; log?:
   /** Writes every profile, whole, through a temporary file renamed over the old one. */
   function save(): void {
     mkdirSync(dirname(path), { recursive: true });
-    const file: ProfileFile = { version: 1, people: Object.fromEntries(people) };
+    const file = { version: 1, people: { ...Object.fromEntries(malformed), ...Object.fromEntries(people) } };
     const temporary = `${path}.${crypto.randomUUID()}.tmp`;
     writeFileSync(temporary, `${JSON.stringify(file, null, 2)}\n`);
     renameSync(temporary, path);
@@ -104,6 +108,7 @@ export function createProfileStore(opts: { path: string; now?: () => Date; log?:
       if (error !== undefined) throw new Error(error);
       fresh();
       if (unreadable) throw new Error(`the people's profiles in ${path} can't be read: fix or remove the file first`);
+      malformed.delete(key);
       people.set(key, { name: trimmed, updatedAt: now().toISOString() });
       save();
       return trimmed;

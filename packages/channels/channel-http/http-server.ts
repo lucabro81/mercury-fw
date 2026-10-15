@@ -462,7 +462,13 @@ export function readRoutes(
     // Who the caller is to the core, on a core that can say.
     ...(reads.me === undefined
       ? {}
-      : { "/me": route(async (_req, principal) => json({ ok: true, ...((await reads.me!(principal)) as object) })) }),
+      : {
+          "/me": route(async (_req, principal) => {
+            // Null when the core no longer admits the caller: still a name, null.
+            const me = (await reads.me!(principal)) as { name: string | null } | null;
+            return json({ ok: true, name: me?.name ?? null });
+          }),
+        }),
     "/health": route(async () => json({ ok: true, ...(await reads.health() as object) })),
     "/wiki/list": route(async (_req, principal) => json({ ok: true, files: await reads.wikiList(principal) })),
     "/wiki/read": route(async (req, principal) => {
