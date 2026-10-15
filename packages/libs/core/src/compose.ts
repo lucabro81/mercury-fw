@@ -500,6 +500,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
     model,
     systemPrompts: systemPromptsFor({ person: { key: "", roles: [] }, operator: false }),
     systemPromptsFor,
+    preferredName: (key) => profiles.nameOf(key),
     identify: people.identify,
     buildTools,
     // Post-turn guards contributed by whatever plugins loaded — the core runs

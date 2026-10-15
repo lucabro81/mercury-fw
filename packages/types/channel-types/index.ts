@@ -110,6 +110,14 @@ export type InboundTurn = {
    * (`SESSION_RESUME_MAX_CHARS`), and 0 turns resuming off.
    */
   resume?: { maxChars?: number };
+  /**
+   * Set, with an empty `text`, when the person hasn't written anything and the
+   * channel asks the assistant to speak first (the HTTP surface, right after
+   * someone signs in). The core speaks only to someone it doesn't know the
+   * name of, introducing itself and asking how to call them; otherwise the
+   * turn finalizes with an empty text and nothing is kept.
+   */
+  opening?: true;
 };
 
 /**

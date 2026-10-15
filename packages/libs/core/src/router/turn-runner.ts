@@ -29,6 +29,19 @@ import { createPeople, type Identified, type TurnWho } from "../identity/people.
 export type { TurnWho };
 import { createSessionLock, type SessionLock } from "./session-lock.ts";
 
+/** Appended to a one-to-one turn's prompt when the person said how they want to be called. */
+export const PREFERRED_NAME_NOTE = (name: string): string =>
+  `You're talking with ${name}: that's how they asked to be called, so address them that way.`;
+
+/** Appended to an opening turn's prompt: the person signed in and wrote nothing, and the assistant doesn't know them. */
+export const OPENING_NOTE =
+  "The person just signed in and opened this conversation: they haven't written anything yet, and you don't know their name. " +
+  "Introduce yourself briefly, in your own words, and ask how they'd like to be called; when they answer, save it with set_preferred_name. " +
+  "This overrides any instruction not to introduce yourself or not to ask questions.";
+
+/** What an opening turn hands the model as the person's message: the history always opens with one (Ollama refuses a chat without), and it's never archived. */
+export const OPENING_CUE = "(The person has just opened the conversation and hasn't written anything yet.)";
+
 export type TurnRunnerDeps = {
   model: LanguageModel;
   /** Both variants, precomposed by the composition root; selected per turn by `turn.multiUser`. Used when `systemPromptsFor` is absent. */
@@ -41,6 +54,8 @@ export type TurnRunnerDeps = {
    * is whoever the channel says.
    */
   identify?: (principal: InboundTurn["principal"]) => Promise<Identified>;
+  /** How the person with `key` asked to be called, or undefined; nobody has a name when absent. */
+  preferredName?: (key: string) => string | undefined;
   /** `key` is the person's key, `who` whom the tools are offered to and act for. */
   buildTools: (
     sessionKey: string,
@@ -164,6 +179,26 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
     const key = who.person.key;
     const tracked = !who.operator;
     const prompts = deps.systemPromptsFor?.(who) ?? deps.systemPrompts;
+    // A shared space names each sender in their messages; one person's name is
+    // only for a one-to-one turn.
+    const name = turn.multiUser ? undefined : deps.preferredName?.(key);
+    // Speaking first is only for someone it doesn't know yet, one to one:
+    // otherwise an opening says nothing and leaves nothing behind.
+    if (turn.opening && (turn.multiUser || name !== undefined)) {
+      try {
+        await sink.finalize("");
+      } finally {
+        sink.dispose();
+      }
+      return;
+    }
+    const base = turn.multiUser ? prompts.multiUser : prompts.singleUser;
+    const system = turn.opening
+      ? `${base}\n\n${OPENING_NOTE}`
+      : name === undefined
+        ? base
+        : `${base}\n\n${PREFERRED_NAME_NOTE(name)}`;
+    const input = turn.opening ? OPENING_CUE : turn.text;
     if (tracked) {
       deps.trackSession(turn.sessionKey, key, (deps.now ?? Date.now)());
       deps.registerCaptureCallback(turn.sessionKey, sink.onToolStart, sink.onToolFinish);
@@ -186,10 +221,10 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
       // otherwise, firing on its own 60s schedule regardless of whether
       // the turn itself already failed and was reported.
       history = await deps.getOrCreateHistory(turn.sessionKey, tracked, tracked ? key : undefined, tracked ? turn.resume : undefined);
-      const text = await (deps.runTurnFn ?? runTurn)(history, turn.text, {
+      const text = await (deps.runTurnFn ?? runTurn)(history, input, {
         model: deps.model,
         tools: deps.buildTools(turn.sessionKey, key, who, sink.onToolStart, sink.onToolFinish),
-        system: turn.multiUser ? prompts.multiUser : prompts.singleUser,
+        system,
         onTextChunk: sink.onTextChunk,
         onReasoningChunk: sink.onReasoningChunk,
         onReasoningEnd: sink.onReasoningEnd,
@@ -259,7 +294,10 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
         // user key (the same identity the wiki and the rest of memory use),
         // not the space-scoped session.
         try {
-          await deps.captureVerbatim({ sessionKey: turn.sessionKey, userId: key, role: "user", content: turn.text });
+          // An opening's cue isn't something the person said.
+          if (!turn.opening) {
+            await deps.captureVerbatim({ sessionKey: turn.sessionKey, userId: key, role: "user", content: turn.text });
+          }
           await deps.captureVerbatim({
             sessionKey: turn.sessionKey,
             userId: key,
