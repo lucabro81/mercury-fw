@@ -63,6 +63,8 @@ The core keeps one identity per person, `<provider>:<id>` (`google-chat:users/42
 
 The wiki has a common area, `curated/`, that everyone reads, and an area per person under `users/<key>/`, which the model sees as `personal/`: `personal/notes/` is what it writes for that person, `personal/inferred/` what consolidation learned about them. Nobody sees anyone else's area. The model can't write the common area directly: `promote_note` copies one of the person's notes there, and only once they confirm it with the token. The operator's tools (`mfw vault`, the nightly review) still see the whole vault.
 
+How a person wants to be called is a setting the core keeps for them, not a note: they say it in conversation and the model saves it with `set_preferred_name`, into `.mercury/profiles.json` on the vault's volume, out of the model's reach and the vault's git. From then on every one-to-one turn tells the model their name (a shared space already names each sender). A channel can ask the assistant to speak first (`opening` on the turn, with no text): it does only for someone whose name it doesn't know, introducing itself and asking, and says nothing otherwise. The HTTP surface does this right after a sign-in, and `reads.me` tells it whether the core knows the caller's name.
+
 An instance that ran an earlier version gets its data moved at startup: Google Chat and terminal notes into their areas, the memory's ids onto the new keys. An id that doesn't say which provider it came from stays where it is, with a line in the log.
 
 ## Several people at once
