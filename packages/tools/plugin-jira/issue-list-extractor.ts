@@ -87,7 +87,7 @@ function classifyResultData(data: unknown): IssueSearchShape {
  */
 const CANNOT_FORMAT_NOTE =
   'Could not build a formatted issue list from this result. Note: formattedList/formattedListNote are ' +
-  "added by Mercury to runCommand's result after jira runs — they are not part of jira's own JSON and can " +
+  "added by the system to runCommand's result after jira runs — they are not part of jira's own JSON and can " +
   'never be reached with --select (e.g. --select formattedList always returns {}). If the user wants a ' +
   `formatted list, rerun the same search with --select ${JIRA_ISSUE_LIST_SELECT}.`;
 

@@ -51,6 +51,9 @@ describe("createJiraIssueListExtractor", () => {
       const data = extracted.data as { formattedListNote: string };
       expect(data.formattedListNote).toContain("--select");
       expect(data.formattedListNote.toLowerCase()).toContain("formattedlist");
+      // #222: the system adds these fields, not the assistant: no name, Mercury least of all.
+      expect(data.formattedListNote).toContain("added by the system to runCommand's result");
+      expect(data.formattedListNote).not.toContain("Mercury");
       expect(extracted.display).toBeUndefined();
     }
   });
