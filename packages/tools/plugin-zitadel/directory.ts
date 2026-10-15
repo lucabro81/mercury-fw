@@ -53,6 +53,9 @@ export function createZitadelDirectory(deps: { runCliFn?: typeof runCli } = {}):
       const googleIdpId = ctx.env[GOOGLE_IDP_ENV]?.trim() || undefined;
       // The auth provider whose subjects are this ZITADEL's users; another issuer's are someone else's.
       const authProvider = ctx.env[AUTH_PROVIDER_ENV]?.trim() || "oidc";
+      if (!/^oidc(-[a-z0-9]+(-[a-z0-9]+)*)?$/.test(authProvider)) {
+        throw new Error(`${AUTH_PROVIDER_ENV} is "${authProvider}": it must be oidc or oidc-<name>, the auth provider of this ZITADEL`);
+      }
 
       /** `args` run as the service user; throws naming the command when it fails or prints no JSON. */
       async function read(command: string, args: string[]): Promise<object> {

@@ -37,6 +37,6 @@ import { createOidcAuth, oidcAuth } from "@mercury-fw/auth-oidc";
 auth: [oidcAuth, createOidcAuth({ name: "company" })],
 ```
 
-A named provider reads `OIDC_<NAME>_ISSUER` and `OIDC_<NAME>_AUDIENCE` (the name upper-cased, `-` as `_`: `OIDC_COMPANY_ISSUER` here), and its principals have `provider: "oidc-<name>"`. A name is lowercase letters, digits and single hyphens. The providers are tried in the order listed, and the first that accepts the token decides who the caller is; one that fails to load is left out, and the others still work.
+A named provider reads `OIDC_<NAME>_ISSUER` and `OIDC_<NAME>_AUDIENCE` (the name upper-cased, `-` as `_`: `OIDC_COMPANY_ISSUER` here), and its principals have `provider: "oidc-<name>"`. A name is lowercase letters, digits and single hyphens. The providers are tried in the order listed, and the first that accepts the token decides who the caller is; one that fails to load is left out, and the others still work. Put the one most people sign in with first: a token for a later provider goes through the earlier ones, and an earlier issuer that's down makes it wait up to 5 s for that issuer's discovery.
 
 Each provider's people are its own: someone signing in through both issuers is two people to Mercury, with two private areas. `mfw create` sets up one provider; a second one is the line above plus its two variables.
