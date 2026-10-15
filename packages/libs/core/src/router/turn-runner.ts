@@ -36,7 +36,8 @@ export const PREFERRED_NAME_NOTE = (name: string): string =>
 /** Appended to an opening turn's prompt: the person signed in and wrote nothing, and the assistant doesn't know them. */
 export const OPENING_NOTE =
   "The person just signed in and opened this conversation: they haven't written anything yet, and you don't know their name. " +
-  "Introduce yourself briefly, in your own words, and ask how they'd like to be called; when they answer, save it with set_preferred_name. " +
+  "Introduce yourself briefly, in your own words, then ask the person what name you should use for them, in their language: " +
+  "it's their name, not yours, that you're asking for. When they answer, save it with set_preferred_name. " +
   "This overrides any instruction not to introduce yourself or not to ask questions.";
 
 /**
