@@ -20,7 +20,7 @@ export const AS_SELF_NOTE =
 const MAX_LOGGED_INPUT = 500;
 
 /** `tools`, acting as Mercury on `personKey`'s behalf: renamed when `rename`, described as such, every call logged. */
-export function actingAsMercury(
+export function actingAsSelf(
   tools: Record<string, Tool>,
   opts: { plugin: string; personKey: string; rename: boolean; log: (msg: string) => void },
 ): Record<string, Tool> {

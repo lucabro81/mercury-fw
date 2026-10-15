@@ -3,7 +3,7 @@ import type { Tool } from "ai";
 import type { SessionToolContext } from "@mercury-fw/plugin-types";
 import type { LoadedPlugin } from "./plugin-loader.ts";
 import { ACT_AS_SELF, offeringFor } from "./offering.ts";
-import { AS_SELF_NOTE } from "./act-as-mercury.ts";
+import { AS_SELF_NOTE } from "./act-as-self.ts";
 import { buildOfferedTools } from "./offered-tools.ts";
 
 /** A plugin whose one tool records the context it was built with. */

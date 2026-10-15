@@ -77,7 +77,7 @@ import { createPeople, type TurnWho } from "./identity/people.ts";
 import { createLinkStore, linksPath } from "./identity/links.ts";
 import { createLinking } from "./identity/linking.ts";
 import { offeringFor, type Offering } from "./plugins/offering.ts";
-import { AS_SELF_SUFFIX } from "./plugins/act-as-mercury.ts";
+import { AS_SELF_SUFFIX } from "./plugins/act-as-self.ts";
 import { buildOfferedTools } from "./plugins/offered-tools.ts";
 import { migrateMemoryToUserKeys, migrateVaultToUserAreas } from "./identity/migrate-layout.ts";
 import { runRawTriagePass, runIndexAndOrphanPass, runContradictionCheckPass } from "./wiki/self-review-runner.ts";

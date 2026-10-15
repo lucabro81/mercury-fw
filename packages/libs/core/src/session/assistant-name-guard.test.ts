@@ -18,7 +18,7 @@ import { createReadSkillTool } from "./read-skill-tool.ts";
 import { createPresentTool } from "../tools/present-tool.ts";
 import { createDisplayStore } from "../tools/display-store.ts";
 import { createVerbatimArchiveProvider } from "../memory/memory-provider.ts";
-import { actingAsMercury } from "../plugins/act-as-mercury.ts";
+import { actingAsSelf } from "../plugins/act-as-self.ts";
 import { toolsWithAssistantName } from "./assistant-name.ts";
 
 /** Every tool the core builds for a turn, before the core substitutes the name. */
@@ -34,7 +34,7 @@ function coreTools(): Record<string, Tool> {
       sessionKey: "s",
       userId: "static:alice",
     }),
-    ...actingAsMercury({ jiraCommand: pluginTool }, { plugin: "jira", personKey: "static:alice", rename: true, log: () => {} }),
+    ...actingAsSelf({ jiraCommand: pluginTool }, { plugin: "jira", personKey: "static:alice", rename: true, log: () => {} }),
   };
 }
 

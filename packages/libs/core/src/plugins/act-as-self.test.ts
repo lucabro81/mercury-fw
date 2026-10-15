@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { Tool } from "ai";
-import { AS_SELF_NOTE, AS_SELF_SUFFIX, actingAsMercury } from "./act-as-mercury.ts";
+import { AS_SELF_NOTE, AS_SELF_SUFFIX, actingAsSelf } from "./act-as-self.ts";
 
 function tool(description: string, result: unknown = { ok: true }) {
   const inputs: unknown[] = [];
@@ -17,11 +17,11 @@ function tool(description: string, result: unknown = { ok: true }) {
 
 const run = (t: Tool | undefined, input: unknown) => t!.execute!(input as never, {} as never);
 
-describe("actingAsMercury", () => {
+describe("actingAsSelf", () => {
   test("the variant beside the person's own gets another name and says whose identity it runs with", async () => {
     const { t, inputs } = tool("Runs a jira command.");
     const logs: string[] = [];
-    const out = actingAsMercury({ jiraCommand: t }, { plugin: "jira", personKey: "people:alice", rename: true, log: (m) => logs.push(m) });
+    const out = actingAsSelf({ jiraCommand: t }, { plugin: "jira", personKey: "people:alice", rename: true, log: (m) => logs.push(m) });
     expect(Object.keys(out)).toEqual([`jiraCommand${AS_SELF_SUFFIX}`]);
     const variant = out[`jiraCommand${AS_SELF_SUFFIX}`];
     expect(variant?.description).toBe(`${AS_SELF_NOTE} Runs a jira command.`);
@@ -31,7 +31,7 @@ describe("actingAsMercury", () => {
 
   test("a plugin acting as Mercury keeps its tools' names, and says whose identity they run with", () => {
     const { t } = tool("Looks a user up.");
-    const out = actingAsMercury({ adminCommand: t }, { plugin: "admin", personKey: "people:alice", rename: false, log: () => {} });
+    const out = actingAsSelf({ adminCommand: t }, { plugin: "admin", personKey: "people:alice", rename: false, log: () => {} });
     expect(Object.keys(out)).toEqual(["adminCommand"]);
     expect(out.adminCommand?.description).toBe(`${AS_SELF_NOTE} Looks a user up.`);
   });
@@ -41,7 +41,7 @@ describe("actingAsMercury", () => {
   test("every call is logged with the person, the plugin and what ran", async () => {
     const { t } = tool("d");
     const logs: string[] = [];
-    const out = actingAsMercury({ adminCommand: t }, { plugin: "admin", personKey: "people:alice", rename: false, log: (m) => logs.push(m) });
+    const out = actingAsSelf({ adminCommand: t }, { plugin: "admin", personKey: "people:alice", rename: false, log: (m) => logs.push(m) });
     await run(out.adminCommand, { command: "atlassian-admin user get --account-id 1" });
     expect(logs).toEqual([
       '[act-as-self] people:alice ran adminCommand of plugin "admin" as Mercury: {"command":"atlassian-admin user get --account-id 1"}',
@@ -50,7 +50,7 @@ describe("actingAsMercury", () => {
 
   test("a tool without execute is passed through renamed, with nothing to log", () => {
     const t = { description: "d", inputSchema: {} as never } as unknown as Tool;
-    const out = actingAsMercury({ x: t }, { plugin: "p", personKey: "k", rename: true, log: () => {} });
+    const out = actingAsSelf({ x: t }, { plugin: "p", personKey: "k", rename: true, log: () => {} });
     expect(out[`x${AS_SELF_SUFFIX}`]?.execute).toBeUndefined();
   });
 });
