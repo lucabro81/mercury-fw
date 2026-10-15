@@ -1,5 +1,18 @@
 # @mercury-fw/core
 
+## 0.46.1
+
+### Patch Changes
+
+- a0dc010: - A reopened conversation shows the lists a turn showed: the verbatim archive keeps them next to the model's answer, and `GET /conversation` and the conversation list serve each answer as the person saw it.
+  - A turn whose answer is only a shown list is archived too.
+  - What goes back to the model (resuming a conversation, `recall_verbatim`) is still the model's own answer only.
+  - @mercury-fw/plugin-types@0.46.1
+  - @mercury-fw/channel-types@0.46.1
+  - @mercury-fw/cli-engine@0.46.1
+  - @mercury-fw/confirm-engine@0.46.1
+  - @mercury-fw/utils@0.46.1
+
 ## 0.46.0
 
 ### Patch Changes

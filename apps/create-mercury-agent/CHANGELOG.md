@@ -1,5 +1,11 @@
 # create-mercury-agent
 
+## 0.46.1
+
+### Patch Changes
+
+- @mercury-fw/cli@0.46.1
+
 ## 0.46.0
 
 ### Patch Changes
