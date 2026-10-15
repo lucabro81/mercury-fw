@@ -89,6 +89,50 @@ describe("openReplSession", () => {
     ).rejects.toThrow("the REPL exited with code 4: no model");
   });
 
+  // #220: the exit was taken as known as soon as the process ended, before
+  // stderr had been read to its end, so the error could come without the
+  // reason ("exited with code 4: "), now and then in CI. A process whose exit
+  // is known before its stderr arrives makes that order certain.
+  test("a REPL whose stderr arrives after its exit: the error still carries it", async () => {
+    const encoder = new TextEncoder();
+    const lateStderr = new ReadableStream<Uint8Array>({
+      start: async (controller) => {
+        await new Promise((r) => setTimeout(r, 50));
+        controller.enqueue(encoder.encode("starting\nno model\n"));
+        controller.close();
+      },
+    });
+    const spawn = () => ({
+      stdin: { write: () => {}, flush: () => {}, end: () => {} },
+      stdout: new ReadableStream<Uint8Array>({ start: (c) => c.close() }),
+      stderr: lateStderr,
+      exited: Promise.resolve(4),
+      kill: () => {},
+    });
+    await expect(
+      openReplSession({ argv: ["repl"], cwd: dir, hostDir: dir, replDir: dir, name: "s1", timeoutMs: 10_000, spawn }),
+    ).rejects.toThrow("the REPL exited with code 4: starting no model");
+  });
+
+  // A grandchild can keep the pipe open after the REPL is gone: the reason
+  // read so far is reported rather than waiting on it.
+  test("a REPL whose stderr never closes after its exit: the error comes anyway, with what was read", async () => {
+    const encoder = new TextEncoder();
+    const openStderr = new ReadableStream<Uint8Array>({ start: (c) => c.enqueue(encoder.encode("no model\n")) });
+    const spawn = () => ({
+      stdin: { write: () => {}, flush: () => {}, end: () => {} },
+      stdout: new ReadableStream<Uint8Array>({ start: (c) => c.close() }),
+      stderr: openStderr,
+      exited: new Promise<number>((r) => setTimeout(() => r(4), 20)),
+      kill: () => {},
+    });
+    const started = Date.now();
+    await expect(
+      openReplSession({ argv: ["repl"], cwd: dir, hostDir: dir, replDir: dir, name: "s1", timeoutMs: 10_000, spawn }),
+    ).rejects.toThrow("the REPL exited with code 4: no model");
+    expect(Date.now() - started).toBeLessThan(3000);
+  });
+
   // #131 review: a REPL that never got to its prompt was left running (a
   // docker compose run container, in real use).
   test("a REPL that doesn't start in time: opening fails, and the REPL is stopped", async () => {
