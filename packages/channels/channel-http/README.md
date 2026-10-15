@@ -93,7 +93,7 @@ All `GET`, all JSON, all reporting state already held in-process. They need an a
 
 | endpoint | `data` on success |
 |---|---|
-| `GET /conversation?id=<conversationId>&limit=<n>&offset=<cursor>` | `{ messages: [{ role, content, timestamp }], nextOffset }` — one of your conversations, its durable transcript in order (empty for an id that isn't yours); `400` if `id` is missing or has other characters than `/turn` accepts |
+| `GET /conversation?id=<conversationId>&limit=<n>&offset=<cursor>` | `{ messages: [{ role, content, timestamp }], nextOffset }` — one of your conversations, its durable transcript in order, each answer as you saw it with the lists it showed (empty for an id that isn't yours); `400` if `id` is missing or has other characters than `/turn` accepts |
 | `GET /conversations?limit=<n>` | `{ conversations: [{ conversationId, lastTimestamp, preview }] }` — your conversations, most-recently-active first |
 | `GET /manifest` | `{ manifest: { coreApiVersion, plugins: [{ name, apiVersion, active, skills, hasBuild, customStatus }], activeClis, skills } }` |
 | `GET /confirmations` | `{ pending: [{ sessionKey, summary, expiresAt }] }` — your pending confirmations; tokens are deliberately never included |

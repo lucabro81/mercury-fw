@@ -603,6 +603,7 @@ components:
           enum: [user, assistant]
         content:
           type: string
+          description: The message as the person saw it. For an answer, the lists the turn showed after it are included, as in the turn's `final` text.
         timestamp:
           type: string
           description: ISO 8601, millisecond precision — the durable ordering key.
