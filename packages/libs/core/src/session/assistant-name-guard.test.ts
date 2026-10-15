@@ -20,6 +20,7 @@ import { createDisplayStore } from "../tools/display-store.ts";
 import { createVerbatimArchiveProvider } from "../memory/memory-provider.ts";
 import { actingAsSelf } from "../plugins/act-as-self.ts";
 import { toolsWithAssistantName } from "./assistant-name.ts";
+import { createProfileTools } from "../identity/profile-tools.ts";
 
 /** Every tool the core builds for a turn, before the core substitutes the name. */
 function coreTools(): Record<string, Tool> {
@@ -28,6 +29,7 @@ function coreTools(): Record<string, Tool> {
   return {
     ...createWikiTools({ vaultPath, key: "static:alice", stageConfirmation: async () => ({ token: "t", summary: "s" }) as never }),
     ...createToolLogRecallTool({ sessionKey: "s", owner: "static:alice" }),
+    ...createProfileTools({ store: { nameOf: () => undefined, setName: (_k, n) => n }, key: "static:alice" }),
     ...createReadSkillTool([{ name: "jira", description: "Jira.", body: "body" }]),
     ...createPresentTool({ sessionKey: "s", store: createDisplayStore() }),
     ...createVerbatimArchiveProvider({ client: {} as never, collectionName: "c", embed: async () => [] }).sessionTools!({

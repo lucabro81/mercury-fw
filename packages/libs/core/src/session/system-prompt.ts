@@ -99,6 +99,13 @@ export function buildSystemPrompt(opts: {
   );
   lines.push(
     [
+      "You have access to the set_preferred_name tool.",
+      "DO:",
+      "- When the person tells you how they want to be called, now or in any later conversation, save it with set_preferred_name.",
+    ].join("\n"),
+  );
+  lines.push(
+    [
       "You have access to the recall_tool_calls tool.",
       "DO:",
       "- If asked what you actually ran/queried/did earlier in this same conversation, call recall_tool_calls and quote it verbatim — you have no memory of your own past tool calls otherwise, only your own prior reply text, so reconstructing from memory instead of calling this tool risks getting it wrong.",
