@@ -55,7 +55,7 @@ const jiraIssueLine = (issue: JiraDisplays["issue-list"]) =>
   `${issue.key} ${issue.status ? `[${issue.status}] ` : ""}${issue.summary}\n${issue.url}`;
 
 export default defineMercuryConfig({
-  persona: { identity, tone },
+  persona: { name: "Hermes", identity, tone },
   plugins: [
     formatterPlugin(
       jiraPlugin,
@@ -74,7 +74,7 @@ A plugin can hand the user a list (Jira does, for `issue search`), and how that 
 
 `directory` says who the people are and what they may do. Every channel brings an identity of its own (a Google Chat user, the subject of an OIDC token), and the directory turns it into one person with their roles, so someone reaching Mercury from two channels keeps one private area. A person can also link their accounts themselves, with a one-time code they get on one and send from the other, and the operator can with `mfw identity`. Without a directory the person is whoever the channel says, with no roles; with one, the instance talks only to the people it knows (unless `access.unknown` is `"allow"`) and refuses everyone while the directory can't be reached. Plugins act as the person by default: the role `mercury.act-as-self` (or `mercury.act-as-self.<plugin>`) lets someone make Mercury act with its own identity, and `access.plugins` restricts a plugin to some roles.
 
-`persona` sets who the assistant is: `identity` opens the system prompt ("You are …") and `tone` closes it with the rules on how to answer. Both are plain strings, kept here in Markdown files imported as text, and a field left out falls back to Mercury's own. Everything between them, the rules tied to the tools, stays with the core.
+`persona` sets who the assistant is: `name` is what it's called (Mercury when left out), `identity` opens the system prompt ("You are {{assistant}}, …") and `tone` closes it with the rules on how to answer. Identity and tone are plain strings, kept here in Markdown files imported as text, and a field left out falls back to the default. Everything between them, the rules tied to the tools, stays with the core. No text the model reads writes a name in: they say `{{assistant}}`, the core puts the persona's name there, and where the one acting is the system around the model they say so, so the model never takes the framework's name for its own.
 
 ## Packages
 
