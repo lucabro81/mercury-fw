@@ -9,9 +9,14 @@
  */
 import { DIRECTORY_API_VERSION, type Directory, type DirectoryPlugin, type PrincipalProvider } from "@mercury-fw/channel-types";
 
-/** The principal providers whose `<provider>:<id>` keys a directory's `<name>:<id>` must never collide with.
- * A record over the union, so a provider added to the contract fails the typecheck until it's listed here. */
-const PRINCIPAL_PROVIDERS: Record<PrincipalProvider, true> = { "google-chat": true, oidc: true, static: true, none: true };
+/** The fixed principal providers whose `<provider>:<id>` keys a directory's `<name>:<id>` must never collide with.
+ * A record over the union's fixed names, so one added to the contract fails the typecheck until it's listed here. */
+const PRINCIPAL_PROVIDERS: Record<Exclude<PrincipalProvider, `oidc-${string}`>, true> = { "google-chat": true, oidc: true, static: true, none: true };
+
+/** Whether `name` is a principal provider's: a fixed one, or a named OIDC provider's `oidc-<name>`. */
+function isPrincipalProvider(name: string): boolean {
+  return Object.hasOwn(PRINCIPAL_PROVIDERS, name) || name.startsWith("oidc-");
+}
 
 /** The built directory under its name, `"none"` when none is declared, `"failed"` when the declared one can't be used. */
 export function loadDirectory(
@@ -27,7 +32,7 @@ export function loadDirectory(
     );
     return "failed";
   }
-  if (Object.hasOwn(PRINCIPAL_PROVIDERS, plugin.name)) {
+  if (isPrincipalProvider(plugin.name)) {
     ctx.log(`directory "${plugin.name}" not activated: its name is a channel identity's provider, so its people's keys could clash; ${closed}`);
     return "failed";
   }

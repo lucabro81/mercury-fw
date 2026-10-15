@@ -53,7 +53,7 @@ describe("loadDirectory", () => {
   // The person's key is `<directory name>:<id>`: a directory named like a
   // principal provider could hand out keys that belong to someone nobody resolved.
   it("refuses a directory named like a principal provider", () => {
-    for (const name of ["static", "oidc", "google-chat", "none"]) {
+    for (const name of ["static", "oidc", "oidc-company", "google-chat", "none"]) {
       const logs: string[] = [];
       const build = mock(() => directoryValue);
       expect(loadDirectory(plugin(build, { name }), { env: {}, log: (m) => logs.push(m) })).toBe("failed");
