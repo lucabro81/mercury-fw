@@ -1,5 +1,13 @@
 # @mercury-fw/cli
 
+## 0.47.1
+
+### Patch Changes
+
+- e005ca4: - `mfw e2e`: a REPL that exits before its stderr has been read no longer reports "exited with code N:" without the reason.
+  - @mercury-fw/core@0.47.1
+  - @mercury-fw/utils@0.47.1
+
 ## 0.47.0
 
 ### Patch Changes
