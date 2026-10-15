@@ -145,6 +145,37 @@ describe("zitadelDirectory", () => {
   });
 });
 
+// #199: with several OIDC providers on one instance, only ZITADEL's subjects
+// are ZITADEL users. Another issuer's (Google's) are numeric too, and would be
+// looked up as if they were.
+describe("zitadelDirectory: which auth provider is ZITADEL", () => {
+  it("takes the provider named by ZITADEL_AUTH_PROVIDER, and no other OIDC provider's subjects", async () => {
+    const { directory, calls } = directoryWith(
+      { authorizations: roles({ keys: ["dev"] }) },
+      { ZITADEL_PROJECT_ID: "p1", ZITADEL_AUTH_PROVIDER: "oidc-company" },
+    );
+    expect(await directory.resolve({ id: SUB, provider: "oidc" })).toBeNull();
+    expect(calls).toEqual([]);
+    expect(await directory.resolve({ id: SUB, provider: "oidc-company" })).toMatchObject({ id: SUB, roles: ["dev"] });
+  });
+
+  it("throws on a ZITADEL_AUTH_PROVIDER that can't be an OIDC provider, so the instance stays closed", () => {
+    for (const value of ["google-chat", "static", "oidc-", "OIDC", "zitadel"]) {
+      expect(() => directoryWith({}, { ZITADEL_PROJECT_ID: "p1", ZITADEL_AUTH_PROVIDER: value })).toThrow(
+        `ZITADEL_AUTH_PROVIDER is "${value}": it must be oidc or oidc-<name>, the auth provider of this ZITADEL`,
+      );
+    }
+  });
+
+  it("is the unnamed oidc provider when ZITADEL_AUTH_PROVIDER is unset or blank", async () => {
+    for (const env of [{ ZITADEL_PROJECT_ID: "p1" }, { ZITADEL_PROJECT_ID: "p1", ZITADEL_AUTH_PROVIDER: " " }]) {
+      const { directory } = directoryWith({}, env);
+      expect(await directory.resolve({ id: SUB, provider: "oidc" })).toMatchObject({ id: SUB });
+      expect(await directory.resolve({ id: SUB, provider: "oidc-company" })).toBeNull();
+    }
+  });
+});
+
 // #190: a Google Chat sender is the ZITADEL user with their (verified) email,
 // whose Google link is that very sender: checked live, the Chat id is the id
 // ZITADEL stores for the link.

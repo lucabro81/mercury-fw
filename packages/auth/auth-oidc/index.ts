@@ -5,7 +5,10 @@
  *
  * `OIDC_ISSUER` is the issuer's URL, the token's `iss`; `OIDC_AUDIENCE` is the
  * client id the UI calling Mercury is registered with, the token's `aud`, so a
- * token the same issuer minted for another application doesn't get in.
+ * token the same issuer minted for another application doesn't get in. Each
+ * issuer is a provider of its own: `createOidcAuth({ name })` reads
+ * `OIDC_<NAME>_ISSUER`/`OIDC_<NAME>_AUDIENCE` instead, and its people are
+ * `oidc-<name>`, so an instance can accept several issuers.
  *
  * The issuer's keys are found through its discovery document
  * (`/.well-known/openid-configuration`), fetched on the first request and kept
@@ -47,19 +50,35 @@ async function discoverKeys(issuer: string, timeoutMs: number): Promise<JWTVerif
   return createRemoteJWKSet(new URL(doc.jwks_uri));
 }
 
-/** The OIDC provider with its discovery timeout, which only a test changes. */
-export function createOidcAuth({ discoveryTimeoutMs = DISCOVERY_TIMEOUT_MS }: { discoveryTimeoutMs?: number } = {}): AuthPlugin {
+/** What a named provider's name may be: lowercase letters and digits, single hyphens between them. */
+const NAME = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+
+/**
+ * An OIDC provider for one issuer. Unnamed, it's `oidc`, configured by
+ * `OIDC_ISSUER`/`OIDC_AUDIENCE`. With a `name`, it's `oidc-<name>`, configured
+ * by `OIDC_<NAME>_ISSUER`/`OIDC_<NAME>_AUDIENCE` (upper-cased, `-` as `_`), so an
+ * instance can accept several issuers, each with its own people. The discovery
+ * timeout is for tests.
+ */
+export function createOidcAuth({ name, discoveryTimeoutMs = DISCOVERY_TIMEOUT_MS }: { name?: string; discoveryTimeoutMs?: number } = {}): AuthPlugin {
+  if (name !== undefined && !NAME.test(name)) {
+    throw new Error(`"${name}" can't name an OIDC provider: use lowercase letters, digits and single hyphens`);
+  }
+  const provider = name === undefined ? "oidc" : (`oidc-${name}` as const);
+  const prefix = name === undefined ? "OIDC" : `OIDC_${name.toUpperCase().replaceAll("-", "_")}`;
+  const ISSUER = `${prefix}_ISSUER`;
+  const AUDIENCE = `${prefix}_AUDIENCE`;
   return {
     // The contract this provider is written for, as a literal: importing
     // AUTH_API_VERSION would report whichever contract is installed.
     apiVersion: 1,
-    name: "oidc",
+    name: provider,
     build: (ctx) => {
-      const issuer = ctx.env.OIDC_ISSUER?.trim();
-      const audience = ctx.env.OIDC_AUDIENCE?.trim();
-      if (!issuer) throw new Error("OIDC_ISSUER is missing");
-      if (!audience) throw new Error("OIDC_AUDIENCE is missing");
-      if (!URL.canParse(issuer)) throw new Error("OIDC_ISSUER isn't a URL");
+      const issuer = ctx.env[ISSUER]?.trim();
+      const audience = ctx.env[AUDIENCE]?.trim();
+      if (!issuer) throw new Error(`${ISSUER} is missing`);
+      if (!audience) throw new Error(`${AUDIENCE} is missing`);
+      if (!URL.canParse(issuer)) throw new Error(`${ISSUER} isn't a URL`);
 
       let keys: Promise<JWTVerifyGetKey> | undefined;
       /** The issuer's keys, discovering them on first use; a failure is forgotten so the next request tries again. */
@@ -86,7 +105,7 @@ export function createOidcAuth({ discoveryTimeoutMs = DISCOVERY_TIMEOUT_MS }: { 
         try {
           const { payload } = await jwtVerify(token, jwks, { issuer, audience, requiredClaims: ["exp"] });
           if (typeof payload.sub !== "string" || payload.sub === "") return null;
-          const principal: Principal = { id: payload.sub, provider: "oidc", claims: { ...payload } };
+          const principal: Principal = { id: payload.sub, provider, claims: { ...payload } };
           const displayName = displayNameOf(payload);
           if (displayName !== undefined) principal.displayName = displayName;
           return principal;

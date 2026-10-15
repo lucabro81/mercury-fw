@@ -66,8 +66,13 @@ export const PENDING_CONFIRMATION_NOTE = "Azione in sospeso, in attesa di confer
 /** Sentinel the model returns for "not addressed to me" in a multi-person space (see `buildSystemPrompt`'s multiUser block). A multi-user channel suppresses it in `finalize`. */
 export const NO_REPLY = "NO_REPLY";
 
-/** Who vouched for a principal's identity: the chat platform itself, an auth provider (`oidc`, `static`), or `none` = nobody did (the terminal): nothing identity-dependent treats it as a real person. */
-export type PrincipalProvider = "google-chat" | "oidc" | "static" | "none";
+/**
+ * Who vouched for a principal's identity: the chat platform itself, an auth
+ * provider (`oidc`, a named OIDC provider `oidc-<name>`, `static`), or `none` =
+ * nobody did (the terminal): nothing identity-dependent treats it as a real
+ * person. Each provider has its own, so two providers' people never share a key.
+ */
+export type PrincipalProvider = "google-chat" | "oidc" | `oidc-${string}` | "static" | "none";
 
 /** Who is talking, as the channel knows them. The channel builds it; the core
  * turns it into the person (see `Directory`) every per-person id derives from. */
@@ -163,11 +168,12 @@ export type Authenticate = (req: Request) => Promise<Principal | null>;
 export const AUTH_API_VERSION = 1;
 
 /**
- * An auth provider, declared as `auth` in `mercury.config.ts`: it tells a
- * channel whose callers carry their own credentials (HTTP) who is calling.
- * `build` reads its own config from `env` and throws when it's missing, so a
- * misconfigured provider leaves the channel without `authenticate` (closed),
- * never open.
+ * An auth provider, declared in `auth` in `mercury.config.ts` (one, or several
+ * tried in order): it tells a channel whose callers carry their own
+ * credentials (HTTP) who is calling. `build` reads its own config from `env`
+ * and throws when it's missing, so a misconfigured provider is left out
+ * (closed), never open. `name` is unique on an instance, and the principals a
+ * provider returns carry it as their `provider`.
  */
 export type AuthPlugin = {
   apiVersion: number;
