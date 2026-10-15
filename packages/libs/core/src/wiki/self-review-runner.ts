@@ -58,7 +58,7 @@ const SHARED_BOUNDARIES =
   "If one says the doc changed since you read it, read it again and redo your edit on the current version.";
 
 const RAW_TRIAGE_SYSTEM =
-  "You are performing Mercury's periodic wiki self-review — the raw/ triage pass. For each entry " +
+  "You are performing the wiki's periodic self-review — the raw/ triage pass. For each entry " +
   "in raw/, read it and decide: merge its content into an existing curated doc, promote it into a " +
   "new curated doc, or discard it (already superseded, duplicate, or simply not wiki-worthy — one " +
   "bucket, not three). Then delete it from raw/ once resolved. If you create or meaningfully change " +
@@ -66,13 +66,13 @@ const RAW_TRIAGE_SYSTEM =
   SHARED_BOUNDARIES;
 
 const INDEX_AND_ORPHAN_SYSTEM =
-  "You are performing Mercury's periodic wiki self-review — the index.md and orphan-page pass. For " +
+  "You are performing the wiki's periodic self-review — the index.md and orphan-page pass. For " +
   "each orphaned curated doc listed below, decide whether it needs an index.md entry " +
   "(update_index_entry), a cross-link from a related doc, or both. " +
   SHARED_BOUNDARIES;
 
 const CONTRADICTION_CHECK_SYSTEM =
-  "You are performing Mercury's periodic wiki self-review — the contradiction and cross-link check. " +
+  "You are performing the wiki's periodic self-review — the contradiction and cross-link check. " +
   "Read through curated/ and look for direct contradictions between documents, or clearly-related " +
   "documents missing a cross-link between them. Fix what you're confident about; leave the rest — " +
   "this is best-effort, not exhaustive. If you delete a doc as a resolved duplicate, call " +

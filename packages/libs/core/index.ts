@@ -15,9 +15,12 @@
  * - `DEFAULT_PERSONA_IDENTITY`/`DEFAULT_PERSONA_TONE` — the persona an instance
  *   gets when its config sets none; the scaffolder writes them as a new app's
  *   starting persona.
+ * - `assistantNameOf` — the assistant's name from a persona, refusing one that
+ *   can't stand in a prompt; the scaffolder checks a new app's name with it.
  */
 export { composeMercury, type ComposedApp, type ConfirmDeps } from "./src/compose.ts";
 export { loadChannels, type LoadedChannel } from "./src/router/channel-loader.ts";
 export { createTerminalProvider } from "./src/router/terminal-provider.ts";
 export { defineMercuryConfig, type MercuryConfig, type MercuryAccess } from "./src/config/define-config.ts";
 export { DEFAULT_PERSONA_IDENTITY, DEFAULT_PERSONA_TONE, type Persona } from "./src/session/system-prompt.ts";
+export { assistantNameOf } from "./src/session/assistant-name.ts";

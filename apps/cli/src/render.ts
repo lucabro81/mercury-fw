@@ -8,7 +8,7 @@
  * written in catalog order, whatever order they were chosen in; the auth
  * provider, when there is one, after the channels.
  */
-import { DEFAULT_PERSONA_TONE } from "@mercury-fw/core";
+import { DEFAULT_PERSONA_IDENTITY, DEFAULT_PERSONA_TONE, assistantNameOf } from "@mercury-fw/core";
 import { CATALOG, type CatalogEntry, type EnvVar } from "./catalog.ts";
 import indexTs from "../template/src/index.ts.tpl" with { type: "text" };
 import replTs from "../template/src/repl.ts.tpl" with { type: "text" };
@@ -79,12 +79,11 @@ export function renderApp(input: RenderInput): Map<string, string> {
     ["README.md", renderReadme(input.name, channels, auth, tools, directory)],
     ["docker-compose.yml", renderCompose(input.name, channels.some((c) => c.id === "http"))],
     ["markdown.d.ts", markdownDts],
-    ["mercury.config.ts", renderConfig(channels, auth, tools, directory)],
+    ["mercury.config.ts", renderConfig(assistantName, channels, auth, tools, directory)],
     ["package.json", renderPackageJson(input.name, channels, auth, tools, input.versions, directory)],
-    ["persona/identity.md", `You are ${assistantName}, ${input.role.trim().replace(/\.+$/, "")}.\n`],
-    // A replacer function, not a string: in a replacement string "$&" and the
-    // like are patterns, and the name must land verbatim.
-    ["persona/tone.md", `${DEFAULT_PERSONA_TONE.replaceAll("Mercury", () => assistantName)}\n`],
+    // The name is persona.name in the config; the persona files refer to it.
+    ["persona/identity.md", `You are {{assistant}}, ${input.role.trim().replace(/\.+$/, "")}.\n`],
+    ["persona/tone.md", `${DEFAULT_PERSONA_TONE}\n`],
     ["src/index.ts", indexTs],
     ["src/repl.ts", replTs],
     ["tsconfig.json", tsconfigJson],
@@ -115,6 +114,8 @@ function validate(input: RenderInput): void {
   if (/[\r\n]/.test(input.assistantName) || /[\r\n]/.test(input.role)) {
     throw new Error("The assistant name and role must each be one line");
   }
+  // What the app would refuse at startup.
+  assistantNameOf({ name: input.assistantName });
   const selection =
     selectionError(input.channels, input.plugins, input.auth, input.directory) ?? pairingError(input.channels, input.auth);
   if (selection !== undefined) {
@@ -164,6 +165,7 @@ function selected(kind: CatalogEntry["kind"], ids: string[]): CatalogEntry[] {
  * any, then the config with each plugin (wrapped in the formatter when it has
  * starting rules) and channel. */
 function renderConfig(
+  assistantName: string,
   channels: CatalogEntry[],
   auth: CatalogEntry | undefined,
   tools: CatalogEntry[],
@@ -197,7 +199,7 @@ function renderConfig(
     ...imports,
     "",
     `${helpers}export default defineMercuryConfig({`,
-    "  persona: { identity, tone },",
+    `  persona: { name: ${JSON.stringify(assistantName)}, identity, tone },`,
     plugins,
     channelList,
     ...(auth ? [`  auth: ${auth.exportName},`] : []),

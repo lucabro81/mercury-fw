@@ -531,6 +531,17 @@ describe("handleLoginCallback", () => {
     expect(await res.text()).toBe(`The login didn't happen (access_deniedbxb${"y".repeat(48)}). Ask Mercury again for a new link.`);
   });
 
+  // #222: the page names the assistant as the app calls it, never Mercury.
+  it("names the assistant as the app does", async () => {
+    const complete = async () => ({ ok: true as const, service: "jira" });
+    expect(await (await handleLoginCallback(callback("?error=access_denied"), { complete, assistantName: "Poc" })).text()).toBe(
+      "The login didn't happen (access_denied). Ask Poc again for a new link.",
+    );
+    expect(await (await handleLoginCallback(callback("?state=st"), { complete, assistantName: "Poc" })).text()).toBe(
+      "The login link came back without a code or a state. Ask Poc again for a new link.",
+    );
+  });
+
   it("reports a login that didn't go through", async () => {
     const res = await handleLoginCallback(callback("?code=c&state=st"), {
       complete: async () => ({ ok: false, error: "This login link has expired or was already used: ask Mercury again for a new one." }),

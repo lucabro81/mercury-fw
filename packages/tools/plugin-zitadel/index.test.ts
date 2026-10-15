@@ -117,3 +117,17 @@ describe("zitadelPlugin", () => {
     ]);
   });
 });
+
+// #222: the model took "Mercury" for its own name because the texts it read used
+// it; the assistant's name is the app's, and the system is "the system".
+describe("zitadelPlugin's texts for the model", () => {
+  it("never name Mercury", () => {
+    const c = zitadelPlugin.build!(buildCtx);
+    const texts = [
+      zitadelPlugin.systemPromptFragment ?? "",
+      ...(zitadelPlugin.skills ?? []).flatMap((s) => [s.description, s.body]),
+      ...Object.values(c.sessionTools!(sctx(null), c.postProcess)).map((t) => (typeof t.description === "string" ? t.description : "")),
+    ];
+    for (const text of texts) expect(text).not.toContain("Mercury");
+  });
+});

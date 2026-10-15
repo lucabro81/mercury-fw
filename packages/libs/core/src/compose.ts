@@ -29,6 +29,7 @@ import { createSemanticFactExtractor } from "./session/semantic-fact-extractor.t
 import { buildContextPrimer } from "./session/context-primer.ts";
 import { resumeConversation, resumeBudget, parseResumeMaxChars } from "./session/resume.ts";
 import { buildSystemPrompts } from "./session/system-prompt.ts";
+import { assistantNameOf, skillsWithAssistantName, toolsWithAssistantName } from "./session/assistant-name.ts";
 import { createSessionLock } from "./router/session-lock.ts";
 import { createSessionCapture } from "./session/session-capture.ts";
 import { createTurnRunner } from "./router/turn-runner.ts";
@@ -76,7 +77,7 @@ import { createPeople, type TurnWho } from "./identity/people.ts";
 import { createLinkStore, linksPath } from "./identity/links.ts";
 import { createLinking } from "./identity/linking.ts";
 import { offeringFor, type Offering } from "./plugins/offering.ts";
-import { AS_MERCURY_SUFFIX } from "./plugins/act-as-mercury.ts";
+import { AS_SELF_SUFFIX } from "./plugins/act-as-self.ts";
 import { buildOfferedTools } from "./plugins/offered-tools.ts";
 import { migrateMemoryToUserKeys, migrateVaultToUserAreas } from "./identity/migrate-layout.ts";
 import { runRawTriagePass, runIndexAndOrphanPass, runContradictionCheckPass } from "./wiki/self-review-runner.ts";
@@ -132,6 +133,10 @@ function requireEnv(name: string): string {
  * app) reads its own `mercury.config.ts` and passes it in. See {@link ComposedApp}.
  */
 export async function composeMercury(config: MercuryConfig): Promise<ComposedApp> {
+  // What every text calls the assistant: checked first, so a persona name that
+  // can't stand in a prompt stops the app before anything starts.
+  const assistantName = assistantNameOf(config.persona);
+
   // The model is constructed up front, before the plugins load and the system
   // prompt is built: a plugin's post-turn guard can be model-backed (Jira's
   // issue-list corrector is), and the system prompt is assembled from the
@@ -167,6 +172,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
 
   const loadedPlugins = await loadPlugins(plugins, {
     model,
+    assistantName,
     env: process.env,
     log: (msg) => console.error(msg),
   });
@@ -176,7 +182,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   // acting as Mercury.
   const toolStatusDescribers: Record<string, (input: unknown) => string> = { ...loadedPlugins.toolStatusDescribers };
   for (const [name, describe] of Object.entries(loadedPlugins.toolStatusDescribers)) {
-    toolStatusDescribers[`${name}${AS_MERCURY_SUFFIX}`] = describe;
+    toolStatusDescribers[`${name}${AS_SELF_SUFFIX}`] = describe;
   }
 
   // Who a principal is to Mercury: an account linked to another is its
@@ -193,7 +199,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   });
 
   // Linking a second account to a person, by a code (see identity/linking.ts).
-  const linking = createLinking({ people, links: accountLinks });
+  const linking = createLinking({ people, links: accountLinks, assistantName });
 
   // What a person is offered of the loaded plugins (see plugins/offering.ts).
   const offeringOf = (who: TurnWho): Offering =>
@@ -216,7 +222,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
 
   // People's pending logins to the plugins' services, finished by the channel
   // that receives the provider's redirect.
-  const personLogins = createPersonLogins({ log: (msg) => console.error(msg) });
+  const personLogins = createPersonLogins({ log: (msg) => console.error(msg), assistantName });
 
   const histories = new Map<string, SessionHistory>();
   /**
@@ -445,9 +451,11 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
     Object.assign(sessionTools, verbatimProvider.sessionTools!({ sessionKey, userId: key }));
     // read_skill only exists when a plugin offered contributed at least one skill.
     if (offering.skills.length > 0) {
-      Object.assign(sessionTools, createReadSkillTool(offering.skills));
+      Object.assign(sessionTools, createReadSkillTool(skillsWithAssistantName(offering.skills, assistantName)));
     }
-    return onToolStart ? withToolStartHook(sessionTools, onToolStart, toolStatusDescribers, onToolFinish) : sessionTools;
+    // Every description, the plugins' included, names the assistant as the app does.
+    const named = toolsWithAssistantName(sessionTools, assistantName);
+    return onToolStart ? withToolStartHook(named, onToolStart, toolStatusDescribers, onToolFinish) : named;
   }
 
   const confirmationStore = createConfirmationStore();
@@ -565,6 +573,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
     }),
     logins: { accept: personLogins.accept, complete: personLogins.complete },
     linking: { start: linking.start },
+    assistantName,
   };
 
   /** Starts the Layer-3 idle-capture and self-review crons; returns one stopper. */

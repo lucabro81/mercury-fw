@@ -25,7 +25,7 @@ const jiraIssueLine = (issue: JiraDisplays["issue-list"]) =>
   `${issue.key} ${issue.status ? `[${issue.status}] ` : ""}${issue.summary}\n${issue.url}`;
 
 export default defineMercuryConfig({
-  persona: { identity, tone },
+  persona: { name: "Mercury", identity, tone },
   plugins: [
     formatterPlugin(
       jiraPlugin,

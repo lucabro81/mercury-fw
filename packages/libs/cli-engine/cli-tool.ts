@@ -3,7 +3,7 @@
  * command-string execution model: the model writes an entire CLI
  * invocation as one free-text string (see `src/tools/command-parser.ts`
  * for how that string becomes a binary + argv), and this module validates
- * it — first that the binary is one this Mercury instance actually has a
+ * it — first that the binary is one this instance actually has a
  * config for, then that the argv shape matches that binary's own
  * allowed-prefix allowlist — before ever executing anything.
  *
@@ -205,7 +205,7 @@ export function createCliTool(
         return {
           ok: false,
           error:
-            "--user is not allowed: Mercury decides whose account a command runs as, never the command itself. Run it again without --user.",
+            "--user is not allowed: this instance decides whose account a command runs as, never the command itself. Run it again without --user.",
         };
       }
 
@@ -214,7 +214,7 @@ export function createCliTool(
         const known = Object.keys(configs).join(", ") || "(none configured)";
         return {
           ok: false,
-          error: `unknown or disabled CLI "${parsed.binary}" on this Mercury instance. Available: ${known}.`,
+          error: `unknown or disabled CLI "${parsed.binary}" on this instance. Available: ${known}.`,
         };
       }
 
@@ -225,7 +225,7 @@ export function createCliTool(
         );
         return {
           ok: false,
-          error: `not permitted on this Mercury instance. Valid commands: ${validPrefixes}. If "${parsed.args.join(" ")}" doesn't match one of these, it's not a recognized command shape — try again with the right prefix, or run --help to check.`,
+          error: `not permitted on this instance. Valid commands: ${validPrefixes}. If "${parsed.args.join(" ")}" doesn't match one of these, it's not a recognized command shape — try again with the right prefix, or run --help to check.`,
         };
       }
       if (match.kind === "confirm-required") {

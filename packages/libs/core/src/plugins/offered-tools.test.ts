@@ -3,7 +3,7 @@ import type { Tool } from "ai";
 import type { SessionToolContext } from "@mercury-fw/plugin-types";
 import type { LoadedPlugin } from "./plugin-loader.ts";
 import { ACT_AS_SELF, offeringFor } from "./offering.ts";
-import { AS_MERCURY_NOTE } from "./act-as-mercury.ts";
+import { AS_SELF_NOTE } from "./act-as-self.ts";
 import { buildOfferedTools } from "./offered-tools.ts";
 
 /** A plugin whose one tool records the context it was built with. */
@@ -52,17 +52,17 @@ describe("buildOfferedTools", () => {
 
   test("with the permission: the variant built with no person, renamed and described; the Mercury plugin built with no person", () => {
     const { tools, built } = setup([ACT_AS_SELF]);
-    expect(Object.keys(tools)).toEqual(["jiraCommand", "jiraCommandAsMercury", "adminCommand"]);
+    expect(Object.keys(tools)).toEqual(["jiraCommand", "jiraCommandAsSelf", "adminCommand"]);
     expect(built.map((c) => c.person)).toEqual([{ key: "people:alice" }, null, null]);
     expect(tools.jiraCommand?.description).toBe("jira tool");
-    expect(tools.jiraCommandAsMercury?.description).toBe(`${AS_MERCURY_NOTE} jira tool`);
-    expect(tools.adminCommand?.description).toBe(`${AS_MERCURY_NOTE} admin tool`);
+    expect(tools.jiraCommandAsSelf?.description).toBe(`${AS_SELF_NOTE} jira tool`);
+    expect(tools.adminCommand?.description).toBe(`${AS_SELF_NOTE} admin tool`);
   });
 
   test("a call made as Mercury for a person is logged with who asked; one made as the person isn't", async () => {
     const { tools, logs } = setup([ACT_AS_SELF]);
     await tools.jiraCommand!.execute!({ command: "jira x" } as never, {} as never);
-    await tools.jiraCommandAsMercury!.execute!({ command: "jira y" } as never, {} as never);
+    await tools.jiraCommandAsSelf!.execute!({ command: "jira y" } as never, {} as never);
     await tools.adminCommand!.execute!({ command: "admin z" } as never, {} as never);
     expect(logs).toEqual([
       '[act-as-self] people:alice ran jiraCommand of plugin "jira" as Mercury: {"command":"jira y"}',

@@ -13,7 +13,8 @@ bun create mercury-agent my-agent
 - `defineMercuryConfig(config)` types the app's `mercury.config.ts`: `plugins`, `channels`, `auth` (the provider that tells a channel like HTTP who is calling, or a list of them tried in order, the first that recognizes the caller deciding; each provider's people are its own, so the same person coming in through two providers is two people; HTTP doesn't start without one), `directory` (who that is to Mercury, with their roles; a closed instance for anyone it doesn't know), `access` (whether unknown people are let in, what they're told, and which roles a plugin is restricted to), `persona`.
 - `composeMercury(config)` builds the agent from that config and the environment, and returns what the entrypoints start: `handleTurn`, the declared channels with their runtime, and the background jobs (`startCrons`).
 - `loadChannels(channels, { runtime })` turns the declared channels into started providers, and `createTerminalProvider(...)` opens the dev REPL on `handleTurn`.
-- `DEFAULT_PERSONA_IDENTITY`, `DEFAULT_PERSONA_TONE` are the persona an app gets when its config sets none.
+- `DEFAULT_PERSONA_IDENTITY`, `DEFAULT_PERSONA_TONE` are the persona an app gets when its config sets none, both referring to the assistant's name as `{{assistant}}`.
+- `assistantNameOf(persona)` is the assistant's name (`persona.name`, Mercury by default), refusing one that can't stand in a prompt: blank, longer than 40 characters, on more than one line. `composeMercury` refuses to start on such a name.
 
 A scaffolded app's `src/index.ts` (the service) and `src/repl.ts` (the REPL) are the reference for using them.
 

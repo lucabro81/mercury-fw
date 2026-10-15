@@ -3,13 +3,13 @@
  * `offering.ts`): each plugin's own tool factory, invoked for the person when
  * it acts as them, with no person when it acts as Mercury. Acting as Mercury
  * for someone (not the operator), the tools say so and log who asked (see
- * `act-as-mercury.ts`); only a tool acting as the person can start their login.
+ * `act-as-self.ts`); only a tool acting as the person can start their login.
  */
 import type { Tool } from "ai";
 import type { LoginRequired, PersonLogin, SessionToolContext } from "@mercury-fw/plugin-types";
 import type { TurnWho } from "../identity/people.ts";
 import type { Offering } from "./offering.ts";
-import { actingAsMercury } from "./act-as-mercury.ts";
+import { actingAsSelf } from "./act-as-self.ts";
 
 export type OfferedToolsDeps = {
   /** The session-scoped capabilities every tool gets, bound to this turn. */
@@ -37,7 +37,7 @@ export function buildOfferedTools(offering: Offering, who: TurnWho, deps: Offere
     Object.assign(
       tools,
       entry.as === "mercury" && !who.operator
-        ? actingAsMercury(built, { plugin: bundle.name, personKey: who.person.key, rename: entry.variant, log: deps.log })
+        ? actingAsSelf(built, { plugin: bundle.name, personKey: who.person.key, rename: entry.variant, log: deps.log })
         : built,
     );
   }

@@ -71,3 +71,17 @@ describe("bitbucketPlugin", () => {
     expect(c.toolStatusDescribers!.bitbucketCommand!({ command: "bitbucket pr list" })).toBe("esecuzione bitbucket pr list");
   });
 });
+
+// #222: the model took "Mercury" for its own name because the texts it read used
+// it; the assistant's name is the app's, and the system is "the system".
+describe("bitbucketPlugin's texts for the model", () => {
+  it("never name Mercury", () => {
+    const c = bitbucketPlugin.build!({ model: {} as never, env: {}, log: () => {} });
+    const texts = [
+      bitbucketPlugin.systemPromptFragment ?? "",
+      ...(bitbucketPlugin.skills ?? []).flatMap((s) => [s.description, s.body]),
+      ...Object.values(c.sessionTools!(sctx, c.postProcess)).map((t) => (typeof t.description === "string" ? t.description : "")),
+    ];
+    for (const text of texts) expect(text).not.toContain("Mercury");
+  });
+});

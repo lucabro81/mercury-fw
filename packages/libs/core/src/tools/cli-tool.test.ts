@@ -410,7 +410,8 @@ describe("createCliTool", () => {
     expect(called).toBe(false);
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.error).toContain("not permitted");
+      // #222: the instance decides, not the assistant: no name, Mercury least of all.
+      expect(result.error).toStartWith("not permitted on this instance.");
       expect(result.error).toContain("issue search");
       expect(result.error).toContain("issue get");
       expect(result.error).toContain("doctor");
@@ -444,7 +445,7 @@ describe("createCliTool", () => {
         expect(result).toEqual({
           ok: false,
           error:
-            "--user is not allowed: Mercury decides whose account a command runs as, never the command itself. Run it again without --user.",
+            "--user is not allowed: this instance decides whose account a command runs as, never the command itself. Run it again without --user.",
         });
       });
     }
@@ -688,6 +689,15 @@ describe("createCliTool", () => {
   // The "not permitted" message must only advertise prefixes that will
   // actually run — otherwise the model would keep retrying a shape that's
   // recognized but always rejected for a different reason.
+  // #222: the instance has the CLIs, not the assistant: the error names neither.
+  it("refuses a CLI the instance doesn't have, saying which it has", async () => {
+    let called = false;
+    const { runCommand } = createCliTool(async () => ((called = true), { ok: true, data: {} }), { jira: jiraConfig }, defaultOpts());
+    const result = (await runCommand.execute({ command: "bitbucket repo list" }, {} as never)) as CliResult;
+    expect(called).toBe(false);
+    expect(result).toEqual({ ok: false, error: 'unknown or disabled CLI "bitbucket" on this instance. Available: jira.' });
+  });
+
   it("excludes confirm-gated prefixes from the 'not permitted' message's valid-commands list", async () => {
     const runCliFn = async (): Promise<CliResult> => ({ ok: true, data: {} });
     const { runCommand } = createCliTool(runCliFn, { jira: jiraConfig }, defaultOpts());

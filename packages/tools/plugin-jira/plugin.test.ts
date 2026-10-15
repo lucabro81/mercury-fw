@@ -147,3 +147,17 @@ describe("jiraPlugin", () => {
     }
   });
 });
+
+// #222: the model took "Mercury" for its own name because the texts it read used
+// it; the assistant's name is the app's, and the system is "the system".
+describe("jiraPlugin's texts for the model", () => {
+  it("never name Mercury", () => {
+    const c = jiraPlugin.build!({ model: MODEL, env: ENV, log: noLog });
+    const texts = [
+      jiraPlugin.systemPromptFragment ?? "",
+      ...(jiraPlugin.skills ?? []).flatMap((s) => [s.description, s.body]),
+      ...Object.values(c.sessionTools!(sctx, c.postProcess)).map((t) => (typeof t.description === "string" ? t.description : "")),
+    ];
+    for (const text of texts) expect(text).not.toContain("Mercury");
+  });
+});

@@ -50,9 +50,24 @@ describe("createPersonLogins", () => {
     expect(await logins.require("jira", f.login, "static:alice")).toEqual({
       ok: false,
       error:
-        "The user isn't logged in to jira, and nothing on this Mercury instance can take a login (the HTTP channel does once HTTP_SURFACE_PUBLIC_URL is set). Tell the user.",
+        "The user isn't logged in to jira, and nothing on this instance can take a login (the HTTP channel does once HTTP_SURFACE_PUBLIC_URL is set). Tell the user.",
     });
     expect(f.calls).toEqual([]);
+  });
+
+  // #222: what people read names the assistant as the app calls it, never Mercury.
+  it("tells people to ask the assistant by its own name", async () => {
+    const logins = createPersonLogins({ assistantName: "Poc", log: () => {} });
+    logins.accept("https://cb");
+    expect(await logins.complete("forged", "code")).toEqual({
+      ok: false,
+      error: "This login link has expired or was already used: ask Poc again for a new one.",
+    });
+    await logins.require("jira", fakeLogin({ completeError: "boom" }).login, "static:alice");
+    expect(await logins.complete("st-1", "c")).toEqual({
+      ok: false,
+      error: "The jira login didn't go through. Ask Poc again for a new link.",
+    });
   });
 
   it("a login that can't start is an error for the model, with the reason", async () => {

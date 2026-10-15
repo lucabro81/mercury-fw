@@ -146,7 +146,7 @@ packages/libs/core/
     ├── session/               # Layer 1 history + summarizer + agent-turn loop
     ├── config/               # defineMercuryConfig + the MercuryConfig contract (plugins, channels, persona)
     ├── tools/                 # CLI executor + command parser/allowlist (cli-tool.ts) + config schema/loader/version-check
-    ├── plugins/               # generic fail-soft tool-plugin loader (plugin-loader.ts), what each person is offered (offering.ts: act-as-self, access.plugins) and the tools acting as Mercury for them (act-as-mercury.ts), the manifest
+    ├── plugins/               # generic fail-soft tool-plugin loader (plugin-loader.ts), what each person is offered (offering.ts: act-as-self, access.plugins) and the tools acting as Mercury for them (act-as-self.ts), the manifest
     ├── router/
     │   ├── turn-runner.ts      # shared per-turn driver every provider funnels through, one turn at a time per session
     │   ├── session-lock.ts     # the per-session queue the turn runner and the idle sweep share

@@ -352,18 +352,23 @@ function loginPage(text: string, status: number): Response {
  * in, with `code` and `state` (or `error`, when they refused). Public: the
  * person's browser carries no token here, and the single-use `state` the core
  * issued for them is what ties the request to their login. Answers with a
- * plain page telling them how it went.
+ * plain page telling them how it went, naming the assistant as the app does
+ * (`Mercury` from an older core that doesn't say).
  */
-export async function handleLoginCallback(req: Request, deps: { complete: CompleteLoginFn }): Promise<Response> {
+export async function handleLoginCallback(
+  req: Request,
+  deps: { complete: CompleteLoginFn; assistantName?: string },
+): Promise<Response> {
+  const assistant = deps.assistantName ?? "Mercury";
   const params = new URL(req.url).searchParams;
   const error = params.get("error");
   if (error !== null) {
     const reason = error.replace(/[^A-Za-z0-9_.-]/g, "").slice(0, 64);
-    return loginPage(`The login didn't happen (${reason}). Ask Mercury again for a new link.`, 400);
+    return loginPage(`The login didn't happen (${reason}). Ask ${assistant} again for a new link.`, 400);
   }
   const code = params.get("code");
   const state = params.get("state");
-  if (!code || !state) return loginPage("The login link came back without a code or a state. Ask Mercury again for a new link.", 400);
+  if (!code || !state) return loginPage(`The login link came back without a code or a state. Ask ${assistant} again for a new link.`, 400);
   const outcome = await deps.complete(state, code);
   return outcome.ok
     ? loginPage(`You're logged in to ${outcome.service}. Go back to the conversation and ask again.`, 200)
@@ -371,8 +376,15 @@ export async function handleLoginCallback(req: Request, deps: { complete: Comple
 }
 
 /** The login callback route, mounted when the server can complete logins. */
-function loginRoutes(complete: CompleteLoginFn): Record<string, { GET: (req: Request) => Promise<Response> }> {
-  return { "/login/callback": { GET: (req) => handleLoginCallback(req, { complete }) } };
+function loginRoutes(
+  complete: CompleteLoginFn,
+  assistantName: string | undefined,
+): Record<string, { GET: (req: Request) => Promise<Response> }> {
+  return {
+    "/login/callback": {
+      GET: (req) => handleLoginCallback(req, { complete, ...(assistantName === undefined ? {} : { assistantName }) }),
+    },
+  };
 }
 
 /** A single read route: its `GET` handler plus the shared `OPTIONS` preflight. */
@@ -471,6 +483,8 @@ export type HttpServerDeps = TurnRequestDeps & {
   completeLogin?: CompleteLoginFn;
   /** Linking another account to the caller; `/link` is mounted only with it. */
   linking?: ChannelLinking;
+  /** What the pages people read call the assistant. */
+  assistantName?: string;
 };
 
 /** Starts the HTTP surface: `POST /turn` (4a) plus the read-only routes (4b)
@@ -502,7 +516,7 @@ export function startHttpServer(deps: HttpServerDeps): ReturnType<typeof Bun.ser
       },
       "/openapi.yaml": { GET: () => openApiResponse(origin), OPTIONS: () => preflight(origin) },
       ...(deps.reads ? readRoutes(deps.reads, deps.authenticate, origin, deps.admit) : {}),
-      ...(deps.completeLogin ? loginRoutes(deps.completeLogin) : {}),
+      ...(deps.completeLogin ? loginRoutes(deps.completeLogin, deps.assistantName) : {}),
       ...(deps.linking ? linkRoutes({ ...deps, start: deps.linking.start, corsOrigin: origin }) : {}),
     },
     error: (err) =>

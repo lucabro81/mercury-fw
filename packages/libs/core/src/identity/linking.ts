@@ -23,6 +23,7 @@ import type { Principal } from "@mercury-fw/channel-types";
 import type { LinkOwner, LinkStore } from "./links.ts";
 import { OPERATOR_PRINCIPAL, type People } from "./people.ts";
 import { userKey } from "./user-key.ts";
+import { DEFAULT_ASSISTANT_NAME } from "../session/assistant-name.ts";
 
 const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
 const CODE = /^[A-Za-z0-9]{4}-[A-Za-z0-9]{4}-[A-Za-z0-9]{4}$/;
@@ -45,7 +46,15 @@ const TERMINAL = "The terminal can't link accounts.";
 
 type Pending = { owner: LinkOwner; ownerName: string; expiresAt: number; redeemedBy?: string };
 
-export function createLinking(deps: { people: People; links: LinkStore; now?: () => number; log?: (msg: string) => void }) {
+export function createLinking(deps: {
+  people: People;
+  links: LinkStore;
+  now?: () => number;
+  log?: (msg: string) => void;
+  /** What the replies call the assistant. */
+  assistantName?: string;
+}) {
+  const assistantName = deps.assistantName ?? DEFAULT_ASSISTANT_NAME;
   const now = deps.now ?? Date.now;
   const log = deps.log ?? ((msg: string) => console.error(msg));
   const codes = new Map<string, Pending>();
@@ -92,7 +101,7 @@ export function createLinking(deps: { people: People; links: LinkStore; now?: ()
       }
       if (pending.redeemedBy !== identity) {
         pending.redeemedBy = identity;
-        return `This will link this account to ${pending.ownerName}: from then on Mercury treats them as one person, with ${pending.ownerName}'s private area and roles. Send the same code again to confirm.`;
+        return `This will link this account to ${pending.ownerName}: from then on ${assistantName} treats them as one person, with ${pending.ownerName}'s private area and roles. Send the same code again to confirm.`;
       }
       codes.delete(code);
 
