@@ -23,6 +23,7 @@ import type { PostTurnGuard } from "@mercury-fw/plugin-types";
 export type { PostTurnGuard };
 import type { SessionHistory } from "../session/history.ts";
 import { recordStep } from "../session/tool-log-buffer.ts";
+import { shownText } from "../memory/verbatim-archive-store.ts";
 import type { HandleTurn, InboundTurn, TurnSink } from "./provider.ts";
 import { createPeople, type Identified, type TurnWho } from "../identity/people.ts";
 export type { TurnWho };
@@ -73,14 +74,16 @@ export type TurnRunnerDeps = {
    * Wired by the composition root to the verbatim-archive provider; absent
    * on an instance with no such provider. Only called for turns whose person
    * a provider vouched for (the archive is per-person, like Layer-3 capture),
-   * with `userId` set to the space-independent user key, and only ever with
-   * the model's own answer text — never the appended `present` displays.
+   * with `userId` set to the space-independent user key. `content` is only
+   * ever the model's own answer text; the `present` displays the turn showed
+   * after it come as `displays`, never inside it.
    */
   captureVerbatim?: (msg: {
     sessionKey: string;
     userId: string;
     role: "user" | "assistant";
     content: string;
+    displays?: string[];
   }) => Promise<void>;
   processToolCorrections: (steps: StepInfo[], onToolStart: TurnSink["onToolStart"], onToolFinish: TurnSink["onToolFinish"]) => Promise<void>;
   logStep: (prefix: string, step: StepInfo) => void;
@@ -172,6 +175,8 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
     // display is appended) — what the verbatim archive stores as the
     // assistant's message. Assigned once the turn resolves successfully.
     let assistantText = "";
+    // What the model surfaced with `present` this turn, archived next to it.
+    let surfacedDisplays: string[] = [];
 
     try {
       // Inside the try, not before it: a failure building the history
@@ -234,8 +239,8 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
       // Append only what the model chose to `present` this turn — never the
       // whole set of tool-produced displays. Appending (not replacing) keeps
       // the already-streamed prefix intact, so terminal.ts's safe-slice holds.
-      const surfaced = deps.takeSurfacedDisplays?.(turn.sessionKey) ?? [];
-      const finalText = [correctedText, ...surfaced].filter((part) => part !== "").join("\n\n");
+      surfacedDisplays = deps.takeSurfacedDisplays?.(turn.sessionKey) ?? [];
+      const finalText = shownText(correctedText, surfacedDisplays);
       await sink.finalize(finalText);
     } finally {
       sink.dispose();
@@ -260,6 +265,7 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
             userId: key,
             role: "assistant",
             content: assistantText,
+            ...(surfacedDisplays.length > 0 ? { displays: surfacedDisplays } : {}),
           });
         } catch (err) {
           console.log(

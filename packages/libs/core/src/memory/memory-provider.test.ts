@@ -69,6 +69,35 @@ describe("createVerbatimArchiveProvider — captureExchange", () => {
     expect(upsertCalls).toBe(0);
     expect(embedCalls).toBe(0);
   });
+
+  // #215: the archive keeps what the turn showed after the answer.
+  it("archives the displays with the answer, and an answer that is only displays", async () => {
+    const upserted: Array<Record<string, unknown>> = [];
+    const client: QdrantClientLike = {
+      getCollections: async () => ({ collections: [] }),
+      createCollection: async () => ({}),
+      upsert: async (_collection, params) => {
+        upserted.push((params.points[0] as { payload: Record<string, unknown> }).payload);
+        return {};
+      },
+      query: async () => ({ points: [] }),
+    };
+    const provider = createVerbatimArchiveProvider({
+      client,
+      collectionName: "verbatim_archive",
+      embed: async () => [1, 2, 3],
+      now: () => new Date("2026-10-15T10:00:00.000Z"),
+    });
+
+    await provider.captureExchange!({ userId: "u", sessionKey: "s", role: "assistant", content: "Ecco:", displays: ["KAN-1"] });
+    await provider.captureExchange!({ userId: "u", sessionKey: "s", role: "assistant", content: "", displays: ["KAN-2"] });
+    await provider.captureExchange!({ userId: "u", sessionKey: "s", role: "assistant", content: " ", displays: [""] });
+
+    expect(upserted).toEqual([
+      { userId: "u", sessionKey: "s", role: "assistant", content: "Ecco:", displays: ["KAN-1"], timestamp: "2026-10-15T10:00:00.000Z" },
+      { userId: "u", sessionKey: "s", role: "assistant", content: "", displays: ["KAN-2"], timestamp: "2026-10-15T10:00:00.000Z" },
+    ]);
+  });
 });
 
 describe("createVerbatimArchiveProvider — recall_verbatim tool", () => {
