@@ -32,6 +32,7 @@ function baseCtx(overrides: Partial<PluginLoadContext> = {}): PluginLoadContext 
     model: {} as never,
     env: {},
     log: () => {},
+    assistantName: "Mercury",
     ...overrides,
   };
 }
@@ -65,11 +66,12 @@ describe("loadPlugins", () => {
     expect(loaded.toolStatusDescribers).toEqual({ jiraCommand: jiraDescribe, bitbucketCommand: bbDescribe });
   });
 
-  it("passes the runtime context (model, env, log) through to build()", async () => {
+  it("passes the runtime context (model, env, log, assistant's name) through to build()", async () => {
     let seen: unknown;
     const model = { id: "m" } as never;
     const plugin = plug({ name: "jira", build: (ctx) => { seen = ctx; return {}; } });
-    await loadPlugins([plugin], baseCtx({ model, env: { JIRA_SITE_URL: "u" } }));
+    await loadPlugins([plugin], baseCtx({ model, env: { JIRA_SITE_URL: "u" }, assistantName: "Poc" }));
+    expect((seen as { assistantName: unknown }).assistantName).toBe("Poc");
     expect((seen as { model: unknown }).model).toBe(model);
     expect((seen as { env: unknown }).env).toEqual({ JIRA_SITE_URL: "u" });
     expect(typeof (seen as { log: unknown }).log).toBe("function");

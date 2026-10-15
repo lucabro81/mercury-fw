@@ -128,6 +128,13 @@ export type PluginRuntimeContext = {
   model: LanguageModel;
   env: Record<string, string | undefined>;
   log: (msg: string) => void;
+  /**
+   * The assistant's name (the app's `persona.name`), for a text the plugin
+   * builds while running. Static texts (fragment, skill, tool descriptions)
+   * write `{{assistant}}` instead, and the core substitutes it. The core always
+   * sets it; optional so a plugin also builds against an older one.
+   */
+  assistantName?: string;
 };
 
 /**

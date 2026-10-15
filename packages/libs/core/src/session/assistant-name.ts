@@ -7,6 +7,7 @@
  * the name itself from the runtime context.
  */
 import type { Tool } from "ai";
+import type { Skill } from "@mercury-fw/plugin-types";
 
 /** What static model-facing texts write where the assistant's name goes. */
 export const ASSISTANT_PLACEHOLDER = "{{assistant}}";
@@ -41,8 +42,26 @@ export function assistantNameOf(persona: { name?: string } | undefined): string 
 export function toolsWithAssistantName(tools: Record<string, Tool>, name: string): Record<string, Tool> {
   const out: Record<string, Tool> = {};
   for (const [toolName, tool] of Object.entries(tools)) {
-    out[toolName] =
-      tool.description === undefined ? tool : ({ ...tool, description: withAssistantName(tool.description, name) } as Tool);
+    const { description } = tool;
+    if (description === undefined) {
+      out[toolName] = tool;
+      continue;
+    }
+    // A description can also be computed per call.
+    const named =
+      typeof description === "function"
+        ? (options: Parameters<typeof description>[0]) => withAssistantName(description(options), name)
+        : withAssistantName(description, name);
+    out[toolName] = { ...tool, description: named } as Tool;
   }
   return out;
+}
+
+/** `skills` with the assistant's name substituted in each description and body. */
+export function skillsWithAssistantName(skills: Skill[], name: string): Skill[] {
+  return skills.map((skill) => ({
+    ...skill,
+    description: withAssistantName(skill.description, name),
+    body: withAssistantName(skill.body, name),
+  }));
 }

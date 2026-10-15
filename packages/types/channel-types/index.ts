@@ -332,6 +332,8 @@ export type ChannelRuntimeContext = {
   logins?: ChannelLogins;
   /** Linking another account to a person (see `ChannelLinking`). */
   linking?: ChannelLinking;
+  /** The assistant's name (the app's `persona.name`), for what the channel tells people itself (a login page, a card). The core always sets it; absent on an older core. */
+  assistantName?: string;
 };
 
 /**

@@ -74,6 +74,8 @@ export interface PluginLoadContext {
   model: LanguageModel;
   env: Record<string, string | undefined>;
   log: (msg: string) => void;
+  /** The assistant's name, for what a plugin builds while running (see `PluginRuntimeContext`). */
+  assistantName: string;
 }
 
 /**
@@ -175,7 +177,7 @@ export async function loadPlugins(plugins: Plugin[], ctx: PluginLoadContext): Pr
     try {
       // Stage into locals first: build() can throw, and a plugin must degrade
       // as a unit — nothing of it lands unless all of it succeeds.
-      const contributions = plugin.build ? plugin.build({ model: ctx.model, env: ctx.env, log: ctx.log }) : {};
+      const contributions = plugin.build ? plugin.build({ model: ctx.model, env: ctx.env, log: ctx.log, assistantName: ctx.assistantName }) : {};
 
       const bundle: SessionToolBundle | undefined = contributions.sessionTools
         ? {

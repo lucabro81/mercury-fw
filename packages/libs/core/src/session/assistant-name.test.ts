@@ -1,10 +1,11 @@
 import { describe, expect, it } from "bun:test";
-import { tool } from "ai";
+import { tool, type Tool } from "ai";
 import { z } from "zod";
 import {
   ASSISTANT_PLACEHOLDER,
   DEFAULT_ASSISTANT_NAME,
   assistantNameOf,
+  skillsWithAssistantName,
   toolsWithAssistantName,
   withAssistantName,
 } from "./assistant-name.ts";
@@ -76,8 +77,23 @@ describe("toolsWithAssistantName", () => {
     expect(await out.a!.execute!({} as never, {} as never)).toBe("ran");
   });
 
+  it("substitutes the name in a description computed per call", () => {
+    const dynamic = { ...make(), description: () => "Asks {{assistant}}." } as unknown as Tool;
+    const out = toolsWithAssistantName({ a: dynamic }, "Poc");
+    expect((out.a?.description as unknown as (o: unknown) => string)({ context: {} })).toBe("Asks Poc.");
+  });
+
   it("leaves a tool without a description without one", () => {
     const out = toolsWithAssistantName({ a: make() }, "Poc");
     expect(out.a?.description).toBeUndefined();
+  });
+});
+
+describe("skillsWithAssistantName", () => {
+  it("substitutes the name in each skill's description and body, keeping its name", () => {
+    const skills = [{ name: "jira", description: "How {{assistant}} reads Jira.", body: "{{assistant}} runs jiraCommand." }];
+    expect(skillsWithAssistantName(skills, "Poc")).toEqual([
+      { name: "jira", description: "How Poc reads Jira.", body: "Poc runs jiraCommand." },
+    ]);
   });
 });
