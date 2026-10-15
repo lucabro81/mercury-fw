@@ -1,12 +1,15 @@
 import { NO_REPLY } from "@mercury-fw/channel-types";
 import type { Skill } from "@mercury-fw/plugin-types";
+import { assistantNameOf, withAssistantName } from "./assistant-name.ts";
 
-/** The assistant's persona, set by the instance: `identity` opens the system
- * prompt, `tone` closes it. Either one left out falls back to its default. */
-export type Persona = { identity?: string; tone?: string };
+/** The assistant's persona, set by the instance: `name` is what every text
+ * calls the assistant (`{{assistant}}` in them, see `assistant-name.ts`),
+ * `identity` opens the system prompt, `tone` closes it. Each one left out
+ * falls back to its default. */
+export type Persona = { name?: string; identity?: string; tone?: string };
 
 /** The identity an instance gets when its config sets none. */
-export const DEFAULT_PERSONA_IDENTITY = "You are Mercury, an internal assistant.";
+export const DEFAULT_PERSONA_IDENTITY = "You are {{assistant}}, an internal assistant.";
 
 /** The tone an instance gets when its config sets none. */
 export const DEFAULT_PERSONA_TONE = [
@@ -17,7 +20,7 @@ export const DEFAULT_PERSONA_TONE = [
   "",
   "DON'T:",
   "- DON'T use Markdown formatting (no **, #, -, etc.), unless the user explicitly asks for it.",
-  "- DON'T introduce yourself as Mercury unless asked; the user already knows who you are.",
+  "- DON'T introduce yourself as {{assistant}} unless asked; the user already knows who you are.",
   "- DON'T ask follow-up questions.",
   "- DON'T add extra explanations or extra actions beyond what was requested.",
 ].join("\n");
@@ -34,7 +37,9 @@ function personaSlot(text: string | undefined, fallback: string): string {
  * Builds a system prompt that only describes tools actually present in
  * `tools` (see `src/session/agent-turn.ts` for why a prompt mentioning
  * an absent tool is a real bug, not a harmless no-op). The persona fills the
- * first and last slots (see `personaSlot`).
+ * first and last slots (see `personaSlot`), and its name replaces the
+ * placeholder everywhere, the plugins' fragments and skills included. Throws
+ * on a persona name that can't stand in a prompt.
  */
 export function buildSystemPrompt(opts: {
   pluginFragments: string[];
@@ -42,6 +47,7 @@ export function buildSystemPrompt(opts: {
   multiUserChannel: boolean;
   persona?: Persona;
 }): string {
+  const assistantName = assistantNameOf(opts.persona);
   const lines = [personaSlot(opts.persona?.identity, DEFAULT_PERSONA_IDENTITY)];
   // Each loaded plugin's own always-on system-prompt fragment, inserted
   // verbatim in the order the composition root supplies them. A plugin that
@@ -70,10 +76,10 @@ export function buildSystemPrompt(opts: {
   // block doesn't need its own opts flag.
   lines.push(
     [
-      "You have access to wiki tools: list_files, read_file, grep, write_file, promote_note, resolve_reference — Mercury's own knowledge base. " +
+      "You have access to wiki tools: list_files, read_file, grep, write_file, promote_note, resolve_reference — your own knowledge base. " +
         "curated/ is the team's common knowledge (conventions, docs, project status), shared by everyone: you can read it, not write it. " +
         "personal/ belongs to the person you're talking to and nobody else sees it: personal/notes/ is where you write for them, " +
-        "personal/inferred/ is what Mercury learned about them, kept by a separate process.",
+        "personal/inferred/ is what you learned about them, kept by a separate process.",
       "DO:",
       "- If your context contains an opaque `[REQ:<token>]` marker, that's a reference to a past confirm-required request — call resolve_reference with that token to see what it was, don't guess at what it means.",
       "- For a CLI's own syntax/flags, rely on --help first. Only check the wiki if --help doesn't cover something specific to how this team uses that tool (a convention, a naming pattern, a policy).",
@@ -124,7 +130,7 @@ export function buildSystemPrompt(opts: {
   }
 
   lines.push(personaSlot(opts.persona?.tone, DEFAULT_PERSONA_TONE));
-  return lines.join("\n");
+  return withAssistantName(lines.join("\n"), assistantName);
 }
 
 /**
