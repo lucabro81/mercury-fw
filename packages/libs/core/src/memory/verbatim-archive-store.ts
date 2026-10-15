@@ -46,23 +46,54 @@ export async function ensureVerbatimCollection(
   }
 }
 
-/** A single verbatim message as it was emitted in chat. `timestamp` (ISO 8601, ms precision) is the durable ordering key. */
+/**
+ * A single verbatim message as it was emitted in chat. `timestamp` (ISO 8601,
+ * ms precision) is the durable ordering key. `content` is what the model said;
+ * `displays` are what the turn showed after it (the lists the model chose to
+ * `present`), absent on messages archived before they were kept.
+ */
 export type VerbatimMessage = {
   userId: string;
   sessionKey: string;
   role: "user" | "assistant";
   content: string;
+  displays?: string[];
   timestamp: string;
 };
 
-/** Embeds `entry.content` and upserts it as a new point in `collectionName`, payload carrying the full verbatim message. */
+/**
+ * What the person saw: the model's text followed by the displays, non-empty
+ * parts only, a blank line between them. The turn's final text is built the
+ * same way.
+ */
+export function shownText(content: string, displays: string[] | undefined): string {
+  return [content, ...(displays ?? [])].filter((part) => part !== "").join("\n\n");
+}
+
+/** `m` as the person saw it, for whatever renders a conversation: the displays folded into `content`. */
+function asShown(m: VerbatimMessage): VerbatimMessage {
+  const { displays, ...rest } = m;
+  return displays === undefined ? rest : { ...rest, content: shownText(m.content, displays) };
+}
+
+/** `m` as the model said it, for whatever hands it back to the model: no displays. */
+function asSaid(m: VerbatimMessage): VerbatimMessage {
+  const { displays: _displays, ...rest } = m;
+  return rest;
+}
+
+/**
+ * Embeds `entry.content` (what was shown, when the model said nothing) and
+ * upserts it as a new point in `collectionName`, payload carrying the full
+ * verbatim message.
+ */
 export async function appendVerbatimMessage(
   client: QdrantClientLike,
   collectionName: string,
   embed: (text: string) => Promise<number[]>,
   entry: VerbatimMessage,
 ): Promise<void> {
-  const vector = await embed(entry.content);
+  const vector = await embed(entry.content !== "" ? entry.content : shownText(entry.content, entry.displays));
   await client.upsert(collectionName, {
     points: [
       {
@@ -84,6 +115,8 @@ function isVerbatimMessage(payload: Record<string, unknown> | null): payload is 
     typeof payload.sessionKey === "string" &&
     (payload.role === "user" || payload.role === "assistant") &&
     typeof payload.content === "string" &&
+    (payload.displays === undefined ||
+      (Array.isArray(payload.displays) && payload.displays.every((d) => typeof d === "string"))) &&
     typeof payload.timestamp === "string"
   );
 }
@@ -92,8 +125,8 @@ function isVerbatimMessage(payload: Record<string, unknown> | null): payload is 
  * The verbatim messages for a specific user most relevant to `queryText`
  * — e.g. "what did we say about KAN-1 last week". Filtered by `userId` so
  * one user's transcript never leaks into another's. Only reads; returns
- * the raw messages, ordering left to the caller (each carries its own
- * `timestamp`).
+ * the messages as the model said them (no displays: this goes back to the
+ * model), ordering left to the caller (each carries its own `timestamp`).
  */
 export async function searchVerbatim(
   client: QdrantClientLike,
@@ -108,7 +141,7 @@ export async function searchVerbatim(
     limit: query.limit ?? DEFAULT_SEARCH_LIMIT,
     with_payload: true,
   });
-  return results.points.map((r) => r.payload ?? null).filter(isVerbatimMessage);
+  return results.points.map((r) => r.payload ?? null).filter(isVerbatimMessage).map(asSaid);
 }
 
 /**
@@ -134,7 +167,8 @@ const PREVIEW_CHARS = 120;
  * One person's conversations, most-recently-active first — the sidebar a UI
  * shows to switch between them. Scrolls the person's newest `SESSION_SCAN_LIMIT`
  * messages (timestamp desc) and dedups by `sessionKey`, keeping each
- * conversation's most recent message for its timestamp and preview, then caps
+ * conversation's most recent message for its timestamp and preview (of what
+ * was shown, displays included), then caps
  * the result at `limit`. Returns empty if the client can't scroll.
  */
 export async function listVerbatimSessions(
@@ -157,10 +191,11 @@ export async function listVerbatimSessions(
     if (seen.has(m.sessionKey)) {
       continue; // desc order → first occurrence is the most recent
     }
+    const shown = shownText(m.content, m.displays);
     seen.set(m.sessionKey, {
       sessionKey: m.sessionKey,
       lastTimestamp: m.timestamp,
-      preview: m.content.length <= PREVIEW_CHARS ? m.content : `${m.content.slice(0, PREVIEW_CHARS)}…`,
+      preview: shown.length <= PREVIEW_CHARS ? shown : `${shown.slice(0, PREVIEW_CHARS)}…`,
     });
   }
   return { conversations: [...seen.values()].slice(0, query.limit) };
@@ -178,7 +213,8 @@ export type VerbatimPage = {
  * Unlike `searchVerbatim` this is a plain scroll (no similarity), filtered by
  * the person (`userId`) and the conversation (`sessionKey`), so a session key
  * that isn't the person's own yields nothing, ordered by `timestamp`
- * ascending, paged via the opaque `offset` cursor. Returns empty if the client
+ * ascending, paged via the opaque `offset` cursor. Each message comes as the
+ * person saw it, its displays folded into `content`. Returns empty if the client
  * can't scroll.
  */
 export async function listVerbatimBySession(
@@ -202,7 +238,7 @@ export async function listVerbatimBySession(
     with_payload: true,
   });
   return {
-    messages: result.points.map((p) => p.payload ?? null).filter(isVerbatimMessage),
+    messages: result.points.map((p) => p.payload ?? null).filter(isVerbatimMessage).map(asShown),
     nextOffset: result.next_page_offset ?? null,
   };
 }
