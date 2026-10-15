@@ -27,15 +27,16 @@ export type MercuryAccess = {
 
 /** The shape of a Mercury instance's composition config: the tool plugins
  * and the channel plugins (each enabled by being declared here: declared =
- * active), each loaded by its own loader, the auth provider that tells a
- * channel like HTTP who is calling (that channel won't start without one),
+ * active), each loaded by its own loader, the auth providers that tell a
+ * channel like HTTP who is calling (one, or several tried in order; that
+ * channel won't start without one),
  * the directory that tells the core who that is and their roles, who may
  * use what (`access`), plus the assistant's persona (its identity and tone;
  * the defaults when left out). */
 export type MercuryConfig = {
   plugins: Plugin[];
   channels?: ChannelPlugin[];
-  auth?: AuthPlugin;
+  auth?: AuthPlugin | AuthPlugin[];
   directory?: DirectoryPlugin;
   access?: MercuryAccess;
   persona?: Persona;
