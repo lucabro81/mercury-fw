@@ -11,7 +11,7 @@ import identity from "./persona/identity.md" with { type: "text" };
 import tone from "./persona/tone.md" with { type: "text" };
 
 export default defineMercuryConfig({
-  persona: { identity, tone },
+  persona: { name: "Mercury", identity, tone },
   plugins: [],
   channels: [],
 });

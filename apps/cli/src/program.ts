@@ -52,7 +52,7 @@ function buildProgram(handlers: ProgramHandlers, result: { code: number }): Comm
     .command("create")
     .summary("writes a new Mercury app")
     .description(
-      "Writes a new Mercury app into <folder>, which has to be missing or empty (its own name is turned into kebab case). Without options it asks for the app name, the assistant's name and role, and which channels (with the HTTP channel's auth provider) and tool plugins to include; then it writes mercury.config.ts for that selection, the persona (persona/identity.md, persona/tone.md), the service and REPL entrypoints, a Dockerfile, a compose file with Qdrant, and an env example listing every variable the app reads. Then it runs bun install, and creates a git repository on main with a first commit, adding the origin when given (nothing is pushed).",
+      "Writes a new Mercury app into <folder>, which has to be missing or empty (its own name is turned into kebab case). Without options it asks for the app name, the assistant's name and role, and which channels (with the HTTP channel's auth provider) and tool plugins to include; then it writes mercury.config.ts for that selection, with the assistant's name as persona.name, the persona (persona/identity.md, persona/tone.md, which refer to the name as {{assistant}}), the service and REPL entrypoints, a Dockerfile, a compose file with Qdrant, and an env example listing every variable the app reads. Then it runs bun install, and creates a git repository on main with a first commit, adding the origin when given (nothing is pushed).",
     )
     .argument("<folder>", "where to write the app")
     .option("--name <name>", "app name, as in package.json (default: the folder's name)")

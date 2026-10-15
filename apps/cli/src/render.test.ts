@@ -6,7 +6,7 @@
  */
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
-import { DEFAULT_PERSONA_TONE } from "@mercury-fw/core";
+import { DEFAULT_PERSONA_IDENTITY, DEFAULT_PERSONA_TONE } from "@mercury-fw/core";
 import { renderApp, type RenderInput } from "./render.ts";
 
 const golden = (name: string): string =>
@@ -222,35 +222,45 @@ describe("renderApp: docker-compose.yml", () => {
 });
 
 describe("renderApp: persona", () => {
-  test("identity from the assistant's name and role", () => {
+  // #222: the name was written into identity.md and tone.md, and the rest of
+  // what the model read still said Mercury. It's persona.name now, and the
+  // persona files refer to it.
+  test("the name goes to persona.name in the config, the role to identity.md", () => {
     const files = renderApp(input({ assistantName: "Hermes", role: "the platform team's release assistant" }));
-    expect(files.get("persona/identity.md")).toBe("You are Hermes, the platform team's release assistant.\n");
+    expect(files.get("mercury.config.ts")).toContain('  persona: { name: "Hermes", identity, tone },');
+    expect(files.get("persona/identity.md")).toBe("You are {{assistant}}, the platform team's release assistant.\n");
   });
 
-  test("tone is the core's default, with the chosen name in place of Mercury", () => {
+  test("tone is the core's default, referring to the name", () => {
     const tone = renderApp(input({ assistantName: "Hermes" })).get("persona/tone.md") ?? "";
-    expect(tone).toBe(`${DEFAULT_PERSONA_TONE.replaceAll("Mercury", "Hermes")}\n`);
-    expect(tone).toContain("DON'T introduce yourself as Hermes unless asked");
+    expect(tone).toBe(`${DEFAULT_PERSONA_TONE}\n`);
+    expect(tone).toContain("DON'T introduce yourself as {{assistant}} unless asked");
     expect(tone).not.toContain("Mercury");
   });
 
-  // Regression: the name went through String.replaceAll as a replacement
-  // string, where "$&" and friends are patterns, so tone.md disagreed with
-  // identity.md for such a name.
-  test("a name with $ patterns lands in the tone verbatim", () => {
-    const tone = renderApp(input({ assistantName: "A$&B$'" })).get("persona/tone.md") ?? "";
-    expect(tone).toContain("DON'T introduce yourself as A$&B$' unless asked");
+  // A name is a string literal in the config: quotes, backslashes and "$"
+  // patterns land verbatim.
+  test("a name with quotes, backslashes or $ patterns lands in the config verbatim", () => {
+    const name = `A$&B$' "C" \\D`;
+    const config = renderApp(input({ assistantName: name })).get("mercury.config.ts") ?? "";
+    expect(config).toContain(`  persona: { name: ${JSON.stringify(name)}, identity, tone },`);
   });
 
   // Regression: a role typed as a sentence ended up with a doubled period.
   test("a role that already ends with a period doesn't get a second one", () => {
-    expect(renderApp(input({ role: "a helper." })).get("persona/identity.md")).toBe("You are Mercury, a helper.\n");
+    expect(renderApp(input({ role: "a helper." })).get("persona/identity.md")).toBe("You are {{assistant}}, a helper.\n");
   });
 
   test("the default name reproduces the core's default persona", () => {
     const files = renderApp(EMPTY);
-    expect(files.get("persona/identity.md")).toBe("You are Mercury, an internal assistant.\n");
+    expect(files.get("mercury.config.ts")).toContain('  persona: { name: "Mercury", identity, tone },');
+    expect(files.get("persona/identity.md")).toBe(`${DEFAULT_PERSONA_IDENTITY}\n`);
     expect(files.get("persona/tone.md")).toBe(`${DEFAULT_PERSONA_TONE}\n`);
+  });
+
+  test("refuses a name the core would refuse", () => {
+    expect(() => renderApp(input({ assistantName: "a".repeat(41) }))).toThrow("persona.name");
+    expect(() => renderApp(input({ assistantName: "{{assistant}}" }))).toThrow("persona.name");
   });
 });
 
