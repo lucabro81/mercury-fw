@@ -196,3 +196,47 @@ describe("oidcAuth", () => {
     expect(() => build({ OIDC_ISSUER: "zitadel", OIDC_AUDIENCE: AUDIENCE })).toThrow("OIDC_ISSUER isn't a URL");
   });
 });
+
+// #199: several issuers on one instance, one provider each, each with its own
+// variables and its own principal provider, so their people never share keys.
+describe("createOidcAuth with a name", () => {
+  const company = createOidcAuth({ name: "company-idp" });
+
+  it("is its own provider: oidc-<name>", () => {
+    expect(company.name).toBe("oidc-company-idp");
+    expect(company.apiVersion).toBe(AUTH_API_VERSION);
+  });
+
+  it("reads OIDC_<NAME>_ISSUER and OIDC_<NAME>_AUDIENCE, and its principals carry its name", async () => {
+    const authenticate = company.build({
+      env: { OIDC_COMPANY_IDP_ISSUER: issuer, OIDC_COMPANY_IDP_AUDIENCE: AUDIENCE, OIDC_ISSUER: "https://other.example", OIDC_AUDIENCE: "other" },
+      log: () => {},
+    });
+    const principal = await authenticate(request(`Bearer ${await token()}`));
+    expect(principal).toMatchObject({ id: "312345", provider: "oidc-company-idp" });
+  });
+
+  it("ignores the unnamed provider's variables", () => {
+    expect(() => company.build({ env: { OIDC_ISSUER: issuer, OIDC_AUDIENCE: AUDIENCE }, log: () => {} })).toThrow(
+      "OIDC_COMPANY_IDP_ISSUER is missing",
+    );
+  });
+
+  it("names its own variables when they're wrong", () => {
+    const build = (env: Record<string, string>) => () => company.build({ env, log: () => {} });
+    expect(build({ OIDC_COMPANY_IDP_ISSUER: issuer })).toThrow("OIDC_COMPANY_IDP_AUDIENCE is missing");
+    expect(build({ OIDC_COMPANY_IDP_ISSUER: "zitadel", OIDC_COMPANY_IDP_AUDIENCE: AUDIENCE })).toThrow(
+      "OIDC_COMPANY_IDP_ISSUER isn't a URL",
+    );
+  });
+
+  it("refuses a name that can't be a provider or a variable", () => {
+    for (const name of ["", "Company", "company_idp", "-company", "company-", "comp any", "ö"]) {
+      expect(() => createOidcAuth({ name })).toThrow(`"${name}" can't name an OIDC provider`);
+    }
+  });
+
+  it("without a name, is the unnamed provider as before", () => {
+    expect(createOidcAuth().name).toBe("oidc");
+  });
+});
