@@ -22,13 +22,31 @@ export type ReplSessionOptions = {
   name: string;
   /** How long one turn may take. */
   timeoutMs: number;
+  /** Starts the REPL; a test hands in a stand-in process. */
+  spawn?: (argv: string[], cwd: string) => ReplProcess;
 };
+
+/** The parts of a spawned process the session uses. */
+export type ReplProcess = {
+  stdin: { write: (text: string) => unknown; flush: () => unknown; end: () => unknown };
+  stdout: ReadableStream<Uint8Array>;
+  stderr: ReadableStream<Uint8Array>;
+  exited: Promise<number>;
+  kill: () => void;
+};
+
+/** How long, once the REPL is gone, its stderr may take to be read to its end. */
+const STDERR_DRAIN_MS = 1000;
+
+function spawnRepl(argv: string[], cwd: string): ReplProcess {
+  return Bun.spawn(argv, { cwd, stdin: "pipe", stdout: "pipe", stderr: "pipe" });
+}
 
 /** Starts the REPL and returns the session over it once the REPL is ready
  * (its first prompt is out), so a turn's time is only the turn's; throws
  * when the REPL exits or doesn't get there in time. */
 export async function openReplSession(opts: ReplSessionOptions): Promise<Session<ReplReply>> {
-  const proc = Bun.spawn(opts.argv, { cwd: opts.cwd, stdin: "pipe", stdout: "pipe", stderr: "pipe" });
+  const proc = (opts.spawn ?? spawnRepl)(opts.argv, opts.cwd);
   let stdout = "";
   let stderr = "";
   let exited: number | undefined;
@@ -42,8 +60,11 @@ export async function openReplSession(opts: ReplSessionOptions): Promise<Session
     }
   };
   void pump(proc.stdout, (t) => (stdout += t));
-  void pump(proc.stderr, (t) => (stderr += t));
-  void proc.exited.then((code) => {
+  const stderrRead = pump(proc.stderr, (t) => (stderr += t)).catch(() => {});
+  // The exit counts once stderr is read to its end, or the reason it gives is
+  // lost; a grandchild still holding the pipe open bounds the wait.
+  void proc.exited.then(async (code) => {
+    await Promise.race([stderrRead, new Promise((r) => setTimeout(r, STDERR_DRAIN_MS))]);
     exited = code;
     notify();
   });
