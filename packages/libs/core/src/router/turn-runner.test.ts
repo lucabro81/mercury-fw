@@ -1502,6 +1502,14 @@ describe("createTurnRunner: preferred name and opening turn", () => {
     expect(captured).toEqual([]);
   });
 
+  // #225: "ask how they'd like to be called" came back from a small model as
+  // "Come vorrei che mi chiamassi?": the question asked the wrong way round.
+  test("the opening note asks for the person's name, with nothing to turn around", () => {
+    expect(OPENING_NOTE).toContain("ask the person what name you should use for them");
+    expect(OPENING_NOTE).toContain("their name, not yours");
+    expect(OPENING_NOTE).not.toContain("how they'd like to be called");
+  });
+
   test("the opening note overrides the tone's rules against introducing itself and asking", () => {
     expect(OPENING_NOTE).toContain("set_preferred_name");
     expect(OPENING_NOTE).toContain("overrides");
