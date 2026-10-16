@@ -208,39 +208,24 @@ describe("createSessionHistory", () => {
     });
   });
 
-  // The primer seeds a brand-new session with facts from the user's last
-  // closed session (see context-primer.ts) — kept as state independent from
-  // `summary` on purpose, so it's never at risk of being paraphrased or
-  // dropped by the LLM summarizer (see history_primer design note).
+  // #233: the primer led the history as the assistant's own message, so the
+  // model picked the last conversation's thread back up, and the closing
+  // conversation's summary absorbed it and saved it again. It's held aside,
+  // for the turn runner to give the model as background in the prompt.
   describe("primer", () => {
-    it("seeds getMessages() with the primer as the leading message before any turn happens", () => {
+    it("is held aside, never among the messages the model gets or what's captured", async () => {
       const history = createSessionHistory(fakeSummarizer(), undefined, "user is a data scientist");
-      expect(history.getMessages()).toEqual([
-        { role: "assistant", content: "Context from your last session: user is a data scientist" },
-      ]);
-    });
-
-    it("orders the primer before the summary message once a real compression produces one", async () => {
-      const history = createSessionHistory(fakeSummarizer(), undefined, "prior session facts");
-      await history.addAssistantMessage("x".repeat(MAX_HISTORY_CHARS));
-      await history.addUserMessage("latest");
-
-      const messages = history.getMessages();
-      expect(messages[0]).toEqual({
-        role: "assistant",
-        content: "Context from your last session: prior session facts",
-      });
-      expect(messages[1]?.content).toContain("a summary");
-    });
-
-    it("omitting the primer behaves exactly as before this change — no leading primer message", () => {
-      const history = createSessionHistory(fakeSummarizer());
+      expect(history.primer()).toBe("user is a data scientist");
       expect(history.getMessages()).toEqual([]);
+      await history.addUserMessage("hi");
+      expect(history.getMessages()).toEqual([{ role: "user", content: "hi" }]);
+      expect(history.getCapturable()).toEqual([{ role: "user", content: "hi" }]);
+      expect(history.getCharCount()).toBe(2);
     });
 
-    it("an empty-string primer behaves like an omitted one", () => {
-      const history = createSessionHistory(fakeSummarizer(), undefined, "");
-      expect(history.getMessages()).toEqual([]);
+    it("is undefined when omitted or empty", () => {
+      expect(createSessionHistory(fakeSummarizer()).primer()).toBeUndefined();
+      expect(createSessionHistory(fakeSummarizer(), undefined, "").primer()).toBeUndefined();
     });
 
     it("survives a real compression event unchanged — it is never part of the batch sent to summarize()", async () => {
@@ -252,15 +237,8 @@ describe("createSessionHistory", () => {
       await history.addUserMessage("latest");
 
       expect(calls).toEqual([[{ role: "assistant", content: filler }]]);
-      expect(history.getMessages()[0]).toEqual({
-        role: "assistant",
-        content: "Context from your last session: prior session facts",
-      });
-    });
-
-    it("getCharCount includes the primer's length once it's present", () => {
-      const history = createSessionHistory(fakeSummarizer(), undefined, "hello");
-      expect(history.getCharCount()).toBe("Context from your last session: hello".length);
+      expect(history.primer()).toBe("prior session facts");
+      expect(history.getMessages()[0]?.content).toContain("a summary");
     });
   });
 
@@ -324,10 +302,9 @@ describe("createSessionHistory", () => {
       ],
     };
 
-    it("leads the history with the resumed summary and messages, after the primer", () => {
+    it("leads the history with the resumed summary and messages", () => {
       const history = createSessionHistory(fakeSummarizer(), undefined, "primer", resumed);
       expect(history.getMessages()).toEqual([
-        { role: "assistant", content: "Context from your last session: primer" },
         { role: "assistant", content: "Earlier conversation summary: they said their favourite colour is green" },
         { role: "user", content: "and the car?" },
         { role: "assistant", content: "a red one" },
@@ -336,11 +313,10 @@ describe("createSessionHistory", () => {
 
     it("leaves the resumed part out of what's capturable, keeping what's new", async () => {
       const history = createSessionHistory(fakeSummarizer(), undefined, "primer", resumed);
-      expect(history.getCapturable()).toEqual([{ role: "assistant", content: "Context from your last session: primer" }]);
+      expect(history.getCapturable()).toEqual([]);
       await history.addUserMessage("and the bike?");
       await history.addAssistantMessage("blue");
       expect(history.getCapturable()).toEqual([
-        { role: "assistant", content: "Context from your last session: primer" },
         { role: "user", content: "and the bike?" },
         { role: "assistant", content: "blue" },
       ]);

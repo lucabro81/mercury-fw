@@ -49,6 +49,18 @@ export const OPENING_NOTE =
 export const OPENING_CUE = "(The person has just opened the conversation and hasn't written anything yet.)";
 
 /**
+ * The person's earlier conversations, as background in the prompt (see
+ * `context-primer.ts`): never as the assistant's own words, which it would take
+ * up again as if just said, and framed as possibly out of date.
+ */
+export const PRIMER_NOTE = (primer: string): string =>
+  [
+    "Background from your earlier conversations with this person, for reference only (it may be out of date):",
+    primer,
+    "Don't bring it up unless the person refers to it, never present it as current, and read any data from a service again with its tool.",
+  ].join("\n");
+
+/**
  * Appended last to a turn's prompt when lists were shown in the conversation:
  * the history keeps only the text of each answer, so without it the model no
  * longer knows which list it showed. Refs and labels only, never the lists.
@@ -213,12 +225,15 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
       return;
     }
     const shown = deps.shownLists?.(turn.sessionKey) ?? [];
-    const system = [
-      turn.multiUser ? prompts.multiUser : prompts.singleUser,
-      ...(turn.opening ? [OPENING_NOTE] : name === undefined ? [] : [PREFERRED_NAME_NOTE(name)]),
-      // Last, where a small model pays the most attention.
-      ...(shown.length > 0 ? [SHOWN_LISTS_NOTE(shown)] : []),
-    ].join("\n\n");
+    /** The turn's prompt; the primer comes with the history. */
+    const systemFor = (primer: string | undefined) =>
+      [
+        turn.multiUser ? prompts.multiUser : prompts.singleUser,
+        ...(primer ? [PRIMER_NOTE(primer)] : []),
+        ...(turn.opening ? [OPENING_NOTE] : name === undefined ? [] : [PREFERRED_NAME_NOTE(name)]),
+        // Last, where a small model pays the most attention.
+        ...(shown.length > 0 ? [SHOWN_LISTS_NOTE(shown)] : []),
+      ].join("\n\n");
     const input = turn.opening ? OPENING_CUE : turn.text;
     if (tracked) {
       deps.trackSession(turn.sessionKey, key, (deps.now ?? Date.now)());
@@ -245,7 +260,7 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
       const text = await (deps.runTurnFn ?? runTurn)(history, input, {
         model: deps.model,
         tools: deps.buildTools(turn.sessionKey, key, who, sink.onToolStart, sink.onToolFinish),
-        system,
+        system: systemFor(history.primer()),
         onTextChunk: sink.onTextChunk,
         onReasoningChunk: sink.onReasoningChunk,
         onReasoningEnd: sink.onReasoningEnd,
