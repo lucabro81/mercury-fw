@@ -23,7 +23,8 @@ export function createPresentTool(deps: PresentToolDeps): { present: ExecutableT
   const present = tool({
     description:
       "Show a previously produced artifact (e.g. a list of issues) to the user. Pass the `ref` a prior tool " +
-      "result returned (its `displayRef`). Call this ONLY when the user wants to see the artifact itself; if you " +
+      "result returned (its `displayRef`), or one listed under \"Lists already shown\" to show it again. " +
+      "Call this ONLY when the user wants to see the artifact itself; if you " +
       "are answering in prose (a count, a yes/no, a single field), do NOT call it — the artifact stays hidden.",
     inputSchema: z.object({ ref: z.string().min(1) }),
     execute: async ({ ref }) => {

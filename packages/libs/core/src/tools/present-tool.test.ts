@@ -34,3 +34,12 @@ describe("createPresentTool", () => {
     expect(store.takeSurfaced("spaces/X:users/42")).toEqual([]);
   });
 });
+
+// #230: a list shown in an earlier turn can be shown again by its ref, named
+// at the end of the prompt.
+describe("createPresentTool description", () => {
+  it("says a ref from the lists already shown can be shown again", () => {
+    const { present } = createPresentTool({ sessionKey: "s", store: createDisplayStore() });
+    expect(present.description).toContain('or one listed under "Lists already shown" to show it again');
+  });
+});

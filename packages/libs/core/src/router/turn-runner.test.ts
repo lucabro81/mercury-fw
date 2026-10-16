@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { createTurnRunner, OPENING_CUE, OPENING_NOTE, PREFERRED_NAME_NOTE, type PostTurnGuard } from "./turn-runner.ts";
+import { createTurnRunner, OPENING_CUE, OPENING_NOTE, PREFERRED_NAME_NOTE, SHOWN_LISTS_NOTE, type PostTurnGuard } from "./turn-runner.ts";
 import type { InboundTurn, TurnSink } from "./provider.ts";
 import type { Principal } from "@mercury-fw/channel-types";
 import { createSessionHistory, type SessionHistory } from "../session/history.ts";
@@ -1514,5 +1514,74 @@ describe("createTurnRunner: preferred name and opening turn", () => {
     expect(OPENING_NOTE).toContain("set_preferred_name");
     expect(OPENING_NOTE).toContain("overrides");
     expect(PREFERRED_NAME_NOTE("Luca")).toContain("Luca");
+  });
+});
+
+// #230: the history keeps only the text of each answer, so a turn after a list
+// was shown the model no longer knew which one, and retyped it with made-up
+// keys. The lists it showed are named at the end of the prompt.
+describe("createTurnRunner: lists already shown", () => {
+  function setup(shown: Array<{ ref: string; label: string }>, names: Record<string, string> = {}) {
+    const systems: string[] = [];
+    const asked: string[] = [];
+    const runner = createTurnRunner({
+      model: {} as any,
+      systemPrompts: { singleUser: "single", multiUser: "multi" },
+      buildTools: () => ({}),
+      getOrCreateHistory: () => fakeHistory(),
+      trackSession: () => {},
+      registerCaptureCallback: () => {},
+      maybeCapture: async () => {},
+      processToolCorrections: async () => {},
+      logStep: () => {},
+      preferredName: (key) => names[key],
+      shownLists: (sessionKey) => (asked.push(sessionKey), shown),
+      runTurnFn: async (_history, _text, deps) => {
+        systems.push(deps.system);
+        return "ok";
+      },
+    });
+    return { runner, systems, asked };
+  }
+
+  test("names each list shown in the conversation, at the very end of the prompt", async () => {
+    const { runner, systems, asked } = setup(
+      [
+        { ref: "d1", label: 'jira issue search --jql "a" (2 items)' },
+        { ref: "d3", label: "" },
+      ],
+      { "google-chat:u1": "Luca" },
+    );
+    await runner(baseTurn({ principal: verified("u1"), sessionKey: "s-1" }), baseSink());
+    expect(asked).toEqual(["s-1"]);
+    expect(systems).toEqual([
+      `single\n\n${PREFERRED_NAME_NOTE("Luca")}\n\n${SHOWN_LISTS_NOTE([
+        { ref: "d1", label: 'jira issue search --jql "a" (2 items)' },
+        { ref: "d3", label: "" },
+      ])}`,
+    ]);
+  });
+
+  test("the note lists refs and labels, and says how to show one again", () => {
+    expect(SHOWN_LISTS_NOTE([{ ref: "d1", label: "jira issue search A (2 items)" }, { ref: "d3", label: "" }])).toBe(
+      [
+        "Lists already shown in this conversation (most recent last):",
+        "- d1: jira issue search A (2 items)",
+        "- d3",
+        "To show one again, call present with its ref. For up-to-date data, or if present says the ref is gone, run its command again. Never retype a list.",
+      ].join("\n"),
+    );
+  });
+
+  test("adds nothing when no list was shown", async () => {
+    const { runner, systems } = setup([]);
+    await runner(baseTurn({ principal: verified("u1") }), baseSink());
+    expect(systems).toEqual(["single"]);
+  });
+
+  test("names them in a shared space too", async () => {
+    const { runner, systems } = setup([{ ref: "d1", label: "x (1 item)" }]);
+    await runner(baseTurn({ principal: verified("u1"), multiUser: true }), baseSink());
+    expect(systems).toEqual([`multi\n\n${SHOWN_LISTS_NOTE([{ ref: "d1", label: "x (1 item)" }])}`]);
   });
 });
