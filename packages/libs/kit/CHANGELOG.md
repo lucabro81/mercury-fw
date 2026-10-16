@@ -1,5 +1,12 @@
 # @mercury-fw/kit
 
+## 0.50.4
+
+### Patch Changes
+
+- @mercury-fw/plugin-types@0.50.4
+- @mercury-fw/channel-types@0.50.4
+
 ## 0.50.3
 
 ### Patch Changes

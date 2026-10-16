@@ -1,5 +1,7 @@
 # @mercury-fw/plugin-types
 
+## 0.50.4
+
 ## 0.50.3
 
 ## 0.50.2

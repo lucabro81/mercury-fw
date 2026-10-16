@@ -1,5 +1,17 @@
 # @mercury-fw/core
 
+## 0.50.4
+
+### Patch Changes
+
+- ef59194: - The turn log says how the model's generation ended (`finish stop`, for instance).
+  - A turn whose generation ended on an error or at a token limit fails with an error instead of passing a cut answer off as complete.
+  - @mercury-fw/plugin-types@0.50.4
+  - @mercury-fw/channel-types@0.50.4
+  - @mercury-fw/cli-engine@0.50.4
+  - @mercury-fw/confirm-engine@0.50.4
+  - @mercury-fw/utils@0.50.4
+
 ## 0.50.3
 
 ### Patch Changes
