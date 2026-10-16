@@ -1737,12 +1737,19 @@ describe("createTurnRunner: turn log", () => {
 
   test("logs a turn whose client went away as cancelled", async () => {
     const abort = new AbortController();
-    const { runner, lines } = setup(async () => {
+    const { runner, lines, stoppedCount } = setup(async () => {
       abort.abort();
       throw new Error("aborted");
     });
     await expect(runner(baseTurn({ logPrefix: "[p] ", abortSignal: abort.signal }), baseSink())).rejects.toThrow();
-    expect(lines[1]).toBe("[p] [turn] cancelled after 0.0s");
+    expect(lines).toEqual(["[p] [turn] start", "[p] [turn] cancelled after 0.0s"]);
+    expect(stoppedCount()).toBe(1);
+  });
+
+  test("counts the answer from the final text on a channel that doesn't stream", async () => {
+    const { runner, lines } = setup(async () => "final answer");
+    await runner(baseTurn({ logPrefix: "[p] " }), baseSink());
+    expect(lines.at(-1)).toBe("[p] [turn] done in 0.0s: 0 steps, 0 tool calls, reasoning 0 chars, answer 12 chars");
   });
 
   test("marks an opening turn", async () => {

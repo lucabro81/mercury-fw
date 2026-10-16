@@ -75,8 +75,8 @@ export const SHOWN_LISTS_NOTE = (shown: Array<{ ref: string; label: string }>): 
 /** How often a turn still running says so in the log. */
 const HEARTBEAT_MS = 60_000;
 
-/** The answer's length: the final text when there is one, what was streamed otherwise. */
-const correctedTextLength = (finalText: string, streamed: number) => (finalText ? finalText.length : streamed);
+/** The answer's length: the final text when there is one (a channel that doesn't stream counts nothing on the way), what was streamed otherwise. */
+const answerLength = (finalText: string, streamed: number) => (finalText ? finalText.length : streamed);
 
 /** `n` and its noun, singular for one. */
 const count = (n: number, noun: string) => `${n} ${noun}${n === 1 ? "" : "s"}`;
@@ -369,7 +369,7 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
       const finalText = shownText(correctedText, surfacedDisplays);
       await sink.finalize(finalText);
       logTurn(
-        `${turn.logPrefix}[turn] done in ${seconds()}s: ${count(steps.length, "step")}, ${count(toolCalls, "tool call")}, reasoning ${reasoningChars} chars, answer ${correctedTextLength(assistantText, answerChars)} chars`,
+        `${turn.logPrefix}[turn] done in ${seconds()}s: ${count(steps.length, "step")}, ${count(toolCalls, "tool call")}, reasoning ${reasoningChars} chars, answer ${answerLength(assistantText, answerChars)} chars`,
       );
     } catch (err) {
       logTurn(
