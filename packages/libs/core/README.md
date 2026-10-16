@@ -59,6 +59,10 @@ What the history keeps of an answer is its text. A list the answer showed (the l
 
 An example. Someone writes "my favourite colour is green" in a web chat and closes the tab. An hour later Mercury has freed that conversation. When they open it again and ask "what's my favourite colour?", Mercury reads the end of the conversation from the archive, puts it back in front of the model, and the answer is "green", as if no time had passed.
 
+## What the log says about a turn
+
+Every turn writes to the service's log (stderr) when it starts and when it ends, with how long it took, its steps and tool calls, and how much reasoning and answer text the model wrote, or why it failed. A turn still running says so every minute, with the same counts: reasoning that keeps growing with no answer is a model going round in circles. The calls to tools are logged as they happen, each with its outcome.
+
 ## Who sees what
 
 The core keeps one identity per person, `<provider>:<id>` (`google-chat:users/42`, `oidc:<sub>`), so two providers issuing the same id are still two people. Memory, the conversation archive, the tool log and pending confirmations are kept per person, and a confirmation can only be confirmed by whoever staged it.
