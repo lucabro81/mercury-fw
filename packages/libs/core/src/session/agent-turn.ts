@@ -109,7 +109,7 @@ type GenerateTextFn = (params: {
   onStepEnd?: (step: StepInfo) => void;
   /** Aborts the in-flight generation when the caller cancels the turn. */
   abortSignal?: AbortSignal;
-}) => Promise<{ text: string; usage?: { inputTokens: number | undefined } }>;
+}) => Promise<{ text: string; usage?: { inputTokens: number | undefined }; finishReason?: string }>;
 
 /**
  * Minimal shape this file reads off a `fullStream` part — deliberately a
@@ -129,7 +129,16 @@ type GenerateTextFn = (params: {
  * silently reading `undefined` and going empty if a future upgrade flips
  * it back.
  */
-type StreamPart = { type: string; delta?: string; text?: string; id?: string };
+type StreamPart = {
+  type: string;
+  delta?: string;
+  text?: string;
+  id?: string;
+  /** On a `finish` part: how the whole generation ended. */
+  finishReason?: string;
+  /** On an `error` part: what broke the stream. */
+  error?: unknown;
+};
 
 /** The shape of the AI SDK streaming call this module needs, injectable for tests. */
 type StreamTextFn = (params: {
@@ -274,6 +283,13 @@ const defaultStreamTextFn: StreamTextFn = (params) => streamText(buildStreamText
  * @param deps.streamTextFn - Test seam for the streaming path (used when
  *   `onTextChunk`/`onReasoningChunk` is provided), same caveat as
  *   `generateTextFn`.
+ * @param deps.onFinish - Optional, called once per turn with how the
+ *   generation ended: the AI SDK's `finishReason` (`stop`, `length`,
+ *   `error`, ...) from the stream's final `finish` part, or from
+ *   `generateText`'s result on the non-streaming path, plus the message of
+ *   the stream's last `error` part when one came through, whatever the
+ *   reason. Not called when no reason arrived (a stream that ended on an
+ *   abort).
  * @param deps.onUsage - Optional, called once per turn with the real
  *   `inputTokens` count the model actually consumed (summed across every
  *   step, including tool calls) — not an estimate. The terminal channel
@@ -295,6 +311,7 @@ export async function runTurn(
     onReasoningChunk?: (chunk: string, id: string) => void;
     onReasoningEnd?: (id: string, failed: boolean) => void;
     onUsage?: (inputTokens: number | undefined) => void;
+    onFinish?: (reason: string, error?: string) => void;
     generateTextFn?: GenerateTextFn;
     streamTextFn?: StreamTextFn;
     /** When set, aborting it stops the in-flight generation — the turn ends
@@ -328,6 +345,8 @@ export async function runTurn(
     // ids) is enough: it's `undefined` whenever no block is open, which is
     // exactly when the abrupt-failure guard below must stay silent.
     let currentReasoningId: string | undefined;
+    let finishReason: string | undefined;
+    let streamError: string | undefined;
     try {
       for await (const part of result.stream) {
         if (part.type === "text-delta") {
@@ -342,6 +361,10 @@ export async function runTurn(
           const id = part.id ?? "";
           currentReasoningId = undefined;
           deps.onReasoningEnd?.(id, false);
+        } else if (part.type === "error") {
+          streamError = part.error instanceof Error ? part.error.message : String(part.error);
+        } else if (part.type === "finish") {
+          finishReason = part.finishReason;
         }
       }
     } finally {
@@ -359,6 +382,8 @@ export async function runTurn(
         deps.onReasoningEnd?.(currentReasoningId, true);
       }
     }
+    // Before usage: a broken stream may reject it, and how it ended matters more.
+    if (finishReason !== undefined) deps.onFinish?.(finishReason, streamError);
     deps.onUsage?.((await result.usage)?.inputTokens);
 
     if (fullText.trim().length === 0) {
@@ -384,6 +409,7 @@ export async function runTurn(
     },
   });
   deps.onUsage?.(result.usage?.inputTokens);
+  if (result.finishReason !== undefined) deps.onFinish?.(result.finishReason);
 
   const text = result.text.trim().length === 0 ? resolveEmptyText(lastStep) : result.text;
   await history.addAssistantMessage(resolveHistoryText(lastStep, text));

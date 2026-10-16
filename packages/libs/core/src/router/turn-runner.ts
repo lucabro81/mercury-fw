@@ -81,6 +81,19 @@ const answerLength = (finalText: string, streamed: number) => (finalText ? final
 /** What a stalled turn fails with: `ms` in seconds, decimals kept under a minute. */
 const stallMessage = (ms: number) => `the model sent nothing for ${Number((ms / 1000).toFixed(1))}s`;
 
+/**
+ * How a generation ended, for a turn that must fail on it: `error` (the
+ * stream broke) and `length` (cut at a token limit) leave an answer that
+ * only looks complete. Any other reason, an end token mid-word included,
+ * can't be told apart from a deliberate end, so it stays a success.
+ *
+ * @returns The failure's message, or `undefined` when the turn succeeds.
+ */
+const finishFailure = (finish: { reason: string; error?: string } | undefined) =>
+  finish && (finish.reason === "error" || finish.reason === "length")
+    ? `the model stopped: ${finish.reason}${finish.error ? ` (${finish.error})` : ""}`
+    : undefined;
+
 /** How long a streaming turn waits for the model by default before it's stopped as stalled. */
 export const DEFAULT_STALL_TIMEOUT_MS = 120_000;
 
@@ -324,6 +337,7 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
     let reasoningChars = 0;
     let answerChars = 0;
     let toolCalls = 0;
+    let finish: { reason: string; error?: string } | undefined;
     logTurn(`${turn.logPrefix}[turn] start${turn.opening ? " (opening)" : ""}`);
     const stopHeartbeat = (
       deps.heartbeat ??
@@ -425,6 +439,9 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
           sink.onStep?.(step);
         },
         onUsage: sink.onUsage,
+        onFinish: (reason, error) => {
+          finish = { reason, error };
+        },
         abortSignal: watching
           ? turn.abortSignal
             ? AbortSignal.any([turn.abortSignal, stall.signal])
@@ -436,6 +453,8 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
       // The AI SDK doesn't throw when its signal aborts: the stream ends and
       // the call returns what it had. A stall is a failure all the same.
       if (stalled && !turn.abortSignal?.aborted) throw new Error(stallMessage(stallMs));
+      const cut = finishFailure(finish);
+      if (cut !== undefined) throw new Error(cut);
 
       let correctedText = text;
       // Plugin-contributed post-turn guards, run in order. `shouldRun` gates
@@ -477,7 +496,7 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
       const finalText = shownText(correctedText, surfacedDisplays);
       await sink.finalize(finalText);
       logTurn(
-        `${turn.logPrefix}[turn] done in ${seconds()}s: ${count(steps.length, "step")}, ${count(toolCalls, "tool call")}, reasoning ${reasoningChars} chars, answer ${answerLength(assistantText, answerChars)} chars`,
+        `${turn.logPrefix}[turn] done in ${seconds()}s: ${count(steps.length, "step")}, ${count(toolCalls, "tool call")}, reasoning ${reasoningChars} chars, answer ${answerLength(assistantText, answerChars)} chars${finish ? `, finish ${finish.reason}` : ""}`,
       );
     } catch (err) {
       // A client that went away is a cancel, even if the watchdog fired meanwhile.
