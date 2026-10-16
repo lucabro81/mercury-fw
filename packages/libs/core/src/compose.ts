@@ -426,7 +426,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
         vaultPath: wikiVaultPath,
         writeConfirmationNoteFn: writeConfirmationNote,
       }),
-      stashDisplay: (artifact: string) => displayStore.stash(sessionKey, artifact),
+      stashDisplay: (artifact: string, label?: string) => displayStore.stash(sessionKey, artifact, label),
     };
 
     // Each CLI-based plugin owns its tool (jiraCommand, …), built from its own
@@ -501,6 +501,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
     systemPrompts: systemPromptsFor({ person: { key: "", roles: [] }, operator: false }),
     systemPromptsFor,
     preferredName: (key) => profiles.nameOf(key),
+    shownLists: (sessionKey) => displayStore.shown(sessionKey),
     identify: people.identify,
     buildTools,
     // Post-turn guards contributed by whatever plugins loaded — the core runs
@@ -599,6 +600,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
         closeSession: (key) => {
           histories.delete(key);
           sessionCapture.close(key);
+          displayStore.forget(key);
         },
         withSession: async (key, fn) => {
           await sessionLock.run(key, fn);

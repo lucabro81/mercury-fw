@@ -48,6 +48,18 @@ export const OPENING_NOTE =
  */
 export const OPENING_CUE = "(The person has just opened the conversation and hasn't written anything yet.)";
 
+/**
+ * Appended last to a turn's prompt when lists were shown in the conversation:
+ * the history keeps only the text of each answer, so without it the model no
+ * longer knows which list it showed. Refs and labels only, never the lists.
+ */
+export const SHOWN_LISTS_NOTE = (shown: Array<{ ref: string; label: string }>): string =>
+  [
+    "Lists already shown in this conversation (most recent last):",
+    ...shown.map(({ ref, label }) => (label ? `- ${ref}: ${label}` : `- ${ref}`)),
+    "To show one again, call present with its ref. For up-to-date data, or if present says the ref is gone, run its command again. Never retype a list.",
+  ].join("\n");
+
 export type TurnRunnerDeps = {
   model: LanguageModel;
   /** Both variants, precomposed by the composition root; selected per turn by `turn.multiUser`. Used when `systemPromptsFor` is absent. */
@@ -60,6 +72,8 @@ export type TurnRunnerDeps = {
    * is whoever the channel says.
    */
   identify?: (principal: InboundTurn["principal"]) => Promise<Identified>;
+  /** The lists shown in the session, most recent last (see `display-store.ts`); none when absent. */
+  shownLists?: (sessionKey: string) => Array<{ ref: string; label: string }>;
   /** How the person with `key` asked to be called, or undefined; nobody has a name when absent. */
   preferredName?: (key: string) => string | undefined;
   /** `key` is the person's key, `who` whom the tools are offered to and act for. */
@@ -198,12 +212,13 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
       }
       return;
     }
-    const base = turn.multiUser ? prompts.multiUser : prompts.singleUser;
-    const system = turn.opening
-      ? `${base}\n\n${OPENING_NOTE}`
-      : name === undefined
-        ? base
-        : `${base}\n\n${PREFERRED_NAME_NOTE(name)}`;
+    const shown = deps.shownLists?.(turn.sessionKey) ?? [];
+    const system = [
+      turn.multiUser ? prompts.multiUser : prompts.singleUser,
+      ...(turn.opening ? [OPENING_NOTE] : name === undefined ? [] : [PREFERRED_NAME_NOTE(name)]),
+      // Last, where a small model pays the most attention.
+      ...(shown.length > 0 ? [SHOWN_LISTS_NOTE(shown)] : []),
+    ].join("\n\n");
     const input = turn.opening ? OPENING_CUE : turn.text;
     if (tracked) {
       deps.trackSession(turn.sessionKey, key, (deps.now ?? Date.now)());
