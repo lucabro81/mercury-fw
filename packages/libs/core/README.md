@@ -28,6 +28,7 @@ A scaffolded app's `src/index.ts` (the service) and `src/repl.ts` (the REPL) are
 | `OLLAMA_THINK` | `false` for a model that doesn't support thinking. |
 | `QDRANT_URL` | Qdrant, for the episodic memory (default `http://qdrant:6333`). |
 | `WIKI_VAULT_PATH` | Where the wiki lives. Required. |
+| `TURN_STALL_TIMEOUT_MS` | How long a turn on a streaming channel (the HTTP surface) waits for the model's next token or step before it's stopped with an error, "the model sent nothing for N seconds" (default 120000, two minutes; `0` turns it off). A tool that takes long doesn't count: the wait pauses while a tool runs. Without it, a model server that stops sending mid-answer leaves the turn, and its conversation, hanging until the service restarts. |
 
 Qdrant being unreachable degrades memory, it doesn't stop the agent.
 
