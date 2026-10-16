@@ -1,5 +1,18 @@
 # @mercury-fw/core
 
+## 0.50.1
+
+### Patch Changes
+
+- d93e06a: - A new conversation on a channel where the person opens and reopens conversations (the HTTP surface) no longer starts with a recap of their last one: nothing from another conversation comes in unless they ask.
+  - On a channel with one running stream (Google Chat), the recap of the last conversation reaches the model as background in its prompt, framed as possibly out of date. It used to arrive as the model's own message, which made it pick that thread back up, and the next summary saved it again.
+  - Episodic summaries keep what was asked and decided, not the data a tool returned.
+  - @mercury-fw/plugin-types@0.50.1
+  - @mercury-fw/channel-types@0.50.1
+  - @mercury-fw/cli-engine@0.50.1
+  - @mercury-fw/confirm-engine@0.50.1
+  - @mercury-fw/utils@0.50.1
+
 ## 0.50.0
 
 ### Minor Changes
