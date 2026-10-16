@@ -32,7 +32,7 @@ import { buildSystemPrompts } from "./session/system-prompt.ts";
 import { assistantNameOf, skillsWithAssistantName, toolsWithAssistantName } from "./session/assistant-name.ts";
 import { createSessionLock } from "./router/session-lock.ts";
 import { createSessionCapture } from "./session/session-capture.ts";
-import { createTurnRunner } from "./router/turn-runner.ts";
+import { createTurnRunner, parseStallTimeoutMs } from "./router/turn-runner.ts";
 import { loadAuth } from "./router/auth-loader.ts";
 import { loadDirectory } from "./router/directory-loader.ts";
 import type { TurnSink } from "./router/provider.ts";
@@ -495,12 +495,15 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   // One turn at a time per session, and the idle sweep waits its turn on the
   // same lock before it captures and closes a session.
   const sessionLock = createSessionLock();
+  // A streaming turn whose model goes silent is stopped (#240); checked here so a bad value stops the app at startup.
+  const stallTimeoutMs = parseStallTimeoutMs(process.env.TURN_STALL_TIMEOUT_MS);
   const handleTurn = createTurnRunner({
     sessionLock,
     model,
     systemPrompts: systemPromptsFor({ person: { key: "", roles: [] }, operator: false }),
     systemPromptsFor,
     preferredName: (key) => profiles.nameOf(key),
+    stallTimeoutMs,
     shownLists: (sessionKey) => displayStore.shown(sessionKey),
     identify: people.identify,
     buildTools,

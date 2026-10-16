@@ -78,6 +78,55 @@ const HEARTBEAT_MS = 60_000;
 /** The answer's length: the final text when there is one (a channel that doesn't stream counts nothing on the way), what was streamed otherwise. */
 const answerLength = (finalText: string, streamed: number) => (finalText ? finalText.length : streamed);
 
+/** How long a streaming turn waits for the model by default before it's stopped as stalled. */
+export const DEFAULT_STALL_TIMEOUT_MS = 120_000;
+
+/** `TURN_STALL_TIMEOUT_MS`: unset or empty is the default, otherwise a whole number of milliseconds from 0 up (0 turns the watchdog off); throws on anything else. */
+export function parseStallTimeoutMs(text: string | undefined): number {
+  const trimmed = text?.trim() ?? "";
+  if (trimmed === "") return DEFAULT_STALL_TIMEOUT_MS;
+  if (!/^\d+$/.test(trimmed)) {
+    throw new Error(`TURN_STALL_TIMEOUT_MS must be a whole number of milliseconds from 0 up, got "${trimmed}"`);
+  }
+  return Number(trimmed);
+}
+
+/**
+ * A model that stops sending mid-stream (#240) would hang its turn, and the
+ * conversation's lock, for good. The watchdog fires `onStall` once `ms` pass
+ * with no `kick`; `pause`/`resume` hold it while a tool runs, since a slow tool
+ * isn't a silent model. With `ms` 0 it never arms.
+ */
+function createWatchdog(ms: number, onStall: () => void, setTimer: (fn: () => void, ms: number) => () => void) {
+  let cancel: (() => void) | undefined;
+  let paused = 0;
+  let stopped = ms <= 0;
+  const disarm = () => {
+    cancel?.();
+    cancel = undefined;
+  };
+  const arm = () => {
+    disarm();
+    if (!stopped && paused === 0) cancel = setTimer(onStall, ms);
+  };
+  arm();
+  return {
+    kick: arm,
+    pause: () => {
+      paused += 1;
+      disarm();
+    },
+    resume: () => {
+      paused = Math.max(0, paused - 1);
+      arm();
+    },
+    stop: () => {
+      stopped = true;
+      disarm();
+    },
+  };
+}
+
 /** `n` and its noun, singular for one. */
 const count = (n: number, noun: string) => `${n} ${noun}${n === 1 ? "" : "s"}`;
 
@@ -166,6 +215,15 @@ export type TurnRunnerDeps = {
   logTurnFn?: (line: string) => void;
   /** Test seam: runs `fn` every `ms` until the returned stop is called; defaults to `setInterval`. */
   heartbeat?: (fn: () => void, ms: number) => () => void;
+  /**
+   * How long a streaming turn waits for the model's next chunk or step before
+   * it's stopped as stalled (`TURN_STALL_TIMEOUT_MS`); off when absent or 0.
+   * A channel that doesn't stream only hears from the model at the end of each
+   * step, so it never gets the watchdog.
+   */
+  stallTimeoutMs?: number;
+  /** Test seam: runs `fn` once after `ms` unless the returned cancel is called first; defaults to `setTimeout`. */
+  stallTimer?: (fn: () => void, ms: number) => () => void;
   /**
    * Returns the display artifacts the model surfaced via `present` this turn
    * (see `display-store.ts`), in stash order, to append after the model's
@@ -278,6 +336,15 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
       HEARTBEAT_MS,
     );
 
+    // Only a streaming turn hears from the model as it goes (see stallTimeoutMs).
+    const stallMs = sink.onTextChunk || sink.onReasoningChunk ? (deps.stallTimeoutMs ?? 0) : 0;
+    const watching = stallMs > 0;
+    const stall = new AbortController();
+    let stalled = false;
+    // Armed right before the model is called: building the history (a Qdrant
+    // read) isn't the model's silence.
+    let watchdog = createWatchdog(0, () => {}, () => () => {});
+
     const steps: StepInfo[] = [];
     let history: SessionHistory;
     // The model's own answer text (post-guards, before any surfaced `present`
@@ -295,15 +362,42 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
       // otherwise, firing on its own 60s schedule regardless of whether
       // the turn itself already failed and was reported.
       history = await deps.getOrCreateHistory(turn.sessionKey, tracked, tracked ? key : undefined, tracked ? turn.resume : undefined);
+      watchdog = createWatchdog(
+        stallMs,
+        () => {
+          stalled = true;
+          stall.abort();
+        },
+        deps.stallTimer ??
+          ((fn, ms) => {
+            const id = setTimeout(fn, ms);
+            return () => clearTimeout(id);
+          }),
+      );
       const text = await (deps.runTurnFn ?? runTurn)(history, input, {
         model: deps.model,
-        tools: deps.buildTools(turn.sessionKey, key, who, sink.onToolStart, sink.onToolFinish),
+        tools: watching
+          ? deps.buildTools(
+              turn.sessionKey,
+              key,
+              who,
+              (...args) => {
+                watchdog.pause();
+                sink.onToolStart(...args);
+              },
+              (toolCallId, outcome) => {
+                watchdog.resume();
+                sink.onToolFinish?.(toolCallId, outcome);
+              },
+            )
+          : deps.buildTools(turn.sessionKey, key, who, sink.onToolStart, sink.onToolFinish),
         system: systemFor(history.primer()),
         // Counted on the way through, and only where the channel streams: an
         // absent callback keeps the turn on the non-streaming path.
         ...(sink.onTextChunk
           ? {
               onTextChunk: (chunk: string) => {
+                watchdog.kick();
                 answerChars += chunk.length;
                 sink.onTextChunk!(chunk);
               },
@@ -312,6 +406,7 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
         ...(sink.onReasoningChunk
           ? {
               onReasoningChunk: (chunk: string, id: string) => {
+                watchdog.kick();
                 reasoningChars += chunk.length;
                 sink.onReasoningChunk!(chunk, id);
               },
@@ -319,6 +414,7 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
           : {}),
         onReasoningEnd: sink.onReasoningEnd,
         onStepFinish: (step) => {
+          watchdog.kick();
           steps.push(step);
           toolCalls += step.toolCalls.length;
           deps.logStep(turn.logPrefix, step);
@@ -326,8 +422,14 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
           sink.onStep?.(step);
         },
         onUsage: sink.onUsage,
-        abortSignal: turn.abortSignal,
+        abortSignal: watching
+          ? turn.abortSignal
+            ? AbortSignal.any([turn.abortSignal, stall.signal])
+            : stall.signal
+          : turn.abortSignal,
       });
+      // The model is done: what's left (guards, finalize) isn't its silence.
+      watchdog.stop();
 
       let correctedText = text;
       // Plugin-contributed post-turn guards, run in order. `shouldRun` gates
@@ -372,6 +474,11 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
         `${turn.logPrefix}[turn] done in ${seconds()}s: ${count(steps.length, "step")}, ${count(toolCalls, "tool call")}, reasoning ${reasoningChars} chars, answer ${answerLength(assistantText, answerChars)} chars`,
       );
     } catch (err) {
+      if (stalled) {
+        const message = `the model sent nothing for ${Math.round(stallMs / 1000)}s`;
+        logTurn(`${turn.logPrefix}[turn] stalled after ${seconds()}s: ${message}`);
+        throw new Error(message);
+      }
       logTurn(
         turn.abortSignal?.aborted
           ? `${turn.logPrefix}[turn] cancelled after ${seconds()}s`
@@ -379,6 +486,7 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
       );
       throw err;
     } finally {
+      watchdog.stop();
       stopHeartbeat();
       sink.dispose();
     }
