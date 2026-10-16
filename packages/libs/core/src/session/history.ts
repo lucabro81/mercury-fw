@@ -15,6 +15,8 @@
  */
 
 /** A single turn's worth of conversation content. */
+import type { ContextPrimer } from "./context-primer.ts";
+
 export type Message = { role: "user" | "assistant"; content: string };
 
 /**
@@ -55,7 +57,7 @@ export type SessionHistory = {
    * taken for the assistant's own words, nor captured again as part of this
    * conversation.
    */
-  primer(): string | undefined;
+  primer(): ContextPrimer | undefined;
   /**
    * The messages to feed into the next model call: the current summary
    * (if one exists, as a synthetic leading message) followed by the raw
@@ -125,7 +127,7 @@ function summaryMessage(summary: string): Message {
 export function createSessionHistory(
   summarize: (messages: Message[]) => Promise<string>,
   onBeforeCompress?: (messages: Message[]) => void,
-  primer?: string,
+  primer?: ContextPrimer,
   resumed?: ResumedConversation,
 ): SessionHistory {
   let rawMessages: Message[] = [...(resumed?.messages ?? [])];
@@ -186,7 +188,7 @@ export function createSessionHistory(
         rawMessages[rawMessages.length - 1] = { role: "assistant", content };
       }
     },
-    primer: () => primer || undefined,
+    primer: () => (primer && (primer.current || primer.recap) ? primer : undefined),
     getMessages,
     getCapturable: () => [...leadingMessages(false), ...rawMessages.slice(restoredCount)],
     getCharCount: () => getMessages().reduce((sum, m) => sum + m.content.length, 0),

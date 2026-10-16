@@ -85,11 +85,28 @@ async function pendingConfirmationTokens(key: string, deps: ContextPrimerDeps): 
  * will, a new one is a fresh start, and nothing from another conversation comes
  * in unless they ask for it.
  */
+/**
+ * How the primer is built for a turn: no last session on a conversation its
+ * client reopens at will (`resume`, the HTTP surface), where a new one is a
+ * deliberate fresh start; with it on a single running stream (Google Chat).
+ */
+export function primerOptions(resume: { maxChars?: number } | undefined): { lastSession: boolean } {
+  return { lastSession: resume === undefined };
+}
+
+/**
+ * A primer in its two parts, each empty when there's nothing: `current` is the
+ * state the model uses as is (the wiki index, the confirmations still pending),
+ * `recap` the last session and the facts it reinforced, background that may be
+ * out of date.
+ */
+export type ContextPrimer = { current: string; recap: string };
+
 export async function buildContextPrimer(
   key: string,
   deps: ContextPrimerDeps,
   opts: { lastSession?: boolean } = {},
-): Promise<string> {
+): Promise<ContextPrimer> {
   // Episodic memory is enrichment: without Qdrant the primer goes on without
   // the recap instead of failing the turn.
   const entries =
@@ -107,14 +124,11 @@ export async function buildContextPrimer(
   // pointed at what's in the wiki right now.
   const indexContent = (await deps.readIndexFileFn(deps.vaultPath)).trim();
 
-  if (entries.length === 0 && pendingTokens.length === 0 && indexContent.length === 0) {
-    return "";
-  }
-
-  const sections: string[] = [];
+  const current: string[] = [];
+  const recap: string[] = [];
 
   if (indexContent.length > 0) {
-    sections.push(`Wiki index:\n${indexContent}`);
+    current.push(`Wiki index:\n${indexContent}`);
   }
 
   if (entries.length > 0) {
@@ -137,9 +151,9 @@ export async function buildContextPrimer(
     }
 
     if (facts.length > 0) {
-      sections.push(`Known facts:\n${facts.map((f) => `- ${f}`).join("\n")}`);
+      recap.push(`Known facts:\n${facts.map((f) => `- ${f}`).join("\n")}`);
     }
-    sections.push(`Last session:\n${entries.map((e) => `- ${e.summary}`).join("\n")}`);
+    recap.push(`Last session:\n${entries.map((e) => `- ${e.summary}`).join("\n")}`);
   }
 
   // Deliberately opaque: just the token, no command, no "still pending"
@@ -147,8 +161,8 @@ export async function buildContextPrimer(
   // Resolving it into something meaningful requires the model to
   // deliberately call resolve_reference (wiki-tools.ts) with the token.
   if (pendingTokens.length > 0) {
-    sections.push(`Riferimenti aperti:\n${pendingTokens.map((t) => `- [REQ:${t}]`).join("\n")}`);
+    current.push(`Open references:\n${pendingTokens.map((t) => `- [REQ:${t}]`).join("\n")}`);
   }
 
-  return sections.join("\n\n");
+  return { current: current.join("\n\n"), recap: recap.join("\n\n") };
 }

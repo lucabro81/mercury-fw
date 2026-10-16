@@ -26,7 +26,7 @@ import { createSessionHistory, type SessionHistory, type Message, type ResumedCo
 import { createSummarizer } from "./session/summarizer.ts";
 import { createEpisodicSummarizer } from "./session/episodic-summarizer.ts";
 import { createSemanticFactExtractor } from "./session/semantic-fact-extractor.ts";
-import { buildContextPrimer } from "./session/context-primer.ts";
+import { buildContextPrimer, primerOptions, type ContextPrimer } from "./session/context-primer.ts";
 import { resumeConversation, resumeBudget, parseResumeMaxChars } from "./session/resume.ts";
 import { buildSystemPrompts } from "./session/system-prompt.ts";
 import { assistantNameOf, skillsWithAssistantName, toolsWithAssistantName } from "./session/assistant-name.ts";
@@ -235,7 +235,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
    * meaningful for sessions it tracks (a real per-user identity); an
    * identity-less channel omits it.
    */
-  function getOrCreateHistory(key: string, trackForCapture = false, primer?: string, resumed?: ResumedConversation): SessionHistory {
+  function getOrCreateHistory(key: string, trackForCapture = false, primer?: ContextPrimer, resumed?: ResumedConversation): SessionHistory {
     let history = histories.get(key);
     if (!history) {
       history = createSessionHistory(
@@ -527,7 +527,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
           readWikiFileInRootsFn: readWikiFileInRoots,
           readIndexFileFn: readIndexFile,
           log: (msg) => console.error(`[memory] ${msg}`),
-        }, { lastSession: resume === undefined });
+        }, primerOptions(resume));
         return getOrCreateHistory(key, trackForCapture, primer, resumed);
       }
       return getOrCreateHistory(key, trackForCapture);

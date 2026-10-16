@@ -132,7 +132,7 @@ describe("createSessionHistory", () => {
     });
 
     it("keeps the user turn even with a primer set (primer + summary alone are both assistant)", async () => {
-      const history = createSessionHistory(fakeSummarizer(), undefined, "prior session facts");
+      const history = createSessionHistory(fakeSummarizer(), undefined, { current: "", recap: "prior session facts" });
       await history.addAssistantMessage("x".repeat(MAX_HISTORY_CHARS));
       await history.addUserMessage("and MER-2?");
 
@@ -214,8 +214,8 @@ describe("createSessionHistory", () => {
   // for the turn runner to give the model as background in the prompt.
   describe("primer", () => {
     it("is held aside, never among the messages the model gets or what's captured", async () => {
-      const history = createSessionHistory(fakeSummarizer(), undefined, "user is a data scientist");
-      expect(history.primer()).toBe("user is a data scientist");
+      const history = createSessionHistory(fakeSummarizer(), undefined, { current: "", recap: "user is a data scientist" });
+      expect(history.primer()).toEqual({ current: "", recap: "user is a data scientist" });
       expect(history.getMessages()).toEqual([]);
       await history.addUserMessage("hi");
       expect(history.getMessages()).toEqual([{ role: "user", content: "hi" }]);
@@ -225,19 +225,23 @@ describe("createSessionHistory", () => {
 
     it("is undefined when omitted or empty", () => {
       expect(createSessionHistory(fakeSummarizer()).primer()).toBeUndefined();
-      expect(createSessionHistory(fakeSummarizer(), undefined, "").primer()).toBeUndefined();
+      expect(createSessionHistory(fakeSummarizer(), undefined, { current: "", recap: "" }).primer()).toBeUndefined();
+      expect(createSessionHistory(fakeSummarizer(), undefined, { current: "Wiki index:", recap: "" }).primer()).toEqual({
+        current: "Wiki index:",
+        recap: "",
+      });
     });
 
     it("survives a real compression event unchanged — it is never part of the batch sent to summarize()", async () => {
       const calls: Message[][] = [];
       const filler = "x".repeat(MAX_HISTORY_CHARS);
-      const history = createSessionHistory(fakeSummarizer({ calls }), undefined, "prior session facts");
+      const history = createSessionHistory(fakeSummarizer({ calls }), undefined, { current: "", recap: "prior session facts" });
 
       await history.addAssistantMessage(filler);
       await history.addUserMessage("latest");
 
       expect(calls).toEqual([[{ role: "assistant", content: filler }]]);
-      expect(history.primer()).toBe("prior session facts");
+      expect(history.primer()).toEqual({ current: "", recap: "prior session facts" });
       expect(history.getMessages()[0]?.content).toContain("a summary");
     });
   });
@@ -303,7 +307,7 @@ describe("createSessionHistory", () => {
     };
 
     it("leads the history with the resumed summary and messages", () => {
-      const history = createSessionHistory(fakeSummarizer(), undefined, "primer", resumed);
+      const history = createSessionHistory(fakeSummarizer(), undefined, { current: "", recap: "primer" }, resumed);
       expect(history.getMessages()).toEqual([
         { role: "assistant", content: "Earlier conversation summary: they said their favourite colour is green" },
         { role: "user", content: "and the car?" },
@@ -312,7 +316,7 @@ describe("createSessionHistory", () => {
     });
 
     it("leaves the resumed part out of what's capturable, keeping what's new", async () => {
-      const history = createSessionHistory(fakeSummarizer(), undefined, "primer", resumed);
+      const history = createSessionHistory(fakeSummarizer(), undefined, { current: "", recap: "primer" }, resumed);
       expect(history.getCapturable()).toEqual([]);
       await history.addUserMessage("and the bike?");
       await history.addAssistantMessage("blue");
@@ -367,7 +371,7 @@ describe("createSessionHistory", () => {
     });
 
     it("without resumed, getCapturable is getMessages", async () => {
-      const history = createSessionHistory(fakeSummarizer(), undefined, "primer");
+      const history = createSessionHistory(fakeSummarizer(), undefined, { current: "", recap: "primer" });
       await history.addUserMessage("hi");
       expect(history.getCapturable()).toEqual(history.getMessages());
     });

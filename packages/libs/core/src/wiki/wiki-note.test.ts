@@ -413,7 +413,7 @@ describe("deleteCuratedEntry", () => {
 // can't stumble onto by browsing (a person's confirmations/ folder is outside
 // what identity/vault-access.ts exposes to the model's own tools) but
 // Mercury's own code can still read deterministically: see resolve_reference
-// in wiki-tools.ts and the "Riferimenti aperti" section in context-primer.ts.
+// in wiki-tools.ts and the "Open references" section in context-primer.ts.
 describe("writeConfirmationNote", () => {
   it("writes a note in the person's area, users/<encoded key>/confirmations/<token>.md", async () => {
     const vaultPath = await makeTempVault();

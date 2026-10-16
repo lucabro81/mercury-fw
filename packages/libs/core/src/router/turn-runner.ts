@@ -49,14 +49,14 @@ export const OPENING_NOTE =
 export const OPENING_CUE = "(The person has just opened the conversation and hasn't written anything yet.)";
 
 /**
- * The person's earlier conversations, as background in the prompt (see
- * `context-primer.ts`): never as the assistant's own words, which it would take
- * up again as if just said, and framed as possibly out of date.
+ * The recap of the person's earlier conversations, as background in the prompt
+ * (see `context-primer.ts`): never as the assistant's own words, which it would
+ * take up again as if just said, and framed as possibly out of date.
  */
-export const PRIMER_NOTE = (primer: string): string =>
+export const RECAP_NOTE = (recap: string): string =>
   [
     "Background from your earlier conversations with this person, for reference only (it may be out of date):",
-    primer,
+    recap,
     "Don't bring it up unless the person refers to it, never present it as current, and read any data from a service again with its tool.",
   ].join("\n");
 
@@ -225,11 +225,12 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
       return;
     }
     const shown = deps.shownLists?.(turn.sessionKey) ?? [];
-    /** The turn's prompt; the primer comes with the history. */
-    const systemFor = (primer: string | undefined) =>
+    /** The turn's prompt; the primer comes with the history: its current state as is, its recap framed as background. */
+    const systemFor = (primer: { current: string; recap: string } | undefined) =>
       [
         turn.multiUser ? prompts.multiUser : prompts.singleUser,
-        ...(primer ? [PRIMER_NOTE(primer)] : []),
+        ...(primer?.current ? [primer.current] : []),
+        ...(primer?.recap ? [RECAP_NOTE(primer.recap)] : []),
         ...(turn.opening ? [OPENING_NOTE] : name === undefined ? [] : [PREFERRED_NAME_NOTE(name)]),
         // Last, where a small model pays the most attention.
         ...(shown.length > 0 ? [SHOWN_LISTS_NOTE(shown)] : []),
