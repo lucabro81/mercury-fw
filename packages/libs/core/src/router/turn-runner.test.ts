@@ -1659,7 +1659,7 @@ describe("createTurnRunner: the primer as background", () => {
 // #238: a turn that answered without tools, or never ended, left no trace in
 // the log: a model looping in its reasoning looked like a dead service.
 describe("createTurnRunner: turn log", () => {
-  function setup(run: (deps: { onReasoningChunk?: (c: string, id: string) => void; onTextChunk?: (c: string) => void; onStepFinish?: (s: StepInfo) => void }, tick: () => void) => Promise<string>) {
+  function setup(run: (deps: { onReasoningChunk?: (c: string, id: string) => void; onTextChunk?: (c: string) => void; onStepFinish?: (s: StepInfo) => void; onFinish?: (reason: string, error?: string) => void }, tick: () => void) => Promise<string>) {
     const lines: string[] = [];
     let now = 1_000;
     let beat: (() => void) | undefined;
@@ -1750,6 +1750,64 @@ describe("createTurnRunner: turn log", () => {
     const { runner, lines } = setup(async () => "final answer");
     await runner(baseTurn({ logPrefix: "[p] " }), baseSink());
     expect(lines.at(-1)).toBe("[p] [turn] done in 0.0s: 0 steps, 0 tool calls, reasoning 0 chars, answer 12 chars");
+  });
+
+  // #243: a generation cut short looked exactly like a finished one in the log.
+  test("ends the done line with how the generation ended", async () => {
+    const { runner, lines } = setup(async (deps) => {
+      deps.onFinish?.("stop");
+      return "ok";
+    });
+    await runner(baseTurn({ logPrefix: "[p] " }), baseSink());
+    expect(lines.at(-1)).toBe("[p] [turn] done in 0.0s: 0 steps, 0 tool calls, reasoning 0 chars, answer 2 chars, finish stop");
+  });
+
+  test("keeps tool-calls, content-filter and other as successes", async () => {
+    for (const reason of ["tool-calls", "content-filter", "other"]) {
+      const { runner, lines } = setup(async (deps) => {
+        deps.onFinish?.(reason);
+        return "ok";
+      });
+      await runner(baseTurn({ logPrefix: "[p] " }), baseSink());
+      expect(lines.at(-1)).toEndWith(`answer 2 chars, finish ${reason}`);
+    }
+  });
+
+  test("fails a turn cut at a token limit, and releases its sink", async () => {
+    const { runner, lines, stoppedCount } = setup(async (deps) => {
+      deps.onTextChunk?.("half an ans");
+      deps.onFinish?.("length");
+      return "half an ans";
+    });
+    const sink = baseSink({ onTextChunk: () => {} });
+    await expect(runner(baseTurn({ logPrefix: "[p] " }), sink)).rejects.toThrow("the model stopped: length");
+    expect(lines).toEqual(["[p] [turn] start", "[p] [turn] failed after 0.0s: the model stopped: length"]);
+    expect(sink.finalized).toEqual([]);
+    expect(sink.disposed).toBe(true);
+    expect(stoppedCount()).toBe(1);
+  });
+
+  test("fails a turn whose stream broke, with the error's message", async () => {
+    const { runner, lines } = setup(async (deps) => {
+      deps.onFinish?.("error", "socket hang up");
+      return "half";
+    });
+    await expect(runner(baseTurn({ logPrefix: "[p] " }), baseSink())).rejects.toThrow("the model stopped: error (socket hang up)");
+    expect(lines.at(-1)).toBe("[p] [turn] failed after 0.0s: the model stopped: error (socket hang up)");
+  });
+
+  test("fails a turn ending on error even without a message", async () => {
+    const { runner } = setup(async (deps) => {
+      deps.onFinish?.("error");
+      return "half";
+    });
+    await expect(runner(baseTurn({ logPrefix: "[p] " }), baseSink())).rejects.toThrow(/^the model stopped: error$/);
+  });
+
+  test("leaves the done line as it was when no finish reason arrived", async () => {
+    const { runner, lines } = setup(async () => "ok");
+    await runner(baseTurn({ logPrefix: "[p] " }), baseSink());
+    expect(lines.at(-1)).toBe("[p] [turn] done in 0.0s: 0 steps, 0 tool calls, reasoning 0 chars, answer 2 chars");
   });
 
   test("marks an opening turn", async () => {

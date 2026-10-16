@@ -62,7 +62,7 @@ An example. Someone writes "my favourite colour is green" in a web chat and clos
 
 ## What the log says about a turn
 
-Every turn writes to the service's log (stderr) when it starts and when it ends, with how long it took, its steps and tool calls, and how much reasoning and answer text the model wrote, or why it failed. A turn still running says so every minute, with the same counts: reasoning that keeps growing with no answer is a model going round in circles. The calls to tools are logged as they happen, each with its outcome.
+Every turn writes to the service's log (stderr) when it starts and when it ends, with how long it took, its steps and tool calls, how much reasoning and answer text the model wrote and how its generation ended (`finish stop`, for instance), or why it failed. A generation that ended on an error or at a token limit fails the turn, since its answer only looks complete. A turn still running says so every minute, with the same counts: reasoning that keeps growing with no answer is a model going round in circles. The calls to tools are logged as they happen, each with its outcome.
 
 ## Who sees what
 
