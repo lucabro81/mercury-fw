@@ -518,6 +518,8 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
             log: (msg) => console.error(msg),
           },
         );
+        // A conversation its client reopens at will starts without the last
+        // one (#233): the person opened a new one on purpose.
         const primer = await buildContextPrimer(userId, {
           vaultPath: wikiVaultPath,
           getLastSessionEntries: (uid) => getLastSessionEpisodicSummaries(qdrant, episodicCollection, { userId: uid }),
@@ -525,7 +527,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
           readWikiFileInRootsFn: readWikiFileInRoots,
           readIndexFileFn: readIndexFile,
           log: (msg) => console.error(`[memory] ${msg}`),
-        });
+        }, { lastSession: resume === undefined });
         return getOrCreateHistory(key, trackForCapture, primer, resumed);
       }
       return getOrCreateHistory(key, trackForCapture);

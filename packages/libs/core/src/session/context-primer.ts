@@ -79,14 +79,26 @@ async function pendingConfirmationTokens(key: string, deps: ContextPrimerDeps): 
  * Text of the primer for the person `key`, built from injected deps only — never
  * touches Qdrant or the filesystem directly, so tests supply fakes and
  * `index.ts` supplies the real Qdrant-backed episodic query and wiki reads.
+ *
+ * `lastSession: false` leaves out the last session's recap and the facts it
+ * reinforced: on a channel where the person opens and reopens conversations at
+ * will, a new one is a fresh start, and nothing from another conversation comes
+ * in unless they ask for it.
  */
-export async function buildContextPrimer(key: string, deps: ContextPrimerDeps): Promise<string> {
+export async function buildContextPrimer(
+  key: string,
+  deps: ContextPrimerDeps,
+  opts: { lastSession?: boolean } = {},
+): Promise<string> {
   // Episodic memory is enrichment: without Qdrant the primer goes on without
   // the recap instead of failing the turn.
-  const entries = await deps.getLastSessionEntries(key).catch((err: unknown) => {
-    deps.log(`last session for ${key} unavailable, primer built without it: ${String(err)}`);
-    return [];
-  });
+  const entries =
+    opts.lastSession === false
+      ? []
+      : await deps.getLastSessionEntries(key).catch((err: unknown) => {
+          deps.log(`last session for ${key} unavailable, primer built without it: ${String(err)}`);
+          return [];
+        });
   // Checked regardless of `entries` — a pending confirmation isn't tied to
   // "was there a prior episodic session", it's simply still open right now.
   const pendingTokens = await pendingConfirmationTokens(key, deps);

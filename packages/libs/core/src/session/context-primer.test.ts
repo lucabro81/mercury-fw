@@ -265,3 +265,30 @@ describe("buildContextPrimer", () => {
     });
   });
 });
+
+// #233: on a channel where the person opens and reopens conversations at will,
+// a new conversation is a fresh start. The last one's recap brought in data
+// nobody asked for, so it stays out.
+describe("buildContextPrimer without the last session", () => {
+  it("keeps the wiki index and the pending refs, and leaves out the recap and its facts", async () => {
+    let askedForLastSession = false;
+    const deps = fakeDeps({
+      getLastSessionEntries: async () => ((askedForLastSession = true), [lastSessionEntry]),
+      readIndexFileFn: async () => "- curated/team.md",
+      listWikiFilesInRootsFn: async (_v, roots) =>
+        roots.some((r) => r.includes("confirmations")) ? ["users/x/confirmations/tok-1.md"] : ["users/x/inferred/role.md"],
+      readWikiFileInRootsFn: async (_v, _r, file) =>
+        file.includes("confirmations")
+          ? confirmationNote("pending")
+          : inferredNote({ confidence: "high", derived_from: [lastSessionEntry.timestamp] }, "Developer"),
+    });
+    const primer = await buildContextPrimer("google-chat:users/42", deps, { lastSession: false });
+    expect(primer).toBe("Wiki index:\n- curated/team.md\n\nRiferimenti aperti:\n- [REQ:tok-1]");
+    expect(askedForLastSession).toBe(false);
+  });
+
+  it("is empty when there's nothing else", async () => {
+    const deps = fakeDeps({ getLastSessionEntries: async () => [lastSessionEntry] });
+    expect(await buildContextPrimer("google-chat:users/42", deps, { lastSession: false })).toBe("");
+  });
+});
