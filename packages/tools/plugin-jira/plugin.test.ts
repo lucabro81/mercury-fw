@@ -87,6 +87,14 @@ describe("jiraPlugin", () => {
       for (const example of examples) expect(example).toContain("--select ");
     });
 
+    // #228: a turn after a list was shown, the model retyped it by hand: the
+    // skill only said what not to do, nothing to do instead.
+    it("says to present a list again by its ref, and to search again once the ref is gone", () => {
+      expect(body).toContain(
+        "- To show a list again later in the conversation, call `present` with the same ref instead of retyping it. If `present` says there is no artifact with that ref (it lasts a few minutes), run the same search again and present the new one.",
+      );
+    });
+
     // #129: what the account ID is for, with the selects tried live on 0.8.2.
     it("shows how to find an account ID and a project key, and where an account ID goes", () => {
       expect(body).toContain("`jira user search --query \"Jane Doe\" --select accountId,displayName`");
