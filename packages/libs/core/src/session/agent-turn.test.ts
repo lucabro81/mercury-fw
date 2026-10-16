@@ -775,3 +775,106 @@ describe("buildStreamTextParams", () => {
     expect(await stopConditionsMet(params.stopWhen, [PENDING_CONFIRMATION_STEP])).toBe(true);
   });
 });
+
+// #243: a generation that ended on an error or a token limit looked exactly
+// like a finished one, because the finish and error parts were dropped.
+describe("runTurn reports how the generation ended", () => {
+  it("passes the stream's final finish part reason to onFinish, once", async () => {
+    async function* fakeStream() {
+      yield { type: "text-delta", id: "1", text: "done" };
+      yield { type: "finish-step", finishReason: "tool-calls" };
+      yield { type: "finish", finishReason: "stop" };
+    }
+    const calls: Array<[string, string | undefined]> = [];
+    await runTurn(createSessionHistory(neverSummarize), "hi", {
+      model: "fake-model" as never,
+      tools: {},
+      system: SYSTEM,
+      streamTextFn: async () => ({ stream: fakeStream() }),
+      onTextChunk: () => {},
+      onFinish: (reason, error) => calls.push([reason, error]),
+    });
+    expect(calls).toEqual([["stop", undefined]]);
+  });
+
+  it("passes an error part's message along with the error finish reason", async () => {
+    async function* fakeStream() {
+      yield { type: "text-delta", id: "1", text: "half an ans" };
+      yield { type: "error", error: new Error("socket hang up") };
+      yield { type: "finish", finishReason: "error" };
+    }
+    const calls: Array<[string, string | undefined]> = [];
+    const text = await runTurn(createSessionHistory(neverSummarize), "hi", {
+      model: "fake-model" as never,
+      tools: {},
+      system: SYSTEM,
+      streamTextFn: async () => ({ stream: fakeStream() }),
+      onTextChunk: () => {},
+      onFinish: (reason, error) => calls.push([reason, error]),
+    });
+    expect(calls).toEqual([["error", "socket hang up"]]);
+    expect(text).toBe("half an ans");
+  });
+
+  it("stringifies an error part whose error isn't an Error", async () => {
+    async function* fakeStream() {
+      yield { type: "error", error: "model unloaded" };
+      yield { type: "finish", finishReason: "error" };
+    }
+    const calls: Array<[string, string | undefined]> = [];
+    await runTurn(createSessionHistory(neverSummarize), "hi", {
+      model: "fake-model" as never,
+      tools: {},
+      system: SYSTEM,
+      streamTextFn: async () => ({ stream: fakeStream() }),
+      onTextChunk: () => {},
+      onFinish: (reason, error) => calls.push([reason, error]),
+    });
+    expect(calls).toEqual([["error", "model unloaded"]]);
+  });
+
+  it("doesn't call onFinish when the stream ends without a finish part (an abort)", async () => {
+    async function* fakeStream() {
+      yield { type: "text-delta", id: "1", text: "cut" };
+      yield { type: "abort" };
+    }
+    let called = false;
+    await runTurn(createSessionHistory(neverSummarize), "hi", {
+      model: "fake-model" as never,
+      tools: {},
+      system: SYSTEM,
+      streamTextFn: async () => ({ stream: fakeStream() }),
+      onTextChunk: () => {},
+      onFinish: () => {
+        called = true;
+      },
+    });
+    expect(called).toBe(false);
+  });
+
+  it("passes generateText's finishReason to onFinish on the non-streaming path", async () => {
+    const calls: Array<[string, string | undefined]> = [];
+    await runTurn(createSessionHistory(neverSummarize), "hi", {
+      model: "fake-model" as never,
+      tools: {},
+      system: SYSTEM,
+      generateTextFn: async () => ({ text: "ok", finishReason: "length" }),
+      onFinish: (reason, error) => calls.push([reason, error]),
+    });
+    expect(calls).toEqual([["length", undefined]]);
+  });
+
+  it("doesn't call onFinish when generateText returns no finishReason", async () => {
+    let called = false;
+    await runTurn(createSessionHistory(neverSummarize), "hi", {
+      model: "fake-model" as never,
+      tools: {},
+      system: SYSTEM,
+      generateTextFn: async () => ({ text: "ok" }),
+      onFinish: () => {
+        called = true;
+      },
+    });
+    expect(called).toBe(false);
+  });
+});
