@@ -101,14 +101,18 @@ describe("createTurnRunner", () => {
       logStep: () => {},
       runTurnFn: async (_history, _input, deps) => {
         receivedOnTextChunk = deps.onTextChunk;
+        deps.onTextChunk?.("he");
+        deps.onTextChunk?.("llo");
         return "reply";
       },
     });
 
-    const onChunk = () => {};
-    await runner(baseTurn(), baseSink({ onTextChunk: onChunk }));
+    const chunks: string[] = [];
+    await runner(baseTurn(), baseSink({ onTextChunk: (c) => chunks.push(c) }));
 
-    expect(receivedOnTextChunk).toBe(onChunk);
+    // Wrapped to count what's streamed (#238), each chunk still reaching the sink.
+    expect(typeof receivedOnTextChunk).toBe("function");
+    expect(chunks).toEqual(["he", "llo"]);
   });
 
   test("leaves onTextChunk undefined when the sink omits it (Google Chat's non-streaming guarantee)", async () => {
@@ -150,15 +154,18 @@ describe("createTurnRunner", () => {
       runTurnFn: async (_history, _input, deps) => {
         receivedOnReasoningChunk = deps.onReasoningChunk;
         receivedOnReasoningEnd = deps.onReasoningEnd;
+        deps.onReasoningChunk?.("think", "r1");
         return "reply";
       },
     });
 
-    const onReasoningChunk = () => {};
+    const reasoning: Array<[string, string]> = [];
     const onReasoningEnd = () => {};
-    await runner(baseTurn(), baseSink({ onReasoningChunk, onReasoningEnd }));
+    await runner(baseTurn(), baseSink({ onReasoningChunk: (c, id) => reasoning.push([c, id]), onReasoningEnd }));
 
-    expect(receivedOnReasoningChunk).toBe(onReasoningChunk);
+    // Wrapped to count what's streamed (#238), each chunk still reaching the sink.
+    expect(typeof receivedOnReasoningChunk).toBe("function");
+    expect(reasoning).toEqual([["think", "r1"]]);
     expect(receivedOnReasoningEnd).toBe(onReasoningEnd);
   });
 
@@ -1646,5 +1653,108 @@ describe("createTurnRunner: the primer as background", () => {
         "X\n" +
         "Don't bring it up unless the person refers to it, never present it as current, and read any data from a service again with its tool.",
     );
+  });
+});
+
+// #238: a turn that answered without tools, or never ended, left no trace in
+// the log: a model looping in its reasoning looked like a dead service.
+describe("createTurnRunner: turn log", () => {
+  function setup(run: (deps: { onReasoningChunk?: (c: string, id: string) => void; onTextChunk?: (c: string) => void; onStepFinish?: (s: StepInfo) => void }, tick: () => void) => Promise<string>) {
+    const lines: string[] = [];
+    let now = 1_000;
+    let beat: (() => void) | undefined;
+    let stopped = 0;
+    const runner = createTurnRunner({
+      model: {} as any,
+      systemPrompts: { singleUser: "single", multiUser: "multi" },
+      buildTools: () => ({}),
+      getOrCreateHistory: () => fakeHistory(),
+      trackSession: () => {},
+      registerCaptureCallback: () => {},
+      maybeCapture: async () => {},
+      processToolCorrections: async () => {},
+      logStep: () => {},
+      now: () => now,
+      logTurnFn: (line) => lines.push(line),
+      heartbeat: (fn, ms) => {
+        expect(ms).toBe(60_000);
+        beat = fn;
+        return () => (stopped += 1);
+      },
+      runTurnFn: async (_h, _t, deps) =>
+        run(deps, () => {
+          now += 60_000;
+          beat?.();
+        }),
+    });
+    return { runner, lines, advance: (ms: number) => (now += ms), stoppedCount: () => stopped };
+  }
+
+  const step = (calls: number): StepInfo => ({ toolCalls: Array.from({ length: calls }, (_, i) => ({ toolCallId: `c${i}`, toolName: "x", input: {} })), toolResults: [], content: [] }) as unknown as StepInfo;
+
+  test("logs the start, then the end with time, steps, tool calls and how much it wrote", async () => {
+    const { runner, lines, advance, stoppedCount } = setup(async (deps) => {
+      deps.onReasoningChunk?.("abcd", "r1");
+      deps.onStepFinish?.(step(2));
+      deps.onStepFinish?.(step(0));
+      deps.onTextChunk?.("hello");
+      advance(12_300);
+      return "hello";
+    });
+    await runner(baseTurn({ logPrefix: "[http:s] " }), baseSink({ onTextChunk: () => {}, onReasoningChunk: () => {} }));
+    expect(lines).toEqual([
+      "[http:s] [turn] start",
+      "[http:s] [turn] done in 12.3s: 2 steps, 2 tool calls, reasoning 4 chars, answer 5 chars",
+    ]);
+    expect(stoppedCount()).toBe(1);
+  });
+
+  test("says it's still running every minute, with what it has written so far", async () => {
+    const { runner, lines } = setup(async (deps, tick) => {
+      deps.onReasoningChunk?.("x".repeat(1840), "r1");
+      tick();
+      deps.onReasoningChunk?.("y".repeat(100), "r1");
+      deps.onStepFinish?.(step(1));
+      tick();
+      return "ok";
+    });
+    await runner(baseTurn({ logPrefix: "[p] " }), baseSink({ onReasoningChunk: () => {} }));
+    expect(lines.slice(1, 3)).toEqual([
+      "[p] [turn] still running after 60s: reasoning 1840 chars, answer 0 chars, 0 tool calls",
+      "[p] [turn] still running after 120s: reasoning 1940 chars, answer 0 chars, 1 tool call",
+    ]);
+  });
+
+  test("logs a failure with its message, and stops the heartbeat", async () => {
+    const { runner, lines, advance, stoppedCount } = setup(async () => {
+      advance(4_100);
+      throw new Error("model down");
+    });
+    await expect(runner(baseTurn({ logPrefix: "[p] " }), baseSink())).rejects.toThrow("model down");
+    expect(lines).toEqual(["[p] [turn] start", "[p] [turn] failed after 4.1s: model down"]);
+    expect(stoppedCount()).toBe(1);
+  });
+
+  test("logs a turn whose client went away as cancelled", async () => {
+    const abort = new AbortController();
+    const { runner, lines, stoppedCount } = setup(async () => {
+      abort.abort();
+      throw new Error("aborted");
+    });
+    await expect(runner(baseTurn({ logPrefix: "[p] ", abortSignal: abort.signal }), baseSink())).rejects.toThrow();
+    expect(lines).toEqual(["[p] [turn] start", "[p] [turn] cancelled after 0.0s"]);
+    expect(stoppedCount()).toBe(1);
+  });
+
+  test("counts the answer from the final text on a channel that doesn't stream", async () => {
+    const { runner, lines } = setup(async () => "final answer");
+    await runner(baseTurn({ logPrefix: "[p] " }), baseSink());
+    expect(lines.at(-1)).toBe("[p] [turn] done in 0.0s: 0 steps, 0 tool calls, reasoning 0 chars, answer 12 chars");
+  });
+
+  test("marks an opening turn", async () => {
+    const { runner, lines } = setup(async () => "Ciao!");
+    await runner(baseTurn({ logPrefix: "[p] ", principal: verified("u1"), opening: true, text: "" }), baseSink());
+    expect(lines[0]).toBe("[p] [turn] start (opening)");
   });
 });
