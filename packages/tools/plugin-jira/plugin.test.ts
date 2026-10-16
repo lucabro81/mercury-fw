@@ -89,10 +89,15 @@ describe("jiraPlugin", () => {
 
     // #228: a turn after a list was shown, the model retyped it by hand: the
     // skill only said what not to do, nothing to do instead.
-    it("says to present a list again by its ref, and to search again once the ref is gone", () => {
-      expect(body).toContain(
-        "- To show a list again later in the conversation, call `present` with the same ref instead of retyping it. If `present` says there is no artifact with that ref (it lasts a few minutes), run the same search again and present the new one.",
-      );
+    // Review of #228: an earlier turn's displayRef never reaches the model's
+    // context (history keeps only each answer's text), so presenting it again
+    // by ref can't work: searching again does.
+    it("says to search again to show a list again, never to retype it, after the rule on when to present", () => {
+      const line =
+        "- If the user wants to see a list again in a later turn, run the same search again and present its new displayRef: an earlier turn's ref isn't in your context. Never retype a list from memory.";
+      expect(body).toContain(line);
+      expect(body.indexOf(line)).toBeGreaterThan(body.indexOf("- Only call `present` when the user actually wants to SEE the list."));
+      expect(body).not.toContain("with the same ref");
     });
 
     // #129: what the account ID is for, with the selects tried live on 0.8.2.
