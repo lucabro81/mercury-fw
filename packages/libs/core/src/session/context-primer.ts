@@ -76,16 +76,6 @@ async function pendingConfirmationTokens(key: string, deps: ContextPrimerDeps): 
 }
 
 /**
- * Text of the primer for the person `key`, built from injected deps only — never
- * touches Qdrant or the filesystem directly, so tests supply fakes and
- * `index.ts` supplies the real Qdrant-backed episodic query and wiki reads.
- *
- * `lastSession: false` leaves out the last session's recap and the facts it
- * reinforced: on a channel where the person opens and reopens conversations at
- * will, a new one is a fresh start, and nothing from another conversation comes
- * in unless they ask for it.
- */
-/**
  * How the primer is built for a turn: no last session on a conversation its
  * client reopens at will (`resume`, the HTTP surface), where a new one is a
  * deliberate fresh start; with it on a single running stream (Google Chat).
@@ -102,6 +92,16 @@ export function primerOptions(resume: { maxChars?: number } | undefined): { last
  */
 export type ContextPrimer = { current: string; recap: string };
 
+/**
+ * Text of the primer for the person `key`, built from injected deps only — never
+ * touches Qdrant or the filesystem directly, so tests supply fakes and
+ * `index.ts` supplies the real Qdrant-backed episodic query and wiki reads.
+ *
+ * `lastSession: false` leaves out the last session's recap and the facts it
+ * reinforced: on a channel where the person opens and reopens conversations at
+ * will, a new one is a fresh start, and nothing from another conversation comes
+ * in unless they ask for it.
+ */
 export async function buildContextPrimer(
   key: string,
   deps: ContextPrimerDeps,

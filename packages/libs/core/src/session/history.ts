@@ -14,9 +14,9 @@
  * supplies the `summarize` function injected into `createSessionHistory`.
  */
 
-/** A single turn's worth of conversation content. */
 import type { ContextPrimer } from "./context-primer.ts";
 
+/** A single turn's worth of conversation content. */
 export type Message = { role: "user" | "assistant"; content: string };
 
 /**
