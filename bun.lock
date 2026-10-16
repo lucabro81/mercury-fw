@@ -259,7 +259,7 @@
     },
     "packages/tools/plugin-jira": {
       "name": "@mercury-fw/plugin-jira",
-      "version": "0.6.3",
+      "version": "0.6.4",
       "dependencies": {
         "ai": "^7.0.126",
         "zod": "^4.6.5",
