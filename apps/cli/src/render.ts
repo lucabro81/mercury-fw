@@ -49,6 +49,11 @@ const CORE_ENV: EnvVar[] = [
   { name: "OLLAMA_EMBEDDING_MODEL", comment: "Embedding model for the episodic memory", value: "nomic-embed-text" },
   { name: "QDRANT_URL", comment: "Qdrant, the compose service", value: "http://qdrant:6333" },
   { name: "WIKI_VAULT_PATH", comment: "Wiki vault, the named volume's mount point", value: "/app/wiki-vault" },
+  {
+    name: "TURN_STALL_TIMEOUT_MS",
+    comment: "How long a streaming turn waits for the model's next token before it's stopped with an error (0 turns it off)",
+    value: "120000",
+  },
 ];
 
 const CONFIG_HEADER = `/**

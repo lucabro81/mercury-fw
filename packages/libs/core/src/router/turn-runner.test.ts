@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { createTurnRunner, OPENING_CUE, OPENING_NOTE, PREFERRED_NAME_NOTE, RECAP_NOTE, SHOWN_LISTS_NOTE, type PostTurnGuard } from "./turn-runner.ts";
+import { createTurnRunner, parseStallTimeoutMs, DEFAULT_STALL_TIMEOUT_MS, OPENING_CUE, OPENING_NOTE, PREFERRED_NAME_NOTE, RECAP_NOTE, SHOWN_LISTS_NOTE, type PostTurnGuard } from "./turn-runner.ts";
 import type { InboundTurn, TurnSink } from "./provider.ts";
 import type { Principal } from "@mercury-fw/channel-types";
 import { createSessionHistory, type SessionHistory } from "../session/history.ts";
@@ -1756,5 +1756,208 @@ describe("createTurnRunner: turn log", () => {
     const { runner, lines } = setup(async () => "Ciao!");
     await runner(baseTurn({ logPrefix: "[p] ", principal: verified("u1"), opening: true, text: "" }), baseSink());
     expect(lines[0]).toBe("[p] [turn] start (opening)");
+  });
+});
+
+// #240: a model stopped sending mid-reasoning and the turn hung for good,
+// holding the conversation's lock: no answer, no error. A streaming turn with
+// no event from the model for the stall timeout is stopped with an error.
+describe("createTurnRunner: stall watchdog", () => {
+  type Timer = { fn: () => void; ms: number; cancelled: boolean };
+
+  function setup(opts: {
+    stallTimeoutMs?: number;
+    run: (deps: Parameters<NonNullable<Parameters<typeof createTurnRunner>[0]["runTurnFn"]>>[2], timers: Timer[]) => Promise<string>;
+    tools?: (onToolStart: TurnSink["onToolStart"], onToolFinish: TurnSink["onToolFinish"]) => void;
+  }) {
+    const timers: Timer[] = [];
+    const lines: string[] = [];
+    const runner = createTurnRunner({
+      model: {} as any,
+      systemPrompts: { singleUser: "single", multiUser: "multi" },
+      buildTools: (_s, _k, _w, onToolStart, onToolFinish) => (opts.tools?.(onToolStart!, onToolFinish), {}),
+      getOrCreateHistory: () => fakeHistory(),
+      trackSession: () => {},
+      registerCaptureCallback: () => {},
+      maybeCapture: async () => {},
+      processToolCorrections: async () => {},
+      logStep: () => {},
+      logTurnFn: (line) => lines.push(line),
+      heartbeat: () => () => {},
+      ...(opts.stallTimeoutMs === undefined ? {} : { stallTimeoutMs: opts.stallTimeoutMs }),
+      stallTimer: (fn, ms) => {
+        const timer = { fn, ms, cancelled: false };
+        timers.push(timer);
+        return () => (timer.cancelled = true);
+      },
+      runTurnFn: async (_h, _t, deps) => opts.run(deps, timers),
+    });
+    return { runner, timers, lines };
+  }
+
+  /** The timer armed last and still live. */
+  const live = (timers: Timer[]) => timers.filter((t) => !t.cancelled);
+
+  /** A model call that hangs until it's aborted, as a stalled stream does. */
+  const hangs = (signal: AbortSignal | undefined) =>
+    new Promise<string>((_, reject) => signal?.addEventListener("abort", () => reject(new Error("aborted"))));
+
+  const streaming = () => baseSink({ onTextChunk: () => {}, onReasoningChunk: () => {} });
+
+  test("stops a turn whose model sends nothing, with an error naming the timeout, and logs it", async () => {
+    const { runner, timers, lines } = setup({
+      stallTimeoutMs: 120_000,
+      run: (deps, t) => {
+        queueMicrotask(() => live(t)[0]!.fn());
+        return hangs(deps.abortSignal);
+      },
+    });
+    const sink = streaming();
+    await expect(runner(baseTurn({ principal: verified("u1") }), sink)).rejects.toThrow("the model sent nothing for 120s");
+    expect(timers[0]!.ms).toBe(120_000);
+    expect(sink.disposed).toBe(true);
+    expect(lines.at(-1)).toMatch(/\[turn\] stalled after [\d.]+s: the model sent nothing for 120s$/);
+  });
+
+  // Review of #240: the AI SDK doesn't throw when its signal aborts: the stream
+  // ends with an "abort" part and the call returns what it had. A stall then
+  // looked like a finished turn with half an answer, and no error at all.
+  test("a stall still fails the turn when the model call returns what it had instead of throwing", async () => {
+    const { runner, lines } = setup({
+      stallTimeoutMs: 120_000,
+      run: (deps, t) =>
+        new Promise<string>((resolve) => {
+          deps.abortSignal?.addEventListener("abort", () => resolve("Dante, in Purgatorio XXVI, 1"));
+          queueMicrotask(() => live(t)[0]!.fn());
+        }),
+    });
+    const sink = streaming();
+    await expect(runner(baseTurn({ principal: verified("u1") }), sink)).rejects.toThrow("the model sent nothing for 120s");
+    expect(sink.finalized).toEqual([]);
+    expect(lines.at(-1)).toMatch(/\[turn\] stalled after [\d.]+s: the model sent nothing for 120s$/);
+  });
+
+  test("a client cancel that races a stall is reported as cancelled", async () => {
+    const controller = new AbortController();
+    const { runner, lines } = setup({
+      stallTimeoutMs: 1000,
+      run: (deps, t) => {
+        queueMicrotask(() => {
+          controller.abort();
+          live(t)[0]?.fn();
+        });
+        return hangs(deps.abortSignal);
+      },
+    });
+    await expect(runner(baseTurn({ principal: verified("u1"), abortSignal: controller.signal }), streaming())).rejects.toThrow("aborted");
+    expect(lines.at(-1)).toMatch(/\[turn\] cancelled after/);
+  });
+
+  test("names a timeout under a minute with its decimals", async () => {
+    const { runner } = setup({
+      stallTimeoutMs: 1500,
+      run: (deps, t) => {
+        queueMicrotask(() => live(t)[0]!.fn());
+        return hangs(deps.abortSignal);
+      },
+    });
+    await expect(runner(baseTurn({ principal: verified("u1") }), streaming())).rejects.toThrow("the model sent nothing for 1.5s");
+  });
+
+  test("a stalled turn releases the conversation: the next turn runs", async () => {
+    let calls = 0;
+    const { runner } = setup({
+      stallTimeoutMs: 1000,
+      run: (deps, t) => {
+        calls += 1;
+        if (calls === 1) {
+          queueMicrotask(() => live(t)[0]!.fn());
+          return hangs(deps.abortSignal);
+        }
+        return Promise.resolve("ok");
+      },
+    });
+    await expect(runner(baseTurn({ principal: verified("u1") }), streaming())).rejects.toThrow();
+    const second = streaming();
+    await runner(baseTurn({ principal: verified("u1") }), second);
+    expect(second.finalized).toEqual(["ok"]);
+  });
+
+  test("every chunk and every finished step re-arms it", async () => {
+    const { runner, timers } = setup({
+      stallTimeoutMs: 1000,
+      run: async (deps, t) => {
+        expect(live(t)).toHaveLength(1);
+        deps.onReasoningChunk!("a", "r1");
+        deps.onTextChunk!("b");
+        deps.onStepFinish!({ toolCalls: [], toolResults: [], content: [] } as unknown as StepInfo);
+        expect(t).toHaveLength(4);
+        expect(live(t)).toEqual([t[3]!]);
+        return "ok";
+      },
+    });
+    await runner(baseTurn({ principal: verified("u1") }), streaming());
+    expect(live(timers)).toEqual([]); // stopped once the model is done
+  });
+
+  test("pauses while a tool runs, and starts again when it's done", async () => {
+    let toolStart: TurnSink["onToolStart"] = () => {};
+    let toolFinish: TurnSink["onToolFinish"] = () => {};
+    const { runner } = setup({
+      stallTimeoutMs: 1000,
+      tools: (start, finish) => {
+        toolStart = start;
+        toolFinish = finish;
+      },
+      run: async (_deps, t) => {
+        toolStart("jira", undefined, "c1");
+        expect(live(t)).toEqual([]);
+        toolFinish!("c1", "success");
+        expect(live(t)).toHaveLength(1);
+        return "ok";
+      },
+    });
+    await runner(baseTurn({ principal: verified("u1") }), streaming());
+  });
+
+  test("is off with 0, without a timeout, and on a channel that doesn't stream", async () => {
+    for (const [stallTimeoutMs, sink] of [
+      [0, streaming()],
+      [undefined, streaming()],
+      [1000, baseSink()],
+    ] as const) {
+      const { runner, timers } = setup({ ...(stallTimeoutMs === undefined ? {} : { stallTimeoutMs }), run: async () => "ok" });
+      await runner(baseTurn({ principal: verified("u1") }), sink);
+      expect(timers).toEqual([]);
+    }
+  });
+
+  test("a turn the client cancels is cancelled, not stalled", async () => {
+    const controller = new AbortController();
+    const { runner, lines } = setup({
+      stallTimeoutMs: 1000,
+      run: (deps) => {
+        queueMicrotask(() => controller.abort());
+        return hangs(deps.abortSignal);
+      },
+    });
+    await expect(runner(baseTurn({ principal: verified("u1"), abortSignal: controller.signal }), streaming())).rejects.toThrow("aborted");
+    expect(lines.at(-1)).toMatch(/\[turn\] cancelled after/);
+  });
+});
+
+describe("parseStallTimeoutMs", () => {
+  test("defaults to two minutes, takes a whole number of milliseconds, 0 turns it off", () => {
+    expect(DEFAULT_STALL_TIMEOUT_MS).toBe(120_000);
+    expect(parseStallTimeoutMs(undefined)).toBe(120_000);
+    expect(parseStallTimeoutMs(" ")).toBe(120_000);
+    expect(parseStallTimeoutMs(" 300000 ")).toBe(300_000);
+    expect(parseStallTimeoutMs("0")).toBe(0);
+  });
+
+  test("refuses anything else, naming the variable", () => {
+    for (const bad of ["-1", "1.5", "two minutes"]) {
+      expect(() => parseStallTimeoutMs(bad)).toThrow(`TURN_STALL_TIMEOUT_MS must be a whole number of milliseconds from 0 up, got "${bad}"`);
+    }
   });
 });
