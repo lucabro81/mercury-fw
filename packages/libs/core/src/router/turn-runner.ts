@@ -72,6 +72,15 @@ export const SHOWN_LISTS_NOTE = (shown: Array<{ ref: string; label: string }>): 
     "To show one again, call present with its ref. For up-to-date data, or if present says the ref is gone, run its command again. Never retype a list.",
   ].join("\n");
 
+/** How often a turn still running says so in the log. */
+const HEARTBEAT_MS = 60_000;
+
+/** The answer's length: the final text when there is one, what was streamed otherwise. */
+const correctedTextLength = (finalText: string, streamed: number) => (finalText ? finalText.length : streamed);
+
+/** `n` and its noun, singular for one. */
+const count = (n: number, noun: string) => `${n} ${noun}${n === 1 ? "" : "s"}`;
+
 export type TurnRunnerDeps = {
   model: LanguageModel;
   /** Both variants, precomposed by the composition root; selected per turn by `turn.multiUser`. Used when `systemPromptsFor` is absent. */
@@ -153,6 +162,10 @@ export type TurnRunnerDeps = {
   logPostTurnGuardFn?: (message: string) => void;
   /** Test seam; defaults to `Date.now`. */
   now?: () => number;
+  /** Where the turn log goes (start, end, failure, still running); defaults to stderr. */
+  logTurnFn?: (line: string) => void;
+  /** Test seam: runs `fn` every `ms` until the returned stop is called; defaults to `setInterval`. */
+  heartbeat?: (fn: () => void, ms: number) => () => void;
   /**
    * Returns the display artifacts the model surfaced via `present` this turn
    * (see `display-store.ts`), in stash order, to append after the model's
@@ -241,6 +254,30 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
       deps.registerCaptureCallback(turn.sessionKey, sink.onToolStart, sink.onToolFinish);
     }
 
+    // The turn log (#238): a turn with no tool calls, or one that never ends,
+    // would otherwise leave no trace at all.
+    const now = deps.now ?? Date.now;
+    const logTurn = deps.logTurnFn ?? ((line: string) => console.error(line));
+    const startedAt = now();
+    const seconds = () => ((now() - startedAt) / 1000).toFixed(1);
+    let reasoningChars = 0;
+    let answerChars = 0;
+    let toolCalls = 0;
+    logTurn(`${turn.logPrefix}[turn] start${turn.opening ? " (opening)" : ""}`);
+    const stopHeartbeat = (
+      deps.heartbeat ??
+      ((fn, ms) => {
+        const id = setInterval(fn, ms);
+        return () => clearInterval(id);
+      })
+    )(
+      () =>
+        logTurn(
+          `${turn.logPrefix}[turn] still running after ${Math.round((now() - startedAt) / 1000)}s: reasoning ${reasoningChars} chars, answer ${answerChars} chars, ${count(toolCalls, "tool call")}`,
+        ),
+      HEARTBEAT_MS,
+    );
+
     const steps: StepInfo[] = [];
     let history: SessionHistory;
     // The model's own answer text (post-guards, before any surfaced `present`
@@ -262,11 +299,28 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
         model: deps.model,
         tools: deps.buildTools(turn.sessionKey, key, who, sink.onToolStart, sink.onToolFinish),
         system: systemFor(history.primer()),
-        onTextChunk: sink.onTextChunk,
-        onReasoningChunk: sink.onReasoningChunk,
+        // Counted on the way through, and only where the channel streams: an
+        // absent callback keeps the turn on the non-streaming path.
+        ...(sink.onTextChunk
+          ? {
+              onTextChunk: (chunk: string) => {
+                answerChars += chunk.length;
+                sink.onTextChunk!(chunk);
+              },
+            }
+          : {}),
+        ...(sink.onReasoningChunk
+          ? {
+              onReasoningChunk: (chunk: string, id: string) => {
+                reasoningChars += chunk.length;
+                sink.onReasoningChunk!(chunk, id);
+              },
+            }
+          : {}),
         onReasoningEnd: sink.onReasoningEnd,
         onStepFinish: (step) => {
           steps.push(step);
+          toolCalls += step.toolCalls.length;
           deps.logStep(turn.logPrefix, step);
           (deps.recordStepFn ?? recordStep)(turn.channel, turn.sessionKey, key, step);
           sink.onStep?.(step);
@@ -314,7 +368,18 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
       surfacedDisplays = deps.takeSurfacedDisplays?.(turn.sessionKey) ?? [];
       const finalText = shownText(correctedText, surfacedDisplays);
       await sink.finalize(finalText);
+      logTurn(
+        `${turn.logPrefix}[turn] done in ${seconds()}s: ${count(steps.length, "step")}, ${count(toolCalls, "tool call")}, reasoning ${reasoningChars} chars, answer ${correctedTextLength(assistantText, answerChars)} chars`,
+      );
+    } catch (err) {
+      logTurn(
+        turn.abortSignal?.aborted
+          ? `${turn.logPrefix}[turn] cancelled after ${seconds()}s`
+          : `${turn.logPrefix}[turn] failed after ${seconds()}s: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      throw err;
     } finally {
+      stopHeartbeat();
       sink.dispose();
     }
 
