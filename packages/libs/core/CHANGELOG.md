@@ -1,5 +1,17 @@
 # @mercury-fw/core
 
+## 0.50.3
+
+### Patch Changes
+
+- 1b786af: - A turn on a streaming channel (the HTTP surface) whose model sends nothing for `TURN_STALL_TIMEOUT_MS` (default two minutes, `0` turns it off) is stopped with the error "the model sent nothing for N seconds", logged as stalled. It used to hang, holding its conversation, until the service restarted. A tool that takes long doesn't count: the wait pauses while a tool runs.
+  - `mfw create` lists `TURN_STALL_TIMEOUT_MS` in a new app's env example.
+  - @mercury-fw/plugin-types@0.50.3
+  - @mercury-fw/channel-types@0.50.3
+  - @mercury-fw/cli-engine@0.50.3
+  - @mercury-fw/confirm-engine@0.50.3
+  - @mercury-fw/utils@0.50.3
+
 ## 0.50.2
 
 ### Patch Changes

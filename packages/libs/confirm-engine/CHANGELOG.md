@@ -1,5 +1,12 @@
 # @mercury-fw/confirm-engine
 
+## 0.50.3
+
+### Patch Changes
+
+- @mercury-fw/plugin-types@0.50.3
+- @mercury-fw/channel-types@0.50.3
+
 ## 0.50.2
 
 ### Patch Changes
