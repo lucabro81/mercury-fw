@@ -16,21 +16,31 @@
  * `idle-session-cron.ts`) is the one and only source of truth for "when" —
  * never duplicated into this text, mechanically or otherwise.
  *
- * Same "not worth mocking deeply" reasoning as `summarizer.ts` — no
- * dedicated test file, it's one line of glue around `generateText`.
+ * `generateText` is injectable, so a test can check what the model is told.
  */
 import { generateText, type LanguageModel } from "ai";
 import type { Message } from "./history.ts";
 
+/** What the episodic summarizer is told: an account of what happened, never the data a tool returned (#233). */
+export const EPISODIC_SUMMARY_INSTRUCTIONS =
+  "Summarize what happened in this conversation as a short, factual account for future recall — what was discussed, asked, or decided. " +
+  "Describe only what occurred in this session. " +
+  "Record what was asked, discussed and decided, not the data a tool returned (lists, counts, statuses, values): it changes, and is read again when needed. " +
+  "Do not infer patterns, habits, or preferences about the user — that is a separate process, not this one. " +
+  "Never mention or guess a date — you don't reliably know the current date, and it's tracked separately from this text.";
+
+/** The part of `generateText` the summarizer calls. */
+type GenerateFn = (params: { model: LanguageModel; instructions: string; prompt: string }) => Promise<{ text: string }>;
+
 /** Returns a function that summarizes a closed session's messages into a factual account. */
 export function createEpisodicSummarizer(
   model: LanguageModel,
+  generate: GenerateFn = (params) => generateText(params),
 ): (messages: Message[]) => Promise<string> {
   return async (messages) => {
-    const { text } = await generateText({
+    const { text } = await generate({
       model,
-      instructions:
-        "Summarize what happened in this conversation as a short, factual account for future recall — what was discussed, asked, or decided. Describe only what occurred in this session. Do not infer patterns, habits, or preferences about the user — that is a separate process, not this one. Never mention or guess a date — you don't reliably know the current date, and it's tracked separately from this text.",
+      instructions: EPISODIC_SUMMARY_INSTRUCTIONS,
       prompt: messages.map((m) => `${m.role}: ${m.content}`).join("\n"),
     });
     return text;

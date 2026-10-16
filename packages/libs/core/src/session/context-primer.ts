@@ -76,17 +76,46 @@ async function pendingConfirmationTokens(key: string, deps: ContextPrimerDeps): 
 }
 
 /**
+ * How the primer is built for a turn: no last session on a conversation its
+ * client reopens at will (`resume`, the HTTP surface), where a new one is a
+ * deliberate fresh start; with it on a single running stream (Google Chat).
+ */
+export function primerOptions(resume: { maxChars?: number } | undefined): { lastSession: boolean } {
+  return { lastSession: resume === undefined };
+}
+
+/**
+ * A primer in its two parts, each empty when there's nothing: `current` is the
+ * state the model uses as is (the wiki index, the confirmations still pending),
+ * `recap` the last session and the facts it reinforced, background that may be
+ * out of date.
+ */
+export type ContextPrimer = { current: string; recap: string };
+
+/**
  * Text of the primer for the person `key`, built from injected deps only — never
  * touches Qdrant or the filesystem directly, so tests supply fakes and
  * `index.ts` supplies the real Qdrant-backed episodic query and wiki reads.
+ *
+ * `lastSession: false` leaves out the last session's recap and the facts it
+ * reinforced: on a channel where the person opens and reopens conversations at
+ * will, a new one is a fresh start, and nothing from another conversation comes
+ * in unless they ask for it.
  */
-export async function buildContextPrimer(key: string, deps: ContextPrimerDeps): Promise<string> {
+export async function buildContextPrimer(
+  key: string,
+  deps: ContextPrimerDeps,
+  opts: { lastSession?: boolean } = {},
+): Promise<ContextPrimer> {
   // Episodic memory is enrichment: without Qdrant the primer goes on without
   // the recap instead of failing the turn.
-  const entries = await deps.getLastSessionEntries(key).catch((err: unknown) => {
-    deps.log(`last session for ${key} unavailable, primer built without it: ${String(err)}`);
-    return [];
-  });
+  const entries =
+    opts.lastSession === false
+      ? []
+      : await deps.getLastSessionEntries(key).catch((err: unknown) => {
+          deps.log(`last session for ${key} unavailable, primer built without it: ${String(err)}`);
+          return [];
+        });
   // Checked regardless of `entries` — a pending confirmation isn't tied to
   // "was there a prior episodic session", it's simply still open right now.
   const pendingTokens = await pendingConfirmationTokens(key, deps);
@@ -95,14 +124,11 @@ export async function buildContextPrimer(key: string, deps: ContextPrimerDeps): 
   // pointed at what's in the wiki right now.
   const indexContent = (await deps.readIndexFileFn(deps.vaultPath)).trim();
 
-  if (entries.length === 0 && pendingTokens.length === 0 && indexContent.length === 0) {
-    return "";
-  }
-
-  const sections: string[] = [];
+  const current: string[] = [];
+  const recap: string[] = [];
 
   if (indexContent.length > 0) {
-    sections.push(`Wiki index:\n${indexContent}`);
+    current.push(`Wiki index:\n${indexContent}`);
   }
 
   if (entries.length > 0) {
@@ -125,9 +151,9 @@ export async function buildContextPrimer(key: string, deps: ContextPrimerDeps): 
     }
 
     if (facts.length > 0) {
-      sections.push(`Known facts:\n${facts.map((f) => `- ${f}`).join("\n")}`);
+      recap.push(`Known facts:\n${facts.map((f) => `- ${f}`).join("\n")}`);
     }
-    sections.push(`Last session:\n${entries.map((e) => `- ${e.summary}`).join("\n")}`);
+    recap.push(`Last session:\n${entries.map((e) => `- ${e.summary}`).join("\n")}`);
   }
 
   // Deliberately opaque: just the token, no command, no "still pending"
@@ -135,8 +161,8 @@ export async function buildContextPrimer(key: string, deps: ContextPrimerDeps): 
   // Resolving it into something meaningful requires the model to
   // deliberately call resolve_reference (wiki-tools.ts) with the token.
   if (pendingTokens.length > 0) {
-    sections.push(`Riferimenti aperti:\n${pendingTokens.map((t) => `- [REQ:${t}]`).join("\n")}`);
+    current.push(`Open references:\n${pendingTokens.map((t) => `- [REQ:${t}]`).join("\n")}`);
   }
 
-  return sections.join("\n\n");
+  return { current: current.join("\n\n"), recap: recap.join("\n\n") };
 }

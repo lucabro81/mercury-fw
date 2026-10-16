@@ -75,7 +75,7 @@ function resolveEmptyText(lastStep: StepInfo | undefined): string {
  * few minutes' TTL — see `confirmation-store.ts`), so any summarized record
  * claiming an action is "still pending" goes stale almost immediately;
  * this is the stale-primer bug's actual fix. The marker forces a reader
- * (the model, later, via `context-primer.ts`'s "Riferimenti aperti" +
+ * (the model, later, via `context-primer.ts`'s "Open references" +
  * `resolve_reference` in `wiki-tools.ts`) to deliberately look up what it
  * refers to instead of absorbing a claim that may no longer be true.
  */

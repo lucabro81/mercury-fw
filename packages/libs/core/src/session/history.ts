@@ -14,6 +14,8 @@
  * supplies the `summarize` function injected into `createSessionHistory`.
  */
 
+import type { ContextPrimer } from "./context-primer.ts";
+
 /** A single turn's worth of conversation content. */
 export type Message = { role: "user" | "assistant"; content: string };
 
@@ -49,6 +51,14 @@ export type SessionHistory = {
    */
   replaceLastAssistantMessage(content: string): void;
   /**
+   * What the person's earlier conversations left for this one (see
+   * `context-primer.ts`), or undefined. Never among the messages: the turn
+   * runner gives it to the model as background in the prompt, so it's never
+   * taken for the assistant's own words, nor captured again as part of this
+   * conversation.
+   */
+  primer(): ContextPrimer | undefined;
+  /**
    * The messages to feed into the next model call: the current summary
    * (if one exists, as a synthetic leading message) followed by the raw
    * messages accumulated since the last summarization.
@@ -81,17 +91,6 @@ function summaryMessage(summary: string): Message {
 }
 
 /**
- * Wraps a primer string as the synthetic leading message `getMessages()`
- * prepends ahead of any `summary` message. Distinct wording from
- * `summaryMessage` on purpose — the primer describes the user's last
- * *closed* session, not a summary of *this* one, and must not be confused
- * with it.
- */
-function primerMessage(primer: string): Message {
-  return { role: "assistant", content: `Context from your last session: ${primer}` };
-}
-
-/**
  * Creates an empty `SessionHistory`.
  *
  * @param summarize - Called with the messages that precede the current
@@ -100,8 +99,8 @@ function primerMessage(primer: string): Message {
  *   `MAX_HISTORY_CHARS`. Its return value becomes the new summary; the
  *   trailing run from the last user message onward is retained as the raw
  *   window rather than cleared, so the current turn is never summarized away
- *   (a model call always follows `addUserMessage`, and the primer/summary
- *   leading messages are both `role:"assistant"` — folding the user turn
+ *   (a model call always follows `addUserMessage`, and the summary
+ *   leading message is `role:"assistant"` — folding the user turn
  *   into them would hand the model a user-less array). The threshold check
  *   runs after every individual append (not once per turn), so the crossing
  *   point is caught precisely regardless of whether it's the user or
@@ -114,11 +113,9 @@ function primerMessage(primer: string): Message {
  *   shared capture function) before that content stops being directly
  *   visible to the model. Fire-and-forget on purpose: this function must
  *   never block or fail Layer 1's own compression on an external write.
- * @param primer - Optional, set once at creation from the user's last closed
- *   session (see `context-primer.ts`). Held as its own state, entirely
- *   independent from `summary`: it's never included in the batch passed to
- *   `summarize`, so a real compression event can't paraphrase or drop it.
- *   Leads `getMessages()` for the whole life of this history.
+ * @param primer - Optional, set once at creation from the person's earlier
+ *   conversations (see `context-primer.ts`). Held as its own state, apart
+ *   from the messages and from `summary`, and returned by `primer()`.
  * @param resumed - Optional, a conversation picked up again after its history
  *   was dropped (see `session/resume.ts`): its summary becomes this history's
  *   summary and its messages lead the raw window, so the model sees the
@@ -130,7 +127,7 @@ function primerMessage(primer: string): Message {
 export function createSessionHistory(
   summarize: (messages: Message[]) => Promise<string>,
   onBeforeCompress?: (messages: Message[]) => void,
-  primer?: string,
+  primer?: ContextPrimer,
   resumed?: ResumedConversation,
 ): SessionHistory {
   let rawMessages: Message[] = [...(resumed?.messages ?? [])];
@@ -147,7 +144,7 @@ export function createSessionHistory(
     if (total > MAX_HISTORY_CHARS) {
       // Retain the trailing run from the last user message onward instead of
       // clearing everything: getMessages() for a model call always follows an
-      // addUserMessage, and the primer/summary leading messages are both
+      // addUserMessage, and the summary leading message is
       // role:"assistant", so summarizing the current user turn away would hand
       // Ollama a user-less array ("no user query found in messages") — bug #19.
       // Compress only what precedes that turn; if nothing precedes it (a lone
@@ -169,12 +166,9 @@ export function createSessionHistory(
     }
   }
 
-  /** The primer and summary messages that lead the history, the summary left out when it came back with `resumed`. */
+  /** The summary message that leads the history, left out when it came back with `resumed`. */
   function leadingMessages(withRestoredSummary: boolean): Message[] {
     const leading: Message[] = [];
-    if (primer) {
-      leading.push(primerMessage(primer));
-    }
     if (summary && (withRestoredSummary || !summaryRestored)) {
       leading.push(summaryMessage(summary));
     }
@@ -194,6 +188,7 @@ export function createSessionHistory(
         rawMessages[rawMessages.length - 1] = { role: "assistant", content };
       }
     },
+    primer: () => (primer && (primer.current || primer.recap) ? primer : undefined),
     getMessages,
     getCapturable: () => [...leadingMessages(false), ...rawMessages.slice(restoredCount)],
     getCharCount: () => getMessages().reduce((sum, m) => sum + m.content.length, 0),

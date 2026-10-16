@@ -40,14 +40,14 @@ Mercury keeps four things for every conversation:
 - **the history**, the conversation as the model gets it, kept in memory while the conversation is active;
 - **its summary**: when the history grows past about 60,000 characters, its older part is replaced by a summary written by the model, and the conversation goes on from the summary plus the recent messages (this is called compaction);
 - **the archive**, every message word for word, kept in the vector store (Qdrant) and never summarized: it's what a UI shows when it reopens a conversation, and what the model can search when it needs an exact quote;
-- **the long-term memory**: short summaries of what was said, which Mercury uses in later conversations to remember the person.
+- **the long-term memory**: short summaries of what was said, asked and decided (never the data a tool returned, which changes), which Mercury uses in later conversations to remember the person.
 
 The history lives in the process's memory, so Mercury frees it once a conversation has been quiet for a while (`SESSION_IDLE_TIMEOUT_MS`, 30 minutes by default). Before freeing it, it writes its summary to the long-term memory.
 
 What happens next depends on the channel:
 
-- **On a channel with a single stream of messages**, like a Google Chat space, a quiet stretch closes the conversation. The next message starts a new one, with a reminder of the last one at the top.
-- **On a channel where one person keeps many conversations and reopens them whenever they want**, like the HTTP surface behind a web chat, a conversation never ends. Freeing the history only empties a cache: the next message rebuilds it from the archive, as a compaction would, with the summaries of the older part and the newest messages word for word. To the model, and to the person, it's the conversation that was on screen. Whatever comes back is already in the long-term memory, so only the new messages go there.
+- **On a channel with a single stream of messages**, like a Google Chat space, a quiet stretch closes the conversation. The next message starts a new one, and the model gets a recap of the last one as background: possibly out of date, to bring up only if the person refers to it, never as its own words.
+- **On a channel where one person keeps many conversations and reopens them whenever they want**, like the HTTP surface behind a web chat, a new conversation is a deliberate fresh start and nothing from another one comes in, unless the person asks (the model can search the archive then). A conversation never ends, though. Freeing the history only empties a cache: the next message rebuilds it from the archive, as a compaction would, with the summaries of the older part and the newest messages word for word. To the model, and to the person, it's the conversation that was on screen. Whatever comes back is already in the long-term memory, so only the new messages go there.
 
 | Variable | |
 |---|---|

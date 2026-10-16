@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { createTurnRunner, OPENING_CUE, OPENING_NOTE, PREFERRED_NAME_NOTE, SHOWN_LISTS_NOTE, type PostTurnGuard } from "./turn-runner.ts";
+import { createTurnRunner, OPENING_CUE, OPENING_NOTE, PREFERRED_NAME_NOTE, RECAP_NOTE, SHOWN_LISTS_NOTE, type PostTurnGuard } from "./turn-runner.ts";
 import type { InboundTurn, TurnSink } from "./provider.ts";
 import type { Principal } from "@mercury-fw/channel-types";
 import { createSessionHistory, type SessionHistory } from "../session/history.ts";
@@ -15,6 +15,7 @@ function fakeHistory(overrides: Partial<SessionHistory> = {}): SessionHistory {
     getMessages: () => [],
     getCharCount: () => 0,
     getCapturable: () => [],
+    primer: () => undefined,
     ...overrides,
   };
 }
@@ -1583,5 +1584,67 @@ describe("createTurnRunner: lists already shown", () => {
     const { runner, systems } = setup([{ ref: "d1", label: "x (1 item)" }]);
     await runner(baseTurn({ principal: verified("u1"), multiUser: true }), baseSink());
     expect(systems).toEqual([`multi\n\n${SHOWN_LISTS_NOTE([{ ref: "d1", label: "x (1 item)" }])}`]);
+  });
+});
+
+// #233: the primer led the history as the assistant's own message, so the model
+// picked an earlier conversation's thread back up and listed its data unasked.
+// It comes as background in the prompt, framed as possibly out of date.
+describe("createTurnRunner: the primer as background", () => {
+  function setup(primer: { current: string; recap: string } | undefined) {
+    const systems: string[] = [];
+    const runner = createTurnRunner({
+      model: {} as any,
+      systemPrompts: { singleUser: "single", multiUser: "multi" },
+      buildTools: () => ({}),
+      getOrCreateHistory: () => fakeHistory({ primer: () => primer }),
+      trackSession: () => {},
+      registerCaptureCallback: () => {},
+      maybeCapture: async () => {},
+      processToolCorrections: async () => {},
+      logStep: () => {},
+      preferredName: () => "Luca",
+      shownLists: () => [{ ref: "d1", label: "x (1 item)" }],
+      runTurnFn: async (_history, _text, deps) => {
+        systems.push(deps.system);
+        return "ok";
+      },
+    });
+    return { runner, systems };
+  }
+
+  test("goes into the prompt before the name and the lists already shown: the current state as is, the recap framed", async () => {
+    const { runner, systems } = setup({ current: "Open references:\n- [REQ:t1]", recap: "Last session:\n- asked for SUP tickets" });
+    await runner(baseTurn({ principal: verified("u1") }), baseSink());
+    expect(systems).toEqual([
+      [
+        "single",
+        "Open references:\n- [REQ:t1]",
+        RECAP_NOTE("Last session:\n- asked for SUP tickets"),
+        PREFERRED_NAME_NOTE("Luca"),
+        SHOWN_LISTS_NOTE([{ ref: "d1", label: "x (1 item)" }]),
+      ].join("\n\n"),
+    ]);
+  });
+
+  test("adds nothing without a primer", async () => {
+    const { runner, systems } = setup(undefined);
+    await runner(baseTurn({ principal: verified("u1") }), baseSink());
+    expect(systems[0]).not.toContain("Background from");
+  });
+
+  test("a primer with no recap brings only the current state, unframed", async () => {
+    const { runner, systems } = setup({ current: "Wiki index:\n- curated/team.md", recap: "" });
+    await runner(baseTurn({ principal: verified("u1") }), baseSink());
+    expect(systems[0]).toContain("single\n\nWiki index:\n- curated/team.md\n\n");
+    expect(systems[0]).not.toContain("Background from");
+  });
+
+  test("frames the recap as possibly out of date, only when the person refers to it, never as current", () => {
+    expect(RECAP_NOTE("X")).toBe(
+      "Background from your earlier conversations with this person, for reference only (it may be out of date):\n" +
+        "X\n" +
+        "Don't bring it up unless the person refers to it, never present it as current, and read any data from a service again with its tool.",
+    );
   });
 });
