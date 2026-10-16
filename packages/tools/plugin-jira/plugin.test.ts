@@ -89,9 +89,9 @@ describe("jiraPlugin", () => {
 
     // #228: a turn after a list was shown, the model retyped it by hand: the
     // skill only said what not to do, nothing to do instead.
-    // Review of #228: an earlier turn's displayRef never reaches the model's
-    // context (history keeps only each answer's text), so presenting it again
-    // by ref can't work: searching again does.
+    // #228: a turn after a list was shown, the model retyped it by hand. An
+    // earlier turn's displayRef isn't in its context (history keeps only each
+    // answer's text), so the way to show it again is to search again.
     it("says to search again to show a list again, never to retype it, after the rule on when to present", () => {
       const line =
         "- If the user wants to see a list again in a later turn, run the same search again and present its new displayRef: an earlier turn's ref isn't in your context. Never retype a list from memory.";
