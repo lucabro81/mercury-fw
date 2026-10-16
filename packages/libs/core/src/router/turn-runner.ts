@@ -78,6 +78,9 @@ const HEARTBEAT_MS = 60_000;
 /** The answer's length: the final text when there is one (a channel that doesn't stream counts nothing on the way), what was streamed otherwise. */
 const answerLength = (finalText: string, streamed: number) => (finalText ? finalText.length : streamed);
 
+/** What a stalled turn fails with: `ms` in seconds, decimals kept under a minute. */
+const stallMessage = (ms: number) => `the model sent nothing for ${Number((ms / 1000).toFixed(1))}s`;
+
 /** How long a streaming turn waits for the model by default before it's stopped as stalled. */
 export const DEFAULT_STALL_TIMEOUT_MS = 120_000;
 
@@ -430,6 +433,9 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
       });
       // The model is done: what's left (guards, finalize) isn't its silence.
       watchdog.stop();
+      // The AI SDK doesn't throw when its signal aborts: the stream ends and
+      // the call returns what it had. A stall is a failure all the same.
+      if (stalled && !turn.abortSignal?.aborted) throw new Error(stallMessage(stallMs));
 
       let correctedText = text;
       // Plugin-contributed post-turn guards, run in order. `shouldRun` gates
@@ -474,10 +480,11 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
         `${turn.logPrefix}[turn] done in ${seconds()}s: ${count(steps.length, "step")}, ${count(toolCalls, "tool call")}, reasoning ${reasoningChars} chars, answer ${answerLength(assistantText, answerChars)} chars`,
       );
     } catch (err) {
-      if (stalled) {
-        const message = `the model sent nothing for ${Math.round(stallMs / 1000)}s`;
+      // A client that went away is a cancel, even if the watchdog fired meanwhile.
+      if (stalled && !turn.abortSignal?.aborted) {
+        const message = stallMessage(stallMs);
         logTurn(`${turn.logPrefix}[turn] stalled after ${seconds()}s: ${message}`);
-        throw new Error(message);
+        throw err instanceof Error && err.message === message ? err : new Error(message);
       }
       logTurn(
         turn.abortSignal?.aborted

@@ -1819,6 +1819,51 @@ describe("createTurnRunner: stall watchdog", () => {
     expect(lines.at(-1)).toMatch(/\[turn\] stalled after [\d.]+s: the model sent nothing for 120s$/);
   });
 
+  // Review of #240: the AI SDK doesn't throw when its signal aborts: the stream
+  // ends with an "abort" part and the call returns what it had. A stall then
+  // looked like a finished turn with half an answer, and no error at all.
+  test("a stall still fails the turn when the model call returns what it had instead of throwing", async () => {
+    const { runner, lines } = setup({
+      stallTimeoutMs: 120_000,
+      run: (deps, t) =>
+        new Promise<string>((resolve) => {
+          deps.abortSignal?.addEventListener("abort", () => resolve("Dante, in Purgatorio XXVI, 1"));
+          queueMicrotask(() => live(t)[0]!.fn());
+        }),
+    });
+    const sink = streaming();
+    await expect(runner(baseTurn({ principal: verified("u1") }), sink)).rejects.toThrow("the model sent nothing for 120s");
+    expect(sink.finalized).toEqual([]);
+    expect(lines.at(-1)).toMatch(/\[turn\] stalled after [\d.]+s: the model sent nothing for 120s$/);
+  });
+
+  test("a client cancel that races a stall is reported as cancelled", async () => {
+    const controller = new AbortController();
+    const { runner, lines } = setup({
+      stallTimeoutMs: 1000,
+      run: (deps, t) => {
+        queueMicrotask(() => {
+          controller.abort();
+          live(t)[0]?.fn();
+        });
+        return hangs(deps.abortSignal);
+      },
+    });
+    await expect(runner(baseTurn({ principal: verified("u1"), abortSignal: controller.signal }), streaming())).rejects.toThrow("aborted");
+    expect(lines.at(-1)).toMatch(/\[turn\] cancelled after/);
+  });
+
+  test("names a timeout under a minute with its decimals", async () => {
+    const { runner } = setup({
+      stallTimeoutMs: 1500,
+      run: (deps, t) => {
+        queueMicrotask(() => live(t)[0]!.fn());
+        return hangs(deps.abortSignal);
+      },
+    });
+    await expect(runner(baseTurn({ principal: verified("u1") }), streaming())).rejects.toThrow("the model sent nothing for 1.5s");
+  });
+
   test("a stalled turn releases the conversation: the next turn runs", async () => {
     let calls = 0;
     const { runner } = setup({
