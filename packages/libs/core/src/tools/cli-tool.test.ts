@@ -834,8 +834,8 @@ describe("createCliTool display staging", () => {
     const twoItems = (_cmd: unknown, result: CliResult): CliResult =>
       result.ok ? { ok: true, data: result.data, display: { type: "issue-list", items: ["MER-1", "MER-2"] } } : result;
     for (const [postProcess, expected] of [
-      [renderingPostProcess, ' jira issue search --jql "x" (1 item)'],
-      [twoItems, ' jira issue search --jql "x" (2 items)'],
+      [renderingPostProcess, 'jira issue search --jql "x" (1 item)'],
+      [twoItems, 'jira issue search --jql "x" (2 items)'],
     ] as const) {
       const { runCommand } = createCliTool(runCliFn, { jira: searchConfig }, {
         stageConfirmation: noopStage(),
@@ -843,7 +843,8 @@ describe("createCliTool display staging", () => {
         postProcess,
       });
       await runCommand.execute({ command: '  jira issue search --jql "x"  ' }, {} as never);
-      expect(labels.at(-1)).toBe(expected.trimStart());
+      // The command as the model wrote it, surrounding spaces trimmed.
+      expect(labels.at(-1)).toBe(expected);
     }
   });
 

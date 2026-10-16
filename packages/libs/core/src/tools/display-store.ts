@@ -40,8 +40,16 @@ export type DisplayStore = {
 };
 
 const DEFAULT_TTL_MS = 24 * 60 * 60_000;
-/** How many entries a conversation keeps; the oldest goes first. */
+/** How many entries a conversation keeps: the oldest never shown goes first, then the oldest. */
 const MAX_PER_SESSION = 10;
+/** A label goes into every prompt: one line, this long at most. */
+const MAX_LABEL_LENGTH = 200;
+
+/** `label` on one line, whitespace collapsed, cut at {@link MAX_LABEL_LENGTH}. */
+function oneLine(label: string): string {
+  const flat = label.replace(/[\s\u0000-\u001f\u007f\u0085\u2028\u2029]+/g, " ").trim();
+  return flat.length > MAX_LABEL_LENGTH ? `${flat.slice(0, MAX_LABEL_LENGTH - 1)}…` : flat;
+}
 
 type Entry = {
   sessionKey: string;
@@ -67,9 +75,19 @@ export function createDisplayStore(
   return {
     stash(sessionKey, artifact, label = "") {
       const ref = refFn();
-      entries.set(ref, { sessionKey, artifact, label, surfaced: false, shownAt: undefined, expiresAt: now() + ttlMs });
-      const own = [...entries].filter(([, entry]) => entry.sessionKey === sessionKey);
-      for (const [old] of own.slice(0, Math.max(0, own.length - MAX_PER_SESSION))) entries.delete(old);
+      entries.set(ref, {
+        sessionKey,
+        artifact,
+        label: oneLine(label),
+        surfaced: false,
+        shownAt: undefined,
+        expiresAt: now() + ttlMs,
+      });
+      // The one just stashed stays; among the rest, a search the model only
+      // looked at goes before a list the person saw.
+      const own = [...entries].filter(([key, entry]) => entry.sessionKey === sessionKey && key !== ref);
+      const order = [...own.filter(([, e]) => e.shownAt === undefined), ...own.filter(([, e]) => e.shownAt !== undefined)];
+      for (const [old] of order.slice(0, Math.max(0, own.length + 1 - MAX_PER_SESSION))) entries.delete(old);
       return ref;
     },
     surface(sessionKey, ref) {

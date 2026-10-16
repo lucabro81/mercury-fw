@@ -194,3 +194,41 @@ describe("createDisplayStore: lists shown in a conversation", () => {
     expect(store.surface("t", "d1")).toBe(true); // another conversation is untouched
   });
 });
+
+// Review of #230: the label goes into every prompt, so it stays one short line.
+describe("createDisplayStore: labels", () => {
+  it("keeps a label on one line and at most 200 characters", () => {
+    let n = 0;
+    const store = createDisplayStore({ refFn: () => `d${++n}` });
+    store.stash("s", "a", "jira issue search\n  --jql \"x\"\t(2 items)");
+    store.stash("s", "b", "x".repeat(300));
+    store.surface("s", "d1");
+    store.surface("s", "d2");
+    const [first, second] = store.shown("s");
+    expect(first!.label).toBe('jira issue search --jql "x" (2 items)');
+    expect(second!.label).toBe(`${"x".repeat(199)}…`);
+  });
+
+  it("evicts lists never shown before the ones shown", () => {
+    let n = 0;
+    const store = createDisplayStore({ refFn: () => `d${++n}` });
+    store.stash("s", "shown", "S");
+    store.surface("s", "d1");
+    for (let i = 0; i < 10; i++) store.stash("s", `search-${i}`, `Q${i}`);
+    expect(store.surface("s", "d1")).toBe(true); // the shown one stays
+    expect(store.surface("s", "d2")).toBe(false); // the oldest never shown goes
+  });
+
+  it("never evicts the list it just stashed", () => {
+    let n = 0;
+    const store = createDisplayStore({ refFn: () => `d${++n}` });
+    for (let i = 0; i < 10; i++) {
+      store.stash("s", `shown-${i}`, `S${i}`);
+      store.surface("s", `d${n}`);
+    }
+    const fresh = store.stash("s", "new", "N");
+    expect(store.surface("s", fresh)).toBe(true);
+    expect(store.surface("s", "d1")).toBe(false); // the oldest shown makes room
+    expect(store.surface("s", "d2")).toBe(true);
+  });
+});
