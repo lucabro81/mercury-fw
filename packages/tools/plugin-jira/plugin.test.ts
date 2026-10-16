@@ -87,6 +87,19 @@ describe("jiraPlugin", () => {
       for (const example of examples) expect(example).toContain("--select ");
     });
 
+    // #228: a turn after a list was shown, the model retyped it by hand: the
+    // skill only said what not to do, nothing to do instead.
+    // #228: a turn after a list was shown, the model retyped it by hand. An
+    // earlier turn's displayRef isn't in its context (history keeps only each
+    // answer's text), so the way to show it again is to search again.
+    it("says to search again to show a list again, never to retype it, after the rule on when to present", () => {
+      const line =
+        "- If the user wants to see a list again in a later turn, run the same search again and present its new displayRef: an earlier turn's ref isn't in your context. Never retype a list from memory.";
+      expect(body).toContain(line);
+      expect(body.indexOf(line)).toBeGreaterThan(body.indexOf("- Only call `present` when the user actually wants to SEE the list."));
+      expect(body).not.toContain("with the same ref");
+    });
+
     // #129: what the account ID is for, with the selects tried live on 0.8.2.
     it("shows how to find an account ID and a project key, and where an account ID goes", () => {
       expect(body).toContain("`jira user search --query \"Jane Doe\" --select accountId,displayName`");
