@@ -23,14 +23,21 @@ import { generateText, type LanguageModel } from "ai";
 import type { Message } from "./history.ts";
 
 /** Returns a function that summarizes a closed session's messages into a factual account. */
+/** What the episodic summarizer is told: an account of what happened, never the data a tool returned (#233). */
+export const EPISODIC_SUMMARY_INSTRUCTIONS =
+  "Summarize what happened in this conversation as a short, factual account for future recall — what was discussed, asked, or decided. " +
+  "Describe only what occurred in this session. " +
+  "Record what was asked, discussed and decided, not the data a tool returned (lists, counts, statuses, values): it changes, and is read again when needed. " +
+  "Do not infer patterns, habits, or preferences about the user — that is a separate process, not this one. " +
+  "Never mention or guess a date — you don't reliably know the current date, and it's tracked separately from this text.";
+
 export function createEpisodicSummarizer(
   model: LanguageModel,
 ): (messages: Message[]) => Promise<string> {
   return async (messages) => {
     const { text } = await generateText({
       model,
-      instructions:
-        "Summarize what happened in this conversation as a short, factual account for future recall — what was discussed, asked, or decided. Describe only what occurred in this session. Do not infer patterns, habits, or preferences about the user — that is a separate process, not this one. Never mention or guess a date — you don't reliably know the current date, and it's tracked separately from this text.",
+      instructions: EPISODIC_SUMMARY_INSTRUCTIONS,
       prompt: messages.map((m) => `${m.role}: ${m.content}`).join("\n"),
     });
     return text;
