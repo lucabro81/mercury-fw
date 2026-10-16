@@ -287,8 +287,9 @@ const defaultStreamTextFn: StreamTextFn = (params) => streamText(buildStreamText
  *   generation ended: the AI SDK's `finishReason` (`stop`, `length`,
  *   `error`, ...) from the stream's final `finish` part, or from
  *   `generateText`'s result on the non-streaming path, plus the message of
- *   the stream's `error` part when one came through. Not called when no
- *   reason arrived (a stream that ended on an abort).
+ *   the stream's last `error` part when one came through, whatever the
+ *   reason. Not called when no reason arrived (a stream that ended on an
+ *   abort).
  * @param deps.onUsage - Optional, called once per turn with the real
  *   `inputTokens` count the model actually consumed (summed across every
  *   step, including tool calls) — not an estimate. The terminal channel
@@ -381,8 +382,9 @@ export async function runTurn(
         deps.onReasoningEnd?.(currentReasoningId, true);
       }
     }
-    deps.onUsage?.((await result.usage)?.inputTokens);
+    // Before usage: a broken stream may reject it, and how it ended matters more.
     if (finishReason !== undefined) deps.onFinish?.(finishReason, streamError);
+    deps.onUsage?.((await result.usage)?.inputTokens);
 
     if (fullText.trim().length === 0) {
       fullText = resolveEmptyText(lastStep);
