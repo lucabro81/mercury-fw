@@ -1,5 +1,16 @@
 # @mercury-fw/core
 
+## 0.50.2
+
+### Patch Changes
+
+- 4e44ff8: - Every turn is logged: when it starts, when it ends (time, steps, tool calls, how much reasoning and answer text), when it fails or is cancelled, and every minute while it is still running. A turn with no tool calls, or one stuck in its reasoning, used to leave no trace.
+  - @mercury-fw/plugin-types@0.50.2
+  - @mercury-fw/channel-types@0.50.2
+  - @mercury-fw/cli-engine@0.50.2
+  - @mercury-fw/confirm-engine@0.50.2
+  - @mercury-fw/utils@0.50.2
+
 ## 0.50.1
 
 ### Patch Changes
