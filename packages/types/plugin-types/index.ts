@@ -146,7 +146,8 @@ export type PluginRuntimeContext = {
 export type SessionToolContext = {
   sessionKey: string;
   stageConfirmation: StageConfirmation;
-  stashDisplay: (artifact: string) => string;
+  /** Stashes a rendered list for the model to `present`, with what it is (`label`: the command that built it), and returns its ref. */
+  stashDisplay: (artifact: string, label?: string) => string;
   /** Whom the tools act for, by the person's key, when they act as the
    * person; `null` when they act as the plugin's own service identity: on the
    * terminal, where whoever types already holds the container, and for a

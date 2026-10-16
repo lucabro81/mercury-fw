@@ -172,7 +172,7 @@ export function createCliTool(
      * the model can `present`. Pre-bound to this turn's session by the
      * composition root. Optional: with none wired the inline `display` is left
      * untouched and no `displayRef` is minted. */
-    stashDisplay?: (artifact: string) => string;
+    stashDisplay?: (artifact: string, label?: string) => string;
     /** The person the turn is for (see `SessionToolContext.person`): every
      * command runs as them, with `--user` and the id their CLI knows them by.
      * Absent or `null`: the CLI's own service identity. */
@@ -273,7 +273,9 @@ export function createCliTool(
       if (opts.stashDisplay && processed.ok && processed.display) {
         const stringItems = processed.display.items.filter((i): i is string => typeof i === "string");
         if (stringItems.length > 0) {
-          const displayRef = opts.stashDisplay(stringItems.join("\n\n"));
+          // What the list is, so the model still knows a turn later.
+          const count = `${stringItems.length} ${stringItems.length === 1 ? "item" : "items"}`;
+          const displayRef = opts.stashDisplay(stringItems.join("\n\n"), `${command.trim()} (${count})`);
           return { ...processed, displayRef };
         }
       }

@@ -426,7 +426,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
         vaultPath: wikiVaultPath,
         writeConfirmationNoteFn: writeConfirmationNote,
       }),
-      stashDisplay: (artifact: string) => displayStore.stash(sessionKey, artifact),
+      stashDisplay: (artifact: string, label?: string) => displayStore.stash(sessionKey, artifact, label),
     };
 
     // Each CLI-based plugin owns its tool (jiraCommand, …), built from its own
