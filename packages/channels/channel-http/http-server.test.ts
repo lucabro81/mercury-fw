@@ -694,6 +694,16 @@ describe("openApiResponse", () => {
     expect(body).toContain("openapi:");
     expect(body).toContain("Mercury HTTP surface");
   });
+
+  // #250: an unquoted "resume: true" in a description made the document
+  // invalid YAML, and only the API docs workflow on main noticed.
+  it("serves a document that parses as YAML, with the resume fields described", async () => {
+    const doc = Bun.YAML.parse(await openApiResponse().text()) as {
+      components: { schemas: Record<string, { properties: Record<string, { description?: string }> }> };
+    };
+    expect(doc.components.schemas.TurnRequest?.properties.resume?.description).toContain("`resume: true`");
+    expect(doc.components.schemas.ConfirmResult?.properties.resume?.description).toContain("`POST /turn { resume: true, conversationId }`");
+  });
 });
 
 // A browser UI on another origin (the separate custom-UI project) can only call

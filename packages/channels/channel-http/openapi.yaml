@@ -575,7 +575,7 @@ components:
         resume:
           type: boolean
           enum: [true]
-          description: The turn a `/confirm` answered `resume: true` for, in `conversationId`, which is then required; `text` is ignored.
+          description: "The turn a `/confirm` answered `resume: true` for, in `conversationId`, which is then required; `text` is ignored."
         conversationId:
           type: string
           pattern: "^[A-Za-z0-9_-]{1,128}$"
@@ -660,7 +660,7 @@ components:
         resume:
           type: boolean
           enum: [true]
-          description: The action handed its result back to the model; its answer comes from `POST /turn { resume: true, conversationId }`.
+          description: "The action handed its result back to the model; its answer comes from `POST /turn { resume: true, conversationId }`."
     Message:
       type: object
       required: [role, content, timestamp]
