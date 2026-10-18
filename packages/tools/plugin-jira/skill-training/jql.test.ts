@@ -92,6 +92,14 @@ describe("filterJql", () => {
     expect(keys("statusCategory = Waiting")).toEqual({ ok: false, error: "The value 'Waiting' does not exist for the field 'statusCategory'." });
   });
 
+  test("in and not in, with a list of values each checked", () => {
+    expect(keys("project in (KAN, OPS) AND statusCategory != Done")).toEqual(["KAN-2", "OPS-1", "KAN-1"]);
+    expect(keys('project = KAN AND priority in ("High", Low)')).toEqual(["KAN-2", "KAN-1"]);
+    expect(keys("project = KAN AND status not in (Done)")).toEqual(["KAN-2", "KAN-1"]);
+    expect(keys('assignee in ("Ada Moretti", currentUser())')).toEqual(["KAN-2", "KAN-1"]);
+    expect(keys("project in (KAN, NOPE)")).toEqual({ ok: false, error: "The value 'NOPE' does not exist for the field 'project'." });
+  });
+
   test("an issue by its key, and Jira's error for a key that doesn't exist", () => {
     expect(keys("key = KAN-2")).toEqual(["KAN-2"]);
     expect(keys("project = KAN AND key != KAN-2")).toEqual(["KAN-3", "KAN-1"]);

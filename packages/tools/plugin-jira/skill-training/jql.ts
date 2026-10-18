@@ -154,6 +154,41 @@ function predicate(clause: string, ctx: JqlContext, keys: Set<string>): Predicat
   }
 }
 
+/** The values of an `in (…)` list, split on the commas outside quotes. */
+function splitList(list: string): string[] {
+  const values: string[] = [];
+  let current = "";
+  let quote: string | null = null;
+  for (const ch of list) {
+    if (quote) {
+      if (ch === quote) quote = null;
+    } else if (ch === '"' || ch === "'") quote = ch;
+    else if (ch === ",") {
+      values.push(current.trim());
+      current = "";
+      continue;
+    }
+    current += ch;
+  }
+  values.push(current.trim());
+  return values.filter((v) => v !== "");
+}
+
+/** The test of `field in (…)` / `field not in (…)`, each value read as `field = value`; undefined for any other clause. */
+function listPredicate(clause: string, ctx: JqlContext, keys: Set<string>): Predicate | { error: string } | undefined {
+  const match = /^(\w+)\s+(not\s+in|in)\s*\((.*)\)$/i.exec(clause.trim());
+  if (!match) return undefined;
+  const tests: Predicate[] = [];
+  for (const value of splitList(match[3]!)) {
+    const test = predicate(`${match[1]} = ${value}`, ctx, keys);
+    // A field the evaluator doesn't know: the clause falls through to being reported, not guessed.
+    if (test === undefined) return undefined;
+    if (typeof test !== "function") return test;
+    tests.push(test);
+  }
+  return /^not/i.test(match[2]!) ? (i) => !tests.some((t) => t(i)) : (i) => tests.some((t) => t(i));
+}
+
 /** The issues `jql` matches, newest key first as Jira lists them; Jira's error for a query it refuses; or the clause the evaluator couldn't read. */
 export function filterJql<T extends JqlIssue>(jql: string, issues: T[], ctx: JqlContext): JqlResult<T> {
   const [where = ""] = jql.split(/\s+ORDER\s+BY\s+/i);
@@ -163,7 +198,7 @@ export function filterJql<T extends JqlIssue>(jql: string, issues: T[], ctx: Jql
   const tests: Predicate[] = [];
   const keys = new Set(issues.map((i) => i.key.toUpperCase()));
   for (const clause of where.split(/\s+AND\s+/i)) {
-    const test = predicate(clause, ctx, keys);
+    const test = listPredicate(clause, ctx, keys) ?? predicate(clause, ctx, keys);
     if (test === undefined) return { ok: false, unsupported: clause.trim() };
     if (typeof test !== "function") return { ok: false, error: test.error };
     tests.push(test);
