@@ -15,8 +15,25 @@ import type { StepInfo } from "@mercury-fw/plugin-types";
 /** Settled outcome of a tool call (or guard/capture-ping) reported via `onToolFinish`. `pending` = action deferred behind a token, not run. */
 export type ToolOutcome = "success" | "failed" | "pending";
 
-/** A confirm-required staging found in a step: the token to send back and a summary of what will run. */
-export type PendingConfirmation = { token: string; summary: string };
+/** One way the person can answer a staging: the token to send back and the words on its button. */
+export type ConfirmChoice = { token: string; label: string };
+
+/**
+ * A confirm-required staging found in a step: the token to send back, a
+ * summary of what will run, and the choices offered. A staging with a single
+ * token is one choice labelled `Conferma`; `token` is always the first
+ * choice's, so a channel that knows nothing of choices still shows that one.
+ */
+export type PendingConfirmation = { token: string; summary: string; choices: ConfirmChoice[] };
+
+/** The `choices` a tool result carries, keeping only well-formed ones. */
+function choicesOf(raw: unknown): ConfirmChoice[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.filter(
+    (c): c is ConfirmChoice =>
+      typeof c === "object" && c !== null && typeof (c as ConfirmChoice).token === "string" && typeof (c as ConfirmChoice).label === "string",
+  ).map((c) => ({ token: c.token, label: c.label }));
+}
 
 /**
  * Returns the first confirm-required staging in `step` (in tool-call order), or
@@ -27,10 +44,15 @@ export type PendingConfirmation = { token: string; summary: string };
 export function detectPendingConfirmation(step: StepInfo): PendingConfirmation | null {
   for (const call of step.toolCalls) {
     const result = step.toolResults.find((r) => r.toolCallId === call.toolCallId);
-    const output = result?.output as { pendingConfirmation?: unknown; token?: unknown; summary?: unknown } | undefined;
+    const output = result?.output as { pendingConfirmation?: unknown; token?: unknown; summary?: unknown; choices?: unknown } | undefined;
     if (!output || output.pendingConfirmation !== true || typeof output.token !== "string") continue;
 
-    return { token: output.token, summary: typeof output.summary === "string" ? output.summary : "" };
+    const choices = choicesOf(output.choices);
+    return {
+      token: output.token,
+      summary: typeof output.summary === "string" ? output.summary : "",
+      choices: choices.length > 0 ? choices : [{ token: output.token, label: "Conferma" }],
+    };
   }
   return null;
 }
@@ -62,6 +84,15 @@ export function loginLinkText(login: LoginRequest): string {
 
 /** Text shown when a turn ends with no text because it staged an action: stands in for the answer, not model-generated (no token to leak). Every channel suppresses it and shows its own confirm UI. */
 export const PENDING_CONFIRMATION_NOTE = "Azione in sospeso, in attesa di conferma.";
+
+/**
+ * What `confirm` returns when the confirmed action's result goes back to the
+ * model (`ConfirmOutcome`'s `resume`): the core keeps the result for the
+ * session, and the channel resumes the turn (`InboundTurn.resumeAfterConfirm`)
+ * instead of showing a reply. A channel that doesn't know it shows this
+ * sentence, and the result waits for the next resumed turn of that session.
+ */
+export const RESUME_AFTER_CONFIRM = "Confermato, riprendo da dove ero rimasto.";
 
 /** Sentinel the model returns for "not addressed to me" in a multi-person space (see `buildSystemPrompt`'s multiUser block). A multi-user channel suppresses it in `finalize`. */
 export const NO_REPLY = "NO_REPLY";
@@ -99,6 +130,11 @@ export type InboundTurn = {
   principal: Principal;
   /** stderr log prefix, e.g. `[chat:spaces/x:users/y] ` — empty for the terminal. */
   logPrefix: string;
+  /** Set when the turn resumes after a confirmation whose result goes back to
+   * the model (`RESUME_AFTER_CONFIRM`): the core runs the model on what it kept
+   * for the session, and `text` is ignored. With nothing kept, the turn ends
+   * with no answer. */
+  resumeAfterConfirm?: true;
   /** When set, aborting it cancels the in-flight turn. Only the HTTP surface supplies one today (client disconnect); other channels leave it undefined. */
   abortSignal?: AbortSignal;
   /**
@@ -236,7 +272,8 @@ export type ConfirmOutcome =
   | { status: "not-a-token" }
   | { status: "not-found" }
   | { status: "ok"; data: unknown }
-  | { status: "failed"; error: string };
+  | { status: "failed"; error: string }
+  | { status: "resume" };
 
 /**
  * Read-only introspection getters the core injects for a channel that exposes an

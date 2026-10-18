@@ -26,6 +26,7 @@ import {
   detectLoginRequired,
   detectPendingConfirmation,
   PENDING_CONFIRMATION_NOTE,
+  RESUME_AFTER_CONFIRM,
   type HandleTurn,
   type TurnSink,
   type Authenticate,
@@ -151,14 +152,16 @@ export function openApiResponse(corsOrigin = "*"): Response {
  * `{ opening: true, conversationId }`, with no `text`, asks the assistant to
  * speak first in that conversation (right after someone signs in): the core
  * decides whether it has anything to say, and a `final` with an empty text
- * means it hasn't.
+ * means it hasn't. `{ resume: true, conversationId }` runs the turn a
+ * `/confirm` answered `resume: true` for; a bare token whose confirmation
+ * resumes runs that turn on the same stream.
  */
 export async function handleTurnRequest(req: Request, deps: TurnRequestDeps): Promise<Response> {
   const origin = deps.corsOrigin ?? "*";
   const cors = corsHeaders(origin);
   const principal = await caller(req, deps, origin);
   if (principal instanceof Response) return principal;
-  let body: { text?: unknown; conversationId?: unknown; opening?: unknown };
+  let body: { text?: unknown; conversationId?: unknown; opening?: unknown; resume?: unknown };
   try {
     body = (await req.json()) as typeof body;
   } catch {
@@ -167,13 +170,18 @@ export async function handleTurnRequest(req: Request, deps: TurnRequestDeps): Pr
   const opening = body.opening === true;
   // A conversation the client names is one it reopens; an ephemeral one never comes back.
   const named = typeof body.conversationId === "string" && body.conversationId.trim().length > 0;
+  // The turn a `/confirm` answered `resume: true` for.
+  const resume = body.resume === true;
   if (opening && !named) {
     return Response.json({ ok: false, error: "an opening needs a conversationId" }, { status: 400, headers: cors });
   }
-  if (!opening && (typeof body.text !== "string" || body.text.trim().length === 0)) {
+  if (resume && !named) {
+    return Response.json({ ok: false, error: "a resumed turn needs a conversationId" }, { status: 400, headers: cors });
+  }
+  if (!opening && !resume && (typeof body.text !== "string" || body.text.trim().length === 0)) {
     return Response.json({ ok: false, error: "missing text" }, { status: 400, headers: cors });
   }
-  const text = opening ? "" : (body.text as string);
+  const text = opening || resume ? "" : (body.text as string);
   const conversationId = named ? (body.conversationId as string).trim() : (deps.newSessionKey ?? (() => crypto.randomUUID()))();
   if (!CONVERSATION_ID.test(conversationId)) {
     return Response.json({ ok: false, error: "invalid conversationId" }, { status: 400, headers: cors });
@@ -207,12 +215,14 @@ export async function handleTurnRequest(req: Request, deps: TurnRequestDeps): Pr
 
       // Same deterministic interception as every other channel — a
       // previously-approved mutation must never depend on the model.
-      const confirmReply = opening ? null : await deps.confirm(text, sessionKey, principal);
-      if (confirmReply !== null) {
+      const confirmReply = opening || resume ? null : await deps.confirm(text, sessionKey, principal);
+      if (confirmReply !== null && confirmReply !== RESUME_AFTER_CONFIRM) {
         send("final", { text: confirmReply });
         close();
         return;
       }
+      // The confirmed action's result goes back to the model: the turn runs again, on this stream.
+      const resuming = resume || confirmReply === RESUME_AFTER_CONFIRM;
 
       const sink: TurnSink = {
         onToolStart: (label, detail, toolCallId, toolName) => send("tool", { label, detail, toolCallId, name: toolName }),
@@ -224,7 +234,7 @@ export async function handleTurnRequest(req: Request, deps: TurnRequestDeps): Pr
         onReasoningEnd: (id, failed) => send("reasoning_end", { id, failed }),
         onStep: (step) => {
           const pending = detectPendingConfirmation(step);
-          if (pending) send("pending", { command: pending.summary, token: pending.token });
+          if (pending) send("pending", { command: pending.summary, token: pending.token, choices: pending.choices });
           const login = detectLoginRequired(step);
           if (login) send("login", { service: login.service, url: login.url });
         },
@@ -238,7 +248,7 @@ export async function handleTurnRequest(req: Request, deps: TurnRequestDeps): Pr
           {
             channel: "http",
             multiUser: false,
-            text,
+            text: resuming ? "" : text,
             sessionKey,
             principal,
             // The caller's id comes from the auth provider, unchecked here.
@@ -246,6 +256,7 @@ export async function handleTurnRequest(req: Request, deps: TurnRequestDeps): Pr
             abortSignal: abort.signal,
             ...(named ? { resume: deps.resumeMaxChars === undefined ? {} : { maxChars: deps.resumeMaxChars } } : {}),
             ...(opening ? { opening: true as const } : {}),
+            ...(resuming ? { resumeAfterConfirm: true as const } : {}),
           },
           sink,
         );
@@ -285,7 +296,9 @@ export type ConfirmRequestDeps = {
  * pending confirmation and its staged action was consumed and run; the `text`
  * then reports whether that execution succeeded. `resolved: false` means the
  * token was not a pending confirmation (unknown, expired, already used, or not
- * even token-shaped). Never touches the model.
+ * even token-shaped). `resume: true` (with no `text`) means the action handed
+ * its result back to the model: the client hears its answer by opening
+ * `/turn { resume: true, conversationId }`. Never touches the model.
  */
 export async function handleConfirmRequest(req: Request, deps: ConfirmRequestDeps): Promise<Response> {
   const origin = deps.corsOrigin ?? "*";
@@ -315,6 +328,9 @@ export async function handleConfirmRequest(req: Request, deps: ConfirmRequestDep
       return Response.json({ ok: true, resolved: true, text: `Confermato ed eseguito: ${JSON.stringify(outcome.data)}` }, { headers: cors });
     case "failed":
       return Response.json({ ok: true, resolved: true, text: `Confermato, ma l'esecuzione è fallita: ${outcome.error}` }, { headers: cors });
+    case "resume":
+      // The result went back to the model: the client opens `/turn { resume: true }` to hear its answer.
+      return Response.json({ ok: true, resolved: true, resume: true }, { headers: cors });
   }
 }
 

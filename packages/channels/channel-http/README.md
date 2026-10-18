@@ -45,8 +45,9 @@ Runs one conversational turn; the reply streams back as Server-Sent Events.
 
 | field | type | required | description |
 |---|---|---|---|
-| `text` | string | yes, unless `opening` | The user message. A bare confirmation token here confirms a staged action (see the `pending` event) without invoking the model. |
+| `text` | string | yes, unless `opening` or `resume` | The user message. A bare confirmation token here confirms a staged action (see the `pending` event) without invoking the model; when the action hands its result back to the model, the model's answer streams on this same request. |
 | `opening` | `true` | no | The assistant speaks first, before the person writes anything: what a UI asks right after someone signs in, when `GET /me` says the assistant doesn't know their name. It introduces itself and asks how to call them, and saves the answer once they give it. For someone it already knows, the stream is a single `final` with an empty text. Needs `conversationId`; `text` is ignored. |
+| `resume` | `true` | no | The turn a `POST /confirm` answered `resume: true` for: the model answers on what the confirmed action handed back. Needs `conversationId`; `text` is ignored. With nothing to resume, the stream is a single `final` with an empty text. |
 | `conversationId` | string | no | Opaque, client-owned id that continues one of your conversations: letters, digits, `-` and `_`, up to 128 characters (a UUID fits) once surrounding whitespace is trimmed, `400` otherwise. Sent again, however long after, it continues that conversation, rebuilt from the archive if Mercury had freed it (see `HTTP_SURFACE_RESUME_MAX_CHARS`). Omitted ⇒ a fresh one-off session that can't be continued. |
 
 **Responses**: `200 text/event-stream` (the events below); `400` if `text` is missing, an opening has no `conversationId`, the body isn't JSON, or `conversationId` has other characters than the ones above.
@@ -62,7 +63,7 @@ Reasoning and answer text arrive as **incremental deltas** — never one finishe
 | `tool` | `{ label, detail, toolCallId, name }` | a tool call starts; `name` is the tool the model called, absent when Mercury is saving something to memory |
 | `tool_finish` | `{ toolCallId, outcome }` | a tool call settles (`outcome`: `success` \| `failed` \| `pending`) |
 | `text` | `{ chunk }` | an answer-text delta |
-| `pending` | `{ command, token }` | a confirm-required action was staged; send `token` back to confirm it — as a later `/turn` `text`, or via `POST /confirm` |
+| `pending` | `{ command, token, choices }` | a confirm-required action was staged; send a token back to confirm it — as a later `/turn` `text`, or via `POST /confirm`. `choices` is every way to answer (`{ token, label }`, in order; one, labelled `Conferma`, for a plain staging): the others die with the one sent |
 | `login` | `{ service, url }` | the caller isn't logged in to `service` yet, which a plugin acts on as them: show them `url` to open (the model never gets it) |
 | `final` | `{ text }` | the complete answer (also emitted for a token confirmation, with no model turn) |
 | `error` | `{ message }` | the turn failed mid-stream |
@@ -86,7 +87,7 @@ A code for linking another of the caller's accounts to them, for the UI to show:
 
 ## `POST /confirm`
 
-Explicit alternative to re-sending a token as `/turn` `text`. Body `{ token, conversationId }`; returns `{ ok: true, resolved: true, text }` when the token was a pending confirmation, `{ ok: true, resolved: false }` otherwise. `400` if `token` or `conversationId` is missing, or the id has other characters than `/turn` accepts. Never invokes the model.
+Explicit alternative to re-sending a token as `/turn` `text`. Body `{ token, conversationId }`; returns `{ ok: true, resolved: true, text }` when the token was a pending confirmation, `{ ok: true, resolved: false }` otherwise. When the confirmed action hands its result back to the model, it returns `{ ok: true, resolved: true, resume: true }` instead: open `POST /turn { resume: true, conversationId }` to hear the model's answer. `400` if `token` or `conversationId` is missing, or the id has other characters than `/turn` accepts. Never invokes the model.
 
 ## Read-only introspection
 

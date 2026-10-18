@@ -120,6 +120,80 @@ describe("pending", () => {
   });
 });
 
+describe("stageGroup", () => {
+  function counterTokens(): () => string {
+    let n = 0;
+    return () => `T${++n}`;
+  }
+
+  it("returns one token per action, in order, and a take returns the chosen action with its label", () => {
+    const store = createConfirmationStore({ tokenFn: counterTokens() });
+    const once = { ...action("fetch https://example.org/a"), label: "Solo questa volta" };
+    const always = { ...action("fetch https://example.org/a"), label: "Sempre per example.org" };
+
+    expect(store.stageGroup("s1", OWNER, [once, always])).toEqual(["T1", "T2"]);
+
+    const taken = store.take("s1", OWNER, "T2");
+    expect(taken?.run).toBe(always.run);
+    expect(taken?.label).toBe("Sempre per example.org");
+  });
+
+  it("taking one choice removes every other choice of the group", () => {
+    const store = createConfirmationStore({ tokenFn: counterTokens() });
+    store.stageGroup("s1", OWNER, [action("a"), action("a"), action("a")]);
+
+    expect(store.take("s1", OWNER, "T2")).not.toBeNull();
+    expect(store.take("s1", OWNER, "T1")).toBeNull();
+    expect(store.take("s1", OWNER, "T3")).toBeNull();
+  });
+
+  it("a refused take (wrong session or person) leaves the whole group in place", () => {
+    const store = createConfirmationStore({ tokenFn: counterTokens() });
+    store.stageGroup("s1", OWNER, [action("a"), action("a")]);
+
+    expect(store.take("s2", OWNER, "T1")).toBeNull();
+    expect(store.take("s1", "static:bob", "T2")).toBeNull();
+    expect(store.take("s1", OWNER, "T2")).not.toBeNull();
+  });
+
+  it("does not touch another group or a single staging", () => {
+    const store = createConfirmationStore({ tokenFn: counterTokens() });
+    store.stageGroup("s1", OWNER, [action("a"), action("a")]);
+    store.stage("s1", OWNER, action("b"));
+    store.stageGroup("s1", OWNER, [action("c"), action("c")]);
+
+    store.take("s1", OWNER, "T1");
+    expect(store.take("s1", OWNER, "T3")?.describe).toBe("b");
+    expect(store.take("s1", OWNER, "T5")?.describe).toBe("c");
+  });
+
+  it("the choices of a group share one expiry", () => {
+    let now = 0;
+    const store = createConfirmationStore({ now: () => now, ttlMs: 1000, tokenFn: counterTokens() });
+    store.stageGroup("s1", OWNER, [action("a"), action("a")]);
+
+    now = 1001;
+    expect(store.take("s1", OWNER, "T1")).toBeNull();
+    expect(store.take("s1", OWNER, "T2")).toBeNull();
+  });
+
+  it("every choice taken carries the group's first token as its noteToken; a single staging's is its own token", () => {
+    const store = createConfirmationStore({ tokenFn: counterTokens() });
+    store.stageGroup("s1", OWNER, [action("a"), action("a")]);
+    store.stage("s1", OWNER, action("b"));
+
+    expect(store.take("s1", OWNER, "T2")?.noteToken).toBe("T1");
+    expect(store.take("s1", OWNER, "T3")?.noteToken).toBe("T3");
+  });
+
+  it("pending lists a group once, by its describe", () => {
+    const store = createConfirmationStore({ now: () => 0, ttlMs: 100, tokenFn: counterTokens() });
+    store.stageGroup("s1", OWNER, [action("fetch https://example.org/a"), action("fetch https://example.org/a")]);
+
+    expect(store.pending(OWNER)).toEqual([{ sessionKey: "s1", summary: "fetch https://example.org/a", expiresAt: 100 }]);
+  });
+});
+
 // Replaces parseConfirmCommand's "conferma <token>" keyword parsing: the
 // real safety gate was always store.take() (must exist, right session, not
 // expired) — the "conferma " prefix added no security, just ceremony left

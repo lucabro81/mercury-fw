@@ -36,6 +36,7 @@ import {
   detectPendingConfirmation,
   loginLinkText,
   PENDING_CONFIRMATION_NOTE,
+  RESUME_AFTER_CONFIRM,
   NO_REPLY,
   type LoginRequest,
   type PendingConfirmation,
@@ -48,7 +49,8 @@ import {
 
 /**
  * Builds the confirmation card sent when a step stages an irreversible
- * command (see `pending-confirmation.ts`). The button's parameters carry
+ * command (see `pending-confirmation.ts`), one button per choice it offers
+ * (a single `Conferma` for a plain staging). Each button's parameters carry
  * the token, so a click routes straight into the same `tryConfirm` path
  * a bare token typed on the terminal uses (see `onCardClick`'s `confirm`
  * case, below) — the user never has to see or type the token themselves.
@@ -62,12 +64,10 @@ function buildConfirmCard(pending: PendingConfirmation): ChatCard {
           { textParagraph: { text: `\`${pending.summary}\`` } },
           {
             buttonList: {
-              buttons: [
-                {
-                  text: "Conferma",
-                  onClick: { action: { function: "confirm", parameters: [{ key: "token", value: pending.token }] } },
-                },
-              ],
+              buttons: pending.choices.map((choice) => ({
+                text: choice.label,
+                onClick: { action: { function: "confirm", parameters: [{ key: "token", value: choice.token }] } },
+              })),
             },
           },
         ],
@@ -196,7 +196,7 @@ type RawChatEvent = {
     sender?: RawChatSender;
   };
   action?: { actionMethodName?: string; parameters?: Array<{ key?: string; value?: string }> };
-  space?: { name?: string };
+  space?: { name?: string; type?: string };
   user?: RawChatSender;
 };
 
@@ -225,6 +225,8 @@ export type ParsedCardClickEvent = {
   sender: string;
   senderEmail: string | undefined;
   parameters: Record<string, string>;
+  /** As on a message (see `ParsedMessageEvent.isDirectMessage`): for the turn a click resumes. */
+  isDirectMessage: boolean;
 };
 
 /** The email Google vouches for on `sender`: a person's only (`HUMAN`), never a bot's or an unknown kind's. */
@@ -260,12 +262,25 @@ export function parseChatEvent(raw: unknown): ParsedMessageEvent | ParsedCardCli
         parameters[p.key] = p.value;
       }
     }
-    return { kind: "card-click", space: event.space.name, sender: event.user.name, senderEmail: emailOf(event.user), parameters };
+    return {
+      kind: "card-click",
+      space: event.space.name,
+      sender: event.user.name,
+      senderEmail: emailOf(event.user),
+      parameters,
+      isDirectMessage: event.space.type === "DM",
+    };
   }
   return null;
 }
 
-export type CardClickHandler = (params: Record<string, string>, space: string, sender: string, senderEmail?: string) => Promise<void>;
+export type CardClickHandler = (
+  params: Record<string, string>,
+  space: string,
+  sender: string,
+  senderEmail?: string,
+  isDirectMessage?: boolean,
+) => Promise<void>;
 
 export type GoogleChatProviderDeps = {
   credentials: ServiceAccountCredentials;
@@ -319,7 +334,50 @@ export function createGoogleChatProvider(deps: GoogleChatProviderDeps): GoogleCh
   // concurrently. Scoped by sessionKey only (not global), so a slow turn
   // for one user/space never blocks a different one's.
   const busySessions = new Set<string>();
-  const queuedEvents = new Map<string, ParsedMessageEvent[]>();
+  const queuedTurns = new Map<string, Array<() => Promise<void>>>();
+  // The turn handler `start` was given, for a turn a card click resumes.
+  let activeHandleTurn: HandleTurn | undefined;
+
+  /** Runs `turn` for `sessionKey` now, or after the turns already queued for it. */
+  async function runInSession(sessionKey: string, turn: () => Promise<void>): Promise<void> {
+    if (busySessions.has(sessionKey)) {
+      const queue = queuedTurns.get(sessionKey) ?? [];
+      queue.push(turn);
+      queuedTurns.set(sessionKey, queue);
+      return;
+    }
+    busySessions.add(sessionKey);
+    try {
+      await turn();
+    } finally {
+      busySessions.delete(sessionKey);
+      const queue = queuedTurns.get(sessionKey);
+      const next = queue?.shift();
+      if (queue && queue.length === 0) queuedTurns.delete(sessionKey);
+      if (next) {
+        runInSession(sessionKey, next).catch((err) => log(`[chat] queued turn failed: ${String(err)}`));
+      }
+    }
+  }
+
+  /** Resumes the session's turn after a confirmation whose result went back to the model (`RESUME_AFTER_CONFIRM`). */
+  function resumeTurn(handleTurn: HandleTurn, space: string, principal: Principal, isDirectMessage: boolean): Promise<void> {
+    const sessionKey = deriveSessionKey(space, principal.id);
+    return runInSession(sessionKey, () =>
+      handleTurn(
+        {
+          channel: "google-chat",
+          multiUser: !isDirectMessage,
+          text: "",
+          sessionKey,
+          principal,
+          logPrefix: `[chat:${space}:${principal.id}] `,
+          resumeAfterConfirm: true,
+        },
+        createSink(space, { user: principal.id, isDirectMessage }),
+      ),
+    );
+  }
 
   /**
    * Default `onCardClick`: the confirm button's token routes through the exact
@@ -329,17 +387,22 @@ export function createGoogleChatProvider(deps: GoogleChatProviderDeps): GoogleCh
    */
   const onCardClick: CardClickHandler =
     deps.onCardClick ??
-    (async (params, space, sender, senderEmail) => {
+    (async (params, space, sender, senderEmail, isDirectMessage = false) => {
       const token = params.token;
       if (!token) {
         log(`[chat] card click with no token parameter`);
         return;
       }
-      const reply = await deps.confirm(token, deriveSessionKey(space, sender), {
+      const principal: Principal = {
         id: sender,
         provider: "google-chat",
         ...(senderEmail === undefined ? {} : { claims: { email: senderEmail } }),
-      });
+      };
+      const reply = await deps.confirm(token, deriveSessionKey(space, sender), principal);
+      if (reply === RESUME_AFTER_CONFIRM && activeHandleTurn) {
+        await resumeTurn(activeHandleTurn, space, principal, isDirectMessage);
+        return;
+      }
       if (reply !== null) {
         log(`[chat:${space}] [out] ${reply}`);
         const sent = await sendMessageFn(space, reply, clientDeps);
@@ -528,6 +591,10 @@ export function createGoogleChatProvider(deps: GoogleChatProviderDeps): GoogleCh
     };
 
     const confirmReply = await deps.confirm(event.text, sessionKey, principal);
+    if (confirmReply === RESUME_AFTER_CONFIRM) {
+      await resumeTurn(handleTurn, event.space, principal, event.isDirectMessage);
+      return;
+    }
     if (confirmReply !== null) {
       log(`[chat:${event.space}] [out] ${confirmReply}`);
       const sent = await sendMessageFn(event.space, confirmReply, clientDeps);
@@ -538,17 +605,8 @@ export function createGoogleChatProvider(deps: GoogleChatProviderDeps): GoogleCh
     // Only the actual model turn needs serializing — tryConfirm above
     // never touches SessionHistory, so it's always safe to run right
     // away regardless of whether this session is mid-turn.
-    if (busySessions.has(sessionKey)) {
-      const queue = queuedEvents.get(sessionKey) ?? [];
-      queue.push(event);
-      queuedEvents.set(sessionKey, queue);
-      return;
-    }
-
-    busySessions.add(sessionKey);
-    try {
-      const sink = createSink(event.space, { user: event.sender, isDirectMessage: event.isDirectMessage });
-      await handleTurn(
+    await runInSession(sessionKey, () =>
+      handleTurn(
         {
           channel: "google-chat",
           multiUser: !event.isDirectMessage,
@@ -557,17 +615,9 @@ export function createGoogleChatProvider(deps: GoogleChatProviderDeps): GoogleCh
           principal,
           logPrefix: `[chat:${event.space}:${event.sender}] `,
         },
-        sink,
-      );
-    } finally {
-      busySessions.delete(sessionKey);
-      const queue = queuedEvents.get(sessionKey);
-      const next = queue?.shift();
-      if (queue && queue.length === 0) queuedEvents.delete(sessionKey);
-      if (next) {
-        processMessageEvent(next, handleTurn).catch((err) => log(`[chat] queued event handling failed: ${String(err)}`));
-      }
-    }
+        createSink(event.space, { user: event.sender, isDirectMessage: event.isDirectMessage }),
+      ),
+    );
   }
 
   /**
@@ -598,7 +648,7 @@ export function createGoogleChatProvider(deps: GoogleChatProviderDeps): GoogleCh
       if (parsed.kind === "message") {
         await processMessageEvent(parsed, handleTurn);
       } else {
-        await onCardClick(parsed.parameters, parsed.space, parsed.sender, parsed.senderEmail);
+        await onCardClick(parsed.parameters, parsed.space, parsed.sender, parsed.senderEmail, parsed.isDirectMessage);
       }
     } catch (err) {
       log(`[chat] event handling failed: ${String(err)}`);
@@ -607,6 +657,7 @@ export function createGoogleChatProvider(deps: GoogleChatProviderDeps): GoogleCh
 
   return {
     async start(handleTurn: HandleTurn): Promise<void> {
+      activeHandleTurn = handleTurn;
       const sub = subscriptionFn(deps.credentials, deps.subscription);
       activeSubscription = sub;
       sub.on("message", (message) => {

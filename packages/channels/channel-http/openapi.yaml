@@ -71,7 +71,16 @@ info:
     An irreversible action is never executed on the model's say-so: the turn
     emits a `pending` event carrying a one-time `token`. The client confirms by
     sending that token back — either as the `text` of a follow-up `POST /turn`,
-    or via `POST /confirm`.
+    or via `POST /confirm`. An action can offer several `choices` (e.g. "only
+    this time" / "always"), each with its own token: the caller sends back one,
+    and the others die with it.
+
+
+    Some actions hand their result back to the model instead of to the caller
+    (a page read after the caller allowed it, for example). Confirming one by
+    `POST /turn` streams the model's answer on that same stream; `POST /confirm`
+    answers `resume: true`, and the client then opens
+    `POST /turn { resume: true, conversationId }` to hear it.
 security:
   - bearerAuth: []
 servers:
@@ -85,7 +94,10 @@ paths:
         Runs one model turn and streams the result as `text/event-stream`. If
         `text` is a pending confirmation token it is resolved deterministically
         without ever consulting the model. Close the connection to cancel an
-        in-flight turn. With `opening: true` and no `text`, the assistant
+        in-flight turn. When the confirmation hands its result back to the
+        model, the model's answer to it streams instead. With `resume: true`
+        and no `text`, the turn is the one a `/confirm` answered `resume: true`
+        for. With `opening: true` and no `text`, the assistant
         speaks first in the conversation named (right after someone signs
         in): it does only for someone it doesn't know the name of, asking how
         to call them, and otherwise the stream carries a single `final` with
@@ -108,7 +120,8 @@ paths:
             An SSE stream. Each event is one of the types in `TurnEvent`:
             `reasoning`/`reasoning_end`, `text` (incremental deltas), `tool`/
             `tool_finish` (status of a tool call), `pending` (a staged
-            confirm-required action, with its command and token), `login` (a
+            confirm-required action, with its command, its token and the
+            choices it offers), `login` (a
             service the caller has to log in to first, with the link to open),
             `final` (the
             authoritative complete answer), and `error`.
@@ -117,7 +130,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/TurnEvent"
         "400":
-          description: Missing/invalid body, an opening without a conversationId, or a conversationId with characters outside the allowed ones.
+          description: Missing/invalid body, an opening or a resumed turn without a conversationId, or a conversationId with characters outside the allowed ones.
           content:
             application/json:
               schema:
@@ -146,7 +159,9 @@ paths:
           description: >
             `resolved: true` (with the reply `text`) when the token was a pending
             confirmation, `resolved: false` when it was not (unknown, expired, or
-            already used).
+            already used). `resolved: true` with `resume: true` and no `text`
+            when the action handed its result back to the model: the answer
+            comes from `POST /turn { resume: true, conversationId }`.
           content:
             application/json:
               schema:
@@ -552,11 +567,15 @@ components:
       properties:
         text:
           type: string
-          description: The user's message, or a bare confirmation token. Required, unless `opening` is true.
+          description: The user's message, or a bare confirmation token. Required, unless `opening` or `resume` is true.
         opening:
           type: boolean
           enum: [true]
           description: The assistant speaks first in `conversationId`, which is then required; `text` is ignored.
+        resume:
+          type: boolean
+          enum: [true]
+          description: The turn a `/confirm` answered `resume: true` for, in `conversationId`, which is then required; `text` is ignored.
         conversationId:
           type: string
           pattern: "^[A-Za-z0-9_-]{1,128}$"
@@ -594,7 +613,18 @@ components:
           description: On `pending` — the staged action's summary.
         token:
           type: string
-          description: On `pending` — the one-time confirmation token.
+          description: On `pending` — the one-time confirmation token (the first choice's).
+        choices:
+          type: array
+          description: On `pending` — every way to answer, in order; a plain staging has one, labelled `Conferma`.
+          items:
+            type: object
+            required: [token, label]
+            properties:
+              token:
+                type: string
+              label:
+                type: string
         service:
           type: string
           description: On `login` — the service the caller has to log in to.
@@ -626,7 +656,11 @@ components:
           type: boolean
         text:
           type: string
-          description: The confirmation reply, present when `resolved` is true.
+          description: The confirmation reply, present when `resolved` is true and `resume` isn't.
+        resume:
+          type: boolean
+          enum: [true]
+          description: The action handed its result back to the model; its answer comes from `POST /turn { resume: true, conversationId }`.
     Message:
       type: object
       required: [role, content, timestamp]

@@ -3,6 +3,7 @@ import { createTerminalProvider } from "./terminal-provider.ts";
 import { startTerminalRepl } from "./terminal.ts";
 import type { HandleTurn, InboundTurn } from "./provider.ts";
 import { PENDING_CONFIRMATION_NOTE } from "../session/agent-turn.ts";
+import { RESUME_AFTER_CONFIRM } from "@mercury-fw/channel-types";
 
 type CapturedHandleInput = (
   input: string,
@@ -187,6 +188,76 @@ describe("createTerminalProvider", () => {
     await capturedHandleInput("elimina KAN-1", (chunk) => chunks.push(chunk));
     expect(chunks.join("")).toContain("jira issue delete KAN-1 --confirm");
     expect(chunks.join("")).toContain("scrivi: TOK1");
+  });
+
+  test("a staging with several choices prints one line per choice, with its label and token", async () => {
+    let capturedHandleInput!: CapturedHandleInput;
+    const provider = createTerminalProvider({
+      confirmDeps: fakeConfirmDeps(),
+      ollamaHost: "http://host",
+      ollamaModel: "model",
+      getLoadedContextLengthFn: async () => 4096,
+      startTerminalReplFn: async (handleInput) => {
+        capturedHandleInput = handleInput;
+      },
+      tryConfirmFn: async () => null,
+    });
+    await provider.start(async (_turn, sink) => {
+      sink.onStep?.({
+        toolCalls: [{ toolCallId: "1", toolName: "web_fetch", input: { url: "https://example.org/a" } }],
+        toolResults: [
+          {
+            toolCallId: "1",
+            toolName: "web_fetch",
+            output: {
+              ok: false,
+              pendingConfirmation: true,
+              token: "T1",
+              summary: "https://example.org/a",
+              choices: [
+                { token: "T1", label: "Solo questa volta" },
+                { token: "T2", label: "Sempre per example.org" },
+              ],
+            },
+          },
+        ],
+        content: [],
+      });
+      await sink.finalize("");
+    });
+
+    const chunks: string[] = [];
+    await capturedHandleInput("leggi la pagina", (chunk) => chunks.push(chunk));
+    expect(chunks.join("")).toBe(
+      "Azione in sospeso: `https://example.org/a`\n  Solo questa volta — scrivi: T1\n  Sempre per example.org — scrivi: T2\n",
+    );
+  });
+
+  test("a confirmation that resumes runs the session's turn again, and answers with what it says", async () => {
+    let capturedHandleInput!: CapturedHandleInput;
+    const turns: InboundTurn[] = [];
+    const provider = createTerminalProvider({
+      confirmDeps: fakeConfirmDeps(),
+      ollamaHost: "http://host",
+      ollamaModel: "model",
+      getLoadedContextLengthFn: async () => 4096,
+      startTerminalReplFn: async (handleInput) => {
+        capturedHandleInput = handleInput;
+      },
+      tryConfirmFn: async () => RESUME_AFTER_CONFIRM,
+    });
+    await provider.start(async (turn, sink) => {
+      turns.push(turn);
+      await sink.finalize("The page says hello.");
+    });
+
+    const result = await capturedHandleInput("ab12-cd34", () => {});
+
+    expect(result).toBe("The page says hello.");
+    expect(turns).toHaveLength(1);
+    expect(turns[0]?.resumeAfterConfirm).toBe(true);
+    expect(turns[0]?.text).toBe("");
+    expect(turns[0]?.sessionKey).toBe("terminal");
   });
 
   test("the sink's onTextChunk is the terminal's real onChunk (streaming enabled)", async () => {

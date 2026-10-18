@@ -20,6 +20,7 @@ import type { StepInfo } from "../session/step-info.ts";
 // blocks delivery — a guard failure is a quality miss, not a reason to
 // withhold an already-generated answer.
 import type { PostTurnGuard } from "@mercury-fw/plugin-types";
+import type { ResumedAction } from "@mercury-fw/confirm-engine";
 export type { PostTurnGuard };
 import type { SessionHistory } from "../session/history.ts";
 import { recordStep } from "../session/tool-log-buffer.ts";
@@ -158,6 +159,9 @@ export type TurnRunnerDeps = {
    * is whoever the channel says.
    */
   identify?: (principal: InboundTurn["principal"]) => Promise<Identified>;
+  /** Takes what a confirmation kept for the session's resumed turn (see
+   * `InboundTurn.resumeAfterConfirm`); nothing is ever kept when absent. */
+  takeResumed?: (sessionKey: string) => ResumedAction | undefined;
   /** The lists shown in the session, most recent last (see `display-store.ts`); none when absent. */
   shownLists?: (sessionKey: string) => Array<{ ref: string; label: string }>;
   /** How the person with `key` asked to be called, or undefined; nobody has a name when absent. */
@@ -256,6 +260,22 @@ export type TurnRunnerDeps = {
   sessionLock?: SessionLock;
 };
 
+/** What stands for the person's message in a turn resumed after a
+ * confirmation: which action they confirmed and the choice they took. Written
+ * by the core, never carrying the action's result. */
+export const RESUMED_LINE = (resumed: ResumedAction) =>
+  `[Confirmed by the person: ${resumed.describe}${resumed.label === undefined ? "" : ` (${resumed.label})`}]`;
+
+/** The confirmed action as a step of the resumed turn, for the post-turn guards. */
+function resumedStep(resumed: ResumedAction): StepInfo {
+  const toolCallId = "resumed";
+  return {
+    toolCalls: [{ toolCallId, toolName: resumed.toolName, input: resumed.input }],
+    toolResults: [{ toolCallId, toolName: resumed.toolName, output: resumed.output }],
+    content: [],
+  };
+}
+
 /** Builds the shared `HandleTurn` every provider's driver calls once it has a real message to run through the model. */
 export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
   const postTurnGuards = deps.postTurnGuards ?? [];
@@ -311,18 +331,30 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
       }
       return;
     }
+    const resumed = turn.resumeAfterConfirm ? deps.takeResumed?.(turn.sessionKey) : undefined;
+    // Nothing kept to resume with (already taken, or lost to a restart).
+    if (turn.resumeAfterConfirm && resumed === undefined) {
+      try {
+        await sink.finalize("");
+      } finally {
+        sink.dispose();
+      }
+      return;
+    }
     const shown = deps.shownLists?.(turn.sessionKey) ?? [];
     /** The turn's prompt; the primer comes with the history: its current state as is, its recap framed as background. */
     const systemFor = (primer: { current: string; recap: string } | undefined) =>
       [
-        turn.multiUser ? prompts.multiUser : prompts.singleUser,
+        // A resumed turn answers the person who confirmed, even in a shared
+        // space: the multi-user prompt would let the model stay silent on it.
+        turn.multiUser && !resumed ? prompts.multiUser : prompts.singleUser,
         ...(primer?.current ? [primer.current] : []),
         ...(primer?.recap ? [RECAP_NOTE(primer.recap)] : []),
         ...(turn.opening ? [OPENING_NOTE] : name === undefined ? [] : [PREFERRED_NAME_NOTE(name)]),
         // Last, where a small model pays the most attention.
         ...(shown.length > 0 ? [SHOWN_LISTS_NOTE(shown)] : []),
       ].join("\n\n");
-    const input = turn.opening ? OPENING_CUE : turn.text;
+    const input = resumed ? RESUMED_LINE(resumed) : turn.opening ? OPENING_CUE : turn.text;
     if (tracked) {
       deps.trackSession(turn.sessionKey, key, (deps.now ?? Date.now)());
       deps.registerCaptureCallback(turn.sessionKey, sink.onToolStart, sink.onToolFinish);
@@ -447,6 +479,7 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
             ? AbortSignal.any([turn.abortSignal, stall.signal])
             : stall.signal
           : turn.abortSignal,
+        ...(resumed ? { resumed } : {}),
       });
       // The model is done: what's left (guards, finalize) isn't its silence.
       watchdog.stop();
@@ -470,7 +503,7 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
         }
         sink.onToolStart(guard.statusLabel, undefined, guard.statusId);
         try {
-          const guarded = await guard.run(correctedText, steps);
+          const guarded = await guard.run(correctedText, resumed ? [resumedStep(resumed), ...steps] : steps);
           sink.onToolFinish?.(guard.statusId, guarded.outcome);
           if (guarded.log !== undefined) {
             logPostTurnGuard(guarded.log);
@@ -530,8 +563,8 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
         // user key (the same identity the wiki and the rest of memory use),
         // not the space-scoped session.
         try {
-          // An opening's cue isn't something the person said.
-          if (!turn.opening) {
+          // An opening's cue and a resumed turn's line aren't something the person said.
+          if (!turn.opening && !resumed) {
             await deps.captureVerbatim({ sessionKey: turn.sessionKey, userId: key, role: "user", content: turn.text });
           }
           await deps.captureVerbatim({

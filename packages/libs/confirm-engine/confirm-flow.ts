@@ -10,7 +10,7 @@
  * thunk (see `StagedAction`) and reports the outcome. A CLI delete, a future
  * memory purge — same path, because the doing was closed over at stage time.
  */
-import type { ConfirmOutcome } from "@mercury-fw/channel-types";
+import { RESUME_AFTER_CONFIRM, type ConfirmOutcome } from "@mercury-fw/channel-types";
 import { isTokenShaped, type ConfirmationStore } from "./confirmation-store.ts";
 
 /**
@@ -37,8 +37,16 @@ export type WriteConfirmationNote = (
  * click on Google Chat and a bare token typed on the terminal both resolve
  * through this exact same path.
  */
+/** A confirmed action whose result goes back to the model: the tool call it
+ * resumes the turn as (`toolName`, `input`), what it returned (`output`), and
+ * what it was (`describe`, `label` of the choice taken) for the history. */
+export type ResumedAction = { describe: string; label?: string; toolName: string; input: unknown; output: unknown };
+
 export type ConfirmDeps = {
   store: ConfirmationStore;
+  /** Keeps a confirmed action's result for `sessionKey`'s resumed turn. Without
+   * it, a resumable action's result goes to the person like any other. */
+  onResume?: (sessionKey: string, action: ResumedAction) => void;
   /** The person confirming (the core's user key): the token resolves only if they staged it. */
   owner: string;
   vaultPath: string;
@@ -63,6 +71,7 @@ export async function resolveConfirmation(
   }
 
   const result = await staged.run();
+  const command = staged.label === undefined ? staged.describe : `${staged.describe} — ${staged.label}`;
   const resolvedAt = (deps.now?.() ?? new Date()).toISOString();
   // Overwrites the same note the propose half wrote (see
   // `confirmation-staging.ts`) so the persistent record reflects what actually
@@ -70,16 +79,27 @@ export async function resolveConfirmation(
   // guards against. Same resilience tradeoff as the propose side: a
   // wiki-write failure must not stop the user from getting their result.
   try {
-    await deps.writeConfirmationNoteFn(deps.vaultPath, deps.owner, token, {
+    await deps.writeConfirmationNoteFn(deps.vaultPath, deps.owner, staged.noteToken ?? token, {
       status: result.ok ? "confirmed" : "failed",
       requestedAt: staged.requestedAt ?? resolvedAt,
       resolvedAt,
-      command: staged.describe,
+      command,
     });
   } catch (err) {
     console.error(`[confirm-flow] failed to write confirmation note: ${String(err)}`);
   }
-  return result.ok ? { status: "ok", data: result.data } : { status: "failed", error: result.error };
+  if (!result.ok) return { status: "failed", error: result.error };
+  if (staged.resume && deps.onResume) {
+    deps.onResume(sessionKey, {
+      describe: staged.describe,
+      ...(staged.label === undefined ? {} : { label: staged.label }),
+      toolName: staged.resume.toolName,
+      input: staged.resume.input,
+      output: result.data,
+    });
+    return { status: "resume" };
+  }
+  return { status: "ok", data: result.data };
 }
 
 export async function tryConfirm(
@@ -97,5 +117,7 @@ export async function tryConfirm(
       return `Confermato, ma l'esecuzione è fallita: ${outcome.error}`;
     case "ok":
       return `Confermato ed eseguito: ${JSON.stringify(outcome.data)}`;
+    case "resume":
+      return RESUME_AFTER_CONFIRM;
   }
 }

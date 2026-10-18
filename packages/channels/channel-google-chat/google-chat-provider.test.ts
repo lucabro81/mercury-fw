@@ -5,7 +5,7 @@ import {
   parseChatEvent,
   type GoogleChatProviderDeps,
 } from "./google-chat-provider.ts";
-import { PENDING_CONFIRMATION_NOTE, type HandleTurn, type InboundTurn, type TurnSink } from "@mercury-fw/channel-types";
+import { PENDING_CONFIRMATION_NOTE, RESUME_AFTER_CONFIRM, type HandleTurn, type InboundTurn, type TurnSink } from "@mercury-fw/channel-types";
 
 const creds = { clientEmail: "bot@test.iam.gserviceaccount.com", privateKey: "fake" };
 
@@ -151,7 +151,18 @@ describe("parseChatEvent", () => {
       sender: "users/42",
       senderEmail: "luca@example.com",
       parameters: { token: "ABC123" },
+      isDirectMessage: false,
     });
+  });
+
+  test("a CARD_CLICKED event in a DM space is a direct message", () => {
+    const raw = {
+      type: "CARD_CLICKED",
+      space: { name: "spaces/X", type: "DM" },
+      user: { name: "users/42", type: "HUMAN" },
+      action: { parameters: [{ key: "token", value: "ABC123" }] },
+    };
+    expect(parseChatEvent(raw)).toMatchObject({ kind: "card-click", isDirectMessage: true });
   });
 
   test("returns null for an unrecognized event type", () => {
@@ -567,6 +578,183 @@ describe("createGoogleChatProvider — StreamingPull", () => {
     const confirmCard = sentCards.find((c) => JSON.stringify(c.card).includes("TOK1"))!;
     expect(confirmCard.space).toBe("spaces/X");
     expect(JSON.stringify(confirmCard.card)).toContain("jira issue delete KAN-1 --confirm");
+  });
+
+  test("a staging with several choices gets one button per choice, each carrying its own token, in order", async () => {
+    const sentCards: unknown[] = [];
+    const sub = fakeSubscription();
+    const provider = createGoogleChatProvider(
+      baseDeps({
+        subscriptionFn: () => sub as any,
+        sendCardFn: async (_space, card) => {
+          sentCards.push(card);
+          return { name: "spaces/X/messages/card1" };
+        },
+      }),
+    );
+
+    await provider.start(async (_turn, sink) => {
+      sink.onStep?.({
+        toolCalls: [{ toolCallId: "1", toolName: "web_fetch", input: { url: "https://example.org/a" } }],
+        toolResults: [
+          {
+            toolCallId: "1",
+            toolName: "web_fetch",
+            output: {
+              ok: false,
+              pendingConfirmation: true,
+              token: "T1",
+              summary: "https://example.org/a",
+              choices: [
+                { token: "T1", label: "Solo questa volta" },
+                { token: "T2", label: "Sempre per example.org" },
+              ],
+            },
+          },
+        ],
+        content: [],
+      });
+      await sink.finalize("");
+    });
+    sub.emit("message", fakeMessage(messageEvent(), []));
+    await new Promise((r) => setTimeout(r, 20));
+
+    const card = sentCards.find((c) => JSON.stringify(c).includes("T2")) as {
+      sections: Array<{ widgets: Array<{ buttonList?: { buttons: Array<{ text: string; onClick: unknown }> } }> }>;
+    };
+    const buttons = card.sections[0]!.widgets.find((w) => w.buttonList)!.buttonList!.buttons;
+    expect(buttons).toEqual([
+      { text: "Solo questa volta", onClick: { action: { function: "confirm", parameters: [{ key: "token", value: "T1" }] } } },
+      { text: "Sempre per example.org", onClick: { action: { function: "confirm", parameters: [{ key: "token", value: "T2" }] } } },
+    ]);
+  });
+
+  test("a single-token staging keeps its one Conferma button", async () => {
+    const sentCards: unknown[] = [];
+    const sub = fakeSubscription();
+    const provider = createGoogleChatProvider(
+      baseDeps({
+        subscriptionFn: () => sub as any,
+        sendCardFn: async (_space, card) => {
+          sentCards.push(card);
+          return { name: "spaces/X/messages/card1" };
+        },
+      }),
+    );
+
+    await provider.start(async (_turn, sink) => {
+      sink.onStep?.({
+        toolCalls: [{ toolCallId: "1", toolName: "runCommand", input: {} }],
+        toolResults: [{ toolCallId: "1", toolName: "runCommand", output: { ok: false, pendingConfirmation: true, token: "TOK1", summary: "jira issue delete KAN-1" } }],
+        content: [],
+      });
+      await sink.finalize("");
+    });
+    sub.emit("message", fakeMessage(messageEvent(), []));
+    await new Promise((r) => setTimeout(r, 20));
+
+    const card = JSON.stringify(sentCards.find((c) => JSON.stringify(c).includes("TOK1")));
+    expect(card).toContain('"text":"Conferma"');
+    expect(card.match(/"function":"confirm"/g)).toHaveLength(1);
+  });
+
+  test("a typed token whose confirmation resumes runs the session's turn again, with no reply message of its own", async () => {
+    const sub = fakeSubscription();
+    const sent: string[] = [];
+    const turns: InboundTurn[] = [];
+    const provider = createGoogleChatProvider(
+      baseDeps({
+        subscriptionFn: () => sub as any,
+        confirm: async (t) => (t === "ab12-cd34" ? RESUME_AFTER_CONFIRM : null),
+        sendMessageFn: async (_space, text) => {
+          sent.push(text);
+          return { name: `spaces/X/messages/${sent.length}` };
+        },
+      }),
+    );
+
+    await provider.start(async (turn, sink) => {
+      turns.push(turn);
+      await sink.finalize("The page says hello.");
+    });
+    sub.emit("message", fakeMessage(messageEvent({ text: "ab12-cd34", spaceType: "DM" }), []));
+    await new Promise((r) => setTimeout(r, 30));
+
+    expect(turns).toHaveLength(1);
+    expect(turns[0]).toMatchObject({ channel: "google-chat", text: "", resumeAfterConfirm: true, sessionKey: "spaces/X:users/42", multiUser: false });
+    expect(sent).not.toContain(RESUME_AFTER_CONFIRM);
+    expect(sent).toContain("The page says hello.");
+  });
+
+  test("a clicked choice whose confirmation resumes runs the session's turn again, multi-user outside a DM", async () => {
+    const sub = fakeSubscription();
+    const sent: string[] = [];
+    const turns: InboundTurn[] = [];
+    const provider = createGoogleChatProvider(
+      baseDeps({
+        subscriptionFn: () => sub as any,
+        confirm: async () => RESUME_AFTER_CONFIRM,
+        sendMessageFn: async (_space, text) => {
+          sent.push(text);
+          return { name: `spaces/X/messages/${sent.length}` };
+        },
+      }),
+    );
+
+    await provider.start(async (turn, sink) => {
+      turns.push(turn);
+      await sink.finalize("Done.");
+    });
+    sub.emit(
+      "message",
+      fakeMessage(
+        {
+          type: "CARD_CLICKED",
+          space: { name: "spaces/X", type: "SPACE" },
+          user: { name: "users/42", email: "luca@example.com", type: "HUMAN" },
+          action: { parameters: [{ key: "token", value: "T2" }] },
+        },
+        [],
+      ),
+    );
+    await new Promise((r) => setTimeout(r, 30));
+
+    expect(turns).toHaveLength(1);
+    expect(turns[0]).toMatchObject({
+      text: "",
+      resumeAfterConfirm: true,
+      sessionKey: "spaces/X:users/42",
+      multiUser: true,
+      principal: { id: "users/42", provider: "google-chat", claims: { email: "luca@example.com" } },
+    });
+    expect(sent).not.toContain(RESUME_AFTER_CONFIRM);
+  });
+
+  test("a resumed turn waits for the session's turn in flight, like any message", async () => {
+    const sub = fakeSubscription();
+    const order: string[] = [];
+    let release!: () => void;
+    const provider = createGoogleChatProvider(
+      baseDeps({
+        subscriptionFn: () => sub as any,
+        confirm: async (t) => (t === "ab12-cd34" ? RESUME_AFTER_CONFIRM : null),
+      }),
+    );
+
+    await provider.start(async (turn, sink) => {
+      order.push(turn.resumeAfterConfirm ? "resume:start" : "message:start");
+      if (!turn.resumeAfterConfirm) await new Promise<void>((r) => (release = r));
+      order.push(turn.resumeAfterConfirm ? "resume:end" : "message:end");
+      await sink.finalize("");
+    });
+    sub.emit("message", fakeMessage(messageEvent({ text: "hello", messageName: "spaces/X/messages/1" }), []));
+    await new Promise((r) => setTimeout(r, 10));
+    sub.emit("message", fakeMessage(messageEvent({ text: "ab12-cd34", messageName: "spaces/X/messages/2" }), []));
+    await new Promise((r) => setTimeout(r, 10));
+    release();
+    await new Promise((r) => setTimeout(r, 30));
+
+    expect(order).toEqual(["message:start", "message:end", "resume:start", "resume:end"]);
   });
 
   // agent-turn.ts returns PENDING_CONFIRMATION_NOTE as the turn's "text"

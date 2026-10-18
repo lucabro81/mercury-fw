@@ -1,5 +1,6 @@
 import { describe, it, expect } from "bun:test";
-import { tryConfirm } from "./confirm-flow.ts";
+import { RESUME_AFTER_CONFIRM } from "@mercury-fw/channel-types";
+import { resolveConfirmation, tryConfirm } from "./confirm-flow.ts";
 import { createConfirmationStore, type StagedAction } from "./confirmation-store.ts";
 import type { WriteConfirmationNote } from "./confirm-flow.ts";
 
@@ -161,5 +162,86 @@ describe("tryConfirm", () => {
 
       expect(result).toContain("KAN-1");
     });
+  });
+});
+
+describe("a choice of a group", () => {
+  it("rewrites the group's note, under its first token, naming the choice taken", async () => {
+    let n = 0;
+    const store = createConfirmationStore({ tokenFn: () => `abc${++n}-wxyz` });
+    store.stageGroup("s1", OWNER, [
+      { ...staged("fetch https://example.org/a", async () => ({ ok: true, data: null }), "2026-10-18T10:00:00.000Z"), label: "Solo questa volta" },
+      { ...staged("fetch https://example.org/a", async () => ({ ok: true, data: null }), "2026-10-18T10:00:00.000Z"), label: "Sempre per example.org" },
+    ]);
+    const writes: Array<{ token: string; command: string; status: string }> = [];
+
+    await tryConfirm("abc2-wxyz", "s1", baseDeps({
+      store,
+      writeConfirmationNoteFn: async (_v, _o, token, fields) => {
+        writes.push({ token, command: fields.command, status: fields.status });
+      },
+    }));
+
+    expect(writes).toEqual([{ token: "abc1-wxyz", command: "fetch https://example.org/a — Sempre per example.org", status: "confirmed" }]);
+  });
+});
+
+describe("resume", () => {
+  const resume = { toolName: "web_fetch", input: { url: "https://example.org/a" } };
+
+  function stageResumable(run: StagedAction["run"]) {
+    const store = createConfirmationStore({ tokenFn: () => "k9m2-x7q4" });
+    store.stageGroup("s1", OWNER, [{ ...staged("fetch https://example.org/a", run), label: "Solo questa volta", resume }]);
+    return store;
+  }
+
+  it("hands a resumable action's result to onResume and returns the resume outcome, not the result", async () => {
+    const store = stageResumable(async () => ({ ok: true, data: { text: "page" } }));
+    const resumed: unknown[] = [];
+
+    const outcome = await resolveConfirmation("k9m2-x7q4", "s1", baseDeps({
+      store,
+      onResume: (sessionKey, action) => resumed.push({ sessionKey, action }),
+    }));
+
+    expect(outcome).toEqual({ status: "resume" });
+    expect(resumed).toEqual([
+      {
+        sessionKey: "s1",
+        action: {
+          describe: "fetch https://example.org/a",
+          label: "Solo questa volta",
+          toolName: "web_fetch",
+          input: { url: "https://example.org/a" },
+          output: { text: "page" },
+        },
+      },
+    ]);
+  });
+
+  it("tryConfirm answers a resume with the fixed RESUME_AFTER_CONFIRM sentence", async () => {
+    const store = stageResumable(async () => ({ ok: true, data: { text: "page" } }));
+
+    const reply = await tryConfirm("k9m2-x7q4", "s1", baseDeps({ store, onResume: () => {} }));
+
+    expect(reply).toBe(RESUME_AFTER_CONFIRM);
+  });
+
+  it("a failed resumable action is reported to the person, never resumed", async () => {
+    const store = stageResumable(async () => ({ ok: false, error: "timeout" }));
+    let resumed = false;
+
+    const outcome = await resolveConfirmation("k9m2-x7q4", "s1", baseDeps({ store, onResume: () => (resumed = true) }));
+
+    expect(outcome).toEqual({ status: "failed", error: "timeout" });
+    expect(resumed).toBe(false);
+  });
+
+  it("without onResume, a resumable action's result goes to the person as any other", async () => {
+    const store = stageResumable(async () => ({ ok: true, data: { text: "page" } }));
+
+    const outcome = await resolveConfirmation("k9m2-x7q4", "s1", baseDeps({ store }));
+
+    expect(outcome).toEqual({ status: "ok", data: { text: "page" } });
   });
 });

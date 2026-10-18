@@ -15,6 +15,7 @@ import { tryConfirm, type ConfirmationStore } from "@mercury-fw/confirm-engine";
 import { parseDumpCommand, defaultDumpPath, writeDump, formatContextUsage } from "./tool-log.ts";
 import { getLoadedContextLength } from "../model/context-size.ts";
 import { detectPendingConfirmation } from "../session/pending-confirmation.ts";
+import { RESUME_AFTER_CONFIRM } from "@mercury-fw/channel-types";
 import { PENDING_CONFIRMATION_NOTE } from "../session/agent-turn.ts";
 import type { Provider, HandleTurn, TurnSink } from "./provider.ts";
 import { userKey } from "../identity/user-key.ts";
@@ -73,11 +74,13 @@ export function createTerminalProvider(deps: TerminalProviderDeps): Provider {
             ...deps.confirmDeps,
             owner: userKey(TERMINAL_PRINCIPAL),
           });
-          if (confirmReply !== null) {
+          if (confirmReply !== null && confirmReply !== RESUME_AFTER_CONFIRM) {
             // A turn of its own, with no model steps: /dump mustn't show the one before.
             lastSteps = [];
             return confirmReply;
           }
+          // The confirmed action's result goes back to the model: the session's turn runs again.
+          const resuming = confirmReply === RESUME_AFTER_CONFIRM;
 
           lastSteps = [];
           let finalText = "";
@@ -119,7 +122,10 @@ export function createTerminalProvider(deps: TerminalProviderDeps): Provider {
               // text (that's channel-specific now) — the terminal has to
               // say it itself, from the structured step data.
               const pending = detectPendingConfirmation(step);
-              if (pending) {
+              if (pending && pending.choices.length > 1) {
+                const lines = pending.choices.map((c) => `  ${c.label} — scrivi: ${c.token}\n`).join("");
+                aside(`Azione in sospeso: \`${pending.summary}\`\n${lines}`);
+              } else if (pending) {
                 aside(`Azione in sospeso: \`${pending.summary}\` — scrivi: ${pending.token}\n`);
               }
             },
@@ -136,10 +142,11 @@ export function createTerminalProvider(deps: TerminalProviderDeps): Provider {
             {
               channel: "terminal",
               multiUser: false,
-              text: input,
+              text: resuming ? "" : input,
               sessionKey: TERMINAL_SESSION_KEY,
               principal: TERMINAL_PRINCIPAL,
               logPrefix: "",
+              ...(resuming ? { resumeAfterConfirm: true as const } : {}),
             },
             sink,
           );

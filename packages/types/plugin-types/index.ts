@@ -77,6 +77,13 @@ export type CliPostProcessor = (
 export type ActionResult = { ok: true; data: unknown } | { ok: false; error: string };
 
 /**
+ * How a confirmed action's result goes back to the model: the core resumes the
+ * turn as if the model had called `toolName` with `input` and got the action's
+ * result back. The result stays a tool result, never text of the person's.
+ */
+export type ResumeAs = { toolName: string; input: unknown };
+
+/**
  * Stages an irreversible action behind a confirmation token and returns that
  * token. The action is opaque — a `run` thunk plus a `describe` string for the
  * paper trail — so nothing here (and nothing in the core that runs it later)
@@ -89,6 +96,19 @@ export type StageConfirmation = (action: {
   run: () => Promise<ActionResult>;
   describe: string;
 }) => Promise<string>;
+
+/**
+ * Stages one action offered as several choices (e.g. "only this time" /
+ * "always for this host") and returns a token per choice, in order, each with
+ * its `label`. The person takes exactly one: the others die with it, and they
+ * all expire together. `describe` is the paper trail of the whole group; a
+ * choice with `resume` has its result handed back to the model (see
+ * `ResumeAs`) instead of shown to the person as is.
+ */
+export type StageChoices = (action: {
+  describe: string;
+  choices: Array<{ label: string; run: () => Promise<ActionResult>; resume?: ResumeAs }>;
+}) => Promise<Array<{ label: string; token: string }>>;
 
 /**
  * Minimal shape of a finished generation step — enough to see what tool was
@@ -146,6 +166,10 @@ export type PluginRuntimeContext = {
 export type SessionToolContext = {
   sessionKey: string;
   stageConfirmation: StageConfirmation;
+  /** Stages an action offered as several choices (see `StageChoices`). The
+   * core always sets it; optional so a plugin also builds against an older
+   * one, where it has to do without. */
+  stageChoices?: StageChoices;
   /** Stashes a rendered list for the model to `present`, with what it is (`label`: the command that built it), and returns its ref. */
   stashDisplay: (artifact: string, label?: string) => string;
   /** Whom the tools act for, by the person's key, when they act as the

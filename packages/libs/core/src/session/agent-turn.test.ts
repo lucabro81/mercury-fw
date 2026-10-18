@@ -1,8 +1,7 @@
 import { describe, it, expect } from "bun:test";
 import { runTurn, buildGenerateTextParams, buildStreamTextParams, PENDING_CONFIRMATION_NOTE } from "./agent-turn.ts";
 import { createSessionHistory } from "./history.ts";
-import type { Message } from "./history.ts";
-import type { Tool } from "ai";
+import type { ModelMessage, Tool } from "ai";
 import type { StepInfo } from "./step-info.ts";
 
 /** A step that staged a confirm-required command — see pending-confirmation.ts. */
@@ -34,8 +33,8 @@ const SYSTEM = "you are a test assistant";
 describe("runTurn", () => {
   it("adds the user input to history before generating", async () => {
     const history = createSessionHistory(neverSummarize);
-    let messagesAtGenerateTime: Message[] = [];
-    const generateTextFn = async (params: { messages: Message[] }) => {
+    let messagesAtGenerateTime: ModelMessage[] = [];
+    const generateTextFn = async (params: { messages: ModelMessage[] }) => {
       messagesAtGenerateTime = params.messages;
       return { text: "ok" };
     };
@@ -876,5 +875,96 @@ describe("runTurn reports how the generation ended", () => {
       },
     });
     expect(called).toBe(false);
+  });
+});
+
+describe("runTurn — resumed after a confirmation", () => {
+  const resumed = {
+    describe: "fetch https://example.org/a",
+    label: "Solo questa volta",
+    toolName: "web_fetch",
+    input: { url: "https://example.org/a" },
+    output: { title: "A", text: "the page body" },
+  };
+
+  /** What the model is handed after the history: the confirmed call and its result, in the tool role. */
+  function expectResumedPair(messages: unknown[]) {
+    const [call, result] = messages.slice(-2) as Array<{ role: string; content: Array<Record<string, unknown>> }>;
+    expect(call?.role).toBe("assistant");
+    expect(call?.content).toEqual([{ type: "tool-call", toolCallId: expect.any(String), toolName: "web_fetch", input: { url: "https://example.org/a" } }]);
+    expect(result?.role).toBe("tool");
+    expect(result?.content).toEqual([
+      {
+        type: "tool-result",
+        toolCallId: call?.content[0]?.toolCallId,
+        toolName: "web_fetch",
+        output: { type: "json", value: { title: "A", text: "the page body" } },
+      },
+    ]);
+  }
+
+  it("hands the model the confirmed call and its result after the history, and keeps the result out of the history", async () => {
+    const history = createSessionHistory(neverSummarize);
+    let seen: unknown[] = [];
+    const generateTextFn = async (params: { messages: unknown[] }) => {
+      seen = params.messages;
+      return { text: "Here is what the page says." };
+    };
+
+    const text = await runTurn(history, "[Confermato: fetch https://example.org/a — Solo questa volta]", {
+      model: {} as never,
+      tools: {},
+      system: SYSTEM,
+      generateTextFn: generateTextFn as never,
+      resumed,
+    });
+
+    expect(text).toBe("Here is what the page says.");
+    expect(seen[seen.length - 3]).toEqual({ role: "user", content: "[Confermato: fetch https://example.org/a — Solo questa volta]" });
+    expectResumedPair(seen);
+    expect(history.getMessages()).toEqual([
+      { role: "user", content: "[Confermato: fetch https://example.org/a — Solo questa volta]" },
+      { role: "assistant", content: "Here is what the page says." },
+    ]);
+  });
+
+  it("does the same on the streaming path", async () => {
+    const history = createSessionHistory(neverSummarize);
+    let seen: unknown[] = [];
+    const streamTextFn = async (params: { messages: unknown[] }) => {
+      seen = params.messages;
+      return { stream: textDeltaStream(["ok"]) };
+    };
+
+    await runTurn(history, "[Confermato]", {
+      model: {} as never,
+      tools: {},
+      system: SYSTEM,
+      onTextChunk: () => {},
+      streamTextFn: streamTextFn as never,
+      resumed,
+    });
+
+    expectResumedPair(seen);
+  });
+
+  it("a result that isn't JSON-shaped reaches the model as null rather than breaking the call", async () => {
+    const history = createSessionHistory(neverSummarize);
+    let seen: unknown[] = [];
+    const generateTextFn = async (params: { messages: unknown[] }) => {
+      seen = params.messages;
+      return { text: "ok" };
+    };
+
+    await runTurn(history, "[Confermato]", {
+      model: {} as never,
+      tools: {},
+      system: SYSTEM,
+      generateTextFn: generateTextFn as never,
+      resumed: { ...resumed, output: undefined },
+    });
+
+    const result = seen[seen.length - 1] as { content: Array<{ output: unknown }> };
+    expect(result.content[0]?.output).toEqual({ type: "json", value: null });
   });
 });

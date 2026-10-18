@@ -18,7 +18,7 @@
     "access": "public"
   },
   "peerDependencies": {
-    "@mercury-fw/channel-types": ">=0.49.0 <1.0.0"
+    "@mercury-fw/channel-types": ">=0.51.0 <1.0.0"
   },
   "devDependencies": {
     "@mercury-fw/channel-types": "workspace:*",
