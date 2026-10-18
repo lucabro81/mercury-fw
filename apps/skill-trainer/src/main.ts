@@ -19,18 +19,21 @@ export type CommandDeps = {
   print: (line: string) => void;
 };
 
+/** Writes `files` (vault-relative path to content) into the vault at `vault`, folders made as needed. */
+export async function seedVaultFiles(vault: string, files: Record<string, string>): Promise<void> {
+  for (const [path, content] of Object.entries(files)) {
+    await mkdir(dirname(join(vault, path)), { recursive: true });
+    await writeFile(join(vault, path), content);
+  }
+}
+
 /** The real dependencies. */
 const realDeps: CommandDeps = {
   loadTraining: (plugin) => loadTraining(plugin),
   harness: {
     open: openMercuryConversation,
     makeVault: () => mkdtemp(join(tmpdir(), "skill-trainer-vault-")),
-    seedVault: async (vault, files) => {
-      for (const [path, content] of Object.entries(files)) {
-        await mkdir(dirname(join(vault, path)), { recursive: true });
-        await writeFile(join(vault, path), content);
-      }
-    },
+    seedVault: (vault, files) => seedVaultFiles(vault, files),
     removeVault: (path) => rm(path, { recursive: true, force: true }),
     now: () => Date.now(),
   },

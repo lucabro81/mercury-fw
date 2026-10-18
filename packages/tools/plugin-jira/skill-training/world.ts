@@ -21,8 +21,12 @@
  * - reconstructed: the 404 and 400 texts (Jira's usual wording, including
  *   "cannot be assigned issues" for a deactivated person), the usage errors
  *   (clap's format), the page token (opaque, here base64 of an offset), user
- *   search matching the start of a word and project search any part of the
- *   key or name, `--fields` accepted with no effect on the answer.
+ *   search matching every word of the query at the start of one of the name's
+ *   (and inactive people included) and project search any part of the key or
+ *   name, `--fields` accepted with no effect on the answer;
+ * - simplified: a garbled page token reads as the first page (Jira would
+ *   refuse it), `--max-results 0` as the default 50, and a transition to the
+ *   status an issue is already in succeeds.
  *
  * `currentUser()` is Sam, the person talking: in Mercury the CLI runs with
  * `--user` for them, which is what the skill teaches. The CLI's own help says

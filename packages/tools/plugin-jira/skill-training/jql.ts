@@ -94,6 +94,9 @@ function dateOf(raw: string, now: Date): number | { error: string } | undefined 
   }
   const offset = offsetOf(value);
   if (offset !== undefined) return now.getTime() + offset;
+  // A bare day, with dashes or slashes, is that day in UTC: never the machine's timezone.
+  const day = /^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/.exec(value);
+  if (day) return Date.UTC(Number(day[1]), Number(day[2]) - 1, Number(day[3]));
   const date = Date.parse(value);
   return Number.isNaN(date) ? undefined : date;
 }

@@ -162,6 +162,13 @@ describe("filterJql", () => {
     expect(keys("duedate <= endOfMonth()")).toEqual(["KAN-2", "KAN-1"]);
   });
 
+  // Guards against the machine's timezone moving a written date: "2026/10/25"
+  // went through Date.parse as local midnight, a day off east of UTC.
+  test("a date written with slashes or dashes is that day in UTC, wherever the machine is", () => {
+    expect(keys('duedate <= "2026/10/25"')).toEqual(keys('duedate <= "2026-10-25"'));
+    expect(keys('duedate <= "2026/10/25"')).toEqual(["KAN-2", "KAN-1"]);
+  });
+
   test("a function Jira doesn't have is refused by name", () => {
     expect(keys("duedate >= startOfd()")).toEqual({ ok: false, error: "Unable to find JQL function 'startOfd()'." });
   });

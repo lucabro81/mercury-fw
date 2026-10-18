@@ -73,7 +73,7 @@ export const BASIC_TASKS: TrainingTask[] = [
   task("move-unknown-status", "val", "transition", "Move WEB-4 to Blocked.", (run, e) => {
     checks.loadsSkill(e);
     e.that("doesn't move WEB-4 to a status it wasn't asked for", !jiraCalls(run, "issue transition ").some((c) => c.ok && cmd(c).includes("WEB-4")));
-    e.answer(/to do|in progress|in review|done/i, "the answer says which statuses there are");
+    checks.namesStatuses(e, run);
   }),
 
   // Assignments, through the person's accountId.
@@ -219,7 +219,10 @@ export const BASIC_TASKS: TrainingTask[] = [
   }),
   task("followup-requery-state", "val", "follow-up", ["Show me the open issues in OPS.", "Move OPS-4 to In Progress.", "Is OPS-4 still To Do?"], (run, e) => {
     const third = run.turns[2]?.calls ?? [];
-    e.that("reads OPS-4 again instead of answering from memory", third.some((c) => c.ok && cmd(c).includes("OPS-4") && /issue (get|search)/.test(cmd(c))));
+    e.that(
+      "reads OPS-4 again instead of answering from memory",
+      third.some((c) => c.ok && /issue (get|search)/.test(cmd(c)) && (cmd(c).includes("OPS-4") || /project\s*=\s*"?OPS/i.test(jqlOf(c)))),
+    );
     e.answer(/in progress/i);
   }),
   task("followup-recall", "test", "follow-up", ["How many open issues are there in DSK?", "What did you search to find that?"], (run, e) => {

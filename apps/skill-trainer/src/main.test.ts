@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { PLUGIN_API_VERSION, type Plugin } from "@mercury-fw/plugin-types";
 import type { SkillTraining, TrainingTask } from "./contract.ts";
 import type { HarnessDeps } from "./harness.ts";
-import { runCommand, type CommandDeps } from "./main.ts";
+import { runCommand, seedVaultFiles, type CommandDeps } from "./main.ts";
 
 let dir: string;
 beforeEach(() => {
@@ -46,6 +46,14 @@ function deps(onOpen: () => void = () => {}, { failOpen = false } = {}): { deps:
 }
 
 const readJson = (path: string) => JSON.parse(readFileSync(path, "utf8")) as Array<{ id: string; hard: number }>;
+
+describe("seedVaultFiles", () => {
+  test("writes each note at its path in the vault, folders made as needed", async () => {
+    await seedVaultFiles(dir, { "curated/jira-projects.md": "the shop: WEB", "curated/deep/note.md": "x" });
+    expect(readFileSync(join(dir, "curated/jira-projects.md"), "utf8")).toBe("the shop: WEB");
+    expect(readFileSync(join(dir, "curated/deep/note.md"), "utf8")).toBe("x");
+  });
+});
 
 describe("runCommand", () => {
   test("prints the report and exits 0 when every task ran, failing checks included", async () => {

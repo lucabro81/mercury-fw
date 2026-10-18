@@ -33,10 +33,11 @@ async function searchAll(jql: string): Promise<{ calls: Call[]; keys: string[] }
   return { calls, keys };
 }
 
-/** The failed checks of task `id` on a reference run of `jql`, answered with the count and the keys found. */
-async function reference(id: string, jql: string): Promise<string[]> {
+/** The failed checks of task `id` on a reference run of `jql` (after the `before` calls: a wiki grep,
+ * a project search), answered with the count and the keys found. */
+async function reference(id: string, jql: string, before: Call[] = []): Promise<string[]> {
   const { calls, keys } = await searchAll(jql);
-  const turn = { calls: [readSkill, ...calls], answer: `${keys.length} issues: ${keys.join(", ")}.`, seconds: 1 };
+  const turn = { calls: [readSkill, ...before, ...calls], answer: `${keys.length} issues: ${keys.join(", ")}.`, seconds: 1 };
   const run: Run = { turns: [turn], last: turn };
   const recorder = createExpect(run);
   const task = training.tasks.find((t) => t.id === id);
@@ -85,10 +86,27 @@ const CASES: Array<[string, string]> = [
   ["h-list-keys-only", `project = OPS AND issuetype = Bug AND ${OPEN}`],
 ];
 
+/** A tool call that worked, for the steps a reference run takes before its search. */
+const ok = (tool: string, input: Record<string, unknown>): Call => ({ tool, input, output: { ok: true }, ok: true, pending: false });
+const grep = (pattern: string) => ok("grep", { pattern });
+const projectSearch = (query: string) => ok("jiraCommand", { command: `jira project search --query ${query} --select values.key,values.name` });
+
+/** Tasks whose right run looks something up before it searches. */
+const CASES_AFTER_LOOKUP: Array<[string, string, Call[]]> = [
+  ["h-wiki-hit", `project = WEB AND ${OPEN}`, [grep("shop")]],
+  ["h-informal-it-desk", `project = DSK AND ${OPEN}`, [grep("help desk"), projectSearch("desk")]],
+  ["informal-project-logs", `project = LOG AND ${OPEN}`, [grep("log archive"), projectSearch("log")]],
+];
+
 describe("the tasks' facts follow from the made-up Jira", () => {
   for (const [id, jql] of CASES) {
     test(`${id}: the right search answered right passes`, async () => {
       expect(await reference(id, jql)).toEqual([]);
+    });
+  }
+  for (const [id, jql, before] of CASES_AFTER_LOOKUP) {
+    test(`${id}: the right lookup and search answered right passes`, async () => {
+      expect(await reference(id, jql, before)).toEqual([]);
     });
   }
 });

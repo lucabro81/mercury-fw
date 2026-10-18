@@ -43,6 +43,12 @@ export const checks = {
         .filter((c) => c.tool === "jiraCommand" && READS.some((r) => cmd(c).includes(r)) && !/\s(--help|-h)\b/.test(cmd(c)))
         .every((c) => /--select(-all)?\b/.test(cmd(c))),
     ),
+  /** The answer names at least two of the workflow's statuses: what there is to move to. */
+  namesStatuses: (e: Expect, run: Run) =>
+    e.that(
+      "the answer says which statuses there are",
+      ["to do", "in progress", "in review", "done"].filter((s) => run.last.answer.toLowerCase().includes(s)).length >= 2,
+    ),
   presented: (e: Expect) => e.call("present", (c) => c.ok, "shows the list with present"),
   notPresented: (e: Expect) => e.callCount({ max: 0 }, "present", "doesn't show a list it wasn't asked for"),
   /** The answer has `n` as a number of its own, in figures or (up to twelve) in words. */

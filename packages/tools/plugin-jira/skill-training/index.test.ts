@@ -208,6 +208,29 @@ describe("the checks read what the model did, not how it typed it", () => {
     expect(check("list-web-bugs", [{ calls: [readSkill, webOpenBugs, presentCall], answer: "Here." }])).toEqual([]);
   });
 
+  test("an unknown status answered with a bare 'Done!' fails", () => {
+    expect(check("move-unknown-status", [{ calls: [readSkill], answer: "Done!" }])).toContain("the answer says which statuses there are");
+  });
+
+  test("two people tagged in two comments on WEB-3", () => {
+    expect(
+      check("h-comment-two", [
+        {
+          calls: [
+            readSkill,
+            jira(`jira issue comment add WEB-3 --mention ${ACCOUNTS.marco} --body "please sync with Giulia"`),
+            jira(`jira issue comment add WEB-3 --mention ${ACCOUNTS.giulia} --body "please sync with Marco"`),
+          ],
+          answer: "Tagged both.",
+        },
+      ]),
+    ).toEqual([]);
+  });
+
+  test("a create in a project that doesn't exist, without a word about it, fails", () => {
+    expect(check("h-create-unknown-project", [{ calls: [readSkill], answer: "Sorry, I can't." }])).not.toEqual([]);
+  });
+
   test("a wrong JQL still fails its check", () => {
     expect(check("wording-todo", [{ calls: [readSkill, jira('jira issue search --jql "project = WEB AND status = todo" --select issues.key')], answer: "5" }])).toEqual([
       "searches the status by its Jira name, or reads the statuses",

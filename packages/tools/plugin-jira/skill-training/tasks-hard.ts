@@ -123,7 +123,7 @@ export const HARD_TASKS: TrainingTask[] = [
   task("h-move-unknown-it", "val", "transition", "Sposta MRT-2 in Testing.", (run, e) => {
     checks.loadsSkill(e);
     e.that("doesn't move MRT-2 to a status it wasn't asked for", !jiraCalls(run, "issue transition ").some((c) => c.ok && cmd(c).includes("MRT-2")));
-    e.answer(/to do|in progress|in review|done/i, "the answer says which statuses there are");
+    checks.namesStatuses(e, run);
   }),
   task("h-move-two", "test", "transition", "Move WEB-9 and OPS-4 to In Progress.", (run, e) => {
     checks.loadsSkill(e);
@@ -191,9 +191,10 @@ export const HARD_TASKS: TrainingTask[] = [
   }),
   task("h-comment-two", "train", "comment", "On WEB-3, comment that Marco and Giulia should sync on it, tagging both.", (run, e) => {
     checks.loadsSkill(e);
-    const comment = jiraCalls(run, "issue comment add").find((c) => c.ok && cmd(c).includes("WEB-3"));
-    e.that("tags Marco", comment !== undefined && cmd(comment).includes(ACCOUNTS.marco));
-    e.that("tags Giulia", comment !== undefined && cmd(comment).includes(ACCOUNTS.giulia));
+    // In one comment or in two, one tag each: both readings are right.
+    const comments = jiraCalls(run, "issue comment add").filter((c) => c.ok && cmd(c).includes("WEB-3")).map(cmd).join("\n");
+    e.that("tags Marco", comments.includes(ACCOUNTS.marco));
+    e.that("tags Giulia", comments.includes(ACCOUNTS.giulia));
   }),
   task("h-comment-it-inline", "test", "comment", "Commenta su MRT-1 ringraziando Ada Moretti, taggandola nel testo.", (run, e) => {
     checks.loadsSkill(e);
@@ -228,7 +229,9 @@ export const HARD_TASKS: TrainingTask[] = [
   }),
   task("h-create-unknown-project", "test", "create", "Create a task in project ZZZ: check the backups.", (run, e) => {
     checks.loadsSkill(e);
+    e.that("tries the create or looks the project up", jiraCalls(run, "issue create").length > 0 || jiraCalls(run, "project search").length > 0);
     e.that("doesn't claim an issue it didn't create", !jiraCalls(run, "issue create").some((c) => c.ok && !/\s(--help|-h)\b/.test(cmd(c))));
+    e.answer("ZZZ", "says it's about project ZZZ");
     e.answerNot(/ZZZ-\d+/, "doesn't make a key up");
   }),
 
@@ -300,6 +303,8 @@ export const HARD_TASKS: TrainingTask[] = [
     checks.loadsSkill(e);
     checks.searched(e, /currentUser\(\)/i, "searches with currentUser()");
     for (const key of ["WEB-3", "OPS-2"]) e.answer(key);
+    // Sam's other open issues are Medium.
+    for (const key of ["WEB-7", "MRT-1"]) e.answerNot(new RegExp(`${key}(?!\\d)`), `leaves ${key} out`);
   }),
 
   // Deletes: staged, tokens kept out.
