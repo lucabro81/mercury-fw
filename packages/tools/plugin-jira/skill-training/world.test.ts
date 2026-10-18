@@ -219,6 +219,34 @@ describe("usage errors", () => {
     expect((await run("issue", "transition", "WEB-3", "--to", "Done", "--select", "key")).ok).toBe(true);
   });
 
+  test("a search without --jql, or with a flag it doesn't have, is clap's refusal", async () => {
+    const { run } = jira();
+    expect(await run("issue", "search", "--select", "issues.key")).toMatchObject({
+      ok: false,
+      exitCode: 2,
+      error: expect.stringContaining("the following required arguments were not provided:\n  --jql <JQL>"),
+    });
+    expect(await run("issue", "search", "--jql", "project = WEB", "--limit", "5", "--select", "issues.key")).toMatchObject({
+      ok: false,
+      exitCode: 2,
+      error: expect.stringContaining("unexpected argument '--limit' found"),
+    });
+  });
+
+  test("a search takes --fields, and --max-results above 100 gets 100", async () => {
+    const { run } = jira();
+    const result = (await run("issue", "search", "--jql", "project = LOG", "--max-results", "500", "--fields", "summary,status", "--select", "issues.key")) as {
+      ok: true;
+      data: { issues: unknown[] };
+    };
+    expect(result.data.issues).toHaveLength(100);
+  });
+
+  test("issue get takes no flags of its own", async () => {
+    const { run } = jira();
+    expect(await run("issue", "get", "WEB-3", "--fields", "summary", "--select", "key")).toMatchObject({ ok: false, exitCode: 2 });
+  });
+
   test("assign with neither --assignee nor --unassign is the CLI's own refusal", async () => {
     const { run } = jira();
     expect(await run("issue", "assign", "WEB-3")).toMatchObject({ ok: false, exitCode: 2 });
@@ -230,6 +258,12 @@ describe("--help", () => {
     const { run } = jira();
     const result = (await run("issue", "transition", "--help")) as { ok: true; data: string };
     expect(result.data).toContain("--to <TO>");
+  });
+
+  test("search and get have their help too", async () => {
+    const { run } = jira();
+    expect(((await run("issue", "search", "--help")) as { data: string }).data).toContain("--page-token <PAGE_TOKEN>");
+    expect(((await run("issue", "get", "-h")) as { data: string }).data).toContain("Usage: jira issue get [OPTIONS] <KEY>");
   });
 
   test("a help it doesn't have is a hole", async () => {

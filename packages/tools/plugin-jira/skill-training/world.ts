@@ -147,6 +147,10 @@ const value = (call: FixtureCall, flag: string) => (typeof call.flags[flag] === 
 
 /** The help texts of the CLI the fixtures know, by command (trimmed to usage, the command's own options and examples). */
 const HELP: Record<string, string> = {
+  "issue search":
+    'Search issues using JQL (Jira Query Language) and return matching issues as JSON\n\nUsage: jira issue search [OPTIONS] --jql <JQL>\n\nOptions:\n      --jql <JQL>                  JQL query string, e.g. "project=KAN AND status=\\"Done\\""\n      --max-results <MAX_RESULTS>  Maximum number of issues to return (default: 50, max: 100) [default: 50]\n      --page-token <PAGE_TOKEN>    Cursor token for the next page, from the nextPageToken field of a previous response\n      --fields <FIELDS>            Comma-separated Jira field names to include in each issue (server-side). Reduces response size.\n      --stale-days <STALE_DAYS>    Only include issues not updated in at least N days. Adds "AND updated <= -Nd" to --jql server-side\n\nExamples:\n  jira issue search --jql "project=KAN AND status=\\"In Progress\\"" --select issues.key,issues.fields.summary\n  jira issue search --jql "assignee=5b10ac8d82e05b22cc7d4ef5 ORDER BY created DESC" --max-results 10 --select issues.key,issues.fields.summary,nextPageToken\n  jira issue search --jql "project=KAN" --fields summary,status,priority --select issues.key,issues.fields.summary,issues.fields.status.name,issues.fields.priority.name\n\nPagination: the response includes a nextPageToken field when more results exist.\nPass its value to --page-token on the next call to fetch the following page.\n\nTo filter by a person, use their account ID (find it with `jira user search --query <name>`),\nnot currentUser(): that resolves to the account the CLI acts as (the service account, or\nthe person with --user <USER_ID>), not necessarily the person you are working for.',
+  "issue get":
+    "Fetch a single issue by key (e.g. PROJ-123) and print it as JSON\n\nUsage: jira issue get [OPTIONS] <KEY>\n\nArguments:\n  <KEY>  Issue key, e.g. PROJ-123\n\nExamples:\n  jira issue get PROJ-123 --select key,fields.summary,fields.status.name\n  jira issue get PROJ-123 --select fields.summary,fields.status.name,fields.assignee.displayName,fields.priority.name",
   "issue create":
     "Create a new issue in a Jira project\n\nUsage: jira issue create [OPTIONS] --project <PROJECT> --type <ISSUE_TYPE> --summary <SUMMARY>\n\nOptions:\n      --project <PROJECT>          Project key, e.g. KAN\n      --type <ISSUE_TYPE>          Issue type name, e.g. Task, Bug, Story\n      --summary <SUMMARY>          One-line summary of the issue\n      --description <DESCRIPTION>  Optional description (Markdown)\n      --assignee <ASSIGNEE>        Optional assignee account ID\n      --priority <PRIORITY>        Optional priority name, e.g. High, Medium, Low\n      --parent <PARENT>            Optional parent issue key, e.g. KAN-10\n\nExamples:\n  jira issue create --project KAN --type Task --summary \"Fix login bug\"\n  jira issue create --project KAN --type Bug --summary \"Crash on startup\" --description \"Happens on macOS 14\" --priority High",
   "issue transition":
@@ -163,6 +167,8 @@ const GLOBAL_FLAGS = ["--select", "--select-all", "--user", "--help", "-h"];
 
 /** The command lines the fixtures check the way clap does (from their help): usage, required flags, the command's own flags. */
 const USAGE: Record<string, { usage: string; required: Array<[string, string]>; flags: string[] }> = {
+  "issue search": { usage: "jira issue search [OPTIONS] --jql <JQL>", required: [["--jql", "<JQL>"]], flags: ["--max-results", "--page-token", "--fields", "--stale-days"] },
+  "issue get": { usage: "jira issue get [OPTIONS] <KEY>", required: [], flags: [] },
   "issue create": {
     usage: "jira issue create [OPTIONS] --project <PROJECT> --type <ISSUE_TYPE> --summary <SUMMARY>",
     required: [
@@ -225,11 +231,10 @@ export function jiraFixtures(world: World): Fixture[] {
   const find = (key: string | undefined) => world.issues.find((i) => i.key === key);
   const help = (command: string[]): Fixture => ({
     command,
-    flags: { "--help": true },
-    switches: ["--help"],
-    result: () => {
-      const text = HELP[command.join(" ")];
-      return text === undefined ? undefined : { ok: true, data: text };
+    switches: ["--help", "-h"],
+    result: (call) => {
+      if (call.flags["--help"] === undefined && call.flags["-h"] === undefined) return undefined;
+      return { ok: true, data: HELP[command.join(" ")]! };
     },
   });
 
@@ -240,7 +245,8 @@ export function jiraFixtures(world: World): Fixture[] {
       command: ["issue", "search"],
       result: (call): CliResult | undefined => {
         const jql = value(call, "--jql");
-        if (jql === undefined) return undefined;
+        // --stale-days filters on `updated`, which the made-up issues don't have: a hole, not a guess.
+        if (jql === undefined || call.flags["--stale-days"] !== undefined) return undefined;
         const found = filterJql(jql, world.issues, {
           now: NOW,
           currentUser: world.me,

@@ -12,8 +12,9 @@ import type { FixtureCall } from "../../../../apps/skill-trainer/src/contract.ts
 /** The size above which `--select-all` is refused too. */
 const SELECT_ALL_CAP = 30000;
 
-/** A page of a search when `--max-results` isn't given (Jira's own default). */
+/** A page of a search when `--max-results` isn't given, and the most one can be (the CLI's help: default 50, max 100). */
 const DEFAULT_PAGE_SIZE = 50;
+const MAX_PAGE_SIZE = 100;
 
 type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 type JsonObject = { [key: string]: Json };
@@ -87,7 +88,7 @@ export function printed(data: unknown, call: FixtureCall, { exempt = false }: { 
 /** The page of `issues` that `call`'s `--max-results` and `--page-token` ask
  * for, shaped as a search response: `nextPageToken` only when more follow. */
 export function page<T>(issues: T[], call: FixtureCall): { isLast: boolean; issues: T[]; nextPageToken?: string } {
-  const size = Number(call.flags["--max-results"]) || DEFAULT_PAGE_SIZE;
+  const size = Math.min(Number(call.flags["--max-results"]) || DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE);
   const token = call.flags["--page-token"];
   const offset = typeof token === "string" ? Number(Buffer.from(token, "base64").toString().replace(/^offset:/, "")) || 0 : 0;
   const slice = issues.slice(offset, offset + size);
