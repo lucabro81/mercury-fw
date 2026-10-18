@@ -54,6 +54,48 @@ describe("the checks read what the model did, not how it typed it", () => {
     ).toEqual([]);
   });
 
+  // The three below are right answers of the first full baseline run that the
+  // checks refused: a create's --help taken for a create, a list shown with
+  // present instead of keys in the text, a careful search taken for a guess.
+  test("asking create for its help isn't creating", () => {
+    expect(
+      check("h-create-unknown-project", [
+        {
+          calls: [readSkill, jira("jira issue create --help", "Create a new issue"), { ...jira('jira issue create --project ZZZ --type Task --summary "Check the backups"'), ok: false }],
+          answer: "I couldn't create it: there's no project ZZZ.",
+        },
+      ]),
+    ).toEqual([]);
+  });
+
+  test("open bugs shown with present", () => {
+    expect(
+      check("h-wiki-hit-backoffice", [
+        {
+          calls: [readSkill, { tool: "grep", input: { pattern: "backoffice" }, output: {}, ok: true, pending: false }, jira('jira issue search --jql "project = OPS AND issuetype = Bug AND statusCategory != Done" --select issues.key'), { tool: "present", input: { ref: "d1" }, output: {}, ok: true, pending: false }],
+          answer: "Three open bugs in the backoffice (OPS).",
+        },
+      ]),
+    ).toEqual([]);
+  });
+
+  test("a project not found, after looking around", () => {
+    expect(
+      check("h-informal-nomatch", [
+        {
+          calls: [readSkill, jira("jira project search --query mobile --select values.key"), jira('jira issue search --jql "project = OPS" --select issues.key')],
+          answer: 'I looked for a project called "mobile app" and couldn\'t find one.',
+        },
+      ]),
+    ).toEqual([]);
+  });
+
+  test("a project not found, but a count given anyway, still fails", () => {
+    expect(
+      check("h-informal-nomatch", [{ calls: [readSkill, jira("jira project search --query mobile --select values.key"), jira('jira issue search --jql "project = OPS" --select issues.key')], answer: "The mobile app project has 6 open issues." }]),
+    ).not.toEqual([]);
+  });
+
   test("a wrong JQL still fails its check", () => {
     expect(check("wording-todo", [{ calls: [readSkill, jira('jira issue search --jql "project = WEB AND status = todo" --select issues.key')], answer: "5" }])).toEqual([
       "searches the status by its Jira name, or reads the statuses",

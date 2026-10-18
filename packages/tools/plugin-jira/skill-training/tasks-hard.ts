@@ -211,7 +211,7 @@ export const HARD_TASKS: TrainingTask[] = [
   }),
   task("h-create-unknown-project", "test", "create", "Create a task in project ZZZ: check the backups.", (run, e) => {
     checks.loadsSkill(e);
-    e.that("doesn't claim an issue it didn't create", !jiraCalls(run, "issue create").some((c) => c.ok));
+    e.that("doesn't claim an issue it didn't create", !jiraCalls(run, "issue create").some((c) => c.ok && !/\s(--help|-h)\b/.test(cmd(c))));
     e.answerNot(/ZZZ-\d+/, "doesn't make a key up");
   }),
 
@@ -232,7 +232,10 @@ export const HARD_TASKS: TrainingTask[] = [
     checks.loadsSkill(e);
     e.call("grep", undefined, "greps the wiki for the name first");
     checks.searched(e, /project\s*=\s*"?OPS/i, "searches OPS, as the wiki says");
-    for (const key of ["OPS-2", "OPS-4", "OPS-8"]) e.answer(key);
+    e.that(
+      "names the three bugs, or shows them",
+      ["OPS-2", "OPS-4", "OPS-8"].every((key) => run.last.answer.includes(key)) || calls(run).some((c) => c.tool === "present" && c.ok),
+    );
   }),
   task("h-informal-it-desk", "test", "informal-project", "Quante issue aperte ha l'help desk?", (run, e) => {
     checks.loadsSkill(e);
@@ -243,11 +246,12 @@ export const HARD_TASKS: TrainingTask[] = [
   task("h-informal-nomatch", "test", "informal-project", "How many open issues does the mobile app project have?", (run, e) => {
     checks.loadsSkill(e);
     e.call("jiraCommand", (c) => c.ok && cmd(c).includes("project search"), "looks the project up");
-    e.that("doesn't count issues of a project it guessed", !jiraCalls(run, "issue search").some((c) => c.ok));
+    e.answer(/(couldn't|could not|can't|cannot|didn't|did not|no project|not find|not found|doesn't exist|does not exist)/i, "says there's no such project, instead of counting a guessed one");
   }),
 
   // Statuses worded the way people say them.
-  wordingTask("h-wording-it-todo", "test", "Quante issue di OPS sono da fare?", /status\s*=\s*["']to do["']|statusCategory\s*=\s*["']?to do/i, 3),
+  // "da fare" reads as "not done" as well as "To Do": asked as "not started yet", it's To Do only.
+  wordingTask("h-wording-it-todo", "test", "Quante issue di OPS non sono ancora iniziate?", /status\s*=\s*["']to do["']|statusCategory\s*=\s*["']?to do/i, 3),
   wordingTask("h-wording-closed", "train", "How many WEB issues are closed?", /status\s*=\s*"?done|statusCategory\s*=\s*"?done/i, 2),
   wordingTask("h-wording-wip", "val", "How many MRT issues are WIP?", /status\s*=\s*["']in progress["']/i, 1),
   wordingTask("h-wording-it-review", "test", "Quanti ticket di OPS aspettano una revisione?", /status\s*=\s*["']in review["']/i, 1),
