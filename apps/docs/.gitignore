@@ -1,0 +1,6 @@
+dist/
+.astro/
+public/reference/http-api/
+src/content/docs/reference/api/
+test-results/
+playwright-report/

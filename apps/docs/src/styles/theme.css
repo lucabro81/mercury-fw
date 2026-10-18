@@ -1,0 +1,117 @@
+/*
+ * The whole theme. Colors are the --mfw-* tokens below (dark under :root,
+ * light under its data-theme block, as Starlight switches them); everything
+ * else maps Starlight's own variables onto them. src/lib/contrast.test.ts
+ * checks these tokens against WCAG 2.2 AA in both themes.
+ */
+
+:root {
+  --mfw-bg: #0e0e0e;
+  --mfw-surface: #161616;
+  --mfw-text: #e8e8e8;
+  --mfw-text-muted: #a3a3a3;
+  --mfw-accent: #22d3ee;
+  --mfw-accent-low: #0b2a30;
+  --mfw-border: #2a2a2a;
+}
+
+:root[data-theme="light"] {
+  --mfw-bg: #f9f9f9;
+  --mfw-surface: #f0f0ee;
+  --mfw-text: #111111;
+  --mfw-text-muted: #595959;
+  --mfw-accent: #0e6a82;
+  --mfw-accent-low: #dcecef;
+  --mfw-border: #dddddd;
+}
+
+/* Starlight's variables, on our tokens. In both themes "white" is the
+   strongest text and "black" the page, so one mapping serves both. */
+:root,
+:root[data-theme="light"] {
+  --sl-color-white: var(--mfw-text);
+  --sl-color-gray-1: var(--mfw-text);
+  --sl-color-gray-2: var(--mfw-text);
+  --sl-color-gray-3: var(--mfw-text-muted);
+  --sl-color-gray-4: var(--mfw-text-muted);
+  --sl-color-gray-5: var(--mfw-border);
+  --sl-color-gray-6: var(--mfw-surface);
+  --sl-color-gray-7: var(--mfw-surface);
+  --sl-color-black: var(--mfw-bg);
+  --sl-color-accent-low: var(--mfw-accent-low);
+  --sl-color-accent: var(--mfw-accent);
+  --sl-color-accent-high: var(--mfw-accent);
+  --sl-color-text-accent: var(--mfw-accent);
+  --sl-color-bg-nav: var(--mfw-bg);
+  --sl-color-bg-sidebar: var(--mfw-bg);
+  --sl-color-hairline: var(--mfw-border);
+  --sl-color-hairline-light: var(--mfw-border);
+  --sl-color-hairline-shade: var(--mfw-border);
+
+  --sl-font: "IBM Plex Serif", Georgia, serif;
+  --sl-font-mono: "IBM Plex Mono", "Courier New", monospace;
+  --sl-text-base: 1.0625rem;
+  --sl-line-height: 1.75;
+  --sl-content-width: 46rem;
+
+  --sl-shadow-sm: none;
+  --sl-shadow-md: none;
+  --sl-shadow-lg: none;
+}
+
+/* Nothing moves. Unlayered, so it wins over Starlight's layered styles. */
+*,
+*::before,
+*::after {
+  transition: none;
+  animation: none;
+  scroll-behavior: auto;
+}
+
+:focus-visible {
+  outline: 2px solid var(--mfw-accent);
+  outline-offset: 3px;
+}
+
+/* The interface speaks mono, the prose serif. */
+.site-title,
+.sidebar-content,
+.right-sidebar-panel,
+.pagination-links,
+starlight-theme-select,
+.mfw-footer {
+  font-family: var(--sl-font-mono);
+}
+
+/* Links: accent, underlined on hover only; never colour alone in body text,
+   so they keep an underline there. */
+.sl-markdown-content a {
+  color: var(--mfw-accent);
+  text-underline-offset: 3px;
+}
+
+.sl-markdown-content :not(pre) > code {
+  background-color: var(--mfw-surface);
+  border: 1px solid var(--mfw-border);
+  border-radius: 3px;
+  padding: 0.1em 0.35em;
+}
+
+.sl-markdown-content blockquote {
+  border-inline-start: 2px solid var(--mfw-accent);
+  color: var(--mfw-text-muted);
+  font-style: italic;
+}
+
+/* The search button's shortcut hint is visible text missing from the button's
+   accessible name (WCAG 2.5.3). Starlight shows it with an inline style, hence
+   the !important; the shortcut itself still works. */
+site-search button > kbd {
+  display: none !important;
+}
+
+/* Pages without a sidebar (the home) keep title and text in one column. */
+:root:not([data-has-sidebar]) .content-panel .sl-container {
+  max-width: 44rem;
+  margin-inline: auto;
+}
