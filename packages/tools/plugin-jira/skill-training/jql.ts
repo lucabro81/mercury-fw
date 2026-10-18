@@ -1,7 +1,7 @@
 /**
  * A small JQL evaluator for the made-up Jira the skill is trained on: enough
- * of the language for what the skill teaches (projects, statuses, assignees,
- * summaries, due and created dates), with Jira's own matching (a status
+ * of the language for what the skill teaches (projects, statuses, types,
+ * priorities, assignees, summaries, due and created dates), with Jira's own matching (a status
  * wording that isn't the status's name matches nothing). A clause it doesn't
  * know is reported, never guessed: the fixture then answers it as a hole in
  * the training data, not as an empty result the model would be blamed for.
@@ -19,6 +19,8 @@ export type JqlIssue = {
   duedate: string | null;
   /** ISO timestamp. */
   created: string;
+  issuetype?: string;
+  priority?: string;
 };
 
 export type JqlResult<T> = { ok: true; issues: T[] } | { ok: false; unsupported: string };
@@ -65,6 +67,11 @@ function predicate(clause: string, ctx: { now: Date; currentUser: string }): ((i
       return negate((i) => eq(i.status));
     case "statuscategory":
       return negate((i) => eq(i.statusCategory));
+    case "issuetype":
+    case "type":
+      return negate((i) => eq(i.issuetype));
+    case "priority":
+      return negate((i) => eq(i.priority));
     case "assignee": {
       if (op === "is" || op === "is not") {
         if (value !== "empty" && value !== "null") return undefined;

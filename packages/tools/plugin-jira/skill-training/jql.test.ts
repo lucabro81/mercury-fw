@@ -62,6 +62,18 @@ describe("filterJql", () => {
     expect(keys('duedate <= "2026-10-25"')).toEqual(["KAN-2", "KAN-1"]);
   });
 
+  test("the issue type and the priority, by name", () => {
+    const typed = [issue({ key: "KAN-1", issuetype: "Bug", priority: "High" }), issue({ key: "KAN-2", issuetype: "Task", priority: "Low" })];
+    const of = (jql: string) => {
+      const result = filterJql(jql, typed, { now: NOW, currentUser: ME });
+      return result.ok ? result.issues.map((i) => i.key) : result;
+    };
+    expect(of("issuetype = Bug")).toEqual(["KAN-1"]);
+    expect(of('type = "task"')).toEqual(["KAN-2"]);
+    expect(of("priority = High")).toEqual(["KAN-1"]);
+    expect(of("priority != High")).toEqual(["KAN-2"]);
+  });
+
   test("ORDER BY is accepted and ignored", () => {
     expect(keys("project = KAN AND statusCategory != Done ORDER BY updated DESC")).toEqual(["KAN-2", "KAN-1"]);
   });
