@@ -5,11 +5,15 @@
  * checks on the calls it made and the answer it gave. A case talks to the
  * app's REPL, or to its HTTP surface as one of the test's users (each a token
  * the app's auth provider knows), possibly in lanes that run at the same time.
- * `mfw e2e` runs them (`runner.ts`).
+ * `mfw e2e` runs them (`runner.ts`). A tool driving Mercury turns of its own
+ * (the skill trainer) reads them with `turnFromDump` and checks them with
+ * `createExpect`, the same two the runner uses.
  */
 import type { Call, TurnData } from "./dump.ts";
 
 export type { Call } from "./dump.ts";
+export { turnFromDump } from "./dump.ts";
+export { createExpect, type Check } from "./expect.ts";
 
 /** One turn as a check sees it: its calls, its answer, how long it took, and
  * on HTTP the response's status (200, or 401 for a token the app refused).
