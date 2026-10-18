@@ -1,0 +1,63 @@
+---
+/**
+ * The facts at the top of a plugin page, generated from the catalog: package,
+ * role, version, how to add it, and the environment variables it reads.
+ */
+import { Code } from "@astrojs/starlight/components";
+import { catalogRow, KIND_LABEL } from "../lib/catalog-data.ts";
+
+interface Props {
+  /** The page's slug: the package name without its scope. */
+  slug: string;
+}
+
+const row = catalogRow(Astro.props.slug);
+---
+
+<dl class="mfw-facts not-content">
+  <dt>Package</dt>
+  <dd><a href={`https://www.npmjs.com/package/${row.package}`}><code>{row.package}</code></a></dd>
+  <dt>Role</dt>
+  <dd>{row.kinds.map((k) => KIND_LABEL[k]).join(", ")}</dd>
+  <dt>Version</dt>
+  <dd>{row.version ?? "not published yet"}</dd>
+</dl>
+
+<Code lang="bash" code={`bun add ${row.package}`} />
+
+{row.env.length > 0 && (
+  <table>
+    <thead>
+      <tr><th scope="col">Variable</th><th scope="col">What it is</th></tr>
+    </thead>
+    <tbody>
+      {row.env.map((e) => (
+        <tr>
+          <td><code>{e.name}</code></td>
+          <td>
+            {e.required && <strong>Required. </strong>}
+            {e.description}
+            {e.example && <> (default <code>{e.example}</code>)</>}
+          </td>
+        </tr>
+      ))}
+    </tbody>
+  </table>
+)}
+
+<style>
+  .mfw-facts {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 0.25rem 1.5rem;
+    font-family: var(--sl-font-mono);
+    font-size: var(--sl-text-sm);
+  }
+  .mfw-facts dt {
+    color: var(--mfw-text-muted);
+  }
+  .mfw-facts dt,
+  .mfw-facts dd {
+    margin: 0;
+  }
+</style>

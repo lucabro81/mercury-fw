@@ -1,0 +1,87 @@
+---
+/**
+ * The site header, replacing Starlight's: the name, the four sections, search,
+ * the theme choice and the repository. On narrow screens the sections live in
+ * the sidebar menu instead.
+ */
+import Search from "@astrojs/starlight/components/Search.astro";
+import ThemeSelect from "@astrojs/starlight/components/ThemeSelect.astro";
+import { REPO_URL } from "../lib/site.ts";
+
+const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+const sections = [
+  { label: "Getting started", href: `${base}/getting-started/first-agent/`, match: "/getting-started/" },
+  { label: "Docs", href: `${base}/concepts/what-mercury-is/`, match: /\/(concepts|reference)\// },
+  { label: "Plugins", href: `${base}/plugins/`, match: "/plugins/" },
+  { label: "Changelog", href: `${base}/changelog/`, match: "/changelog/" },
+];
+const path = Astro.url.pathname;
+const isCurrent = (match: string | RegExp) => (typeof match === "string" ? path.includes(match) : match.test(path));
+---
+
+<div class="mfw-header">
+  <a href={`${base}/`} class="site-title">mercury</a>
+  <nav aria-label="Sections" class="mfw-sections">
+    {sections.map((s) => (
+      <a href={s.href} aria-current={isCurrent(s.match) ? "page" : undefined}>{s.label}</a>
+    ))}
+  </nav>
+  <div class="mfw-search print:hidden"><Search /></div>
+  <div class="mfw-right print:hidden">
+    <ThemeSelect />
+    <a href={REPO_URL} class="mfw-repo">GitHub</a>
+  </div>
+</div>
+
+<style>
+  .mfw-header {
+    display: flex;
+    align-items: center;
+    gap: var(--sl-nav-gap);
+    height: 100%;
+    font-family: var(--sl-font-mono);
+    font-size: var(--sl-text-sm);
+  }
+  .site-title {
+    color: var(--mfw-accent);
+    text-decoration: none;
+    letter-spacing: 0.02em;
+    font-size: var(--sl-text-base);
+  }
+  .mfw-sections {
+    display: none;
+    gap: 1.5rem;
+  }
+  .mfw-sections a,
+  .mfw-repo {
+    color: var(--mfw-text-muted);
+    text-decoration: none;
+  }
+  .mfw-sections a:hover,
+  .mfw-repo:hover,
+  .mfw-sections a[aria-current="page"] {
+    color: var(--mfw-text);
+    text-decoration: underline;
+    text-decoration-color: var(--mfw-accent);
+    text-underline-offset: 4px;
+  }
+  .mfw-search {
+    flex: 1;
+    display: flex;
+    justify-content: flex-end;
+  }
+  .mfw-right {
+    display: none;
+    align-items: center;
+    gap: 1rem;
+  }
+  @media (min-width: 50rem) {
+    .mfw-sections,
+    .mfw-right {
+      display: flex;
+    }
+    .mfw-search {
+      justify-content: center;
+    }
+  }
+</style>

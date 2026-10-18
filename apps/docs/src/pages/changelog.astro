@@ -1,0 +1,53 @@
+---
+/**
+ * The unified changelog: every GitHub Release of the repository, newest first,
+ * framework and single-package releases together, each body rendered from its
+ * Markdown. Built at build time; with no release to read it says so.
+ */
+import StarlightPage from "@astrojs/starlight/components/StarlightPage.astro";
+import { createMarkdownProcessor } from "@astrojs/markdown-remark";
+import { getReleases, REPO_URL } from "../lib/site.ts";
+
+const releases = await getReleases();
+const markdown = await createMarkdownProcessor();
+const entries = await Promise.all(
+  releases.map(async (r) => ({ ...r, html: (await markdown.render(r.body)).code })),
+);
+const anchor = (r: (typeof entries)[number]) => (r.kind === "framework" ? `v${r.version}` : r.tag.replace(/[@/]/g, "-").replace(/^-/, ""));
+---
+
+<StarlightPage
+  frontmatter={{
+    title: "Changelog",
+    description: "What changed in every release of Mercury and of each plugin, newest first.",
+    tableOfContents: false,
+  }}
+>
+  <p>
+    The framework (core, CLI, contracts) is released as a whole and called by one version, <em>Mercury x.y.z</em>.
+    Plugins, channels and auth providers are released on their own, each with its own version. Both are listed here,
+    newest first.
+  </p>
+
+  {entries.length === 0 ? (
+    <p>There are no releases to show yet. Until there are, each package's <code>CHANGELOG.md</code> in <a href={REPO_URL}>the repository</a> lists what changed.</p>
+  ) : (
+    entries.map((r) => (
+      <section class="mfw-release" aria-labelledby={anchor(r)}>
+        <h2 id={anchor(r)}>{r.title}</h2>
+        <p class="mfw-release-meta">
+          <time datetime={r.date}>{r.date}</time> · <a href={r.url}>on GitHub</a>
+        </p>
+        <Fragment set:html={r.html} />
+      </section>
+    ))
+  )}
+</StarlightPage>
+
+<style>
+  .mfw-release-meta {
+    font-family: var(--sl-font-mono);
+    font-size: var(--sl-text-sm);
+    color: var(--mfw-text-muted);
+  }
+</style>

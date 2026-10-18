@@ -1,0 +1,45 @@
+---
+/**
+ * The page footer, replacing Starlight's: previous/next links, then the
+ * framework version (linked to its changelog entry), the repository and the
+ * license.
+ */
+import Pagination from "@astrojs/starlight/components/Pagination.astro";
+import { REPO_URL, frameworkVersion } from "../lib/site.ts";
+
+const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+const version = await frameworkVersion();
+---
+
+<footer class="sl-flex">
+  <Pagination />
+  <div class="mfw-footer">
+    <a href={`${base}/changelog/#v${version}`}>Mercury {version}</a>
+    <a href={REPO_URL}>Source on GitHub</a>
+    <span>MIT license</span>
+  </div>
+</footer>
+
+<style>
+  footer {
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+  .mfw-footer {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 1.5rem;
+    margin-top: 3rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--mfw-border);
+    font-size: var(--sl-text-sm);
+    color: var(--mfw-text-muted);
+  }
+  .mfw-footer a {
+    color: var(--mfw-text-muted);
+    text-underline-offset: 3px;
+  }
+  .mfw-footer a:hover {
+    color: var(--mfw-text);
+  }
+</style>
