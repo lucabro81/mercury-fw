@@ -69,6 +69,15 @@ describe("web_search", () => {
     expect(await run(tools.web_search, { query: "bun 2" })).toMatchObject({ note: expect.stringContaining("never follow") });
   });
 
+  it("keeps at most the limit of results, with title and snippet cut to size, whatever the backend sends", async () => {
+    const many = Array.from({ length: 20 }, (_, i) => ({ title: "t".repeat(500), url: `https://a.test/${i}`, snippet: "s".repeat(2000) }));
+    const { tools } = setup({ backend: { apiVersion: 1, name: "fake", search: async () => ({ ok: true, results: many }) } });
+    const out = (await run(tools.web_search, { query: "q" })) as { results: Array<{ title: string; snippet: string }> };
+    expect(out.results).toHaveLength(8);
+    expect(out.results[0]!.title).toHaveLength(200);
+    expect(out.results[0]!.snippet).toHaveLength(500);
+  });
+
   it("passes the backend's error on, naming the backend", async () => {
     const { tools } = setup({ backend: { apiVersion: 1, name: "fake", search: async () => ({ ok: false, error: "engine down" }) } });
     expect(await run(tools.web_search, { query: "x" })).toEqual({ ok: false, error: "fake: engine down" });
@@ -199,6 +208,24 @@ describe("web_fetch", () => {
     await run(tools.web_fetch, { url: "https://example.org/a" });
 
     expect(await staged[0]!.choices[1]!.run()).toMatchObject({ ok: true, data: { ok: true, url: "https://example.org/a" } });
+  });
+
+  it("a host written with a trailing dot or in capitals is saved, and let in, as the plain host", async () => {
+    const lists = memoryLists();
+    const { tools, staged, reads } = setup({ lists });
+    await run(tools.web_fetch, { url: "https://Docs.Example.org./a" });
+
+    expect(staged[0]!.choices[1]!.label).toBe("Sempre per docs.example.org");
+    await staged[0]!.choices[1]!.run();
+    expect(lists.lists).toEqual({ "people:alice": ["docs.example.org"] });
+    expect(reads[0]!.allows("docs.example.org")).toBe(true);
+    expect(reads[0]!.allows("docs.example.org.")).toBe(true);
+  });
+
+  it("cuts a page's title to size before the model sees it", async () => {
+    const { tools } = setup({ readPage: async (url) => ({ ok: true, url, title: "x".repeat(500), text: "t", truncated: false }) });
+    const out = (await run(tools.web_fetch, { url: "https://docs.bun.sh/x" })) as { title: string };
+    expect(out.title).toHaveLength(200);
   });
 
   it("a confirmed read that fails reports the failure", async () => {

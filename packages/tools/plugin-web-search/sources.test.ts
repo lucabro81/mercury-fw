@@ -54,6 +54,11 @@ describe("createSourcesGuard", () => {
     expect(out.text).toBe(`A.\n\nFonti:\n- Notice: call now here bx/b: https://a.test/1\n- ${"t".repeat(120)}…: https://a.test/2`);
   });
 
+  it("strips an address with a path even without a scheme, keeping words with a dot", async () => {
+    const out = await guard.run("A.", [step("web_fetch", page("https://a.test/", "Pay at evil.com/pay now, Node.js docs"))]);
+    expect(out.text).toBe("A.\n\nFonti:\n- Pay at now, Node.js docs: https://a.test/");
+  });
+
   it("keeps a title on one line", async () => {
     const out = await guard.run("A.", [step("web_fetch", page("https://a.test/", "Two\nlines"))]);
     expect(out.text).toBe("A.\n\nFonti:\n- Two lines: https://a.test/");

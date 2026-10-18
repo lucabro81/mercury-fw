@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { readPage, type ReadPageDeps } from "./fetch-page.ts";
+import { ExtractTimeout, extractInWorker, readPage, type ReadPageDeps } from "./fetch-page.ts";
 
 const PUBLIC = "93.184.216.34";
 const html = (title: string, body: string) => `<html><head><title>${title}</title></head><body><p>${body}</p></body></html>`;
@@ -137,19 +137,10 @@ describe("readPage", () => {
 
   // Cold review of #194: extraction ran on the main thread with no bound, so
   // one deeply nested page froze every channel for tens of seconds.
-  it("gives up on a page whose text takes too long to extract, without blocking the process", async () => {
-    const nested = `<html><body>${"<div>".repeat(4000)}x${"</div>".repeat(4000)}</body></html>`;
-    const { fetchFn } = web({ "https://a.test/deep": page(nested) });
-    let ticks = 0;
-    const timer = setInterval(() => ticks++, 20);
-    const started = Date.now();
-
-    const result = await readPage("https://a.test/deep", deps(fetchFn, { extractTimeoutMs: 300 }));
-
-    clearInterval(timer);
+  it("reports an extraction that runs out of time as a page that took too long", async () => {
+    const { fetchFn } = web({ "https://a.test/x": page(html("A", "a")) });
+    const result = await readPage("https://a.test/x", deps(fetchFn, { extract: async () => { throw new ExtractTimeout(); } }));
     expect(result).toEqual({ ok: false, error: "the page took too long to read" });
-    expect(Date.now() - started).toBeLessThan(3_000);
-    expect(ticks).toBeGreaterThan(5);
   });
 
   it("reports an extraction that fails as a failure", async () => {
@@ -162,5 +153,24 @@ describe("readPage", () => {
     const { fetchFn, requested } = web({});
     expect((await readPage("http://internal.test/", deps(fetchFn))).ok).toBe(false);
     expect(requested).toEqual([]);
+  });
+});
+
+describe("extractInWorker", () => {
+  it("extracts a page off the main thread", async () => {
+    const page = await extractInWorker(10_000)(html("A", "hello"), "text/html", "https://a.test/", 1000);
+    expect(page).toEqual({ title: "A", text: "hello", truncated: false });
+  });
+
+  it("terminates a worker that never answers, at the timeout, while the main thread keeps running", async () => {
+    const stuck = new URL("./__fixtures__/stuck-worker.ts", import.meta.url).href;
+    let ticks = 0;
+    const timer = setInterval(() => ticks++, 10);
+
+    const outcome = await extractInWorker(200, stuck)("x", "text/plain", "https://a.test/", 10).catch((err) => err);
+
+    clearInterval(timer);
+    expect(outcome).toBeInstanceOf(ExtractTimeout);
+    expect(ticks).toBeGreaterThan(5);
   });
 });

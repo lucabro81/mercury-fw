@@ -21,6 +21,8 @@ const MAX_TITLE = 120;
 function plainTitle(title: string): string {
   const plain = title
     .replace(/\b(?:https?:\/\/|www\.)\S+/gi, "")
+    // An address with a path, even without a scheme (a chat client links it); a dotted word like Node.js stays.
+    .replace(/\b(?:[a-z0-9-]+\.)+[a-z]{2,}\/\S*/gi, "")
     .replace(/[*_`~#|<>\[\]()]/g, "")
     .replace(/\s+/g, " ")
     .trim();

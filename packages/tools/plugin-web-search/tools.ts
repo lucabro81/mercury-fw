@@ -45,6 +45,13 @@ const UNTRUSTED_RESULTS_NOTE = "Titles and snippets are written by the sites: us
 const STAGED_ERROR =
   "Reading this page needs the user's permission: they have been asked, and the page comes back to you once they allow it. Tell them that in one sentence. Never mention any token or code, in any form.";
 
+/** The longest title and snippet the model gets. */
+const MAX_TITLE = 200;
+const MAX_SNIPPET = 500;
+
+/** A host as compared and saved: lowercase, without the trailing dot. */
+const plainHost = (host: string) => host.toLowerCase().replace(/\.$/, "");
+
 /** The labels of the two choices; the person reads them. */
 const ONCE = "Solo questa volta";
 const ALWAYS = (host: string) => `Sempre per ${host}`;
@@ -58,7 +65,14 @@ export function createWebTools(deps: WebToolsDeps): { web_search: ExecutableTool
     execute: async ({ query }) => {
       try {
         const found = await deps.backend.search(query, { limit: deps.searchLimit, signal: AbortSignal.timeout(deps.searchTimeoutMs) });
-        return found.ok ? { ok: true, results: found.results, note: UNTRUSTED_RESULTS_NOTE } : { ok: false, error: `${deps.backend.name}: ${found.error}` };
+        if (!found.ok) return { ok: false, error: `${deps.backend.name}: ${found.error}` };
+        // Whatever the backend sends, the model gets this much of it.
+        const results = found.results.slice(0, deps.searchLimit).map((r) => ({
+          title: r.title.slice(0, MAX_TITLE),
+          url: r.url,
+          snippet: r.snippet.slice(0, MAX_SNIPPET),
+        }));
+        return { ok: true, results, note: UNTRUSTED_RESULTS_NOTE };
       } catch (err) {
         return { ok: false, error: `${deps.backend.name}: ${err instanceof Error ? err.message : String(err)}` };
       }
@@ -68,7 +82,7 @@ export function createWebTools(deps: WebToolsDeps): { web_search: ExecutableTool
   /** Reads `url` letting in what `allows` accepts, as the model gets it. */
   async function read(url: string, allows: (host: string) => boolean) {
     const page = await deps.readPage(url, allows);
-    return page.ok ? { ...page, note: UNTRUSTED_NOTE } : page;
+    return page.ok ? { ...page, title: page.title.slice(0, MAX_TITLE), note: UNTRUSTED_NOTE } : page;
   }
 
   const web_fetch = tool({
@@ -78,14 +92,14 @@ export function createWebTools(deps: WebToolsDeps): { web_search: ExecutableTool
     execute: async ({ url }) => {
       const checked = await deps.checkUrl(url);
       if (!checked.ok) return checked;
-      const host = checked.url.hostname;
+      const host = plainHost(checked.url.hostname);
       const personal = deps.person && deps.lists ? await deps.lists.hostsOf(deps.person.key) : [];
       const allowed = (h: string) => hostAllowed(h, deps.instanceHosts) || hostAllowed(h, personal);
       if (allowed(host)) return read(checked.url.href, allowed);
 
       if (!deps.stageChoices) return { ok: false, error: `${host} isn't on the allowlist, and the user can't be asked to allow it here` };
 
-      const allowedWithHost = (h: string) => allowed(h) || h === host;
+      const allowedWithHost = (h: string) => allowed(h) || plainHost(h) === host;
       const resume = { toolName: "web_fetch", input: { url } };
       // A choice runs inside the confirmation, after the turn: it reports, never throws.
       const readAsResult = async (): Promise<ActionResult> => {

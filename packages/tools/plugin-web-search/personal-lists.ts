@@ -5,7 +5,8 @@
  * restart and never reaches the wiki. A file is replaced whole through a
  * temporary file and a rename, so a reader never sees half of one. What is
  * read back is checked again: a damaged file counts as an empty list, and an
- * entry that isn't an acceptable host is ignored.
+ * entry that isn't an acceptable host is ignored. A file that can't be read
+ * at all is never overwritten.
  */
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -24,10 +25,20 @@ export function createPersonalLists(dataDir: string): PersonalLists {
   // A user key holds ":" and "/" (google-chat:users/42): encoded, it's one flat file name.
   const fileOf = (personKey: string) => join(folder, `${encodeURIComponent(personKey)}.json`);
 
-  async function hostsOf(personKey: string): Promise<string[]> {
+  /** The hosts in `personKey`'s file. A missing or damaged file is an empty
+   * list; a file that can't be read throws when `strict`, so an add never
+   * overwrites a list it couldn't see. */
+  async function readHosts(personKey: string, strict: boolean): Promise<string[]> {
+    let text: string;
+    try {
+      text = await readFile(fileOf(personKey), "utf8");
+    } catch (err) {
+      if (!strict || (err as NodeJS.ErrnoException).code === "ENOENT") return [];
+      throw err;
+    }
     let raw: unknown;
     try {
-      raw = JSON.parse(await readFile(fileOf(personKey), "utf8"));
+      raw = JSON.parse(text);
     } catch {
       return [];
     }
@@ -42,7 +53,7 @@ export function createPersonalLists(dataDir: string): PersonalLists {
 
   /** Reads, extends and replaces `personKey`'s file. */
   async function append(personKey: string, host: string): Promise<void> {
-    const hosts = await hostsOf(personKey);
+    const hosts = await readHosts(personKey, true);
     if (hosts.includes(host)) return;
     await mkdir(folder, { recursive: true });
     const file = fileOf(personKey);
@@ -55,7 +66,7 @@ export function createPersonalLists(dataDir: string): PersonalLists {
   const queues = new Map<string, Promise<void>>();
 
   return {
-    hostsOf,
+    hostsOf: (personKey) => readHosts(personKey, false),
     add(personKey, host) {
       const next = (queues.get(personKey) ?? Promise.resolve()).catch(() => {}).then(() => append(personKey, host));
       queues.set(personKey, next);

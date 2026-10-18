@@ -14,17 +14,17 @@ import type { ExtractedPage } from "./extract.ts";
 export type Extract = (body: string, contentType: string, url: string, maxChars: number) => Promise<ExtractedPage>;
 
 /** Thrown by `extractInWorker` when the page took longer than allowed. */
-class ExtractTimeout extends Error {}
+export class ExtractTimeout extends Error {}
 
 /**
  * Extracts in a worker of its own (`extract-worker.ts`), terminated after
  * `timeoutMs`: a page built to make the parser crawl costs that much and no
- * more, and never holds the main thread.
+ * more, and never holds the main thread. `workerUrl` replaces the worker, for tests.
  */
-export function extractInWorker(timeoutMs: number): Extract {
+export function extractInWorker(timeoutMs: number, workerUrl = new URL("./extract-worker.ts", import.meta.url).href): Extract {
   return (body, contentType, url, maxChars) =>
     new Promise((resolve, reject) => {
-      const worker = new Worker(new URL("./extract-worker.ts", import.meta.url).href);
+      const worker = new Worker(workerUrl);
       const done = () => {
         clearTimeout(timer);
         worker.terminate();

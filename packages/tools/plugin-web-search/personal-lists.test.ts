@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { mkdtempSync, readdirSync, writeFileSync, mkdirSync } from "node:fs";
+import { chmodSync, mkdtempSync, readdirSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createPersonalLists } from "./personal-lists.ts";
@@ -37,6 +37,22 @@ describe("createPersonalLists", () => {
     const lists = createPersonalLists(dir());
     await Promise.all([lists.add("people:alice", "a.test"), lists.add("people:alice", "b.test"), lists.add("people:alice", "c.test")]);
     expect((await lists.hostsOf("people:alice")).sort()).toEqual(["a.test", "b.test", "c.test"]);
+  });
+
+  // Cold review of #194: any read error counted as an empty list, so a file
+  // that couldn't be read for a moment was overwritten with one host.
+  it("adding to a list that can't be read fails, leaving the file as it was", async () => {
+    const d = dir();
+    const lists = createPersonalLists(d);
+    await lists.add("people:alice", "a.test");
+    const file = join(d, "allowlist", "people%3Aalice.json");
+    chmodSync(file, 0o000);
+    try {
+      await expect(lists.add("people:alice", "b.test")).rejects.toThrow();
+    } finally {
+      chmodSync(file, 0o644);
+    }
+    expect(await lists.hostsOf("people:alice")).toEqual(["a.test"]);
   });
 
   it("leaves no temporary file behind", async () => {
