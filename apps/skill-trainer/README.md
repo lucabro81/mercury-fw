@@ -118,4 +118,4 @@ What that means for a plugin's training data:
 - **At least 80 test tasks with 5 runs, or 120 with 3,** to claim a gain as small as 5 points.
 - **At least 30 val tasks.** SkillOpt's gate accepts an edit when its val score is strictly higher in one run, so with few val tasks it accepts noise as progress.
 - **Tasks the baseline fails sometimes.** A task every skill always passes adds nothing but runtime. Aim for a test baseline between 60% and 80%: near 100% there's no room left to measure.
-- **The time it takes.** A task costs about 40 seconds on the current model, so 50 test tasks, 3 runs, two skills is about 3 hours and a half, and 80 tasks with 5 runs about 9.
+- **The time it takes.** A task costs about 25 seconds on the current model (a few take over a minute, when the model wanders), so 50 test tasks, 3 runs, two skills is about 2 hours, and 80 tasks with 5 runs about 5 and a half.
