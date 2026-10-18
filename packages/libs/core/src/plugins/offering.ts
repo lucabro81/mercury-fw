@@ -3,6 +3,8 @@
  * the turn so the model never sees a tool it isn't allowed to use.
  *
  * - A plugin acting as the person is offered to everyone, run as them.
+ * - A plugin acting as no one is offered to everyone too, with no variant
+ *   acting as Mercury: there's no identity to choose between.
  * - Making Mercury act as itself takes `mercury.act-as-self` (every plugin) or
  *   `mercury.act-as-self.<plugin>` (that one): a plugin acting as Mercury is
  *   offered only then, and a plugin acting as the person gets a variant beside
@@ -20,7 +22,7 @@ export const ACT_AS_SELF = "mercury.act-as-self";
 
 /** One plugin as offered: as whom its tools act, and whether it's the variant
  * acting as Mercury beside the person's own (its tools then get other names). */
-export type OfferedPlugin = { plugin: LoadedPlugin; as: "person" | "mercury"; variant: boolean };
+export type OfferedPlugin = { plugin: LoadedPlugin; as: "person" | "mercury" | "anyone"; variant: boolean };
 
 export type Offering = {
   entries: OfferedPlugin[];
@@ -43,11 +45,15 @@ export function offeringFor(
   const entries: OfferedPlugin[] = [];
   for (const plugin of plugins) {
     if (who.operator) {
-      entries.push({ plugin, as: "mercury", variant: false });
+      entries.push({ plugin, as: plugin.actsAs === "anyone" ? "anyone" : "mercury", variant: false });
       continue;
     }
     const allowedRoles = access[plugin.name]?.roles;
     if (allowedRoles !== undefined && !allowedRoles.some((r) => roles.has(r))) continue;
+    if (plugin.actsAs === "anyone") {
+      entries.push({ plugin, as: "anyone", variant: false });
+      continue;
+    }
     const actsAsSelf = roles.has(ACT_AS_SELF) || roles.has(`${ACT_AS_SELF}.${plugin.name}`);
     if (plugin.actsAs === "person") {
       entries.push({ plugin, as: "person", variant: false });

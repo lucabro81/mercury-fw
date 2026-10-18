@@ -46,7 +46,7 @@ export interface SessionToolBundle {
  * nothing acts as Mercury. */
 export interface LoadedPlugin {
   name: string;
-  actsAs: "person" | "mercury";
+  actsAs: "person" | "mercury" | "anyone";
   promptFragment?: string;
   skills: Skill[];
   /** Its tool factory, when it contributes tools; the composition root invokes
@@ -223,7 +223,7 @@ export async function loadPlugins(plugins: Plugin[], ctx: PluginLoadContext): Pr
             ...(contributions.login === undefined ? {} : { login: contributions.login }),
           }
         : undefined;
-      const actsAs = plugin.actsAs === "person" ? "person" : "mercury";
+      const actsAs = plugin.actsAs === "person" || plugin.actsAs === "anyone" ? plugin.actsAs : "mercury";
       loaded.push({
         name: plugin.name,
         actsAs,

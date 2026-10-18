@@ -1,0 +1,44 @@
+services:
+  mercury:
+    build: .
+    # Back up after a crash or a host reboot.
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    volumes:
+      - wiki-vault:/app/wiki-vault
+      # The login of a plugin's CLI, on a volume so what the CLI writes back
+      # (refreshed tokens) survives a redeploy: see README.md.
+      - cli-credentials:/home/mercury/.config
+    # The HTTP surface, on the host: every route but its OpenAPI document needs a token.
+    ports:
+      - "${HTTP_SURFACE_PORT:-4100}:${HTTP_SURFACE_PORT:-4100}"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - qdrant
+      - searxng
+
+  qdrant:
+    image: qdrant/qdrant:v1
+    volumes:
+      - qdrant-data:/qdrant/storage
+
+  searxng:
+    # SearXNG publishes no major version tags, only latest and dated ones.
+    image: searxng/searxng:latest
+    restart: unless-stopped
+    environment:
+      # SearXNG exits on its default key: without one, compose says so instead.
+      SEARXNG_SECRET: ${SEARXNG_SECRET:?set SEARXNG_SECRET in .env (see .env.example)}
+    volumes:
+      - ./searxng/settings.yml:/etc/searxng/settings.yml:ro
+
+volumes:
+  wiki-vault:
+    name: demo_wiki-vault
+  qdrant-data:
+    name: demo_qdrant-data
+  cli-credentials:
+    name: demo_cli-credentials

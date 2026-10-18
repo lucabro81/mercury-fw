@@ -18,13 +18,14 @@ describe("CATALOG", () => {
       "tool:bitbucket",
       "tool:atlassian-admin",
       "tool:zitadel",
+      "tool:web-search",
       "directory:static",
       "directory:zitadel",
     ]);
   });
 
   test("every entry's package exports what the catalog says, named as its id", async () => {
-    for (const entry of CATALOG) {
+    for (const entry of CATALOG.filter((e) => e.build === undefined)) {
       const mod = (await import(entry.package)) as Record<string, { name?: unknown } | undefined>;
       const exported = mod[entry.exportName];
       expect(exported, `${entry.package} has no export ${entry.exportName}`).toBeDefined();
@@ -33,6 +34,20 @@ describe("CATALOG", () => {
       // name prefixes its people's keys instead, so its id is the choice's.
       if (entry.kind !== "directory") expect(exported?.name).toBe(entry.id);
     }
+  });
+
+  test("a plugin built by a call: every name its config imports exists, and web search builds as web-search", async () => {
+    for (const entry of CATALOG.filter((e) => e.build !== undefined)) {
+      for (const { names, package: pkg } of [{ names: entry.exportName, package: entry.package }, ...entry.build!.imports]) {
+        const mod = (await import(pkg)) as Record<string, unknown>;
+        for (const name of names.split(",").map((n) => n.trim())) {
+          expect(mod[name], `${pkg} has no export ${name}`).toBeDefined();
+        }
+      }
+    }
+    const { webSearchPlugin } = await import("@mercury-fw/plugin-web-search");
+    const { searxngBackend } = await import("@mercury-fw/web-search-searxng");
+    expect(webSearchPlugin({ backend: searxngBackend({ url: "http://searxng:8080" }) }).name).toBe("web-search");
   });
 
   test("every env var has a comment, and no var is declared twice", () => {

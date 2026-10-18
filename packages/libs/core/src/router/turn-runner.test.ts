@@ -2083,6 +2083,24 @@ describe("createTurnRunner: a turn resumed after a confirmation", () => {
     expect(sink.disposed).toBe(true);
   });
 
+  test("a guard's shouldRun sees the turn's steps too, the confirmed action first", async () => {
+    const seen: StepInfo[][] = [];
+    const guard: PostTurnGuard = {
+      statusLabel: "g",
+      statusId: "g",
+      shouldRun: (_text, steps) => {
+        seen.push(steps ?? []);
+        return false;
+      },
+      run: async (text) => ({ text, outcome: "success" }),
+    };
+    const { runner } = setup(new Map([["session-1", resumed]]), [guard]);
+
+    await runner(baseTurn({ text: "", resumeAfterConfirm: true }), baseSink());
+
+    expect(seen[0]?.[0]?.toolCalls[0]?.toolName).toBe("web_fetch");
+  });
+
   test("the post-turn guards see the confirmed action as the turn's first step", async () => {
     const seen: StepInfo[][] = [];
     const guard: PostTurnGuard = {

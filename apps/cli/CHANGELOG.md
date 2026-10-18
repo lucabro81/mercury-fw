@@ -1,5 +1,19 @@
 # @mercury-fw/cli
 
+## 0.53.0
+
+### Minor Changes
+
+- 79a232e: - New package `@mercury-fw/web-search-searxng`: a SearXNG instance as the web search plugin's backend, through its JSON format.
+  - `mfw create --plugins web-search` adds the web search plugin with the SearXNG backend, a `searxng` service in the compose file (on the compose network only), its `searxng/settings.yml` with the JSON format on, and `SEARXNG_URL` and `SEARXNG_SECRET` in the env example.
+
+### Patch Changes
+
+- Updated dependencies [56e4ed5]
+- Updated dependencies [c83b129]
+  - @mercury-fw/core@0.53.0
+  - @mercury-fw/utils@0.53.0
+
 ## 0.52.0
 
 ### Minor Changes

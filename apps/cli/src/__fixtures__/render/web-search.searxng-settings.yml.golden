@@ -1,0 +1,13 @@
+# SearXNG for the web search plugin. Only the app reaches it, on the compose
+# network: nothing of it is published on the host. The secret comes from
+# SEARXNG_SECRET in the app's env file.
+use_default_settings: true
+server:
+  # Only Mercury asks: no rate limiting, no image proxy.
+  limiter: false
+  image_proxy: false
+search:
+  # The plugin reads the results as JSON, which is off by default.
+  formats:
+    - html
+    - json
