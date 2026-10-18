@@ -3,9 +3,9 @@
  * repo, conversations with a composed Mercury, a throwaway vault per task)
  * are the default dependencies; a test hands in its own.
  */
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import type { SkillTraining } from "./contract.ts";
 import { runBatch, selectTasks, type HarnessDeps, type TaskResult } from "./harness.ts";
 import { loadTraining } from "./load.ts";
@@ -25,6 +25,12 @@ const realDeps: CommandDeps = {
   harness: {
     open: openMercuryConversation,
     makeVault: () => mkdtemp(join(tmpdir(), "skill-trainer-vault-")),
+    seedVault: async (vault, files) => {
+      for (const [path, content] of Object.entries(files)) {
+        await mkdir(dirname(join(vault, path)), { recursive: true });
+        await writeFile(join(vault, path), content);
+      }
+    },
     removeVault: (path) => rm(path, { recursive: true, force: true }),
     now: () => Date.now(),
   },

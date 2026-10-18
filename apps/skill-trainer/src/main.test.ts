@@ -39,6 +39,7 @@ function deps(onOpen: () => void = () => {}, { failOpen = false } = {}): { deps:
     },
     makeVault: async () => join(dir, "vault"),
     removeVault: async () => {},
+    seedVault: async () => {},
     now: () => 0,
   };
   return { deps: { loadTraining: async () => training, harness, print: (l) => void printed.push(l) }, printed };

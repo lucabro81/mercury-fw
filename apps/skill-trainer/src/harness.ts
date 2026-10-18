@@ -23,6 +23,8 @@ export type HarnessDeps = {
   /** Opens a conversation with Mercury running only `plugin`, on the vault at `vaultPath`. */
   open: (plugin: Plugin, vaultPath: string) => Promise<Conversation>;
   makeVault: () => Promise<string>;
+  /** Writes `files` (vault-relative path to content) into the vault at `vaultPath`. */
+  seedVault: (vaultPath: string, files: Record<string, string>) => Promise<void>;
   removeVault: (path: string) => Promise<void>;
   /** Milliseconds. */
   now: () => number;
@@ -51,9 +53,9 @@ const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
 /** The tasks to run: those of `split` when given, those named in `ids` in
  * their order when given, every task otherwise. Throws on a task id that's
- * repeated or unsafe as a file name, on a task that can't run (no turns, or a
- * first turn needing one before it), and on an id that isn't there or is
- * named twice. */
+ * repeated or unsafe as a file name, on a task that can't run (no turns, a
+ * first turn needing one before it, a vault note outside the vault), and on an
+ * id that isn't there or is named twice. */
 export function selectTasks(tasks: TrainingTask[], { split, ids }: { split?: Split; ids?: string[] }): TrainingTask[] {
   const byId = new Map<string, TrainingTask>();
   for (const t of tasks) {
@@ -61,6 +63,8 @@ export function selectTasks(tasks: TrainingTask[], { split, ids }: { split?: Spl
     if (byId.has(t.id)) throw new Error(`two tasks have the id "${t.id}"`);
     if (t.turns.length === 0) throw new Error(`the task "${t.id}" has no turns`);
     if (typeof t.turns[0] !== "string") throw new Error(`the task "${t.id}" starts with a function turn, which needs a turn before it`);
+    const outside = Object.keys(t.vault ?? {}).find((p) => p.startsWith("/") || p.split("/").includes(".."));
+    if (outside !== undefined) throw new Error(`the task "${t.id}" has a vault note outside the vault: ${outside}`);
     byId.set(t.id, t);
   }
   const inSplit = split === undefined ? tasks : tasks.filter((t) => t.split === split);
@@ -97,6 +101,7 @@ async function runTask(training: SkillTraining, task: TrainingTask, candidate: s
   let error: string | undefined;
   const vault = await deps.makeVault();
   try {
+    if (task.vault !== undefined) await deps.seedVault(vault, task.vault);
     const conversation = await deps.open(plugin, vault);
     try {
       for (const text of task.turns) {

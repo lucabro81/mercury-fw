@@ -60,6 +60,8 @@ export type TrainingTask = {
   turns: TurnText[];
   /** Fixtures for this task only, tried before the plugin's own. */
   fixtures?: Fixtures;
+  /** Notes in the wiki when the task starts, by vault-relative path (`curated/projects.md`). */
+  vault?: Record<string, string>;
   check: (run: Run, expect: Expect) => void;
 };
 

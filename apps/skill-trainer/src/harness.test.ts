@@ -59,6 +59,7 @@ function fakeDeps(reply: (text: string, cli: RunCli) => Promise<{ steps: unknown
     },
     makeVault: async () => `/tmp/vault-${++vaults}`,
     removeVault: async (path) => void seen.removed.push(path),
+    seedVault: async () => {},
     now: () => (clock += 500),
   };
   return { deps, seen };
@@ -245,6 +246,18 @@ describe("runBatch", () => {
     expect(seen).toEqual([["a"], ["a", "b"]]);
   });
 
+  test("a task's vault notes are written into its vault before the conversation opens", async () => {
+    const { training, cli } = trainingWith([task({ id: "a", vault: { "curated/projects.md": "The shop is WEB." } }), task({ id: "b" })]);
+    const { deps, seen } = fakeDeps(async () => ({ steps: [textStep("done")], text: "done" }), cli);
+    const seeded: Array<[string, Record<string, string>]> = [];
+    deps.seedVault = async (vault, files) => {
+      seeded.push([vault, files]);
+      expect(seen.vaults).not.toContain(vault);
+    };
+    await runBatch(training, training.tasks, undefined, deps);
+    expect(seeded).toEqual([["/tmp/vault-1", { "curated/projects.md": "The shop is WEB." }]]);
+  });
+
   test("without a candidate the plugin keeps its own skill", async () => {
     const { training, cli } = trainingWith([task()]);
     const { deps, seen } = fakeDeps(async () => ({ steps: [textStep("done")], text: "done" }), cli);
@@ -300,6 +313,11 @@ describe("selectTasks", () => {
     expect(() => selectTasks([task({ id: "f", turns: [(prev) => prev.answer] })], {})).toThrow(
       'the task "f" starts with a function turn, which needs a turn before it',
     );
+  });
+
+  test("a vault note outside the vault is an error naming it", () => {
+    expect(() => selectTasks([task({ id: "v", vault: { "../escape.md": "x" } })], {})).toThrow('the task "v" has a vault note outside the vault: ../escape.md');
+    expect(() => selectTasks([task({ id: "w", vault: { "/etc/x.md": "x" } })], {})).toThrow("outside the vault: /etc/x.md");
   });
 
   test("an id that isn't safe as a file name is an error", () => {
