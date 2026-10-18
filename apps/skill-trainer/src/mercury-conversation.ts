@@ -8,14 +8,19 @@
 import { randomUUID } from "node:crypto";
 import { composeMercury, defineMercuryConfig, OPERATOR_PRINCIPAL } from "@mercury-fw/core";
 import type { Plugin } from "@mercury-fw/plugin-types";
+import { watchBuild } from "./build-watch.ts";
 import type { Conversation } from "./harness.ts";
 
-/** Opens a conversation with Mercury running only `plugin`. The core reads
- * the vault's path from the environment when it's composed, so this sets it
- * first: conversations are opened one at a time. */
+/** Opens a conversation with Mercury running only `plugin`; throws when the
+ * plugin didn't load. The core reads the vault's path from the environment
+ * when it's composed, so this sets it first: conversations are opened one at
+ * a time. */
 export async function openMercuryConversation(plugin: Plugin, vaultPath: string): Promise<Conversation> {
   process.env.WIKI_VAULT_PATH = vaultPath;
-  const app = await composeMercury(defineMercuryConfig({ plugins: [plugin] }));
+  const watched = watchBuild(plugin);
+  const app = await composeMercury(defineMercuryConfig({ plugins: [watched.plugin] }));
+  const failure = watched.failure();
+  if (failure !== undefined) throw new Error(failure);
   const sessionKey = `skill-trainer:${randomUUID()}`;
   return {
     send: async (text) => {
@@ -25,6 +30,11 @@ export async function openMercuryConversation(plugin: Plugin, vaultPath: string)
         { channel: "terminal", multiUser: false, text, sessionKey, principal: OPERATOR_PRINCIPAL, logPrefix: "[skill-trainer] " },
         {
           onToolStart: () => {},
+          // Taking the stream (and dropping it) is what turns on the core's
+          // stall watchdog: a model that stops sending fails the turn instead
+          // of holding the batch forever.
+          onTextChunk: () => {},
+          onReasoningChunk: () => {},
           onStep: (step) => void steps.push(step),
           finalize: async (finalText) => {
             reply = finalText;
