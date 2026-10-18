@@ -6,6 +6,10 @@
  * are an e2e case's (`@mercury-fw/cli/e2e`), so one is written the same way.
  */
 import type { Expect, Run, TurnText } from "@mercury-fw/cli/e2e";
+
+// What a task's checks are written with, for a plugin's training data to
+// import from here: the plugin itself doesn't depend on the CLI.
+export type { Call, Expect, Run, TurnText } from "@mercury-fw/cli/e2e";
 import type { runCli } from "@mercury-fw/cli-engine";
 import type { CliResult, Plugin } from "@mercury-fw/plugin-types";
 
