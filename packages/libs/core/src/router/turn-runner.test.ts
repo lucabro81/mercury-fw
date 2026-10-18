@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { createTurnRunner, parseStallTimeoutMs, DEFAULT_STALL_TIMEOUT_MS, OPENING_CUE, OPENING_NOTE, PREFERRED_NAME_NOTE, RECAP_NOTE, SHOWN_LISTS_NOTE, type PostTurnGuard } from "./turn-runner.ts";
+import { createTurnRunner, parseStallTimeoutMs, DEFAULT_STALL_TIMEOUT_MS, OPENING_CUE, OPENING_NOTE, PREFERRED_NAME_NOTE, RECAP_NOTE, SHOWN_LISTS_NOTE, RESUMED_LINE, type PostTurnGuard } from "./turn-runner.ts";
 import type { InboundTurn, TurnSink } from "./provider.ts";
 import type { Principal } from "@mercury-fw/channel-types";
 import { createSessionHistory, type SessionHistory } from "../session/history.ts";
@@ -2017,5 +2017,102 @@ describe("parseStallTimeoutMs", () => {
     for (const bad of ["-1", "1.5", "two minutes"]) {
       expect(() => parseStallTimeoutMs(bad)).toThrow(`TURN_STALL_TIMEOUT_MS must be a whole number of milliseconds from 0 up, got "${bad}"`);
     }
+  });
+});
+
+describe("createTurnRunner: a turn resumed after a confirmation", () => {
+  const resumed = {
+    describe: "fetch https://example.org/a",
+    label: "Solo questa volta",
+    toolName: "web_fetch",
+    input: { url: "https://example.org/a" },
+    output: { title: "A", text: "the page body" },
+  };
+
+  function setup(slot: Map<string, typeof resumed>, guards: PostTurnGuard[] = []) {
+    const calls: Array<{ text: string; resumed: unknown }> = [];
+    const captured: Array<{ role: string; content: string }> = [];
+    const runner = createTurnRunner({
+      model: {} as any,
+      systemPrompts: { singleUser: "single", multiUser: "multi" },
+      buildTools: () => ({}),
+      getOrCreateHistory: () => fakeHistory(),
+      trackSession: () => {},
+      registerCaptureCallback: () => {},
+      maybeCapture: async () => {},
+      processToolCorrections: async () => {},
+      logStep: () => {},
+      captureVerbatim: async (msg) => {
+        captured.push({ role: msg.role, content: msg.content });
+      },
+      takeResumed: (sessionKey) => {
+        const action = slot.get(sessionKey);
+        slot.delete(sessionKey);
+        return action;
+      },
+      postTurnGuards: guards,
+      runTurnFn: async (_history, text, deps) => {
+        calls.push({ text, resumed: deps.resumed });
+        return "The page says hello.";
+      },
+    });
+    return { runner, calls, captured };
+  }
+
+  test("runs the model with the session's confirmed action and a line naming it, then empties the slot", async () => {
+    const slot = new Map([["session-1", resumed]]);
+    const { runner, calls } = setup(slot);
+    const sink = baseSink();
+
+    await runner(baseTurn({ text: "", resumeAfterConfirm: true, principal: verified("u1") }), sink);
+
+    expect(calls).toEqual([{ text: RESUMED_LINE(resumed), resumed }]);
+    expect(RESUMED_LINE(resumed)).toBe("[Confirmed by the person: fetch https://example.org/a (Solo questa volta)]");
+    expect(sink.finalized).toEqual(["The page says hello."]);
+    expect(slot.size).toBe(0);
+  });
+
+  test("with nothing kept for the session, ends the turn with no answer and no model call", async () => {
+    const { runner, calls } = setup(new Map([["other-session", resumed]]));
+    const sink = baseSink();
+
+    await runner(baseTurn({ text: "", resumeAfterConfirm: true }), sink);
+
+    expect(calls).toEqual([]);
+    expect(sink.finalized).toEqual([""]);
+    expect(sink.disposed).toBe(true);
+  });
+
+  test("the post-turn guards see the confirmed action as the turn's first step", async () => {
+    const seen: StepInfo[][] = [];
+    const guard: PostTurnGuard = {
+      statusLabel: "g",
+      statusId: "g",
+      shouldRun: () => true,
+      run: async (text, steps) => {
+        seen.push(steps);
+        return { text, outcome: "success" };
+      },
+    };
+    const { runner } = setup(new Map([["session-1", resumed]]), [guard]);
+
+    await runner(baseTurn({ text: "", resumeAfterConfirm: true }), baseSink());
+
+    expect(seen[0]?.[0]).toEqual({
+      toolCalls: [{ toolCallId: expect.any(String), toolName: "web_fetch", input: { url: "https://example.org/a" } }],
+      toolResults: [{ toolCallId: seen[0]?.[0]?.toolCalls[0]?.toolCallId ?? "", toolName: "web_fetch", output: { title: "A", text: "the page body" } }],
+      content: [],
+    });
+  });
+
+  test("the verbatim archive keeps the line, never the result", async () => {
+    const { runner, captured } = setup(new Map([["session-1", resumed]]));
+
+    await runner(baseTurn({ text: "", resumeAfterConfirm: true, principal: verified("u1") }), baseSink());
+
+    expect(captured).toEqual([
+      { role: "user", content: RESUMED_LINE(resumed) },
+      { role: "assistant", content: "The page says hello." },
+    ]);
   });
 });

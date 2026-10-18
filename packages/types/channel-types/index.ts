@@ -130,6 +130,11 @@ export type InboundTurn = {
   principal: Principal;
   /** stderr log prefix, e.g. `[chat:spaces/x:users/y] ` — empty for the terminal. */
   logPrefix: string;
+  /** Set when the turn resumes after a confirmation whose result goes back to
+   * the model (`RESUME_AFTER_CONFIRM`): the core runs the model on what it kept
+   * for the session, and `text` is ignored. With nothing kept, the turn ends
+   * with no answer. */
+  resumeAfterConfirm?: true;
   /** When set, aborting it cancels the in-flight turn. Only the HTTP surface supplies one today (client disconnect); other channels leave it undefined. */
   abortSignal?: AbortSignal;
   /**
