@@ -40,13 +40,17 @@ const mentions = (key: string, accountId: string) => (c: Call) =>
 
 export const HARD_TASKS: TrainingTask[] = [
   // Lists, in Italian, by first name, with combined filters, and keys only.
-  listTask("h-list-it-web", "test", "Fammi vedere le issue aperte di WEB.", /project\s*=\s*"?WEB/i),
-  listTask("h-list-unassigned", "train", "Show me the open WEB issues nobody is assigned to.", /assignee\s+is\s+(empty|null)/i),
-  listTask("h-list-it-high-bugs", "test", "Mostrami i bug aperti con priorità alta o massima, in tutti i progetti.", /priority\s*(in\s*\(|=).*high/i),
-  listTask("h-list-giulia", "val", "Show me Giulia's open issues.", person("giulia ferri", ACCOUNTS.giulia)),
-  listTask("h-list-it-review", "test", "Cosa c'è in review in questo momento?", /status\s*(=|in)\s*\(?\s*["']in review["']/i),
-  listTask("h-list-stories", "train", "List the open stories.", /(issuetype|type)\s*(=|in)\s*\(?\s*"?story/i),
-  listTask("h-list-it-mine", "test", "Le mie issue aperte, per favore.", /currentUser\(\)/i),
+  listTask("h-list-it-web", "test", "Fammi vedere le issue aperte di WEB.", /project\s*=\s*"?WEB/i, ["project = WEB AND statusCategory != Done"]),
+  listTask("h-list-unassigned", "train", "Show me the open WEB issues nobody is assigned to.", /assignee\s*(is|=)\s*(empty|null)/i, [
+    "project = WEB AND assignee is EMPTY AND statusCategory != Done",
+  ]),
+  listTask("h-list-it-high-bugs", "test", "Mostrami i bug aperti con priorità alta o massima, in tutti i progetti.", /priority\s*(in\s*\(|=).*high/i, [
+    "issuetype = Bug AND priority in (High, Highest) AND statusCategory != Done",
+  ]),
+  listTask("h-list-giulia", "val", "Show me Giulia's open issues.", person("giulia ferri", ACCOUNTS.giulia), ['assignee = "Giulia Ferri" AND statusCategory != Done']),
+  listTask("h-list-it-review", "test", "Cosa c'è in review in questo momento?", /status\s*(=|in)\s*\(?\s*["']in review["']/i, ['status = "In Review"']),
+  listTask("h-list-stories", "train", "List the open stories.", /(issuetype|type)\s*(=|in)\s*\(?\s*"?story/i, ["issuetype = Story AND statusCategory != Done"]),
+  listTask("h-list-it-mine", "test", "Le mie issue aperte, per favore.", /currentUser\(\)/i, ["assignee = currentUser() AND statusCategory != Done"]),
   task("h-list-keys-only", "train", "list", "Just give me the keys of the open OPS bugs, no list.", (run, e) => {
     checks.loadsSkill(e);
     checks.searched(e, /(issuetype|type)\s*=\s*"?bug/i, "searches the OPS bugs");

@@ -6,6 +6,7 @@
  */
 import { parseCommand } from "@mercury-fw/cli-engine";
 import type { Call, Expect, Run, Split, TrainingTask } from "../../../../apps/skill-trainer/src/contract.ts";
+import { keysFor } from "./world.ts";
 
 /** A jiraCommand call's command line. */
 export const cmd = (c: Call) => String((c.input as { command?: unknown }).command ?? "");
@@ -57,14 +58,28 @@ export const task = (id: string, split: Split, taskType: string, turn: string | 
 });
 
 /** A list the user wants to see: searched as asked, shown with present. */
-export const listTask = (id: string, split: Split, turn: string, jql: RegExp) =>
+export const listTask = (id: string, split: Split, turn: string, jql: RegExp, references: string[]) =>
   task(id, split, "list", turn, (run, e) => {
     checks.loadsSkill(e);
     checks.searched(e, jql, "searches the right issues");
+    const wanted = references.map((ref) => new Set(keysFor(ref)));
+    e.that(
+      "finds the issues asked for",
+      jiraCalls(run, "issue search").some((c) => {
+        const got = returnedKeys(c);
+        return c.ok && wanted.some((w) => w.size === got.length && got.every((k) => w.has(k)));
+      }),
+    );
     checks.searchedWith(e, /--select[ =]\S*issues\.key/, "selects the list's paths");
     checks.presented(e);
     checks.selects(e, run);
   });
+
+/** The keys of the issues a search call returned, in order. */
+export function returnedKeys(c: Call): string[] {
+  const data = (c.output as { data?: { issues?: Array<{ key?: unknown }> } } | undefined)?.data;
+  return (data?.issues ?? []).map((i) => i.key).filter((k): k is string => typeof k === "string");
+}
 
 /** A count: searched as asked, answered as a number, no list shown. */
 export const countTask = (id: string, split: Split, turn: string, jql: RegExp, n: number) =>

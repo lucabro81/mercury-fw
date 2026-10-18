@@ -9,13 +9,22 @@ import { ACCOUNTS } from "./world.ts";
 
 export const BASIC_TASKS: TrainingTask[] = [
   // Lists the user wants to see.
-  listTask("list-web-open", "train", "Show me the open issues in WEB.", /project\s*=\s*"?WEB/i),
-  listTask("list-ops-open", "train", "List the OPS issues that aren't done yet.", /project\s*=\s*"?OPS/i),
-  listTask("list-mrt-in-progress", "val", "What's in progress in MRT? Show me the list.", /project\s*=\s*"?MRT.*(in progress|statusCategory)/i),
-  listTask("list-dsk-open", "test", "Can I see the open tickets of the DSK project?", /project\s*=\s*"?DSK/i),
-  listTask("list-web-bugs", "train", "List the open bugs in WEB.", /(issuetype|type)\s*=\s*"?bug/i),
-  listTask("list-marco", "val", "Show me the issues assigned to Marco Bianchi that are still open.", new RegExp(`marco bianchi|${ACCOUNTS.marco}`, "i")),
-  listTask("list-ops-highest", "test", "Show me the OPS issues whose priority is Highest.", /priority\s*(=|in)\s*\(?["']?highest/i),
+  listTask("list-web-open", "train", "Show me the open issues in WEB.", /project\s*=\s*"?WEB/i, ["project = WEB AND statusCategory != Done"]),
+  listTask("list-ops-open", "train", "List the OPS issues that aren't done yet.", /project\s*=\s*"?OPS/i, ["project = OPS AND statusCategory != Done"]),
+  listTask("list-mrt-in-progress", "val", "What's in progress in MRT? Show me the list.", /project\s*=\s*"?MRT.*(in progress|statusCategory)/i, [
+    'project = MRT AND status = "In Progress"',
+    'project = MRT AND statusCategory = "In Progress"',
+  ]),
+  listTask("list-dsk-open", "test", "Can I see the open tickets of the DSK project?", /project\s*=\s*"?DSK/i, ["project = DSK AND statusCategory != Done"]),
+  listTask("list-web-bugs", "train", "List the open bugs in WEB.", /(issuetype|type)\s*=\s*"?bug/i, ["project = WEB AND issuetype = Bug AND statusCategory != Done"]),
+  listTask("list-marco", "val", "Show me the issues assigned to Marco Bianchi that are still open.", new RegExp(`marco bianchi|${ACCOUNTS.marco}`, "i"), [
+    'assignee = "Marco Bianchi" AND statusCategory != Done',
+  ]),
+  // Open or not, both readings are right: OPS-7 is a Highest that's done.
+  listTask("list-ops-highest", "test", "Show me the OPS issues whose priority is Highest.", /priority\s*(=|in)\s*\(?["']?highest/i, [
+    "project = OPS AND priority = Highest",
+    "project = OPS AND priority = Highest AND statusCategory != Done",
+  ]),
 
   // Counts: an answer, no list.
   countTask("count-web-open", "train", "How many open issues are there in WEB?", /project\s*=\s*"?WEB/i, 8),

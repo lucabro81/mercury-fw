@@ -33,7 +33,7 @@
 import type { CliResult } from "@mercury-fw/plugin-types";
 import type { Fixture, FixtureCall } from "../../../../apps/skill-trainer/src/contract.ts";
 import { failure, page, printed } from "./jira-cli.ts";
-import { filterJql, type JqlIssue } from "./jql.ts";
+import { filterJql, type JqlContext, type JqlIssue } from "./jql.ts";
 
 /** "Now" for every date in the world and every `now()` in JQL. */
 export const NOW = new Date("2026-10-20T09:00:00Z");
@@ -140,6 +140,27 @@ export function makeWorld(): World {
     };
   });
   return { me: ACCOUNTS.sam, users: structuredClone(USERS), projects: structuredClone(PROJECTS), issues };
+}
+
+/** What a JQL query runs against in `world`: now, who's asking, and the values each field has. */
+export function jqlContext(world: World): JqlContext {
+  return {
+    now: NOW,
+    currentUser: world.me,
+    projects: world.projects.map((p) => p.key),
+    statuses: WORKFLOW.map((s) => s.name),
+    users: world.users,
+    issuetypes: ["Bug", "Task", "Story", "Epic", "Subtask"],
+    priorities: ["Highest", "High", "Medium", "Low", "Lowest"],
+  };
+}
+
+/** The keys a JQL query finds in a fresh world, in the order Jira lists them; throws when the query isn't one it answers. */
+export function keysFor(jql: string): string[] {
+  const world = makeWorld();
+  const found = filterJql(jql, world.issues, jqlContext(world));
+  if (!found.ok) throw new Error(`reference JQL not answered: ${jql}`);
+  return found.issues.map((i) => i.key);
 }
 
 /** An issue as Jira's API returns it. */
@@ -272,15 +293,7 @@ export function jiraFixtures(world: World): Fixture[] {
         const jql = value(call, "--jql");
         // --stale-days filters on `updated`, which the made-up issues don't have: a hole, not a guess.
         if (jql === undefined || call.flags["--stale-days"] !== undefined) return undefined;
-        const found = filterJql(jql, world.issues, {
-          now: NOW,
-          currentUser: world.me,
-          projects: world.projects.map((p) => p.key),
-          statuses: WORKFLOW.map((s) => s.name),
-          users: world.users,
-          issuetypes: ["Bug", "Task", "Story", "Epic", "Subtask"],
-          priorities: ["Highest", "High", "Medium", "Low", "Lowest"],
-        });
+        const found = filterJql(jql, world.issues, jqlContext(world));
         if (!found.ok && "error" in found) return failure(`Jira API returned status 400: ${JSON.stringify({ errorMessages: [found.error], errors: {} })}`);
         if (!found.ok) return undefined;
         const { issues, ...rest } = page(found.issues, call);

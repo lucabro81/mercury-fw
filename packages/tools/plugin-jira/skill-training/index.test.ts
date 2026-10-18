@@ -194,6 +194,20 @@ describe("the checks read what the model did, not how it typed it", () => {
     ).toContain("closes DSK-2");
   });
 
+  // From the fourth cold review: a list task checked one clause of the JQL,
+  // so a search that found the wrong issues passed.
+  test("a list task checks which issues the search found", () => {
+    const presentCall: Call = { tool: "present", input: { ref: "d1" }, output: {}, ok: true, pending: false };
+    const found = (keys: string[]) => ({ ok: true, data: { isLast: true, issues: keys.map((key) => ({ key })) } });
+    const allBugs = jira('jira issue search --jql "issuetype = Bug" --select issues.key,issues.fields.summary,issues.fields.status.name', found(["WEB-10", "WEB-7", "WEB-5", "WEB-3", "WEB-1"]));
+    expect(check("list-web-bugs", [{ calls: [readSkill, allBugs, presentCall], answer: "Here." }])).toContain("finds the issues asked for");
+    const webOpenBugs = jira(
+      'jira issue search --jql "project = WEB AND issuetype = Bug AND statusCategory != Done" --select issues.key,issues.fields.summary,issues.fields.status.name',
+      found(["WEB-10", "WEB-7", "WEB-5", "WEB-3"]),
+    );
+    expect(check("list-web-bugs", [{ calls: [readSkill, webOpenBugs, presentCall], answer: "Here." }])).toEqual([]);
+  });
+
   test("a wrong JQL still fails its check", () => {
     expect(check("wording-todo", [{ calls: [readSkill, jira('jira issue search --jql "project = WEB AND status = todo" --select issues.key')], answer: "5" }])).toEqual([
       "searches the status by its Jira name, or reads the statuses",
