@@ -1,5 +1,23 @@
 # @mercury-fw/core
 
+## 0.52.0
+
+### Minor Changes
+
+- 678c1cc: - A plugin gets a folder of its own on the vault's volume, `PluginRuntimeContext.dataDir` (`<vault>/.mercury/plugins/<name>/`), created by the core before `build()`: data it keeps there survives a restart, and never reaches the model or the wiki.
+  - A plugin whose name isn't a safe folder name, or whose folder can't be created, gets none (the core logs why) and loads anyway.
+- 7939ff2: - `@mercury-fw/core` exports `OPERATOR_PRINCIPAL`, the terminal's principal, for a caller that drives `handleTurn` itself as the operator.
+  - `@mercury-fw/cli/e2e` exports `turnFromDump` and `createExpect`, so a tool running Mercury turns of its own reads and checks them the way `mfw e2e` does.
+
+### Patch Changes
+
+- Updated dependencies [678c1cc]
+  - @mercury-fw/plugin-types@0.52.0
+  - @mercury-fw/cli-engine@0.52.0
+  - @mercury-fw/confirm-engine@0.52.0
+  - @mercury-fw/channel-types@0.52.0
+  - @mercury-fw/utils@0.52.0
+
 ## 0.51.0
 
 ### Minor Changes

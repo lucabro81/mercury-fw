@@ -1,5 +1,19 @@
 # @mercury-fw/cli
 
+## 0.52.0
+
+### Minor Changes
+
+- 7939ff2: - `@mercury-fw/core` exports `OPERATOR_PRINCIPAL`, the terminal's principal, for a caller that drives `handleTurn` itself as the operator.
+  - `@mercury-fw/cli/e2e` exports `turnFromDump` and `createExpect`, so a tool running Mercury turns of its own reads and checks them the way `mfw e2e` does.
+
+### Patch Changes
+
+- Updated dependencies [678c1cc]
+- Updated dependencies [7939ff2]
+  - @mercury-fw/core@0.52.0
+  - @mercury-fw/utils@0.52.0
+
 ## 0.51.0
 
 ### Patch Changes
