@@ -9,6 +9,7 @@ import { formatter, formatterPlugin } from "../../../formatters/formatter/index.
 import type { JiraDisplays } from "../index.ts";
 import { createJiraPlugin } from "../plugin.ts";
 import { BASIC_TASKS } from "./tasks-basic.ts";
+import { HARD_TASKS } from "./tasks-hard.ts";
 import { jiraFixtures, makeWorld } from "./world.ts";
 
 /** One issue in a list, as `mfw create` writes the rule into a new app: without
@@ -19,6 +20,6 @@ export default {
   skill: "jira",
   plugin: (runCliFn) => formatterPlugin(createJiraPlugin({ runCliFn }), formatter<JiraDisplays>({ "issue-list": { item: jiraIssueLine, empty: "No matching issues." } })),
   fixtures: () => jiraFixtures(makeWorld()),
-  tasks: [...BASIC_TASKS],
+  tasks: [...BASIC_TASKS, ...HARD_TASKS],
 } satisfies SkillTraining;
 
