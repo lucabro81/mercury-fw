@@ -1,9 +1,10 @@
 /**
  * Builds a turn's plugin tools from what the person is offered (see
  * `offering.ts`): each plugin's own tool factory, invoked for the person when
- * it acts as them, with no person when it acts as Mercury. Acting as Mercury
- * for someone (not the operator), the tools say so and log who asked (see
- * `act-as-self.ts`); only a tool acting as the person can start their login.
+ * it acts as them or as no one, with no person when it acts as Mercury. Acting
+ * as Mercury for someone (not the operator), the tools say so and log who
+ * asked (see `act-as-self.ts`); only a tool acting as the person can start
+ * their login.
  */
 import type { Tool } from "ai";
 import type { LoginRequired, PersonLogin, SessionToolContext } from "@mercury-fw/plugin-types";

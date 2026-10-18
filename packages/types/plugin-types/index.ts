@@ -362,10 +362,9 @@ export type PluginSurface = {
  *   service, no login): offered to everyone, and its tools still get the
  *   turn's `person`, to keep what belongs to them; an older core reads it as
  *   `"mercury"`. Undeclared counts as `"mercury"`. A
- *   `"mercury"` plugin is offered to people only once they hold the
- *   permission to make Mercury act as itself, which doesn't exist yet: until
- *   then it's offered on the terminal only, where its prompt fragment, skills
- *   and tools stay.
+ *   `"mercury"` plugin is offered to people only when they hold the
+ *   permission to make Mercury act as itself (`mercury.act-as-self`, or
+ *   `mercury.act-as-self.<plugin>`), and on the terminal.
  *
  * A plugin no longer carries a raw `cliConfig`: the core knows nothing about
  * CLIs. A CLI-based plugin owns its allowlist and, using `@mercury-fw/cli-engine`,
