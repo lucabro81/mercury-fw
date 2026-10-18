@@ -6,6 +6,7 @@
  * arguments and the facts the answer has to carry, never at its wording.
  * Values follow from world.ts: change a seed there and the counts here move.
  */
+import { parseCommand } from "@mercury-fw/cli-engine";
 import type { Call, Expect, Run, SkillTraining, Split, TrainingTask } from "../../../../apps/skill-trainer/src/contract.ts";
 import { formatter, formatterPlugin } from "../../../formatters/formatter/index.ts";
 import type { JiraDisplays } from "../index.ts";
@@ -17,14 +18,28 @@ const cmd = (c: Call) => String((c.input as { command?: unknown }).command ?? ""
 const calls = (run: Run) => run.turns.flatMap((t) => t.calls);
 const jiraCalls = (run: Run, sub: string) => calls(run).filter((c) => c.tool === "jiraCommand" && cmd(c).includes(sub));
 
+/** A call's JQL, tokenized the way Mercury tokenizes the command (quotes and escapes resolved). */
+function jqlOf(c: Call): string {
+  const parsed = parseCommand(cmd(c));
+  if (!parsed.ok) return "";
+  const at = parsed.args.indexOf("--jql");
+  if (at !== -1) return parsed.args[at + 1] ?? "";
+  return parsed.args.find((a) => a.startsWith("--jql="))?.slice("--jql=".length) ?? "";
+}
+
+/** Small numbers as a model may write them out. */
+const WORDS = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve"];
+
 /** The reads the CLI refuses without `--select`. */
 const READS = ["issue search", "issue get", "user search", "project search"];
 
 /** The checks most tasks share. */
 const checks = {
   loadsSkill: (e: Expect) => e.call("read_skill", (c) => (c.input as { name?: string }).name === "jira", "loads the jira skill"),
-  /** A search that worked whose command matches `pattern`. */
-  searched: (e: Expect, pattern: RegExp, label: string) => e.call("jiraCommand", (c) => c.ok && cmd(c).includes("issue search") && pattern.test(cmd(c)), label),
+  /** A search that worked whose JQL matches `pattern`. */
+  searched: (e: Expect, pattern: RegExp, label: string) => e.call("jiraCommand", (c) => c.ok && cmd(c).includes("issue search") && pattern.test(jqlOf(c)), label),
+  /** A search that worked whose command line (its flags beyond the JQL) matches `pattern`. */
+  searchedWith: (e: Expect, pattern: RegExp, label: string) => e.call("jiraCommand", (c) => c.ok && cmd(c).includes("issue search") && pattern.test(cmd(c)), label),
   /** Every read went out with `--select` (or `--select-all`). */
   selects: (e: Expect, run: Run) =>
     e.that(
@@ -33,8 +48,8 @@ const checks = {
     ),
   presented: (e: Expect) => e.call("present", (c) => c.ok, "shows the list with present"),
   notPresented: (e: Expect) => e.callCount({ max: 0 }, "present", "doesn't show a list it wasn't asked for"),
-  /** The answer has `n` as a number of its own. */
-  number: (e: Expect, n: number) => e.answer(new RegExp(`\\b${n}\\b`), `the answer says ${n}`),
+  /** The answer has `n` as a number of its own, in figures or (up to twelve) in words. */
+  number: (e: Expect, n: number) => e.answer(new RegExp(`\\b(${n}${WORDS[n] ? `|${WORDS[n]}` : ""})\\b`, "i"), `the answer says ${n}`),
 };
 
 const task = (id: string, split: Split, taskType: string, turn: string | TrainingTask["turns"], check: (run: Run, e: Expect) => void): TrainingTask => ({
@@ -50,7 +65,7 @@ const listTask = (id: string, split: Split, turn: string, jql: RegExp) =>
   task(id, split, "list", turn, (run, e) => {
     checks.loadsSkill(e);
     checks.searched(e, jql, "searches the right issues");
-    checks.searched(e, /issues\.key/, "selects the list's paths");
+    checks.searchedWith(e, /--select[ =]\S*issues\.key/, "selects the list's paths");
     checks.presented(e);
     checks.selects(e, run);
   });
@@ -107,7 +122,7 @@ const dateTask = (id: string, split: Split, turn: string, keys: string[]) =>
   task(id, split, "relative-date", turn, (run, e) => {
     checks.loadsSkill(e);
     checks.searched(e, /now\(\)|[-+]?\d+[dwh]\b/, "uses JQL's relative dates");
-    e.that("doesn't write a computed date", !jiraCalls(run, "issue search").some((c) => /\d{4}-\d{2}-\d{2}/.test(cmd(c))));
+    e.that("doesn't write a computed date", !jiraCalls(run, "issue search").some((c) => /\d{4}-\d{2}-\d{2}/.test(jqlOf(c))));
     for (const key of keys) e.answer(key);
     checks.selects(e, run);
   });
@@ -120,7 +135,7 @@ const tasks: TrainingTask[] = [
   listTask("list-dsk-open", "test", "Can I see the open tickets of the DSK project?", /project\s*=\s*"?DSK/i),
   listTask("list-web-bugs", "train", "List the open bugs in WEB.", /(issuetype|type)\s*=\s*"?bug/i),
   listTask("list-marco", "val", "Show me the issues assigned to Marco Bianchi that are still open.", new RegExp(`marco bianchi|${ACCOUNTS.marco}`, "i")),
-  listTask("list-ops-highest", "test", "Show me the highest priority issues in OPS.", /priority\s*=\s*"?highest/i),
+  listTask("list-ops-highest", "test", "Show me the OPS issues whose priority is Highest.", /priority\s*(=|in)\s*\(?["']?highest/i),
 
   // Counts: an answer, no list.
   countTask("count-web-open", "train", "How many open issues are there in WEB?", /project\s*=\s*"?WEB/i, 8),
@@ -133,7 +148,7 @@ const tasks: TrainingTask[] = [
   // Counting past one page: every page's issues added up.
   task("count-log-paged", "train", "count", "How many open issues are there in LOG?", (run, e) => {
     checks.loadsSkill(e);
-    checks.searched(e, /--page-token/, "asks for the next page");
+    checks.searchedWith(e, /--page-token/, "asks for the next page");
     checks.number(e, 120);
     checks.notPresented(e);
   }),
@@ -260,8 +275,8 @@ const tasks: TrainingTask[] = [
   }),
 
   // A status worded the way people say it.
-  wordingTask("wording-todo", "train", "How many WEB issues are todo?", /status\s*=\s*"to do"|status\s*=\s*'to do'|statusCategory\s*=\s*"?to do/i, 5),
-  wordingTask("wording-review", "val", "How many tickets are waiting for review in WEB?", /status\s*=\s*"in review"/i, 1),
+  wordingTask("wording-todo", "train", "How many WEB issues are todo?", /status\s*=\s*["']to do["']|statusCategory\s*=\s*["']?to do/i, 5),
+  wordingTask("wording-review", "val", "How many tickets are waiting for review in WEB?", /status\s*=\s*["']in review["']/i, 1),
   wordingTask("wording-progress", "test", "How many OPS issues have the status in progres?", /status\s*=\s*["']in progress["']/i, 2),
 
   // Dates relative to today.
@@ -308,8 +323,9 @@ const tasks: TrainingTask[] = [
   task("followup-requery-filter", "train", "follow-up", ["Show me the open issues in WEB.", "Which of those are Marco's?"], (run, e) => {
     checks.loadsSkill(e);
     const second = run.turns[1]?.calls ?? [];
-    e.that("filters by searching again, with Marco in the JQL", second.some((c) => c.ok && cmd(c).includes("issue search") && /marco/i.test(cmd(c))));
-    e.answer("WEB-8");
+    // "Marco" alone isn't a value Jira takes for assignee: the full name or the accountId is.
+    e.that("filters by searching again, with Marco in the JQL", second.some((c) => c.ok && cmd(c).includes("issue search") && new RegExp(`marco bianchi|${ACCOUNTS.marco}`, "i").test(jqlOf(c))));
+    e.that("names WEB-8, or shows the filtered list", run.last.answer.includes("WEB-8") || second.some((c) => c.tool === "present" && c.ok));
   }),
   task("followup-requery-state", "val", "follow-up", ["Show me the open issues in OPS.", "Move OPS-4 to In Progress.", "Is OPS-4 still To Do?"], (run, e) => {
     const third = run.turns[2]?.calls ?? [];
