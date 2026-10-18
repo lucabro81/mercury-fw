@@ -4,9 +4,6 @@
   "private": true,
   "type": "module",
   "license": "MIT",
-  "bin": {
-    "skill-trainer": "src/bin.ts"
-  },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "bun test src"

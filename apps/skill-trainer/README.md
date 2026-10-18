@@ -30,7 +30,7 @@ bun src/bin.ts run jira --task open-issues-count --skill /tmp/candidate.md
 bun src/bin.ts run jira --json /tmp/results.json
 ```
 
-`run` sends every task of the plugin (or those of `--split`, or those named by `--task`, in that order) once, prints each task's checks and the commands no fixture answered, then the scores. `--skill` swaps in a candidate: its body alone, or a whole `SKILL.md` whose name and description are the skill's own (the description isn't trained, since it decides whether the model loads the skill at all, so a candidate with another one is refused). `--json` also writes the results to a file, turns and calls included; it's a file and not stdout because the core logs there too.
+`run` sends every task of the plugin (or those of `--split`, or those named by `--task`, in that order) once, prints each task's checks and the commands no fixture answered, then the scores. `--skill` swaps in a candidate: its body alone, or a whole `SKILL.md` whose name and description are the skill's own (the description isn't trained, since it decides whether the model loads the skill at all, so a candidate with another one is refused). `--json` also writes the results to a file, turns and calls included; it's a file and not stdout because the core logs there too. The file is emptied before anything runs and rewritten as each task ends, so a run cut short keeps the tasks it finished.
 
 The process runs with a throwaway home folder, so composing Mercury never links anything into yours, and each task gets a fresh conversation on a throwaway vault, removed when the task ends (a run interrupted with Ctrl-C leaves both in the system's temp folder).
 
@@ -41,6 +41,8 @@ It exits 1 when a task couldn't run at all: a plugin that didn't load (the core 
 A turn runs as the operator (the terminal's principal) in a one-to-one conversation, which gets every plugin acting as Mercury under its own tool names. A person on a channel gets the plugin acting as them, and in a shared space the multi-user prompt, so the context the skill is scored in is close to production but not identical.
 
 The rest of the turn is the real one, post-turn work included: the tool corrections still run after a turn with a failed call (a model call of their own, and a write to Qdrant that fails against `QDRANT_URL`), and so does the plugin's post-processing (Jira's issue lists).
+
+Confirmations aren't part of a run. On the terminal a pasted token goes to the confirm store before the model sees it; here every turn goes to the model. A task about an irreversible command ends where the skill's part ends: the command staged (a `pending` call) and the token kept out of the answer.
 
 A turn's answer is the model's text, as in `mfw e2e`: a list the model shows with `present` is appended to the reply but isn't part of the answer, so check the `present` call rather than the list in the answer.
 
@@ -71,7 +73,7 @@ A fixture answers one command, matched on the parsed argv and not on the line, b
 
 A command no fixture answers fails the way a CLI fails an unknown command (exit code 2), and the report lists it. A run with unmatched commands says more about the fixtures than about the skill, so fill those holes before reading the scores.
 
-The matcher knows no CLI's schema, so it reads an argv by shape: a token starting with `--` is a flag, the token after it is its value unless it's a flag itself, anything else is a positional. So a valueless flag followed by a positional takes it as its value (`--unassign KAN-4`), a short flag (`-p`) counts as a positional, a repeated flag keeps its last value, and a global flag before the subcommand breaks the `command` match. When a command the model wrote reasonably shows up as unmatched for one of these, write the fixture around it (match the positional through the flag's value, say) instead of reading it as the model's mistake.
+The matcher knows no CLI's schema, so it reads an argv by shape: a token starting with `--` (or `-` and a letter) is a flag, the token after it is its value unless it's a flag itself, anything else is a positional. A flag that takes no value goes in the fixture's `switches` (`switches: ["--unassign"]`), or `--unassign KAN-4` reads KAN-4 as its value. A repeated flag keeps its last value, and a global flag before the subcommand breaks the `command` match. When a command the model wrote reasonably shows up as unmatched for one of these, fix the fixture instead of reading it as the model's mistake. Each answer is a fresh copy of the fixture's `result`, so nothing a turn does to it reaches the next task.
 
 ## Tasks and scores
 
