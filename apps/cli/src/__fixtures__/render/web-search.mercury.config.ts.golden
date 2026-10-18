@@ -18,7 +18,7 @@ export default defineMercuryConfig({
   persona: { name: "Mercury", identity, tone },
   plugins: [
     webSearchPlugin({
-      backend: searxngBackend({ url: process.env.SEARXNG_URL ?? "http://searxng:8080" }),
+      backend: searxngBackend({ url: process.env.SEARXNG_URL || "http://searxng:8080" }),
       // Hosts whose pages anyone may read without being asked; each covers its subdomains.
       allowedHosts: [],
     }),

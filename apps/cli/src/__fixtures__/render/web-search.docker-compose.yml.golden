@@ -30,7 +30,8 @@ services:
     image: searxng/searxng:latest
     restart: unless-stopped
     environment:
-      SEARXNG_SECRET: ${SEARXNG_SECRET:-}
+      # SearXNG exits on its default key: without one, compose says so instead.
+      SEARXNG_SECRET: ${SEARXNG_SECRET:?set SEARXNG_SECRET in .env (see .env.example)}
     volumes:
       - ./searxng/settings.yml:/etc/searxng/settings.yml:ro
 

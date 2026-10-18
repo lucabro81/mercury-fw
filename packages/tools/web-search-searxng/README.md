@@ -8,7 +8,7 @@ SearXNG is a metasearch engine you run yourself: it asks the search engines it's
 import { webSearchPlugin } from "@mercury-fw/plugin-web-search";
 import { searxngBackend } from "@mercury-fw/web-search-searxng";
 
-webSearchPlugin({ backend: searxngBackend({ url: process.env.SEARXNG_URL ?? "http://searxng:8080" }) });
+webSearchPlugin({ backend: searxngBackend({ url: process.env.SEARXNG_URL || "http://searxng:8080" }) });
 ```
 
 ## The instance
@@ -23,7 +23,8 @@ An app created before that adds it by hand. The service goes under `services:` i
     image: searxng/searxng:latest
     restart: unless-stopped
     environment:
-      SEARXNG_SECRET: ${SEARXNG_SECRET:-}
+      # SearXNG exits on its default key: without one, compose says so instead.
+      SEARXNG_SECRET: ${SEARXNG_SECRET:?set SEARXNG_SECRET in .env (see .env.example)}
     volumes:
       - ./searxng/settings.yml:/etc/searxng/settings.yml:ro
 ```

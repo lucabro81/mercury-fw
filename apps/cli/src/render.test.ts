@@ -457,6 +457,18 @@ describe("renderApp: web search", () => {
     expect(env).toContain("\nSEARXNG_SECRET=\n");
   });
 
+  // Cold review of #194: an empty secret let SearXNG start with its default
+  // key and exit, restarting forever, while every search said "can't be reached".
+  test("the compose file refuses to start SearXNG without its secret, saying where to set it", () => {
+    expect(renderApp(WEB).get("docker-compose.yml")).toContain(
+      "      SEARXNG_SECRET: ${SEARXNG_SECRET:?set SEARXNG_SECRET in .env (see .env.example)}\n",
+    );
+  });
+
+  test("an empty SEARXNG_URL falls back to the compose service too", () => {
+    expect(renderApp(WEB).get("mercury.config.ts")).toContain('searxngBackend({ url: process.env.SEARXNG_URL || "http://searxng:8080" })');
+  });
+
   test("without web search: no SearXNG service and no settings file", () => {
     expect(renderApp(FULL).get("docker-compose.yml")).not.toContain("searxng");
     expect(renderApp(FULL).has("searxng/settings.yml")).toBe(false);

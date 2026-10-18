@@ -161,7 +161,7 @@ export const CATALOG: CatalogEntry[] = [
     build: {
       expression: [
         "    webSearchPlugin({",
-        '      backend: searxngBackend({ url: process.env.SEARXNG_URL ?? "http://searxng:8080" }),',
+        '      backend: searxngBackend({ url: process.env.SEARXNG_URL || "http://searxng:8080" }),',
         "      // Hosts whose pages anyone may read without being asked; each covers its subdomains.",
         "      allowedHosts: [],",
         "    })",
@@ -176,7 +176,8 @@ export const CATALOG: CatalogEntry[] = [
         "    image: searxng/searxng:latest",
         "    restart: unless-stopped",
         "    environment:",
-        "      SEARXNG_SECRET: ${SEARXNG_SECRET:-}",
+        "      # SearXNG exits on its default key: without one, compose says so instead.",
+        "      SEARXNG_SECRET: ${SEARXNG_SECRET:?set SEARXNG_SECRET in .env (see .env.example)}",
         "    volumes:",
         "      - ./searxng/settings.yml:/etc/searxng/settings.yml:ro",
       ],
