@@ -6,7 +6,14 @@
  * matched to nothing, and a value of several words needs quotes. A clause it
  * doesn't know is reported, never guessed: the fixture then answers it as a
  * hole in the training data, not as a result the model would be blamed for.
- * The value errors are Jira's wording; the syntax errors follow its format.
+ *
+ * What's known to differ from Jira, none of it reached by a task's answer:
+ * `summary ~` matches a substring (Jira matches stemmed words, so "log"
+ * doesn't find "login" there); `created = <date>` compares timestamps, so a
+ * bare day never matches; the reserved characters checked are a subset of
+ * Jira's (not `.`, `,`, `/`); ORDER BY is found without regard to quotes. The
+ * value errors are Jira's wording, the syntax errors follow its format; none
+ * was recorded from a real instance.
  */
 
 /** An issue as the evaluator reads it. */
@@ -200,6 +207,9 @@ function parseCondition(s: string, at: number, ctx: JqlContext, keys: Set<string
 
 type Predicate = (i: JqlIssue) => boolean;
 
+/** An issue's resolution in the made-up Jira: Done once its status is in the Done category, none before. */
+const resolutionOf = (i: JqlIssue): string | null => (i.statusCategory === "Done" ? "Done" : null);
+
 /** The test `clause` puts on an issue, Jira's error for a value its field doesn't have, or undefined when the evaluator doesn't know the clause. */
 function predicate(clause: string, ctx: JqlContext, keys: Set<string>): Predicate | { error: string } | undefined {
   const match = CLAUSE.exec(clause.trim());
@@ -220,6 +230,7 @@ function predicate(clause: string, ctx: JqlContext, keys: Set<string>): Predicat
     priority: (i) => i.priority ?? null,
     issuetype: (i) => i.issuetype ?? null,
     type: (i) => i.issuetype ?? null,
+    resolution: (i) => resolutionOf(i),
   };
   const get = emptiable[field.toLowerCase()];
   if (value === "empty" || value === "null") {
@@ -249,12 +260,16 @@ function predicate(clause: string, ctx: JqlContext, keys: Set<string>): Predicat
       const user = ctx.users.find((u) => u.displayName.toLowerCase() === value || u.accountId.toLowerCase() === value);
       return user ? negate((i) => i.assignee?.accountId === user.accountId) : missing;
     }
+    case "resolution":
+      // Unresolved is how JQL names the empty resolution.
+      if (value === "unresolved") return negate((i) => resolutionOf(i) === null);
+      return among(["Done"], (i) => eq(resolutionOf(i) ?? undefined));
     case "summary":
       return op === "~" ? (i) => i.summary.toLowerCase().includes(value) : undefined;
     case "duedate":
     case "created": {
-      // A due date is a day, compared as its midnight: `duedate < now()` takes in what's due
-      // today, as in Jira (which is what `startOfDay()` is there for).
+      // A due date is a day, taken here as its midnight, so `duedate < now()` takes in what's due
+      // today. Not checked against a real Jira: the tasks whose answer depends on it accept both readings.
       const at = (i: JqlIssue) => (field.toLowerCase() === "duedate" ? i.duedate : i.created);
       const bound = dateOf(raw, ctx.now);
       if (typeof bound === "object") return bound;

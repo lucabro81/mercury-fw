@@ -94,6 +94,14 @@ describe("filterJql", () => {
     expect(keys("project = KAN ORDER BY updated DESC")).toEqual({ ok: false, unsupported: "ORDER BY updated DESC" });
   });
 
+  test("resolution: Unresolved for what isn't done, Done for what is", () => {
+    expect(keys("project = KAN AND resolution = Unresolved")).toEqual(["KAN-2", "KAN-1"]);
+    expect(keys("project = KAN AND resolution is EMPTY")).toEqual(["KAN-2", "KAN-1"]);
+    expect(keys("project = KAN AND resolution = Done")).toEqual(["KAN-3"]);
+    expect(keys("project = KAN AND resolution != Unresolved")).toEqual(["KAN-3"]);
+    expect(keys("resolution = Fixed")).toEqual({ ok: false, error: "The value 'Fixed' does not exist for the field 'resolution'." });
+  });
+
   test("= EMPTY and != EMPTY, as Jira takes them besides is EMPTY", () => {
     expect(keys("project = KAN AND assignee = EMPTY")).toEqual(["KAN-3"]);
     expect(keys("project = KAN AND assignee != EMPTY")).toEqual(["KAN-2", "KAN-1"]);

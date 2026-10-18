@@ -2,8 +2,33 @@
  * The made-up Jira the skill is trained on, and the fixtures answering the
  * jira CLI from it. Every task gets a fresh world (`makeWorld`), so what one
  * task writes (a transition, an assignment, a new issue) a later turn of that
- * task sees and no other task does. Names, keys and texts are invented; the
- * shapes are the real CLI's (see jira-cli.ts).
+ * task sees and no other task does. Names, keys and texts are invented.
+ *
+ * What the answers are modelled on, command by command. Recorded means the
+ * real CLI (2.3.2) printed that shape against a real Jira:
+ *
+ * - recorded: a search (`isLast`, `issues`, `nextPageToken` only while more
+ *   follow, an empty result as `{isLast: true, issues: []}`), its `--select`
+ *   projection and both refusals (see jira-cli.ts); `issue get` with
+ *   `browse_url` and nulls kept; `issue transitions` (its fields; that every
+ *   status is a transition from every other is this world's workflow);
+ *   `issue transition`, its success and its "not found … Available
+ *   transitions" failure; `issue assign`, assigned and unassigned; `issue
+ *   comment add` (the author is the account the CLI acts as, Mercury here);
+ *   `issue create`; `user search` (a top-level array, `[{}]` for a path that
+ *   isn't there); `project search`; the help texts, trimmed; a 403 as
+ *   `Jira API returned status 403: …`;
+ * - reconstructed: the 404 and 400 texts (Jira's usual wording, including
+ *   "cannot be assigned issues" for a deactivated person), the usage errors
+ *   (clap's format), the page token (opaque, here base64 of an offset), user
+ *   search matching the start of a word and project search any part of the
+ *   key or name, `--fields` accepted with no effect on the answer.
+ *
+ * `currentUser()` is Sam, the person talking: in Mercury the CLI runs with
+ * `--user` for them, which is what the skill teaches. The CLI's own help says
+ * the opposite (that it's the account the CLI acts as, the service account
+ * without `--user`), and it's kept as recorded: a model reading it meets the
+ * same two statements it would in production.
  */
 import type { CliResult } from "@mercury-fw/plugin-types";
 import type { Fixture, FixtureCall } from "../../../../apps/skill-trainer/src/contract.ts";
