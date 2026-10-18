@@ -59,3 +59,23 @@ describe("offeringFor", () => {
     expect(offeringFor(plugins, person([ACT_AS_SELF])).signature).not.toBe(offeringFor(plugins, { roles: [], operator: true }).signature);
   });
 });
+
+describe("offeringFor: a plugin that acts as no one", () => {
+  const search: LoadedPlugin = { name: "web-search", actsAs: "anyone", promptFragment: "SEARCH", skills: [] };
+
+  test("is offered to everyone, as no one, with no variant acting as Mercury", () => {
+    expect(shape(offeringFor([search], person()))).toEqual(["web-search:anyone"]);
+    expect(shape(offeringFor([search], person([ACT_AS_SELF])))).toEqual(["web-search:anyone"]);
+    expect(shape(offeringFor([search], person([`${ACT_AS_SELF}.web-search`])))).toEqual(["web-search:anyone"]);
+  });
+
+  test("the operator gets it as no one too, under its own name", () => {
+    expect(shape(offeringFor([search], { roles: [], operator: true }))).toEqual(["web-search:anyone"]);
+  });
+
+  test("the installer's restriction still applies to it", () => {
+    const access = { "web-search": { roles: ["researcher"] } };
+    expect(shape(offeringFor([search], person(), access))).toEqual([]);
+    expect(shape(offeringFor([search], person(["researcher"]), access))).toEqual(["web-search:anyone"]);
+  });
+});

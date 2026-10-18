@@ -27,10 +27,11 @@ export function buildOfferedTools(offering: Offering, who: TurnWho, deps: Offere
     const { bundle } = entry.plugin;
     if (bundle === undefined) continue;
     hasCliTool = true;
-    const person = entry.as === "person" ? { key: who.person.key } : null;
+    // A plugin acting as no one still learns whom the turn is for, to keep what's theirs.
+    const person = entry.as === "person" || entry.as === "anyone" ? { key: who.person.key } : null;
     const { login } = bundle;
     const requireLogin = async (): Promise<LoginRequired> =>
-      person && login
+      person && login && entry.as === "person"
         ? deps.requireLogin(bundle.name, login, person.key)
         : { ok: false, error: `${bundle.name} says the user isn't logged in, and it has no way to log anyone in.` };
     const built = bundle.build({ ...deps.context, person, requireLogin }, bundle.postProcess);

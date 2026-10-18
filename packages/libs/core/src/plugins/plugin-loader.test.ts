@@ -376,3 +376,12 @@ describe("loadPlugins: a folder of its own for each plugin", () => {
     expect(logs.some((m) => m.startsWith(`plugin "web-search" gets no data folder: `))).toBe(true);
   });
 });
+
+describe("loadPlugins: a plugin that acts as no one", () => {
+  it("keeps actsAs anyone, logging nothing about Mercury acting as itself", async () => {
+    const logs: string[] = [];
+    const loaded = await loadPlugins([plug({ name: "web-search", actsAs: "anyone" })], baseCtx({ log: (m) => logs.push(m) }));
+    expect(loaded.plugins.map((p) => p.actsAs)).toEqual(["anyone"]);
+    expect(logs).toEqual([]);
+  });
+});

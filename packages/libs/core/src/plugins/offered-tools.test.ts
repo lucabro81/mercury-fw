@@ -99,3 +99,34 @@ describe("buildOfferedTools", () => {
     });
   });
 });
+
+describe("buildOfferedTools: a plugin that acts as no one", () => {
+  function setupAnyone(operator: boolean) {
+    const built: SessionToolContext[] = [];
+    const search = { ...plugin("search", "person", built), actsAs: "anyone" } as LoadedPlugin;
+    const who = { person: { key: operator ? "operator:terminal" : "people:alice", roles: [ACT_AS_SELF] }, operator };
+    const result = buildOfferedTools(offeringFor([search], { roles: [ACT_AS_SELF], operator }), who, {
+      context,
+      requireLogin: async () => ({ ok: false, error: "no channel" }),
+      log: () => {},
+    });
+    return { ...result, built };
+  }
+
+  test("its tools are built for the person the turn is for, under their own names, never described as Mercury", () => {
+    const { tools, built } = setupAnyone(false);
+    expect(Object.keys(tools)).toEqual(["searchCommand"]);
+    expect(built.map((c) => c.person)).toEqual([{ key: "people:alice" }]);
+    expect(tools.searchCommand?.description).toBe("search tool");
+  });
+
+  test("on the terminal its tools get the operator's key", () => {
+    const { built } = setupAnyone(true);
+    expect(built.map((c) => c.person)).toEqual([{ key: "operator:terminal" }]);
+  });
+
+  test("asking it for a login starts none", async () => {
+    const { built } = setupAnyone(false);
+    expect(await built[0]!.requireLogin()).toEqual({ ok: false, error: "search says the user isn't logged in, and it has no way to log anyone in." });
+  });
+});
