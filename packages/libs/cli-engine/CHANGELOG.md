@@ -1,5 +1,13 @@
 # @mercury-fw/cli-engine
 
+## 0.51.0
+
+### Patch Changes
+
+- Updated dependencies [b2f8cfb]
+  - @mercury-fw/plugin-types@0.51.0
+  - @mercury-fw/utils@0.51.0
+
 ## 0.50.4
 
 ### Patch Changes
