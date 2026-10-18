@@ -5,8 +5,9 @@
  * restart and never reaches the wiki. A file is replaced whole through a
  * temporary file and a rename, so a reader never sees half of one. What is
  * read back is checked again: a damaged file, or one that isn't a list of
- * hosts, counts as an empty list (and is set aside, as `<file>.corrupt-<time>`, before the next host is written), and
- * an entry that isn't an acceptable host is ignored. A file that can't be read
+ * hosts, counts as an empty list, and an entry that isn't an acceptable host
+ * is ignored; either way the file is set aside, as `<file>.corrupt-<time>`,
+ * before the next host is written. A file that can't be read
  * at all is never overwritten.
  */
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
@@ -48,11 +49,14 @@ export function createPersonalLists(dataDir: string): PersonalLists {
       if (strict) await rename(fileOf(personKey), `${fileOf(personKey)}.corrupt-${Date.now()}`);
       return [];
     }
-    return hosts.flatMap((h) => {
+    const valid = hosts.flatMap((h) => {
       if (typeof h !== "string") return [];
       const parsed = parseHostEntry(h);
       return parsed.ok ? [parsed.host] : [];
     });
+    // An entry that isn't a host any more (hand-edited, or a suffix refused since): kept aside, not dropped for good.
+    if (strict && valid.length < hosts.length) await rename(fileOf(personKey), `${fileOf(personKey)}.corrupt-${Date.now()}`);
+    return valid;
   }
 
   /** Reads, extends and replaces `personKey`'s file. */

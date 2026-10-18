@@ -56,6 +56,12 @@ The global Internet Domain Name System is documented in [RFC 1034].</pre>`;
     expect(page.text).toContain("The global Internet Domain Name System");
   });
 
+  it("reads a bare page even when a script in it mentions an <html> tag", () => {
+    const page = extractText("<p>real text</p><script>var a = '<html >';</script><p>more text</p>", "text/html", "https://x.test/", 100_000);
+    expect(page.text).toContain("real text");
+    expect(page.text).toContain("more text");
+  });
+
   it("collapses the whitespace of the text", () => {
     const page = extractText("<html><body><p>a\n\n\n   b</p>\n\n\n\n<p>c</p></body></html>", "text/html", "https://example.org/", 100_000);
     expect(page.text).not.toMatch(/\n{3,}/);

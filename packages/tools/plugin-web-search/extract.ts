@@ -43,9 +43,10 @@ export function extractText(body: string, contentType: string, url: string, maxC
   if (/^text\/plain\b/i.test(contentType)) {
     text = body;
   } else {
-    // Without an <html> tag linkedom takes the first element for the document
-    // and leaves the body empty: a bare page gets a document around it.
-    const html = /<html[\s>]/i.test(body) ? body : `<!doctype html><html><body>${body}</body></html>`;
+    // Without an <html> element linkedom takes the first element for the
+    // document and leaves the body empty: a bare page gets a document around it.
+    const bare = parseHTML(body).document.documentElement?.tagName !== "HTML";
+    const html = bare ? `<!doctype html><html><body>${body}</body></html>` : body;
     const { document } = parseHTML(html);
     const pageTitle = document.querySelector("title")?.textContent?.trim();
     const article = new Readability(document as unknown as ConstructorParameters<typeof Readability>[0]).parse();

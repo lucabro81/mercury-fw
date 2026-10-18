@@ -98,7 +98,7 @@ async function readCapped(response: Response, maxBytes: number): Promise<{ bytes
 
 /** The charset a content type names, if the decoder knows it; UTF-8 otherwise. */
 function decoderFor(contentType: string): TextDecoder {
-  const charset = /charset=([^;]+)/i.exec(contentType)?.[1]?.trim();
+  const charset = /charset=([^;]+)/i.exec(contentType)?.[1]?.trim().replace(/^"(.*)"$/, "$1");
   try {
     return new TextDecoder((charset ?? "utf-8") as ConstructorParameters<typeof TextDecoder>[0]);
   } catch {

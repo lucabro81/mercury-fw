@@ -89,6 +89,20 @@ describe("createPersonalLists", () => {
     expect(aside).toHaveLength(1);
   });
 
+  it("sets aside a file whose entries aren't all hosts any more, before writing", async () => {
+    const d = dir();
+    mkdirSync(join(d, "allowlist"));
+    const original = JSON.stringify({ hosts: ["bun.sh", "com"] });
+    writeFileSync(join(d, "allowlist", "people%3Aalice.json"), original);
+
+    await createPersonalLists(d).add("people:alice", "python.org");
+
+    const aside = readdirSync(join(d, "allowlist")).filter((f) => f.startsWith("people%3Aalice.json.corrupt-"));
+    expect(aside).toHaveLength(1);
+    expect(readFileSync(join(d, "allowlist", aside[0]!), "utf8")).toBe(original);
+    expect(await createPersonalLists(d).hostsOf("people:alice")).toEqual(["bun.sh", "python.org"]);
+  });
+
   it("keeps only well-formed host names read back from a file", async () => {
     const d = dir();
     mkdirSync(join(d, "allowlist"));

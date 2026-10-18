@@ -145,6 +145,12 @@ describe("readPage", () => {
     expect(await readPage("https://a.test/file.pdf", deps(fetchFn))).toEqual({ ok: false, error: "not a page: application/pdf" });
   });
 
+  it("reads a charset written between quotes", async () => {
+    const latin1 = new Uint8Array([0x63, 0x61, 0x66, 0xe9]); // "café" in ISO-8859-1
+    const { fetchFn } = web({ "https://a.test/l.txt": () => new Response(latin1, { headers: { "content-type": 'text/plain; charset="iso-8859-1"' } }) });
+    expect(await readPage("https://a.test/l.txt", deps(fetchFn))).toMatchObject({ ok: true, text: "café" });
+  });
+
   it("reads plain text", async () => {
     const { fetchFn } = web({ "https://a.test/a.txt": page("just text", "text/plain") });
     expect(await readPage("https://a.test/a.txt", deps(fetchFn))).toMatchObject({ ok: true, text: "just text" });
