@@ -23,4 +23,4 @@ export {
   type ConfirmDeps,
   type WriteConfirmationNote,
 } from "./confirm-flow.ts";
-export { createStageConfirmation, type StageConfirmation } from "./confirmation-staging.ts";
+export { createStageChoices, createStageConfirmation, type StageChoices, type StageConfirmation } from "./confirmation-staging.ts";

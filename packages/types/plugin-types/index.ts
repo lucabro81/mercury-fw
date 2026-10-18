@@ -98,6 +98,19 @@ export type StageConfirmation = (action: {
 }) => Promise<string>;
 
 /**
+ * Stages one action offered as several choices (e.g. "only this time" /
+ * "always for this host") and returns a token per choice, in order, each with
+ * its `label`. The person takes exactly one: the others die with it, and they
+ * all expire together. `describe` is the paper trail of the whole group; a
+ * choice with `resume` has its result handed back to the model (see
+ * `ResumeAs`) instead of shown to the person as is.
+ */
+export type StageChoices = (action: {
+  describe: string;
+  choices: Array<{ label: string; run: () => Promise<ActionResult>; resume?: ResumeAs }>;
+}) => Promise<Array<{ label: string; token: string }>>;
+
+/**
  * Minimal shape of a finished generation step — enough to see what tool was
  * called, with what input, and what came back. A subset of the AI SDK's
  * `StepResult`; function parameter types only need to be structurally

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "bun:test";
-import { createStageConfirmation } from "./confirmation-staging.ts";
+import { createStageChoices, createStageConfirmation } from "./confirmation-staging.ts";
 import { createConfirmationStore } from "./confirmation-store.ts";
 import type { WriteConfirmationNote } from "./confirm-flow.ts";
 
@@ -79,5 +79,83 @@ describe("createStageConfirmation", () => {
 
     expect(token).toBe("TOK1");
     expect(store.take("terminal", OWNER, "TOK1")?.describe).toBe("jira doctor --confirm");
+  });
+});
+
+describe("createStageChoices", () => {
+  function deps(writeConfirmationNoteFn: WriteConfirmationNote = noopWrite) {
+    let n = 0;
+    const store = createConfirmationStore({ tokenFn: () => `T${++n}` });
+    return {
+      store,
+      stage: createStageChoices({
+        store,
+        sessionKey: "s1",
+        owner: OWNER,
+        vaultPath: "/vault",
+        writeConfirmationNoteFn,
+        nowFn: () => new Date("2026-10-18T10:00:00Z"),
+      }),
+    };
+  }
+
+  it("returns a token per choice, in order, with its label, staged as one group", async () => {
+    const { store, stage } = deps();
+    const once = async () => ({ ok: true as const, data: "once" });
+    const always = async () => ({ ok: true as const, data: "always" });
+    const resume = { toolName: "web_fetch", input: { url: "https://example.org/a" } };
+
+    const choices = await stage({
+      describe: "fetch https://example.org/a",
+      choices: [
+        { label: "Solo questa volta", run: once, resume },
+        { label: "Sempre per example.org", run: always, resume },
+      ],
+    });
+
+    expect(choices).toEqual([
+      { label: "Solo questa volta", token: "T1" },
+      { label: "Sempre per example.org", token: "T2" },
+    ]);
+    const taken = store.take("s1", OWNER, "T2");
+    expect(taken?.run).toBe(always);
+    expect(taken?.label).toBe("Sempre per example.org");
+    expect(taken?.describe).toBe("fetch https://example.org/a");
+    expect(taken?.resume).toEqual(resume);
+    expect(taken?.requestedAt).toBe("2026-10-18T10:00:00.000Z");
+    // the other choice died with it
+    expect(store.take("s1", OWNER, "T1")).toBeNull();
+  });
+
+  it("writes one pending note for the whole group, under its first token", async () => {
+    const writes: Array<{ token: string; fields: unknown }> = [];
+    const { stage } = deps(async (_vault, _owner, token, fields) => {
+      writes.push({ token, fields });
+    });
+
+    await stage({
+      describe: "fetch https://example.org/a",
+      choices: [
+        { label: "Solo questa volta", run: async () => ({ ok: true, data: null }) },
+        { label: "Sempre per example.org", run: async () => ({ ok: true, data: null }) },
+      ],
+    });
+
+    expect(writes).toEqual([
+      {
+        token: "T1",
+        fields: { status: "pending", requestedAt: "2026-10-18T10:00:00.000Z", resolvedAt: null, command: "fetch https://example.org/a" },
+      },
+    ]);
+  });
+
+  it("still returns the tokens when the note can't be written", async () => {
+    const { stage } = deps(async () => {
+      throw new Error("disk full");
+    });
+
+    const choices = await stage({ describe: "x", choices: [{ label: "A", run: async () => ({ ok: true, data: null }) }] });
+
+    expect(choices).toEqual([{ label: "A", token: "T1" }]);
   });
 });
