@@ -48,9 +48,10 @@
  * since it's a live UI-only surface, not something the model should ever
  * see reflected back at it on a later turn.
  */
-import { isStepCount, type LanguageModel, type StopCondition, type Tool } from "ai";
+import { isStepCount, type JSONValue, type LanguageModel, type ModelMessage, type StopCondition, type Tool } from "ai";
+import type { ResumedAction } from "@mercury-fw/confirm-engine";
 import { generateText, streamText } from "ai-sdk-ollama";
-import type { Message, SessionHistory } from "./history.ts";
+import type { SessionHistory } from "./history.ts";
 import type { StepInfo } from "./step-info.ts";
 import { detectPendingConfirmation } from "./pending-confirmation.ts";
 // The sentinel is a channel-side contract value (see `@mercury-fw/channel-types`);
@@ -103,7 +104,7 @@ function pendingConfirmationStop(): StopCondition<any> {
 /** The shape of the AI SDK call this module needs, injectable for tests. */
 type GenerateTextFn = (params: {
   model: LanguageModel;
-  messages: Message[];
+  messages: ModelMessage[];
   tools: Record<string, Tool>;
   instructions: string;
   onStepEnd?: (step: StepInfo) => void;
@@ -143,7 +144,7 @@ type StreamPart = {
 /** The shape of the AI SDK streaming call this module needs, injectable for tests. */
 type StreamTextFn = (params: {
   model: LanguageModel;
-  messages: Message[];
+  messages: ModelMessage[];
   tools: Record<string, Tool>;
   instructions: string;
   onStepEnd?: (step: StepInfo) => void;
@@ -192,7 +193,7 @@ type StreamTextFn = (params: {
  */
 export function buildGenerateTextParams(params: {
   model: LanguageModel;
-  messages: Message[];
+  messages: ModelMessage[];
   tools: Record<string, Tool>;
   instructions: string;
   onStepEnd?: (step: StepInfo) => void;
@@ -216,7 +217,7 @@ const defaultGenerateTextFn: GenerateTextFn = (params) =>
  */
 export function buildStreamTextParams(params: {
   model: LanguageModel;
-  messages: Message[];
+  messages: ModelMessage[];
   tools: Record<string, Tool>;
   instructions: string;
   onStepEnd?: (step: StepInfo) => void;
@@ -227,6 +228,27 @@ export function buildStreamTextParams(params: {
 
 /** Default production implementation: calls the real `streamText` from `ai-sdk-ollama`. */
 const defaultStreamTextFn: StreamTextFn = (params) => streamText(buildStreamTextParams(params));
+
+/**
+ * The confirmed action as the model sees it in a resumed turn: its own call to
+ * `toolName` and the result that came back, so the result stays in the tool
+ * role and is never mistaken for words of the person's. Never stored in the
+ * history, like any other tool result. A result that isn't JSON-shaped goes as
+ * `null`.
+ */
+function resumedMessages(resumed: ResumedAction): ModelMessage[] {
+  const toolCallId = `resumed-${crypto.randomUUID()}`;
+  let value: JSONValue = null;
+  try {
+    value = (JSON.parse(JSON.stringify(resumed.output ?? null)) as JSONValue) ?? null;
+  } catch {
+    value = null;
+  }
+  return [
+    { role: "assistant", content: [{ type: "tool-call", toolCallId, toolName: resumed.toolName, input: resumed.input }] },
+    { role: "tool", content: [{ type: "tool-result", toolCallId, toolName: resumed.toolName, output: { type: "json", value } }] },
+  ];
+}
 
 /**
  * Runs one turn: records `userInput`, generates a response with the
@@ -318,16 +340,22 @@ export async function runTurn(
      * promptly instead of running to completion (see the HTTP surface's
      * client-disconnect cancellation). Optional; existing callers pass none. */
     abortSignal?: AbortSignal;
+    /** Set when the turn resumes after a confirmed action: the model gets
+     * that action back as a tool call and its result, after the history. */
+    resumed?: ResumedAction;
   },
 ): Promise<string> {
   await history.addUserMessage(userInput);
+  const messages: ModelMessage[] = deps.resumed
+    ? [...history.getMessages(), ...resumedMessages(deps.resumed)]
+    : history.getMessages();
 
   if (deps.onTextChunk || deps.onReasoningChunk) {
     const stream = deps.streamTextFn ?? defaultStreamTextFn;
     let lastStep: StepInfo | undefined;
     const result = await stream({
       model: deps.model,
-      messages: history.getMessages(),
+      messages,
       tools: deps.tools,
       instructions: deps.system,
       abortSignal: deps.abortSignal,
@@ -399,7 +427,7 @@ export async function runTurn(
   let lastStep: StepInfo | undefined;
   const result = await generate({
     model: deps.model,
-    messages: history.getMessages(),
+    messages,
     tools: deps.tools,
     instructions: deps.system,
     abortSignal: deps.abortSignal,
