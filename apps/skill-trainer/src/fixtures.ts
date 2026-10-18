@@ -7,7 +7,7 @@
  */
 import { basename } from "node:path";
 import type { CliResult } from "@mercury-fw/plugin-types";
-import type { Fixture, RunCli } from "./contract.ts";
+import type { Fixture, FixtureCall, RunCli } from "./contract.ts";
 
 /** The exit code of an unknown command, as CLIs built on clap use it. */
 const USAGE_EXIT_CODE = 2;
@@ -56,10 +56,10 @@ function meets(value: string | undefined, condition: string | RegExp): boolean {
   return condition.test(value);
 }
 
-/** Whether `fixture` answers `args`. */
-function matches(fixture: Fixture, args: string[]): boolean {
-  if (args.length < fixture.command.length) return false;
-  if (fixture.command.some((token, i) => args[i] !== token)) return false;
+/** `args` as `fixture` sees it when the fixture answers them, undefined otherwise. */
+function match(fixture: Fixture, args: string[]): FixtureCall | undefined {
+  if (args.length < fixture.command.length) return undefined;
+  if (fixture.command.some((token, i) => args[i] !== token)) return undefined;
   const { positionals, flags } = parse(args, fixture.command.length, fixture.switches ?? []);
   const positionalsOk = (fixture.args ?? []).every((condition, i) => meets(positionals[i], condition));
   const flagsOk = Object.entries(fixture.flags ?? {}).every(([name, condition]) => {
@@ -68,7 +68,7 @@ function matches(fixture: Fixture, args: string[]): boolean {
     if (condition === false) return value === undefined;
     return meets(typeof value === "string" ? value : undefined, condition);
   });
-  return positionalsOk && flagsOk;
+  return positionalsOk && flagsOk ? { args: [...args], positionals, flags: Object.fromEntries(flags) } : undefined;
 }
 
 /** A fake CLI answering from `fixtures`, first match first, and the commands
@@ -76,10 +76,13 @@ function matches(fixture: Fixture, args: string[]): boolean {
 export function createFakeCli(fixtures: Fixture[]): { run: RunCli; unmatched: () => string[][] } {
   const unmatched: string[][] = [];
   const run: RunCli = async (binary, args): Promise<CliResult> => {
-    const fixture = fixtures.find((f) => matches(f, args));
-    // A copy, as the real CLI parses a fresh one: what a post-processor
-    // does to it mustn't reach the next task sharing the fixture.
-    if (fixture) return structuredClone(fixture.result);
+    for (const fixture of fixtures) {
+      const call = match(fixture, args);
+      if (call === undefined) continue;
+      // A copy, as the real CLI parses a fresh one: what a post-processor
+      // does to it mustn't reach the next task sharing the fixture.
+      return structuredClone(typeof fixture.result === "function" ? fixture.result(call) : fixture.result);
+    }
     unmatched.push([...args]);
     return {
       ok: false,

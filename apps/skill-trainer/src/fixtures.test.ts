@@ -114,6 +114,32 @@ describe("createFakeCli", () => {
     expect((await cli.run("jira", ["issue", "transitions", "OPS-12"])).ok).toBe(false);
   });
 
+  test("a result given as a function gets the command's argv, positionals and flags", async () => {
+    const seen: unknown[] = [];
+    const cli = createFakeCli([
+      {
+        command: ["issue", "get"],
+        switches: ["--verbose"],
+        result: (call) => {
+          seen.push(call);
+          return ok({ key: call.positionals[0] });
+        },
+      },
+    ]);
+    expect(await cli.run("jira", ["issue", "get", "--select", "key", "--verbose", "KAN-4"])).toEqual(ok({ key: "KAN-4" }));
+    expect(seen).toEqual([
+      { args: ["issue", "get", "--select", "key", "--verbose", "KAN-4"], positionals: ["KAN-4"], flags: { "--select": "key", "--verbose": true } },
+    ]);
+  });
+
+  test("a function result is a fresh copy too", async () => {
+    const shared = { issues: [{ key: "KAN-1" }] };
+    const cli = createFakeCli([{ command: ["issue", "search"], result: () => ok(shared) }]);
+    const first = (await cli.run("jira", ["issue", "search"])) as { ok: true; data: { issues: unknown[] } };
+    first.data.issues.push("MUTATED");
+    expect(shared.issues).toEqual([{ key: "KAN-1" }]);
+  });
+
   test("answers a failure result as the fixture gives it", async () => {
     const failure = { ok: false as const, error: "jira exited with code 3: not logged in", exitCode: 3 };
     const cli = createFakeCli([{ command: ["issue", "search"], result: failure }]);

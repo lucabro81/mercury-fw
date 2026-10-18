@@ -28,9 +28,15 @@ export type Fixture = {
   /** Flags that take no value, so the token after one stays a positional
    * (without this, `--unassign KAN-4` reads KAN-4 as the flag's value). */
   switches?: string[];
-  /** What the CLI answers. */
-  result: CliResult;
+  /** What the CLI answers: a fixed result, or one computed from the call
+   * (applying `--select` or paging the way the real CLI does). */
+  result: CliResult | ((call: FixtureCall) => CliResult);
 };
+
+/** A command as a fixture's result function sees it: the whole argv, and the
+ * positionals and flags after the fixture's `command` (a flag without a value
+ * is `true`). */
+export type FixtureCall = { args: string[]; positionals: string[]; flags: Record<string, string | true> };
 
 /** The splits SkillOpt trains, gates and tests on. */
 export type Split = "train" | "val" | "test";
