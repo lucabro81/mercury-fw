@@ -1,0 +1,37 @@
+---
+title: Atlassian admin
+description: Looks up users in an Atlassian organization, read-only, for the people allowed to.
+---
+
+import PluginFacts from "../../../components/PluginFacts.astro";
+
+<PluginFacts slug="plugin-atlassian-admin" />
+
+The agent looks up the users of an Atlassian organization through the `atlassian-admin` command-line tool, which the
+package downloads when it installs.
+
+## Adding it
+
+`bun add @mercury-fw/plugin-atlassian-admin`, list it in `trustedDependencies` in the app's `package.json`, and
+declare it:
+
+```ts title="mercury.config.ts"
+import { atlassianAdminPlugin } from "@mercury-fw/plugin-atlassian-admin";
+
+plugins: [atlassianAdminPlugin],
+```
+
+Then give the tool the organization's API key, once, in the app's container (it asks for the organization id and
+the key, without echoing it):
+
+```bash
+mfw credentials setup @mercury-fw/plugin-atlassian-admin
+mfw credentials check @mercury-fw/plugin-atlassian-admin
+```
+
+## Who can use it
+
+The key belongs to the organization, and through it anyone could look up any account, email included. So the plugin
+acts as the agent itself (`actsAs: "mercury"`), and only people holding the role
+`mercury.act-as-self.atlassian-admin` (or `mercury.act-as-self`) may use it, plus the terminal. Everyone else doesn't
+see it at all, and every lookup is logged with who asked. See [People and roles](../../concepts/people/).

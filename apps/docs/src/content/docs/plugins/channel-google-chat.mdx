@@ -1,0 +1,56 @@
+---
+title: Google Chat
+description: Puts the agent on Google Chat as a Chat app people message directly or add to a space.
+---
+
+import PluginFacts from "../../../components/PluginFacts.astro";
+
+<PluginFacts slug="channel-google-chat" />
+
+With this channel the agent is a **Chat app** in your Google Workspace: people find it in Google Chat, message it
+directly or add it to a space, and it answers there. While it works it shows a card with what it's doing, and an
+action that needs [confirmation](../../concepts/confirmations/) comes with a button.
+
+Each message reaches the agent as `google-chat:users/<id>`, the sender's Chat account, with their email when Google
+vouches for it, which a [directory](../../concepts/people/) can use to recognize them.
+
+## How it connects
+
+Google Chat doesn't call your server directly. It publishes each event (a message, a button click) on a
+**Pub/Sub topic**, Google Cloud's message queue, and the agent reads them from a **subscription** to that topic. It
+answers through the Chat API, as a **service account** (an account for programs, with a key instead of a
+password). So the agent needs no public address, only the three settings above: the subscription, and the
+service account's email and key.
+
+## Setting it up
+
+You need a Google Workspace account that can create Chat apps, and a Google Cloud project. The setup creates the
+topic and the subscription, the service account and its key, and the Chat app itself in the Cloud Console. The
+[channel's README](https://github.com/lucabro81/mercury-fw/tree/main/packages/channels/channel-google-chat#setting-up-the-chat-app)
+walks through it step by step.
+
+Once you have the key file, `mfw` writes the settings into `.env` without printing the key:
+
+```bash
+mfw google-chat set-key key.json --subscription projects/my-project/subscriptions/mercury-chat-sub
+```
+
+Delete the key file afterwards, and `mfw start`.
+
+## Adding it by hand
+
+An app created with `mfw create --channels google-chat` has this already. Otherwise, `bun add
+@mercury-fw/channel-google-chat`, add `protobufjs` (which Google's Pub/Sub client uses) to `trustedDependencies` in
+the app's `package.json`, and declare it:
+
+```ts title="mercury.config.ts"
+import { googleChatChannel } from "@mercury-fw/channel-google-chat";
+
+channels: [googleChatChannel],
+```
+
+## Logins
+
+When a plugin that acts as the person needs them to log in to a service, the channel sends a card with a button only
+that person sees. The service then sends their browser back to the [HTTP channel](../channel-http/)'s
+`/login/callback`, so an app where people log in needs the HTTP channel too, with `HTTP_SURFACE_PUBLIC_URL`.

@@ -1,0 +1,37 @@
+---
+title: OpenID Connect auth
+description: Tells the HTTP channel who is calling, from a token a login service such as ZITADEL, Google or Keycloak signed.
+---
+
+import PluginFacts from "../../../components/PluginFacts.astro";
+
+<PluginFacts slug="auth-oidc" />
+
+**OpenID Connect** is the standard most login services speak: a person signs in there, the service gives your chat
+interface a signed **token**, and the interface sends it with every request (`Authorization: Bearer <token>`). This
+provider checks that token (signature, issuer, audience, expiry) and turns it into the caller's identity,
+`oidc:<their id at the service>`. Anything else is refused.
+
+```ts title="mercury.config.ts"
+import { oidcAuth } from "@mercury-fw/auth-oidc";
+
+auth: oidcAuth,
+```
+
+`OIDC_ISSUER` is the login service's address, exactly as tokens carry it, and `OIDC_AUDIENCE` the id your interface
+is registered with there, so a token the same service made for another application is refused. Roles aren't read
+from the token: they come from the [directory](../../concepts/people/).
+
+## Several login services
+
+One provider serves one service. To accept people from two, give the second a provider of its own with a name, and
+list both:
+
+```ts title="mercury.config.ts"
+import { createOidcAuth, oidcAuth } from "@mercury-fw/auth-oidc";
+
+auth: [oidcAuth, createOidcAuth({ name: "company" })],
+```
+
+The named one reads `OIDC_COMPANY_ISSUER` and `OIDC_COMPANY_AUDIENCE`. Someone signing in through both services is
+two people to Mercury, unless a directory or a link joins them.

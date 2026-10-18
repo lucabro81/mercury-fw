@@ -1,0 +1,64 @@
+---
+title: Jira
+description: Searches, reads, creates, moves, assigns and comments Jira issues, and deletes one only after confirmation.
+---
+
+import PluginFacts from "../../../components/PluginFacts.astro";
+
+<PluginFacts slug="plugin-jira" />
+
+The agent works on Jira through the `jira` command-line tool, which the package downloads when it installs (an exact
+version, so every app runs the one the plugin was tested with). It can search issues with JQL (Jira's query
+language), read an issue, find people and projects, create issues, move and assign them, and comment. Deleting an
+issue waits for the person's [confirmation](../../concepts/confirmations/).
+
+## Adding it
+
+An app created with `mfw create --plugins jira` has everything below already. By hand:
+
+1. `bun add @mercury-fw/plugin-jira`, and list it in `trustedDependencies` in the app's `package.json`: Bun runs a
+   package's install script only when it's trusted, and that script downloads the tool.
+2. Declare it, wrapped in the formatter so search results read the way you want:
+
+   ```ts title="mercury.config.ts"
+   import { formatterPlugin, formatter } from "@mercury-fw/formatter";
+   import { jiraPlugin, type JiraDisplays } from "@mercury-fw/plugin-jira";
+
+   plugins: [
+     formatterPlugin(
+       jiraPlugin,
+       formatter<JiraDisplays>({
+         "issue-list": {
+           item: (issue) => `${issue.key} ${issue.status ? `[${issue.status}] ` : ""}${issue.summary}\n${issue.url}`,
+           empty: "No matching issues.",
+         },
+       }),
+     ),
+   ],
+   ```
+
+3. Set `JIRA_SITE_URL` in `.env`. Without it the plugin doesn't load, and the log says so.
+
+## Logins
+
+The plugin acts as the person (`actsAs: "person"`): every command runs with the Jira account of whoever the agent
+is talking to, so they see and change exactly what their account can. In the terminal there's no person, and
+commands run as a Jira **service account**.
+
+Two things are set up once, on Atlassian's side and then in the app's container:
+
+- the service account, created by an organization admin in admin.atlassian.com, which the terminal runs as;
+- the app people log in through, created on developer.atlassian.com, with
+  `<HTTP_SURFACE_PUBLIC_URL>/login/callback` among its callback addresses.
+
+The [jira tool's README](https://github.com/lucabro81/CLI-monorepo/tree/main/crates/jira#setup) has the steps on
+Atlassian's side. Then:
+
+```bash
+mfw credentials setup @mercury-fw/plugin-jira
+mfw credentials setup @mercury-fw/plugin-jira --user-app
+mfw credentials check @mercury-fw/plugin-jira
+```
+
+People log in on their own: the first time someone asks for something in Jira, the agent tells them, and the
+[HTTP channel](../channel-http/) shows them the link.

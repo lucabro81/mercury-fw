@@ -1,0 +1,176 @@
+---
+title: Your first agent
+description: From an empty folder to an agent that answers you in the terminal and uses a tool you wrote.
+sidebar:
+  order: 1
+---
+
+By the end of this page you'll have an agent running in Docker on your machine, answering you in a terminal, and
+using a small tool of your own that reads a secret from its configuration. Every command below was run as written,
+and the outputs are copied from that run.
+
+## Before you start
+
+You need three things installed:
+
+- **Bun**, the JavaScript runtime Mercury runs on. Install it from [bun.sh](https://bun.sh), then check it with
+  `bun --version`.
+- **Docker**, where the agent runs (on a Mac, Docker Desktop). `docker --version` should answer, and Docker Desktop
+  must be running.
+- **Ollama**, the program that serves the language model. Install it from [ollama.com](https://ollama.com) and pull
+  two models: one that talks and can call tools, and one that turns text into numbers for the memory (an
+  *embedding* model).
+
+```bash
+ollama pull qwen3.5:9b
+ollama pull nomic-embed-text
+```
+
+Any chat model that supports tool calling works; `qwen3.5:9b` is the one this page was tested with, and a bigger
+model answers better if your machine can take it. The agent runs inside Docker and reaches Ollama on your machine
+at the address `host.docker.internal`, which is already the default.
+
+## 1. Create the app
+
+An *app* is a folder with your agent in it: its configuration, its personality, and what Docker needs to run it.
+`bun create mercury-agent` writes one for you.
+
+```bash
+bun create mercury-agent my-agent --yes
+```
+
+`--yes` takes the defaults for everything. Without it, the command asks you the app's name, the assistant's name
+and role, which channels and plugins to include, and a git remote; you can leave every answer at its default for
+now. It ends like this:
+
+```text
+Created my-agent in /…/my-agent
+  bun install: done
+  git: first commit on main
+
+Next:
+  cd /…/my-agent
+  cp .env.example .env    # then fill it in
+  mfw start               # bunx mfw start, without a global mfw
+```
+
+The app is also a git repository with a first commit, so you can see every change you make from here on.
+
+```text title="Prompt for your coding agent"
+Create a new Mercury agent app in a folder called my-agent with `bun create mercury-agent my-agent --yes`,
+then show me the files it wrote and what each one is for.
+```
+
+## 2. Point it at your model
+
+The settings that change from one machine to the next, and every secret, live in a file called `.env`, which is
+never committed. The app comes with an example to copy:
+
+```bash
+cd my-agent
+cp .env.example .env
+```
+
+Open `.env` and fill in the chat model, the only line left empty:
+
+```bash title=".env"
+OLLAMA_MODEL=qwen3.5:9b
+```
+
+The other lines already point at Ollama on your machine (`OLLAMA_HOST`), at the embedding model, and at the two
+places Mercury keeps its memory. The [environment reference](../../reference/environment/) explains each one.
+
+## 3. Start it
+
+`mfw` is Mercury's command-line tool, and the app has its own copy: `bunx mfw` runs it.
+
+```bash
+bunx mfw start
+```
+
+The first start builds the Docker image, which takes a while. It starts two containers, the agent and
+[Qdrant](https://qdrant.tech), the database behind the long-term memory:
+
+```text
+ Container my-agent-qdrant-1  Started
+ Container my-agent-mercury-1  Started
+```
+
+The agent is now a service waiting for messages from its channels. It has none yet, so the way to talk to it is the
+terminal.
+
+## 4. Talk to it
+
+```bash
+bunx mfw repl
+```
+
+A REPL is an interactive prompt: type a message, press Enter, read the answer. This is what the run above printed
+for "Hi! Who are you?" (the model's reasoning, printed in grey while it thinks, is left out):
+
+```text
+[~?k tokens] > Hi! Who are you?
+[turn] start
+I'm Mercury, an internal assistant. How can I help you?
+[turn] done in 20.6s: 1 step, 0 tool calls, reasoning 258 chars, answer 55 chars, finish stop
+```
+
+The `[turn]` lines are for you, not for the person chatting: how long the answer took, and how many tools the model
+called. It called none, because it has none. Press `Ctrl+D` to leave the REPL. The agent keeps running until
+`bunx mfw stop`.
+
+```text title="Prompt for your coding agent"
+In my Mercury app, fill in .env from .env.example with OLLAMA_MODEL=qwen3.5:9b, start the app with
+`bunx mfw start`, and tell me when the containers are up. Don't print the contents of .env.
+```
+
+## 5. Give it a tool
+
+An agent without tools can only talk. What it can do comes from *plugins*, and a plugin can be a package from npm
+or a file in your app. Here you'll write one: a tool that tells people the office guest Wi-Fi, whose password
+lives in `.env` like every secret should.
+
+[Your first plugin](../local-plugin/) walks through it line by line. In short, add the packages a plugin is
+written with:
+
+```bash
+bun add @mercury-fw/kit ai zod
+```
+
+then create `src/plugins/guest-wifi.ts` with the plugin from that page, declare it in `mercury.config.ts`, and add
+its two settings to `.env`:
+
+```bash title=".env"
+GUEST_WIFI_NAME=Office-Guest
+GUEST_WIFI_PASSWORD=correct-horse-battery
+```
+
+Restart, so the image picks up the new file and the container the new settings:
+
+```bash
+bunx mfw restart
+```
+
+## 6. Check it uses the tool
+
+```bash
+bunx mfw repl
+```
+
+```text
+[~?k tokens] > How do I get on the guest Wi-Fi?
+[turn] start
+[tool] guest_wifi({})
+[tool result] {"ok":true,"network":"Office-Guest","password":"correct-horse-battery"}
+The office guest Wi-Fi is "Office-Guest" with password "correct-horse-battery".
+[turn] done in 27.5s: 2 steps, 1 tool call, reasoning 338 chars, answer 79 chars, finish stop
+```
+
+The `[tool]` lines show the model deciding to call `guest_wifi` and what came back, and the answer is built on it.
+The password never appeared in your code, only in `.env`.
+
+## Where to go next
+
+- [Concepts](../../concepts/what-mercury-is/) explains the pieces you just used: the app, the core, channels, plugins.
+- [Plugins](../../plugins/) lists the ready-made ones, and how to add each.
+- To let people reach the agent from somewhere other than your terminal, add a channel: [Google Chat](../../plugins/channel-google-chat/) or [HTTP](../../plugins/channel-http/).

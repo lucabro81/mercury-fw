@@ -1,0 +1,27 @@
+---
+title: Static directory
+description: Lists the people by hand, with the identities the channels know them by and their roles.
+---
+
+import PluginFacts from "../../../components/PluginFacts.astro";
+
+<PluginFacts slug="directory-static" />
+
+A [directory](../../concepts/people/) kept by hand, for a small team whose admin maintains the list.
+
+```ts title="mercury.config.ts"
+import { staticDirectory } from "@mercury-fw/directory-static";
+
+directory: staticDirectory,
+```
+
+```bash title=".env"
+DIRECTORY_STATIC_PEOPLE=[{"id": "alice", "displayName": "Alice", "roles": ["mercury.act-as-self"], "identities": ["static:alice", "google-chat:users/123"]}]
+```
+
+Each person has an `id` (a short lowercase name), optionally a `displayName`, an `email` and `roles`, and the
+`identities` the channels know them by. Listing two identities makes them one person: one memory, one private area,
+the same roles. An identity belongs to one person only.
+
+A missing or malformed list lets nobody in but the terminal: a broken configuration closes the agent, it never opens
+it.

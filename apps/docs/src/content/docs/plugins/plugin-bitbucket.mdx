@@ -1,0 +1,38 @@
+---
+title: Bitbucket
+description: Lists and reads Bitbucket pull requests, read-only.
+---
+
+import PluginFacts from "../../../components/PluginFacts.astro";
+
+<PluginFacts slug="plugin-bitbucket" />
+
+The agent lists and reads pull requests through the `bitbucket` command-line tool, which the package downloads when
+it installs. Nothing it runs changes Bitbucket.
+
+## Adding it
+
+`bun add @mercury-fw/plugin-bitbucket`, list it in `trustedDependencies` in the app's `package.json` (so Bun runs
+the script that downloads the tool), and declare it:
+
+```ts title="mercury.config.ts"
+import { bitbucketPlugin } from "@mercury-fw/plugin-bitbucket";
+
+plugins: [bitbucketPlugin],
+```
+
+## Logins
+
+The plugin acts as the person: every command runs with the Bitbucket account of whoever the agent is talking to. In
+the terminal, commands run as the workspace's **OAuth consumer** (an app registered in Bitbucket).
+
+Two consumers are set up once: the one the terminal runs as, and the one people log in through, with
+`<HTTP_SURFACE_PUBLIC_URL>/login/callback` among its callback addresses. The
+[bitbucket tool's README](https://github.com/lucabro81/CLI-monorepo/tree/main/crates/bitbucket) has the steps on
+Bitbucket's side. Then:
+
+```bash
+mfw credentials setup @mercury-fw/plugin-bitbucket
+mfw credentials setup @mercury-fw/plugin-bitbucket --user-app
+mfw credentials check @mercury-fw/plugin-bitbucket
+```

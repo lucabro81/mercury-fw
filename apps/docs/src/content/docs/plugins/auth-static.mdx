@@ -1,0 +1,26 @@
+---
+title: Static auth
+description: Tells the HTTP channel who is calling from a fixed list of test tokens, for local tests.
+---
+
+import PluginFacts from "../../../components/PluginFacts.astro";
+
+<PluginFacts slug="auth-static" />
+
+A fixed map from token to user, for trying the HTTP channel on your machine and for end-to-end tests: two tokens are
+two users, and you can check that one doesn't see the other's things. For real people use
+[OpenID Connect auth](../auth-oidc/).
+
+```ts title="mercury.config.ts"
+import { staticAuth } from "@mercury-fw/auth-static";
+
+auth: staticAuth,
+```
+
+```bash title=".env"
+AUTH_STATIC_TOKENS={"alice-token": {"id": "alice", "displayName": "Alice"}, "bob-token": {"id": "bob"}}
+```
+
+A caller sending `Authorization: Bearer alice-token` is `static:alice`; anything else is refused. The tokens are
+secrets even here, so they live in `.env` only. A missing or malformed list stops the provider, and the HTTP channel
+doesn't start.
