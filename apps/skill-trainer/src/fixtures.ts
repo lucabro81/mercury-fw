@@ -79,9 +79,11 @@ export function createFakeCli(fixtures: Fixture[]): { run: RunCli; unmatched: ()
     for (const fixture of fixtures) {
       const call = match(fixture, args);
       if (call === undefined) continue;
+      const result = typeof fixture.result === "function" ? fixture.result(call) : fixture.result;
+      if (result === undefined) continue;
       // A copy, as the real CLI parses a fresh one: what a post-processor
       // does to it mustn't reach the next task sharing the fixture.
-      return structuredClone(typeof fixture.result === "function" ? fixture.result(call) : fixture.result);
+      return structuredClone(result);
     }
     unmatched.push([...args]);
     return {

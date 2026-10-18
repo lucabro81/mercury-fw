@@ -207,6 +207,25 @@ describe("runBatch", () => {
     expect(results.map((r) => r.unmatched)).toEqual([[["sprint", "list"]], [["sprint", "list"]]]);
   });
 
+  // Fixtures given as functions hold state (a transition moves an issue): each
+  // task must start from a fresh one, or one task's writes reach the next.
+  test("fixtures given as functions are made anew for every task", async () => {
+    let made = 0;
+    const counter = (): Fixture[] => {
+      const n = ++made;
+      return [{ command: ["whoami"], result: ok(n) }];
+    };
+    const { training, cli } = trainingWith([task({ id: "a", fixtures: counter }), task({ id: "b", fixtures: counter })]);
+    training.fixtures = () => [{ command: ["shared"], result: ok("shared") }];
+    const outputs: unknown[] = [];
+    const { deps } = fakeDeps(async (_text, run) => {
+      outputs.push(await run("jira", ["whoami"]), await run("jira", ["shared"]));
+      return { steps: [textStep("done")], text: "done" };
+    }, cli);
+    await runBatch(training, training.tasks, undefined, deps);
+    expect(outputs).toEqual([ok(1), ok("shared"), ok(2), ok("shared")]);
+  });
+
   test("each task gets its own vault, its own plugin and the candidate skill", async () => {
     const { training, cli } = trainingWith([task({ id: "a" }), task({ id: "b" })]);
     const { deps, seen } = fakeDeps(async () => ({ steps: [textStep("done")], text: "done" }), cli);

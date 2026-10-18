@@ -29,9 +29,14 @@ export type Fixture = {
    * (without this, `--unassign KAN-4` reads KAN-4 as the flag's value). */
   switches?: string[];
   /** What the CLI answers: a fixed result, or one computed from the call
-   * (applying `--select` or paging the way the real CLI does). */
-  result: CliResult | ((call: FixtureCall) => CliResult);
+   * (applying `--select` or paging the way the real CLI does), undefined when
+   * this fixture can't answer it after all (the next one is tried). */
+  result: CliResult | ((call: FixtureCall) => CliResult | undefined);
 };
+
+/** Fixtures as given: a list, or a function making a fresh one for each task
+ * (for fixtures holding state, like an issue a transition moves). */
+export type Fixtures = Fixture[] | (() => Fixture[]);
 
 /** A command as a fixture's result function sees it: the whole argv, and the
  * positionals and flags after the fixture's `command` (a flag without a value
@@ -50,7 +55,7 @@ export type TrainingTask = {
   taskType: string;
   turns: TurnText[];
   /** Fixtures for this task only, tried before the plugin's own. */
-  fixtures?: Fixture[];
+  fixtures?: Fixtures;
   check: (run: Run, expect: Expect) => void;
 };
 
@@ -60,7 +65,7 @@ export type SkillTraining = {
   skill: string;
   /** The plugin built on `runCliFn`. */
   plugin: (runCliFn: RunCli) => Plugin;
-  fixtures: Fixture[];
+  fixtures: Fixtures;
   tasks: TrainingTask[];
 };
 

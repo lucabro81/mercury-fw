@@ -9,7 +9,7 @@
  */
 import { createExpect, turnFromDump, type Check, type Run, type Turn } from "@mercury-fw/cli/e2e";
 import type { Plugin } from "@mercury-fw/plugin-types";
-import type { SkillTraining, Split, TrainingTask } from "./contract.ts";
+import type { Fixture, Fixtures, SkillTraining, Split, TrainingTask } from "./contract.ts";
 import { createFakeCli } from "./fixtures.ts";
 import { withSkill } from "./skill-override.ts";
 
@@ -74,6 +74,9 @@ export function selectTasks(tasks: TrainingTask[], { split, ids }: { split?: Spl
   });
 }
 
+/** The fixtures `given` stands for, made anew when it's a function. */
+const fixturesOf = (given: Fixtures | undefined): Fixture[] => (typeof given === "function" ? given() : (given ?? []));
+
 /** An error's message. */
 const messageOf = (err: unknown) => (err instanceof Error ? err.message : String(err));
 
@@ -87,7 +90,7 @@ function score(checks: Check[]): { hard: 0 | 1; soft: number } {
 /** Runs `task` with the plugin `training` builds, its skill body `candidate` (the plugin's own when undefined). */
 async function runTask(training: SkillTraining, task: TrainingTask, candidate: string | undefined, deps: HarnessDeps): Promise<TaskResult> {
   const started = deps.now();
-  const cli = createFakeCli([...(task.fixtures ?? []), ...training.fixtures]);
+  const cli = createFakeCli([...fixturesOf(task.fixtures), ...fixturesOf(training.fixtures)]);
   const plugin = withSkill(training.plugin(cli.run), training.skill, candidate);
   const turns: SentTurn[] = [];
   let checks: Check[];

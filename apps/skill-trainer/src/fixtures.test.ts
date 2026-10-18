@@ -132,6 +132,17 @@ describe("createFakeCli", () => {
     ]);
   });
 
+  test("a function result that's undefined passes the command on: to the next fixture, or to unmatched", async () => {
+    const cli = createFakeCli([
+      { command: ["issue", "search"], result: (call) => (call.flags["--jql"] === "project = KAN" ? ok("kan") : undefined) },
+      { command: ["issue", "search"], flags: { "--jql": /OPS/ }, result: ok("ops") },
+    ]);
+    expect(await cli.run("jira", ["issue", "search", "--jql", "project = KAN"])).toEqual(ok("kan"));
+    expect(await cli.run("jira", ["issue", "search", "--jql", "project = OPS"])).toEqual(ok("ops"));
+    expect((await cli.run("jira", ["issue", "search", "--jql", "sprint in openSprints()"])).ok).toBe(false);
+    expect(cli.unmatched()).toEqual([["issue", "search", "--jql", "sprint in openSprints()"]]);
+  });
+
   test("a function result is a fresh copy too", async () => {
     const shared = { issues: [{ key: "KAN-1" }] };
     const cli = createFakeCli([{ command: ["issue", "search"], result: () => ok(shared) }]);
