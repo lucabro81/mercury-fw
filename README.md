@@ -113,7 +113,7 @@ The framework packages share one version and are released together, so an app pi
 
 ## Developing in this repo
 
-A Bun workspace managed with Turborepo: the framework and the first-party plugins under `packages/` (grouped by role), the CLI and `create-mercury-agent` under `apps/`, and the [test bed](apps/testbed), where a change gets tried end to end before it's published: an app made with `mfw create` that installs this repo's packages packed as they'd go to npm, and `mfw e2e` checking what its real model does with them. The [skill trainer](apps/skill-trainer) scores a plugin's skill on the real model, its tasks run as Mercury turns with the plugin's CLI answered by fixtures.
+A Bun workspace managed with Turborepo: the framework and the first-party plugins under `packages/` (grouped by role), the CLI and `create-mercury-agent` under `apps/`, and the [test bed](apps/testbed), where a change gets tried end to end before it's published: an app made with `mfw create` that installs this repo's packages packed as they'd go to npm, and `mfw e2e` checking what its real model does with them. The [skill trainer](apps/skill-trainer) scores a plugin's skill on the real model, its tasks run as Mercury turns with the plugin's CLI answered by fixtures. The [documentation site](apps/docs) is an Astro + Starlight workspace that runs locally for now: `bun run dev` inside it serves it, and `bun run build` then `bun run test:a11y` check every kind of page against WCAG 2.2 AA in both themes, with no broken link.
 
 ```bash
 bun install
