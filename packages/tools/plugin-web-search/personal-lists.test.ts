@@ -113,6 +113,27 @@ describe("createPersonalLists", () => {
     await createPersonalLists(d).add("people:alice", "bun.sh");
 
     expect(await createPersonalLists(d).hostsOf("people:alice")).toEqual(["bun.sh"]);
+    const aside = readdirSync(join(d, "allowlist")).filter((f) => f.startsWith("people%3Aalice.json.corrupt-"));
+    expect(readFileSync(join(d, "allowlist", aside[0]!), "utf8")).toBe(JSON.stringify({ hosts: ["bun.sh", "com"] }));
+  });
+
+  // Cold review of #194: the file was renamed aside before the new one was
+  // written, so a failed write left the person with no list at all.
+  it("a write that fails after a damaged entry leaves the original file in place", async () => {
+    const d = dir();
+    mkdirSync(join(d, "allowlist"));
+    const original = JSON.stringify({ hosts: ["bun.sh", "docs.x.org", "com"] });
+    writeFileSync(join(d, "allowlist", "people%3Aalice.json"), original);
+    const failing = createPersonalLists(d, {
+      writeFile: async () => {
+        throw new Error("ENOSPC");
+      },
+    });
+
+    await expect(failing.add("people:alice", "python.org")).rejects.toThrow("ENOSPC");
+
+    expect(readFileSync(join(d, "allowlist", "people%3Aalice.json"), "utf8")).toBe(original);
+    expect(await createPersonalLists(d).hostsOf("people:alice")).toEqual(["bun.sh", "docs.x.org"]);
   });
 
   it("keeps only well-formed host names read back from a file", async () => {
