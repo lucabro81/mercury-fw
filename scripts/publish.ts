@@ -1,6 +1,7 @@
 /**
  * Publishes every public workspace whose current version isn't on the
- * registry yet, dependencies before their dependents. Run from the repo root
+ * registry yet, dependencies before their dependents. A workspace at 0.0.0
+ * (a new package merged before its first release) is skipped. Run from the repo root
  * after `bun run release`:
  *
  *   bun scripts/publish.ts [--registry <url>] [--tag <dist-tag>] [--dry-run]
@@ -42,6 +43,26 @@ export async function isPublished(
   throw new Error(`${registry} answered ${res.status} checking ${name}@${version}: stopping`);
 }
 
+/** The version a brand-new package carries until its first release bumps it. */
+const UNRELEASED = "0.0.0";
+
+/**
+ * What to do with one workspace: skip it while it's unreleased (a new package
+ * merged before its first release: its first version is published by hand,
+ * since it can't be trusted before it exists), skip it when the registry
+ * already has its version, publish it otherwise. `published` is the registry
+ * check (`isPublished`), asked only when the version could be published.
+ */
+export async function publishAction(
+  pkg: { name: string; version: string },
+  registry: string,
+  published: (name: string, version: string, registry: string) => Promise<boolean> = isPublished,
+): Promise<{ publish: true } | { publish: false; reason: string }> {
+  if (pkg.version === UNRELEASED) return { publish: false, reason: "not released yet" };
+  if (await published(pkg.name, pkg.version, registry)) return { publish: false, reason: `already on ${registry}` };
+  return { publish: true };
+}
+
 /** The `npm publish` argv for one packed tarball. */
 export function publishCommand(
   tarball: string,
@@ -79,8 +100,9 @@ if (import.meta.main) {
     run(["bun", "scripts/build-types.ts"]);
     run(["bun", "scripts/check-pack.ts", "--types"]);
     for (const { dir, pkg } of publicWorkspacesInOrder()) {
-      if (await isPublished(pkg.name, pkg.version, registry)) {
-        console.log(`skip ${pkg.name}@${pkg.version}: already on ${registry}`);
+      const action = await publishAction(pkg, registry);
+      if (!action.publish) {
+        console.log(`skip ${pkg.name}@${pkg.version}: ${action.reason}`);
         continue;
       }
       console.log(`publish ${pkg.name}@${pkg.version}`);

@@ -9,7 +9,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { orderByDependencies, workspaces, type Workspace } from "./workspaces.ts";
-import { isPublished, publishCommand } from "./publish.ts";
+import { isPublished, publishAction, publishCommand } from "./publish.ts";
 import { comparePack } from "./check-pack.ts";
 import { pendingChangesets, stageRelease } from "./release.ts";
 
@@ -108,6 +108,43 @@ describe("every public package ships its changelog", () => {
   test.each(workspaces().filter((w) => !w.pkg.private).map((w) => [w.pkg.name, w] as const))("%s", (_name, w) => {
     const files = (w.pkg as { files?: string[] }).files ?? [];
     expect(files).toContain("CHANGELOG.md");
+  });
+});
+
+// Regression (#257): merging a brand-new package put it on main at 0.0.0, and
+// publish.ts tried to publish that, which failed (no trusted publisher yet)
+// and turned the CI run red.
+describe("publishAction", () => {
+  const at = (version: string) => ({ name: "@mercury-fw/plugin-new", version });
+
+  test("a workspace at 0.0.0 is skipped as unreleased, without asking the registry", async () => {
+    let asked = false;
+    const published = async () => {
+      asked = true;
+      return false;
+    };
+    expect(await publishAction(at("0.0.0"), "https://r.test", published)).toEqual({ publish: false, reason: "not released yet" });
+    expect(asked).toBe(false);
+  });
+
+  test("a version already on the registry is skipped, saying where", async () => {
+    expect(await publishAction(at("0.1.0"), "https://r.test", async () => true)).toEqual({
+      publish: false,
+      reason: "already on https://r.test",
+    });
+  });
+
+  test("a version not on the registry is published", async () => {
+    expect(await publishAction(at("0.1.0"), "https://r.test", async () => false)).toEqual({ publish: true });
+  });
+
+  test("asks the registry for the workspace's own name and version", async () => {
+    const asked: string[] = [];
+    await publishAction(at("0.1.0"), "https://r.test", async (name, version, registry) => {
+      asked.push(`${name}@${version} ${registry}`);
+      return false;
+    });
+    expect(asked).toEqual(["@mercury-fw/plugin-new@0.1.0 https://r.test"]);
   });
 });
 
