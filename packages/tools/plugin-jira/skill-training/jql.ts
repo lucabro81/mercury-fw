@@ -213,10 +213,20 @@ function predicate(clause: string, ctx: JqlContext, keys: Set<string>): Predicat
   const eq = (actual: string | undefined) => actual?.toLowerCase() === value;
   const negate = (test: Predicate): Predicate | undefined => (op === "!=" ? (i) => !test(i) : op === "=" ? test : undefined);
   const among = (values: string[], test: Predicate) => (values.some((v) => v.toLowerCase() === value) ? negate(test) : missing);
-  const empty = (get: (i: JqlIssue) => unknown): Predicate | undefined => {
-    if (value !== "empty" && value !== "null") return undefined;
-    return op === "is" ? (i) => get(i) === null : (i) => get(i) !== null;
+  // EMPTY and null, with `is`/`is not` or `=`/`!=` alike, on the fields that can be empty.
+  const emptiable: Record<string, (i: JqlIssue) => unknown> = {
+    assignee: (i) => i.assignee,
+    duedate: (i) => i.duedate,
+    priority: (i) => i.priority ?? null,
+    issuetype: (i) => i.issuetype ?? null,
+    type: (i) => i.issuetype ?? null,
   };
+  const get = emptiable[field.toLowerCase()];
+  if (value === "empty" || value === "null") {
+    if (get === undefined || !["is", "is not", "=", "!="].includes(op)) return undefined;
+    return op === "is" || op === "=" ? (i) => get(i) === null : (i) => get(i) !== null;
+  }
+  if (op === "is" || op === "is not") return undefined;
 
   switch (field.toLowerCase()) {
     case "key":
@@ -235,7 +245,6 @@ function predicate(clause: string, ctx: JqlContext, keys: Set<string>): Predicat
     case "priority":
       return among(ctx.priorities, (i) => eq(i.priority));
     case "assignee": {
-      if (op === "is" || op === "is not") return empty((i) => i.assignee);
       if (/^currentuser\(\)$/.test(value)) return negate((i) => i.assignee?.accountId === ctx.currentUser);
       const user = ctx.users.find((u) => u.displayName.toLowerCase() === value || u.accountId.toLowerCase() === value);
       return user ? negate((i) => i.assignee?.accountId === user.accountId) : missing;
@@ -244,14 +253,15 @@ function predicate(clause: string, ctx: JqlContext, keys: Set<string>): Predicat
       return op === "~" ? (i) => i.summary.toLowerCase().includes(value) : undefined;
     case "duedate":
     case "created": {
-      const get = (i: JqlIssue) => (field.toLowerCase() === "duedate" ? i.duedate : i.created);
-      if (op === "is" || op === "is not") return empty(get);
+      // A due date is a day, compared as its midnight: `duedate < now()` takes in what's due
+      // today, as in Jira (which is what `startOfDay()` is there for).
+      const at = (i: JqlIssue) => (field.toLowerCase() === "duedate" ? i.duedate : i.created);
       const bound = dateOf(raw, ctx.now);
       if (typeof bound === "object") return bound;
       if (bound === undefined || !["<", "<=", ">", ">=", "=", "!="].includes(op)) return undefined;
       return (i) => {
-        const at = get(i);
-        return at !== null && compare(Date.parse(at), op, bound);
+        const when = at(i);
+        return when !== null && compare(Date.parse(when), op, bound);
       };
     }
     default:
@@ -296,15 +306,58 @@ function listPredicate(clause: string, ctx: JqlContext, keys: Set<string>): Pred
 
 /** The issues `jql` matches, newest key first as Jira lists them; Jira's error for a query it refuses; or the clause the evaluator couldn't read. */
 export function filterJql<T extends JqlIssue>(jql: string, issues: T[], ctx: JqlContext): JqlResult<T> {
-  const [where = ""] = jql.split(/\s+ORDER\s+BY\s+/i);
+  const ordered = /^(.*?)\s*\bORDER\s+BY\s+(.+)$/is.exec(jql.trim());
+  const where = ordered ? ordered[1]! : jql.trim();
+  const orderBy = ordered?.[2];
   const syntax = syntaxError(where);
   if (syntax !== undefined) return { ok: false, error: syntax };
   const keys = new Set(issues.map((i) => i.key.toUpperCase()));
-  const test = parseCondition(where, 0, ctx, keys);
+  const test = where === "" ? () => true : parseCondition(where, 0, ctx, keys);
   if (typeof test !== "function") return { ok: false, ...test };
-  const number = (key: string) => Number(key.split("-")[1]);
-  const matched = issues
-    .filter((i) => test(i))
-    .sort((a, b) => number(b.key) - number(a.key) || b.project.localeCompare(a.project));
-  return { ok: true, issues: matched };
+  const order = sortOf(orderBy);
+  if (typeof order !== "function") return { ok: false, unsupported: `ORDER BY ${orderBy}` };
+  return { ok: true, issues: issues.filter((i) => test(i)).sort(order) };
+}
+
+/** The issue number of a key. */
+const numberOf = (key: string) => Number(key.split("-")[1]);
+
+/** Newest key first: the order the real CLI's searches came back in without an ORDER BY. */
+const newestFirst = (a: JqlIssue, b: JqlIssue) => numberOf(b.key) - numberOf(a.key) || b.project.localeCompare(a.project);
+
+/** Priorities from the highest down, for ordering by priority. */
+const PRIORITY_RANK = ["highest", "high", "medium", "low", "lowest"];
+
+/** How each orderable field compares two issues ascending; null means the issue has no value there. */
+const SORT_KEYS: Record<string, (i: JqlIssue) => string | number | null> = {
+  key: (i) => `${i.project}-${String(numberOf(i.key)).padStart(8, "0")}`,
+  issuekey: (i) => `${i.project}-${String(numberOf(i.key)).padStart(8, "0")}`,
+  created: (i) => Date.parse(i.created),
+  duedate: (i) => (i.duedate === null ? null : Date.parse(i.duedate)),
+  // Descending puts the highest first, as Jira does: rank 0 for Highest is the largest value.
+  priority: (i) => (i.priority === undefined ? null : PRIORITY_RANK.length - PRIORITY_RANK.indexOf(i.priority.toLowerCase())),
+};
+
+/** The comparator an ORDER BY asks for (fields Jira sorts ascending by default, empty values last,
+ * newest key first as the last tie-break); undefined for a field the evaluator doesn't order by. */
+function sortOf(orderBy: string | undefined): ((a: JqlIssue, b: JqlIssue) => number) | undefined {
+  if (orderBy === undefined) return newestFirst;
+  const keys: Array<{ get: (i: JqlIssue) => string | number | null; desc: boolean }> = [];
+  for (const part of orderBy.split(",")) {
+    const match = /^(\w+)(?:\s+(ASC|DESC))?$/i.exec(part.trim());
+    const get = match ? SORT_KEYS[match[1]!.toLowerCase()] : undefined;
+    if (!match || !get) return undefined;
+    keys.push({ get, desc: match[2]?.toUpperCase() === "DESC" });
+  }
+  return (a, b) => {
+    for (const { get, desc } of keys) {
+      const [x, y] = [get(a), get(b)];
+      if (x === y) continue;
+      if (x === null) return 1;
+      if (y === null) return -1;
+      const cmp = x < y ? -1 : 1;
+      return desc ? -cmp : cmp;
+    }
+    return newestFirst(a, b);
+  };
 }

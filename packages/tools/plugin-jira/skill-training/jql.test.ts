@@ -79,8 +79,26 @@ describe("filterJql", () => {
     expect(keys("priority = High")).toEqual(["KAN-1"]);
   });
 
-  test("ORDER BY is accepted and ignored", () => {
-    expect(keys("project = KAN AND statusCategory != Done ORDER BY updated DESC")).toEqual(["KAN-2", "KAN-1"]);
+  test("without ORDER BY, newest key first, as the real CLI's searches came back", () => {
+    expect(keys("project = KAN")).toEqual(["KAN-3", "KAN-2", "KAN-1"]);
+  });
+
+  test("ORDER BY key, created, duedate or priority, either way, empty values last", () => {
+    expect(keys("project = KAN ORDER BY key ASC")).toEqual(["KAN-1", "KAN-2", "KAN-3"]);
+    expect(keys("project = KAN ORDER BY created DESC")).toEqual(["KAN-3", "KAN-2", "KAN-1"]);
+    expect(keys("project = KAN ORDER BY duedate")).toEqual(["KAN-1", "KAN-2", "KAN-3"]);
+    expect(keys("project = KAN ORDER BY priority DESC, key ASC")).toEqual(["KAN-1", "KAN-2", "KAN-3"]);
+  });
+
+  test("an ORDER BY on a field it doesn't model is a hole, not an order made up", () => {
+    expect(keys("project = KAN ORDER BY updated DESC")).toEqual({ ok: false, unsupported: "ORDER BY updated DESC" });
+  });
+
+  test("= EMPTY and != EMPTY, as Jira takes them besides is EMPTY", () => {
+    expect(keys("project = KAN AND assignee = EMPTY")).toEqual(["KAN-3"]);
+    expect(keys("project = KAN AND assignee != EMPTY")).toEqual(["KAN-2", "KAN-1"]);
+    expect(keys("project = KAN AND duedate = null")).toEqual(["KAN-3"]);
+    expect(keys("project = KAN AND priority is EMPTY")).toEqual(["KAN-3"]);
   });
 
   // Jira refuses a value its field doesn't have, it doesn't answer an empty
