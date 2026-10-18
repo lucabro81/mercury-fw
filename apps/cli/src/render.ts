@@ -76,13 +76,16 @@ export function renderApp(input: RenderInput): Map<string, string> {
   const directory = selected("directory", input.directory === undefined ? [] : [input.directory])[0];
   const assistantName = input.assistantName.trim();
 
+  const extraFiles = [...channels, ...tools].flatMap((e) => Object.entries(e.files ?? {}));
+  const services = tools.flatMap((t) => (t.service ? [t.service] : []));
   return new Map([
+    ...extraFiles,
     [".dockerignore", dockerignore],
     [".env.example", renderEnv(channels, auth, tools, directory)],
     [".gitignore", gitignore],
     ["Dockerfile", dockerfile],
     ["README.md", renderReadme(input.name, channels, auth, tools, directory)],
-    ["docker-compose.yml", renderCompose(input.name, channels.some((c) => c.id === "http"))],
+    ["docker-compose.yml", renderCompose(input.name, channels.some((c) => c.id === "http"), services)],
     ["markdown.d.ts", markdownDts],
     ["mercury.config.ts", renderConfig(assistantName, channels, auth, tools, directory)],
     ["package.json", renderPackageJson(input.name, channels, auth, tools, input.versions, directory)],
@@ -184,6 +187,7 @@ function renderConfig(
   for (const t of tools) {
     const names = t.formatter ? `${t.exportName}, type ${t.formatter.displaysType}` : t.exportName;
     imports.push(`import { ${names} } from "${t.package}";`);
+    for (const extra of t.build?.imports ?? []) imports.push(`import { ${extra.names} } from "${extra.package}";`);
   }
   for (const c of [...channels, ...(auth ? [auth] : []), ...(directory ? [directory] : [])]) {
     imports.push(`import { ${c.exportName} } from "${c.package}";`);
@@ -216,6 +220,7 @@ function renderConfig(
 
 /** One element of the config's `plugins` array. */
 function renderPluginEntry(t: CatalogEntry): string {
+  if (t.build) return `${t.build.expression},`;
   if (!t.formatter) {
     return `    ${t.exportName},`;
   }
@@ -227,6 +232,11 @@ function renderPluginEntry(t: CatalogEntry): string {
     "      }),",
     "    ),",
   ].join("\n");
+}
+
+/** The packages an entry brings into the app: its own, and those its config imports. */
+export function entryPackages(e: CatalogEntry): string[] {
+  return [e.package, ...(e.build?.imports ?? []).map((i) => i.package)];
 }
 
 /** `package.json`: the core, the formatter when a plugin is wrapped in it, the
@@ -241,7 +251,7 @@ function renderPackageJson(
   directory: CatalogEntry | undefined,
 ): string {
   const chosen = [...channels, ...(auth ? [auth] : []), ...tools, ...(directory ? [directory] : [])];
-  const packages = [...new Set(["@mercury-fw/core", ...chosen.map((e) => e.package)])];
+  const packages = [...new Set(["@mercury-fw/core", ...chosen.flatMap(entryPackages)])];
   if (tools.some((t) => t.formatter)) {
     packages.push("@mercury-fw/formatter");
   }
@@ -297,8 +307,8 @@ function renderEnv(
 /** `docker-compose.yml`: the app and Qdrant, with named volumes prefixed by the
  * app's name, the CLI credentials one included whatever was chosen (a plugin
  * with a CLI can come later); the HTTP surface's port published on the host
- * only with the HTTP channel. */
-function renderCompose(name: string, hasHttp: boolean): string {
+ * only with the HTTP channel; and the services chosen plugins need. */
+function renderCompose(name: string, hasHttp: boolean, services: Array<{ name: string; lines: string[] }>): string {
   const httpPort = hasHttp
     ? [
         "    # The HTTP surface, on the host: every route but its OpenAPI document needs a token.",
@@ -325,12 +335,14 @@ function renderCompose(name: string, hasHttp: boolean): string {
     '      - "host.docker.internal:host-gateway"',
     "    depends_on:",
     "      - qdrant",
+    ...services.map((s) => `      - ${s.name}`),
     "",
     "  qdrant:",
     "    image: qdrant/qdrant:v1",
     "    volumes:",
     "      - qdrant-data:/qdrant/storage",
     "",
+    ...services.flatMap((s) => [...s.lines, ""]),
     "volumes:",
     "  wiki-vault:",
     `    name: ${name}_wiki-vault`,
@@ -351,6 +363,13 @@ function renderReadme(
   directory: CatalogEntry | undefined,
 ): string {
   const list = (entries: CatalogEntry[]) => (entries.length > 0 ? entries.map((e) => e.id).join(", ") : "none");
+  // What the app can't start without, named where the reader is about to start it.
+  const required = [...channels, ...(auth ? [auth] : []), ...tools, ...(directory ? [directory] : [])]
+    .flatMap((e) => e.env)
+    .filter((v) => v.comment.startsWith("Required:"))
+    .map((v) => `\`${v.name}\``);
+  const requiredNote =
+    required.length > 0 ? `\nBefore \`mfw start\`, fill in the variables the chosen pieces require: ${required.join(", ")}.\n` : "";
   return `# ${name}
 
 A Mercury app, scaffolded by \`mfw create\`.
@@ -381,7 +400,7 @@ cp .env.example .env
 mfw start
 mfw repl
 \`\`\`
-
+${requiredNote}
 \`bun install\` here gives your editor, \`bun run typecheck\` and the app's own \`mfw\` (the one a global \`mfw\` runs inside the app) the packages (tool plugins download their CLI binary as they install); the image installs its own copy when it builds. \`mfw start\` builds the image and starts the app with Qdrant in the background, \`mfw repl\` opens a terminal conversation with the assistant. \`mfw --help\` lists the rest: stopping and restarting, logs, a shell in the container, the wiki and the memory, and resetting them.
 ${renderHttpSection(channels, auth)}${CREDENTIALS_SECTION}`;
 }

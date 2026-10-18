@@ -32,8 +32,10 @@
         "@mercury-fw/plugin-atlassian-admin": "workspace:*",
         "@mercury-fw/plugin-bitbucket": "workspace:*",
         "@mercury-fw/plugin-jira": "workspace:*",
+        "@mercury-fw/plugin-web-search": "workspace:*",
         "@mercury-fw/plugin-zitadel": "workspace:*",
         "@mercury-fw/typescript-config": "*",
+        "@mercury-fw/web-search-searxng": "workspace:*",
         "@types/bun": "^1.4.2",
         "typescript": "^6.0.3",
       },
@@ -124,7 +126,7 @@
         "typescript": "^6.0.3",
       },
       "peerDependencies": {
-        "@mercury-fw/channel-types": ">=0.46.0 <1.0.0",
+        "@mercury-fw/channel-types": ">=0.51.0 <1.0.0",
       },
     },
     "packages/channels/channel-http": {
@@ -138,7 +140,7 @@
         "typescript": "^6.0.3",
       },
       "peerDependencies": {
-        "@mercury-fw/channel-types": ">=0.49.0 <1.0.0",
+        "@mercury-fw/channel-types": ">=0.51.0 <1.0.0",
       },
     },
     "packages/config/typescript-config": {
@@ -335,6 +337,19 @@
         "@mercury-fw/utils": ">=0.45.0 <1.0.0",
       },
     },
+    "packages/tools/web-search-searxng": {
+      "name": "@mercury-fw/web-search-searxng",
+      "version": "0.0.0",
+      "devDependencies": {
+        "@mercury-fw/plugin-web-search": "workspace:*",
+        "@mercury-fw/typescript-config": "*",
+        "@types/bun": "^1.4.2",
+        "typescript": "^6.0.3",
+      },
+      "peerDependencies": {
+        "@mercury-fw/plugin-web-search": ">=0.0.0 <1.0.0",
+      },
+    },
     "packages/types/channel-types": {
       "name": "@mercury-fw/channel-types",
       "version": "0.52.0",
@@ -470,6 +485,8 @@
     "@mercury-fw/typescript-config": ["@mercury-fw/typescript-config@workspace:packages/config/typescript-config"],
 
     "@mercury-fw/utils": ["@mercury-fw/utils@workspace:packages/libs/utils"],
+
+    "@mercury-fw/web-search-searxng": ["@mercury-fw/web-search-searxng@workspace:packages/tools/web-search-searxng"],
 
     "@mozilla/readability": ["@mozilla/readability@0.6.0", "", {}, "sha512-juG5VWh4qAivzTAeMzvY9xs9HY5rAcr2E4I7tiSSCokRFi7XIZCAu92ZkSTsIj1OPceCifL3cpfteP3pDT9/QQ=="],
 

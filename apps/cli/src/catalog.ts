@@ -24,7 +24,32 @@ export type CatalogEntry = {
   /** Dependencies whose install scripts Bun must run for this entry (Bun runs
    * none it isn't told to trust), on top of a tool plugin's own package. */
   trusts?: string[];
+  /** For a plugin built by calling its export: what the config writes in
+   * `plugins` (indented as an element of it) and the other imports that needs,
+   * whose packages the app depends on too. */
+  build?: { expression: string; imports: Array<{ names: string; package: string }> };
+  /** A compose service the entry needs next to the app (its lines under
+   * `services:`), which the app then depends on. */
+  service?: { name: string; lines: string[] };
+  /** Files the entry adds to the app, by path. */
+  files?: Record<string, string>;
 };
+
+/** SearXNG's settings for the web search plugin, mounted into its container. */
+const SEARXNG_SETTINGS = `# SearXNG for the web search plugin. Only the app reaches it, on the compose
+# network: nothing of it is published on the host. The secret comes from
+# SEARXNG_SECRET in the app's env file.
+use_default_settings: true
+server:
+  # Only Mercury asks: no rate limiting, no image proxy.
+  limiter: false
+  image_proxy: false
+search:
+  # The plugin reads the results as JSON, which is off by default.
+  formats:
+    - html
+    - json
+`;
 
 /** Starting formatter rules for a plugin that hands the user lists: without a
  * rule a kind of list isn't shown, so the scaffolded config wraps the plugin
@@ -123,6 +148,41 @@ export const CATALOG: CatalogEntry[] = [
     package: "@mercury-fw/plugin-zitadel",
     exportName: "zitadelPlugin",
     env: [],
+  },
+  {
+    id: "web-search",
+    kind: "tool",
+    package: "@mercury-fw/plugin-web-search",
+    exportName: "webSearchPlugin",
+    env: [
+      { name: "SEARXNG_URL", comment: "SearXNG, the compose service the web search asks", value: "http://searxng:8080" },
+      { name: "SEARXNG_SECRET", comment: "Required: SearXNG's secret key, any long random string (openssl rand -hex 32)" },
+    ],
+    build: {
+      expression: [
+        "    webSearchPlugin({",
+        '      backend: searxngBackend({ url: process.env.SEARXNG_URL || "http://searxng:8080" }),',
+        "      // Hosts whose pages anyone may read without being asked; each covers its subdomains.",
+        "      allowedHosts: [],",
+        "    })",
+      ].join("\n"),
+      imports: [{ names: "searxngBackend", package: "@mercury-fw/web-search-searxng" }],
+    },
+    service: {
+      name: "searxng",
+      lines: [
+        "  searxng:",
+        "    # SearXNG publishes no major version tags, only latest and dated ones.",
+        "    image: searxng/searxng:latest",
+        "    restart: unless-stopped",
+        "    environment:",
+        "      # SearXNG exits on its default key: without one, compose says so instead.",
+        "      SEARXNG_SECRET: ${SEARXNG_SECRET:?set SEARXNG_SECRET in .env (see .env.example)}",
+        "    volumes:",
+        "      - ./searxng/settings.yml:/etc/searxng/settings.yml:ro",
+      ],
+    },
+    files: { "searxng/settings.yml": SEARXNG_SETTINGS },
   },
   {
     id: "static",

@@ -11,7 +11,7 @@ import type { CreateArgs } from "./args.ts";
 import { CATALOG } from "./catalog.ts";
 import { kebabCase } from "./naming.ts";
 import { runProgram } from "./program.ts";
-import { pairingError, renderApp, selectionError } from "./render.ts";
+import { entryPackages, pairingError, renderApp, selectionError } from "./render.ts";
 import { appVersions, cliVersion, newerCli, registryFrom } from "./versions.ts";
 import { appCommands, terminalDeps, type AppDeps } from "./app/commands.ts";
 import { copyPacks, readPacks, withLocalOverrides } from "./app/local-packages.ts";
@@ -147,7 +147,7 @@ async function create(args: CreateArgs, rawArgs: string[], relaunch: Relaunch, g
           : e.kind === "directory"
             ? e.id === answers.directory
             : (e.kind === "channel" ? answers.channels : answers.plugins).includes(e.id),
-      ).map((e) => e.package),
+      ).flatMap(entryPackages),
     ),
   ];
   const versions = await appVersions(chosen, {
