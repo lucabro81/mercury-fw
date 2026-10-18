@@ -19,7 +19,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 /** Workspaces that stay private: never published. */
-const PRIVATE = new Set(["testbed", "@mercury-fw/typescript-config"]);
+const PRIVATE = new Set(["testbed", "skill-trainer", "@mercury-fw/typescript-config"]);
 
 /** Tracked files that belong to the repo, not to a published package. */
 const REPO_ONLY = [
@@ -30,6 +30,8 @@ const REPO_ONLY = [
   /^\.turbo\//,
   // The HTTP channel's docs build config (GitHub Pages), not needed at run time.
   /^redocly\.yaml$/,
+  // A plugin's skill-training data, read by the skill trainer in this repo.
+  /^skill-training\//,
 ];
 
 /** Runs `cmd` in `cwd`, returning its stdout; throws with stderr on failure. */

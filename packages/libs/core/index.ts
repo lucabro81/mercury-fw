@@ -17,6 +17,8 @@
  *   starting persona.
  * - `assistantNameOf` — the assistant's name from a persona, refusing one that
  *   can't stand in a prompt; the scaffolder checks a new app's name with it.
+ * - `OPERATOR_PRINCIPAL` — the terminal's principal: a caller driving
+ *   `handleTurn` itself as the operator (the skill trainer) sends its turns as it.
  */
 export { composeMercury, type ComposedApp, type ConfirmDeps } from "./src/compose.ts";
 export { loadChannels, type LoadedChannel } from "./src/router/channel-loader.ts";
@@ -24,3 +26,4 @@ export { createTerminalProvider } from "./src/router/terminal-provider.ts";
 export { defineMercuryConfig, type MercuryConfig, type MercuryAccess } from "./src/config/define-config.ts";
 export { DEFAULT_PERSONA_IDENTITY, DEFAULT_PERSONA_TONE, type Persona } from "./src/session/system-prompt.ts";
 export { assistantNameOf } from "./src/session/assistant-name.ts";
+export { OPERATOR_PRINCIPAL } from "./src/identity/people.ts";

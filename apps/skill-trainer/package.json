@@ -1,0 +1,24 @@
+{
+  "name": "skill-trainer",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test src"
+  },
+  "comment:shape": "The skill trainer: runs a plugin's skill-training tasks as real Mercury turns against fixtures standing in for the plugin's CLI, to score a skill and, through SkillOpt, train it. See README.md.",
+  "dependencies": {
+    "@mercury-fw/cli": "workspace:*",
+    "@mercury-fw/cli-engine": "workspace:*",
+    "@mercury-fw/core": "workspace:*",
+    "@mercury-fw/plugin-types": "workspace:*",
+    "commander": "^15.0.0"
+  },
+  "devDependencies": {
+    "@mercury-fw/typescript-config": "*",
+    "@types/bun": "^1.4.2",
+    "typescript": "^6.0.3"
+  }
+}
