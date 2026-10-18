@@ -166,6 +166,10 @@ export type PluginRuntimeContext = {
 export type SessionToolContext = {
   sessionKey: string;
   stageConfirmation: StageConfirmation;
+  /** Stages an action offered as several choices (see `StageChoices`). The
+   * core always sets it; optional so a plugin also builds against an older
+   * one, where it has to do without. */
+  stageChoices?: StageChoices;
   /** Stashes a rendered list for the model to `present`, with what it is (`label`: the command that built it), and returns its ref. */
   stashDisplay: (artifact: string, label?: string) => string;
   /** Whom the tools act for, by the person's key, when they act as the

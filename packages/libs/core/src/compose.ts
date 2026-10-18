@@ -16,7 +16,7 @@
  */
 import { QdrantClient } from "@qdrant/js-client-rest";
 import { getOllamaProvider } from "./model/client.ts";
-import { createConfirmationStore, createStageConfirmation, type ConfirmationStore } from "@mercury-fw/confirm-engine";
+import { createConfirmationStore, createStageChoices, createStageConfirmation, type ConfirmationStore } from "@mercury-fw/confirm-engine";
 import { createDisplayStore } from "./tools/display-store.ts";
 import { createPresentTool } from "./tools/present-tool.ts";
 import { loadPlugins } from "./plugins/plugin-loader.ts";
@@ -415,17 +415,19 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
     const sessionTools: Record<string, Tool> = {};
 
     // The session-scoped capabilities every CLI tool needs, bound to this turn:
-    // staging a confirm-required action (token + pending note) and stashing a
-    // display artifact the model can `present`.
+    // staging a confirm-required action (token + pending note), alone or as
+    // several choices, and stashing a display artifact the model can `present`.
+    const stagingDeps = {
+      store: confirmationStore,
+      sessionKey,
+      owner: key,
+      vaultPath: wikiVaultPath,
+      writeConfirmationNoteFn: writeConfirmationNote,
+    };
     const sessionToolContext = {
       sessionKey,
-      stageConfirmation: createStageConfirmation({
-        store: confirmationStore,
-        sessionKey,
-        owner: key,
-        vaultPath: wikiVaultPath,
-        writeConfirmationNoteFn: writeConfirmationNote,
-      }),
+      stageConfirmation: createStageConfirmation(stagingDeps),
+      stageChoices: createStageChoices(stagingDeps),
       stashDisplay: (artifact: string, label?: string) => displayStore.stash(sessionKey, artifact, label),
     };
 
