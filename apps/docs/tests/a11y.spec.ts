@@ -71,3 +71,24 @@ test("nothing animates", async ({ page }) => {
   );
   expect(animated).toBe(0);
 });
+
+test("the open search dialog has no WCAG 2.2 AA violations", async ({ page }) => {
+  await open(page, "concepts/memory/", "dark");
+  await page.getByRole("button", { name: "Search" }).click();
+  await expect(page.getByRole("dialog")).toBeVisible();
+  const results = await new AxeBuilder({ page }).include("dialog").withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"]).analyze();
+  expect(results.violations.map((v) => v.id)).toEqual([]);
+});
+
+test("a theme picked by hand overrides the system and is remembered on the next page", async ({ browser }) => {
+  const context = await browser.newContext({ colorScheme: "dark" });
+  const page = await context.newPage();
+  await page.goto("concepts/memory/");
+  await page.getByRole("combobox", { name: "Select theme" }).selectOption("light");
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+  await page.goto("concepts/channels/");
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+  await page.getByRole("combobox", { name: "Select theme" }).selectOption("auto");
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  await context.close();
+});

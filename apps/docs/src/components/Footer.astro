@@ -8,13 +8,13 @@ import Pagination from "@astrojs/starlight/components/Pagination.astro";
 import { REPO_URL, frameworkVersion } from "../lib/site.ts";
 
 const base = import.meta.env.BASE_URL.replace(/\/$/, "");
-const version = await frameworkVersion();
+const { version, href } = await frameworkVersion();
 ---
 
 <footer class="sl-flex">
   <Pagination />
   <div class="mfw-footer">
-    <a href={`${base}/changelog/#v${version}`}>Mercury Framework {version}</a>
+    <a href={`${base}/${href}`}>Mercury Framework {version}</a>
     <a href={REPO_URL}>Source on GitHub</a>
     <span>MIT license</span>
   </div>

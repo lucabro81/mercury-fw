@@ -2,7 +2,7 @@
  * Facts the whole site shows: where the repository is, and which framework
  * version these pages describe. Read once per build and shared by every page.
  */
-import { fetchReleases, latestFrameworkVersion, type Release } from "./releases.ts";
+import { fetchReleases, footerVersion, type Release } from "./releases.ts";
 import corePackage from "../../../../packages/libs/core/package.json" with { type: "json" };
 
 export const REPO = "lucabro81/mercury-fw";
@@ -21,10 +21,11 @@ export function getReleases(): Promise<Release[]> {
 }
 
 /**
- * The framework version the site describes: the newest framework release, or
- * the core's own version while there's no release to read (offline, or before
- * the first one), which matches it right after a release anyway.
+ * The framework version the footer shows, and where it links: the newest
+ * framework release and its changelog entry, or the core's own version and the
+ * changelog page while there's no release to read (offline, or before the
+ * first one), which matches it right after a release anyway.
  */
-export async function frameworkVersion(): Promise<string> {
-  return latestFrameworkVersion(await getReleases()) ?? corePackage.version;
+export async function frameworkVersion(): Promise<{ version: string; href: string }> {
+  return footerVersion(await getReleases(), corePackage.version);
 }

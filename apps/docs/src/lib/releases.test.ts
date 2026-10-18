@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { demoteHeadings, fetchReleases, latestFrameworkVersion, parseReleases, releaseAnchor, type GithubRelease } from "./releases.ts";
+import { demoteHeadings, fetchReleases, footerVersion, latestFrameworkVersion, parseReleases, releaseAnchor, type GithubRelease } from "./releases.ts";
 
 const release = (over: Partial<GithubRelease>): GithubRelease => ({
   tag_name: "v0.1.0",
@@ -158,5 +158,18 @@ describe("demoteHeadings", () => {
 
   test("never past h6, and the rest of the markup untouched", () => {
     expect(demoteHeadings('<h5>E</h5><h6 class="x">F</h6><p id="keep">p</p>')).toBe('<h6>E</h6><h6 class="x">F</h6><p id="keep">p</p>');
+  });
+});
+
+describe("footerVersion", () => {
+  test("the newest framework release, linked to its entry on the changelog", () => {
+    const releases = parseReleases([release({ tag_name: "v0.53.0" })]);
+    expect(footerVersion(releases, "0.53.1")).toEqual({ version: "0.53.0", href: "changelog/#v0.53.0" });
+  });
+
+  test("with no framework release to read, the core's version and the changelog page itself, never an anchor that isn't there", () => {
+    expect(footerVersion([], "0.53.0")).toEqual({ version: "0.53.0", href: "changelog/" });
+    const onlyPlugins = parseReleases([release({ tag_name: "@mercury-fw/plugin-jira@0.7.0" })]);
+    expect(footerVersion(onlyPlugins, "0.53.0")).toEqual({ version: "0.53.0", href: "changelog/" });
   });
 });

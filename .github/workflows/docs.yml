@@ -9,22 +9,20 @@ name: Docs site
 on:
   pull_request:
     paths:
+      # The catalog and the CLI reference come from apps/cli, the versions,
+      # the contracts' reference and the HTTP API from packages.
       - apps/docs/**
-      - apps/cli/src/catalog.ts
-      - packages/*/*/package.json
-      - packages/libs/core/index.ts
-      - packages/types/**
-      - packages/channels/channel-http/openapi.yaml
+      - apps/cli/**
+      - packages/**
       - .github/workflows/docs.yml
   push:
     branches: [main]
     paths:
+      # The catalog and the CLI reference come from apps/cli, the versions,
+      # the contracts' reference and the HTTP API from packages.
       - apps/docs/**
-      - apps/cli/src/catalog.ts
-      - packages/*/*/package.json
-      - packages/libs/core/index.ts
-      - packages/types/**
-      - packages/channels/channel-http/openapi.yaml
+      - apps/cli/**
+      - packages/**
       - .github/workflows/docs.yml
 
 permissions:
@@ -37,8 +35,10 @@ jobs:
       run:
         working-directory: apps/docs
     env:
-      # The changelog page reads the repository's releases.
+      # The changelog page reads the repository's releases; failing to read
+      # them fails the build here instead of checking an empty changelog.
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      RELEASES_REQUIRED: "1"
       CI: "true"
     steps:
       - uses: actions/checkout@v4

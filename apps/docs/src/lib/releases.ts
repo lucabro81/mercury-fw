@@ -64,6 +64,16 @@ export function latestFrameworkVersion(releases: Release[]): string | null {
   return releases.find((r) => r.kind === "framework")?.version ?? null;
 }
 
+/**
+ * What the footer shows: the newest framework release, linked to its entry on
+ * the changelog (`href` relative to the site's base), or, with no framework
+ * release to read, `coreVersion` linked to the changelog page itself.
+ */
+export function footerVersion(releases: Release[], coreVersion: string): { version: string; href: string } {
+  const version = latestFrameworkVersion(releases);
+  return version === null ? { version: coreVersion, href: "changelog/" } : { version, href: `changelog/#v${version}` };
+}
+
 /** The anchor of a release on the changelog page: `v<version>` for the framework (the footer links to it), the tag without `@` and `/` for a package. */
 export function releaseAnchor(r: Release): string {
   return r.kind === "framework" ? `v${r.version}` : r.tag.replace(/[@/]/g, "-").replace(/^-+/, "");

@@ -35,7 +35,7 @@ const row = catalogRow(Astro.props.slug);
         <tr>
           <td><code>{e.name}</code></td>
           <td>
-            {e.required && <strong>Required. </strong>}
+            {e.required && <><strong>Required.</strong>{" "}</>}
             {e.description}
             {e.example && <> (default <code>{e.example}</code>)</>}
           </td>
