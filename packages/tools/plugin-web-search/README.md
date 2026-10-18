@@ -20,7 +20,7 @@ export default defineMercuryConfig({
 });
 ```
 
-The model gets two tools. `web_search` returns title, URL and snippet of each result, and `web_fetch` reads a page and returns its title and text (the main content, found by Readability; menus, footers and scripts are left out). An answer built on pages ends with a `Fonti:` list of what was read, written by the plugin and not by the model, so it can't be left out or made up.
+The model gets two tools. `web_search` returns title, URL and snippet of each result, and `web_fetch` reads a page and returns its title and text (the main content, found by Readability; menus, footers and scripts are left out). An answer built on pages ends with a `Fonti:` list of what was read, written by the plugin and not by the model, so it can't be left out or made up (a title is the site's text, so it shows up cut at 120 characters and stripped of links and formatting).
 
 The plugin acts as no one (`actsAs: "anyone"`): there's no login, everyone gets it, and `access.plugins` in the config restricts it to some roles like any other plugin.
 
@@ -31,7 +31,7 @@ A page is read right away only when its host is allowed, by the instance (`allow
 For any other host the plugin asks the person, through the same confirmation Mercury uses for irreversible actions (a button per choice on Google Chat, a token per choice on the terminal and over HTTP):
 
 - **Solo questa volta** reads that page and nothing else;
-- **Sempre per \<host\>** adds the host to the person's own list, then reads the page.
+- **Sempre per \<host\>** adds the host to the person's own list, then reads the page (the host stays on the list even if that read fails: the person allowed the host, not the page).
 
 Either way the page goes back to the model, which answers on it in the same conversation. A person's list is theirs alone (nobody else's reads change), and it lives in the plugin's folder on the vault's volume, so it survives a restart; with a core that gives the plugin no folder, only the first choice is offered.
 

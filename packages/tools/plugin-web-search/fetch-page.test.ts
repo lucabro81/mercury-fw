@@ -73,6 +73,24 @@ describe("readPage", () => {
     expect(requested).toHaveLength(1);
   });
 
+  // Cold review of #194: an unparsable Location threw out of readPage, past the
+  // confirmation that ran it, instead of coming back as a failure.
+  it("reports a redirect to an unparsable Location as a failure", async () => {
+    const { fetchFn } = web({ "https://a.test/x": redirect("http://[bad") });
+    expect(await readPage("https://a.test/x", deps(fetchFn))).toEqual({ ok: false, error: "the page redirects to an invalid address: http://[bad" });
+  });
+
+  it("releases a redirect's body before following it", async () => {
+    let cancelled = false;
+    const body = new ReadableStream({ cancel: () => void (cancelled = true) });
+    const { fetchFn } = web({
+      "https://a.test/x": () => new Response(body, { status: 302, headers: { location: "/y" } }),
+      "https://a.test/y": page(html("Y", "y")),
+    });
+    await readPage("https://a.test/x", deps(fetchFn));
+    expect(cancelled).toBe(true);
+  });
+
   it("stops after too many redirects", async () => {
     const { fetchFn } = web({ "https://a.test/1": redirect("/2"), "https://a.test/2": redirect("/3"), "https://a.test/3": redirect("/1") });
 

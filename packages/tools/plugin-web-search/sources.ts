@@ -10,6 +10,23 @@ import type { PostTurnGuard, StepInfo } from "@mercury-fw/plugin-types";
 /** A page `web_fetch` read in the turn. */
 type ReadPage = { url: string; title: string };
 
+/** Longest title shown, in characters. */
+const MAX_TITLE = 120;
+
+/**
+ * A title as the person sees it: it's the site's text, so it brings no link,
+ * address or formatting of its own (a chat client would render them), stays
+ * on one line and is cut at `MAX_TITLE`.
+ */
+function plainTitle(title: string): string {
+  const plain = title
+    .replace(/\b(?:https?:\/\/|www\.)\S+/gi, "")
+    .replace(/[*_`~#|<>\[\]()]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  return plain.length > MAX_TITLE ? `${plain.slice(0, MAX_TITLE)}…` : plain;
+}
+
 /** The pages read successfully in `steps`, in order, once each. */
 function pagesRead(steps: StepInfo[] = []): ReadPage[] {
   const pages = new Map<string, ReadPage>();
@@ -18,7 +35,7 @@ function pagesRead(steps: StepInfo[] = []): ReadPage[] {
       if (result.toolName !== "web_fetch") continue;
       const out = result.output as { ok?: unknown; url?: unknown; title?: unknown } | undefined;
       if (out?.ok !== true || typeof out.url !== "string" || pages.has(out.url)) continue;
-      pages.set(out.url, { url: out.url, title: typeof out.title === "string" ? out.title.replace(/\s+/g, " ").trim() : "" });
+      pages.set(out.url, { url: out.url, title: typeof out.title === "string" ? plainTitle(out.title) : "" });
     }
   }
   return [...pages.values()];

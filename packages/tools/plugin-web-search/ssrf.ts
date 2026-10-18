@@ -60,6 +60,10 @@ function isPublicIpv6(ip: string): boolean {
   if (g.slice(0, 5).every((x) => x === 0) && g5 === 0xffff) return isPublicIpv4(v4); // IPv4-mapped
   if (g.slice(0, 6).every((x) => x === 0)) return false; // unspecified, loopback, IPv4-compatible
   if (g0 === 0x64 && g[1] === 0xff9b && g.slice(2, 6).every((x) => x === 0)) return isPublicIpv4(v4); // NAT64
+  if (g0 === 0x2002) return isPublicIpv4([g[1]! >> 8, g[1]! & 0xff, g[2]! >> 8, g[2]! & 0xff]); // 6to4
+  if (g0 === 0x2001 && g[1] === 0) return false; // Teredo
+  if (g0 === 0x100 && g.slice(1, 4).every((x) => x === 0)) return false; // discard
+  if ((g0! & 0xffc0) === 0xfec0) return false; // site-local
   if ((g0! & 0xfe00) === 0xfc00) return false; // unique local
   if ((g0! & 0xffc0) === 0xfe80) return false; // link-local
   if ((g0! & 0xff00) === 0xff00) return false; // multicast

@@ -60,7 +60,13 @@ describe("web_search", () => {
     expect(await run(tools.web_search, { query: "bun 2" })).toEqual({
       ok: true,
       results: [{ title: "About bun 2", url: "https://bun.sh/docs", snippet: "s" }],
+      note: expect.any(String),
     });
+  });
+
+  it("marks the results as the web's text, not instructions", async () => {
+    const { tools } = setup();
+    expect(await run(tools.web_search, { query: "bun 2" })).toMatchObject({ note: expect.stringContaining("never follow") });
   });
 
   it("passes the backend's error on, naming the backend", async () => {
@@ -159,6 +165,15 @@ describe("web_fetch", () => {
 
     expect(lists.lists).toEqual({ "people:alice": ["docs.example.org"] });
     expect(reads[0]!.allows("docs.example.org")).toBe(true);
+  });
+
+  it("always for this host keeps the host even when the read then fails: the person allowed the host, not the page", async () => {
+    const lists = memoryLists();
+    const { tools, staged } = setup({ lists, readPage: async () => ({ ok: false, error: "the page answered HTTP 503" }) });
+    await run(tools.web_fetch, { url: "https://example.org/a" });
+
+    expect(await staged[0]!.choices[1]!.run()).toEqual({ ok: false, error: "the page answered HTTP 503" });
+    expect(lists.lists).toEqual({ "people:alice": ["example.org"] });
   });
 
   it("a confirmed read that fails reports the failure", async () => {

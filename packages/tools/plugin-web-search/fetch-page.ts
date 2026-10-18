@@ -88,7 +88,12 @@ export async function readPage(rawUrl: string, deps: ReadPageDeps): Promise<Read
 
     const location = response.headers.get("location");
     if (response.status >= 300 && response.status < 400 && location) {
-      current = new URL(location, checked.url).href;
+      await response.body?.cancel().catch(() => {});
+      try {
+        current = new URL(location, checked.url).href;
+      } catch {
+        return { ok: false, error: `the page redirects to an invalid address: ${location}` };
+      }
       continue;
     }
     if (!response.ok) return { ok: false, error: `the page answered HTTP ${response.status}` };

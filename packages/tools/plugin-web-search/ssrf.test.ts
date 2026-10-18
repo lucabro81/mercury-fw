@@ -30,6 +30,14 @@ describe("isPublicAddress", () => {
     }
   });
 
+  it("refuses IPv6 transition and legacy ranges that can reach IPv4 or local networks", () => {
+    for (const ip of ["2002:7f00:1::1", "2002:a00:1::1", "2001:0:4136:e378::1", "fec0::1", "100::1"]) {
+      expect(isPublicAddress(ip)).toBe(false);
+    }
+    // 6to4 wrapping a public address is fine
+    expect(isPublicAddress("2002:5db8:d822::1")).toBe(true);
+  });
+
   it("refuses what isn't an IP address at all", () => {
     expect(isPublicAddress("localhost")).toBe(false);
     expect(isPublicAddress("999.1.1.1")).toBe(false);
