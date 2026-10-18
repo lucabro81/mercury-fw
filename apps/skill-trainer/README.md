@@ -34,7 +34,7 @@ bun src/bin.ts run jira --json /tmp/results.json
 
 The process runs with a throwaway home folder, so composing Mercury never links anything into yours, and each task gets a fresh conversation on a throwaway vault, removed when the task ends (a run interrupted with Ctrl-C leaves both in the system's temp folder).
 
-It exits 1 when a task couldn't run at all: a plugin that didn't load (the core skips a plugin whose build fails, so without this check the tasks would run without its tool), a model that stopped sending (the core's stall watchdog, `TURN_STALL_TIMEOUT_MS`), an unreachable endpoint. A task that ran and failed its checks is a score, not an error, and exits 0.
+It exits 1 when no task ran (a split with no tasks, say) or a task couldn't run at all: a plugin that didn't load (the core skips a plugin whose build fails, so without this check the tasks would run without its tool), a model that stopped sending (the core's stall watchdog, `TURN_STALL_TIMEOUT_MS`), an unreachable endpoint. A task that ran and failed its checks is a score, not an error, and exits 0.
 
 ## What a run is and isn't
 
