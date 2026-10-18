@@ -206,6 +206,13 @@ describe("the Jira skill's training data", () => {
     expect(() => selectTasks(training.tasks, {})).not.toThrow();
   });
 
+  // The sizes the comparison needs (the trainer's README, "Measuring a gain"):
+  // fewer test or val tasks can't tell a 10-point gain from noise.
+  test("at least 50 test tasks and 30 val tasks", () => {
+    expect(training.tasks.filter((t) => t.split === "test").length).toBeGreaterThanOrEqual(50);
+    expect(training.tasks.filter((t) => t.split === "val").length).toBeGreaterThanOrEqual(30);
+  });
+
   test("every split has tasks, and every kind of task is trained on", () => {
     const of = (split: string) => training.tasks.filter((t) => t.split === split);
     for (const split of ["train", "val", "test"]) expect(of(split).length).toBeGreaterThan(0);

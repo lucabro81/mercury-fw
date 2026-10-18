@@ -51,7 +51,7 @@ A turn's answer is the model's text, as in `mfw e2e`: a list the model shows wit
 
 ## What a plugin provides
 
-Its training data sits next to its code, in `packages/tools/plugin-<name>/skill-training/index.ts` (`run jira` reads `packages/tools/plugin-jira/`). The folder stays out of the plugin's npm package: `files` in its `package.json` doesn't name it, and `scripts/check-pack.ts` knows it's repo-only.
+Its training data sits next to its code, in `packages/tools/plugin-<name>/skill-training/index.ts` (`run jira` reads `packages/tools/plugin-jira/`). The folder stays out of the plugin's npm package: `files` in its `package.json` doesn't name it, and `scripts/workspaces.ts` lists it among the repo-only folders, which the pack check and the type build both leave out (it imports from outside the package, which a declaration build can't take).
 
 The default export is a `SkillTraining` (`src/contract.ts`):
 
@@ -60,7 +60,7 @@ The default export is a `SkillTraining` (`src/contract.ts`):
 - `fixtures`, what that runner answers: a list, or a function making a fresh one for each task when the fixtures hold state;
 - `tasks`.
 
-The plugin doesn't depend on the trainer or the CLI, so its training data imports both the contract and the check types (`Call`, `Expect`, `Run`) from `apps/skill-trainer/src/contract.ts` by a relative path; the plugin's own typecheck covers the folder. Jira's (`packages/tools/plugin-jira/skill-training/`) is the worked example: a made-up Jira (`world.ts`) with a small JQL evaluator (`jql.ts`), printed the way the real CLI prints (`jira-cli.ts`), the tasks (`tasks-basic.ts`, `tasks-hard.ts`) and what they check (`checks.ts`), gathered in `index.ts`; `facts.test.ts` holds every expected count against the made-up Jira. Its fixtures answer `--help` only for the commands whose help was recorded from the real CLI (search, get, create, transition, assign, comment add, delete): asking for any other shows up as unmatched.
+The plugin doesn't depend on the trainer or the CLI, so its training data imports both the contract and the check types (`Call`, `Expect`, `Run`) from `apps/skill-trainer/src/contract.ts` by a relative path; the plugin's own typecheck covers the folder. Jira's (`packages/tools/plugin-jira/skill-training/`) is the worked example: a made-up Jira (`world.ts`) with a small JQL evaluator (`jql.ts`), printed the way the real CLI prints (`jira-cli.ts`), the tasks (`tasks-basic.ts`, `tasks-hard.ts`) and what they check (`checks.ts`), gathered in `index.ts`; `facts.test.ts` holds the expected counts and issue sets of most tasks against the made-up Jira, with a reference run of the right search for each. Its fixtures answer `--help` only for the commands whose help was recorded from the real CLI (search, get, create, transition, assign, comment add, delete): asking for any other shows up as unmatched.
 
 ## Fixtures
 
@@ -115,7 +115,7 @@ With no real gain the comparison claims one 3 to 9% of the time across the table
 What that means for a plugin's training data:
 
 - **At least 50 test tasks, 3 runs per skill** to tell a 10-point gain from noise. That's the minimum for any claim. Under 30 tasks no number of runs makes it reliable (16 tasks with 5 runs see +10 points about half the time at a 70% baseline).
-- **At least 80 test tasks with 5 runs, or 120 with 3,** to claim a gain as small as 5 points.
+- **At least 80 test tasks with 5 runs, or 120 with 3,** to claim a gain as small as 5 points, and that only near a 90% baseline: at 70% even those see a 5-point gain only about 60% of the time, and a smaller gain isn't worth measuring.
 - **At least 30 val tasks.** SkillOpt's gate accepts an edit when its val score is strictly higher in one run, so with few val tasks it accepts noise as progress.
 - **Tasks the baseline fails sometimes.** A task every skill always passes adds nothing but runtime. Aim for a test baseline between 60% and 80%: near 100% there's no room left to measure. Jira's, on the current model, came out at 99%: that's the answer there, the skill doesn't need training.
 - **The time it takes.** A task costs about 40 seconds on the current model (Jira's 132 tasks took 90 minutes; most take 15 to 30, a few over a minute when the model wanders), so 50 test tasks, 3 runs, two skills is about 3 hours and a half, and 80 tasks with 5 runs about 9.

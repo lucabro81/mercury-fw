@@ -78,6 +78,11 @@ const CASES: Array<[string, string]> = [
   ["h-dates-due-week", "project = WEB AND duedate >= now() AND duedate <= 7d"],
   ["h-dates-it-no-due", `project = WEB AND ${OPEN} AND duedate is EMPTY`],
   ["h-mine-it-count", `assignee = currentUser() AND ${OPEN}`],
+  ["h-count-lena", `assignee = "Lena Hoffmann" AND ${OPEN}`],
+  ["someone-else", `assignee = "Ada Moretti" AND ${OPEN}`],
+  ["h-mine-in-progress", 'assignee = currentUser() AND status = "In Progress"'],
+  ["h-dates-it-mine-overdue", `assignee = currentUser() AND ${OPEN} AND duedate < now()`],
+  ["h-list-keys-only", `project = OPS AND issuetype = Bug AND ${OPEN}`],
 ];
 
 describe("the tasks' facts follow from the made-up Jira", () => {
