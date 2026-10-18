@@ -15,8 +15,25 @@ import type { StepInfo } from "@mercury-fw/plugin-types";
 /** Settled outcome of a tool call (or guard/capture-ping) reported via `onToolFinish`. `pending` = action deferred behind a token, not run. */
 export type ToolOutcome = "success" | "failed" | "pending";
 
-/** A confirm-required staging found in a step: the token to send back and a summary of what will run. */
-export type PendingConfirmation = { token: string; summary: string };
+/** One way the person can answer a staging: the token to send back and the words on its button. */
+export type ConfirmChoice = { token: string; label: string };
+
+/**
+ * A confirm-required staging found in a step: the token to send back, a
+ * summary of what will run, and the choices offered. A staging with a single
+ * token is one choice labelled `Conferma`; `token` is always the first
+ * choice's, so a channel that knows nothing of choices still shows that one.
+ */
+export type PendingConfirmation = { token: string; summary: string; choices: ConfirmChoice[] };
+
+/** The `choices` a tool result carries, keeping only well-formed ones. */
+function choicesOf(raw: unknown): ConfirmChoice[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.filter(
+    (c): c is ConfirmChoice =>
+      typeof c === "object" && c !== null && typeof (c as ConfirmChoice).token === "string" && typeof (c as ConfirmChoice).label === "string",
+  ).map((c) => ({ token: c.token, label: c.label }));
+}
 
 /**
  * Returns the first confirm-required staging in `step` (in tool-call order), or
@@ -27,10 +44,15 @@ export type PendingConfirmation = { token: string; summary: string };
 export function detectPendingConfirmation(step: StepInfo): PendingConfirmation | null {
   for (const call of step.toolCalls) {
     const result = step.toolResults.find((r) => r.toolCallId === call.toolCallId);
-    const output = result?.output as { pendingConfirmation?: unknown; token?: unknown; summary?: unknown } | undefined;
+    const output = result?.output as { pendingConfirmation?: unknown; token?: unknown; summary?: unknown; choices?: unknown } | undefined;
     if (!output || output.pendingConfirmation !== true || typeof output.token !== "string") continue;
 
-    return { token: output.token, summary: typeof output.summary === "string" ? output.summary : "" };
+    const choices = choicesOf(output.choices);
+    return {
+      token: output.token,
+      summary: typeof output.summary === "string" ? output.summary : "",
+      choices: choices.length > 0 ? choices : [{ token: output.token, label: "Conferma" }],
+    };
   }
   return null;
 }
