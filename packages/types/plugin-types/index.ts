@@ -77,6 +77,13 @@ export type CliPostProcessor = (
 export type ActionResult = { ok: true; data: unknown } | { ok: false; error: string };
 
 /**
+ * How a confirmed action's result goes back to the model: the core resumes the
+ * turn as if the model had called `toolName` with `input` and got the action's
+ * result back. The result stays a tool result, never text of the person's.
+ */
+export type ResumeAs = { toolName: string; input: unknown };
+
+/**
  * Stages an irreversible action behind a confirmation token and returns that
  * token. The action is opaque — a `run` thunk plus a `describe` string for the
  * paper trail — so nothing here (and nothing in the core that runs it later)
