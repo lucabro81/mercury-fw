@@ -115,7 +115,7 @@
     },
     "packages/channels/channel-google-chat": {
       "name": "@mercury-fw/channel-google-chat",
-      "version": "0.8.0",
+      "version": "0.8.1",
       "dependencies": {
         "@google-cloud/pubsub": "^5.3.1",
       },
@@ -301,7 +301,7 @@
     },
     "packages/tools/plugin-web-search": {
       "name": "@mercury-fw/plugin-web-search",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "dependencies": {
         "@mozilla/readability": "^0.6.0",
         "ai": "^7.0.126",
