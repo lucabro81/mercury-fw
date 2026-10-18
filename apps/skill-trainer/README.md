@@ -60,7 +60,7 @@ The default export is a `SkillTraining` (`src/contract.ts`):
 - `fixtures`, what that runner answers: a list, or a function making a fresh one for each task when the fixtures hold state;
 - `tasks`.
 
-The plugin doesn't depend on the trainer or the CLI, so its training data imports both the contract and the check types (`Call`, `Expect`, `Run`) from `apps/skill-trainer/src/contract.ts` by a relative path; the plugin's own typecheck covers the folder. Jira's (`packages/tools/plugin-jira/skill-training/`) is the worked example: a made-up Jira (`world.ts`) with a small JQL evaluator (`jql.ts`), printed the way the real CLI prints (`jira-cli.ts`), and the tasks (`index.ts`).
+The plugin doesn't depend on the trainer or the CLI, so its training data imports both the contract and the check types (`Call`, `Expect`, `Run`) from `apps/skill-trainer/src/contract.ts` by a relative path; the plugin's own typecheck covers the folder. Jira's (`packages/tools/plugin-jira/skill-training/`) is the worked example: a made-up Jira (`world.ts`) with a small JQL evaluator (`jql.ts`), printed the way the real CLI prints (`jira-cli.ts`), the tasks (`tasks-basic.ts`, `tasks-hard.ts`) and what they check (`checks.ts`), gathered in `index.ts`; `facts.test.ts` holds every expected count against the made-up Jira. Its fixtures answer `--help` only for the commands whose help was recorded from the real CLI (search, get, create, transition, assign, comment add, delete): asking for any other shows up as unmatched.
 
 ## Fixtures
 
@@ -100,7 +100,7 @@ A trained skill counts as better only if it beats the original by more than the 
 
 **Check the procedure on itself first.** Compare the baseline with a second run of the baseline: it has to come out as no gain. If it doesn't, the tasks or the checks are noisier than the numbers below assume.
 
-How many tasks and runs that takes comes from `bun scripts/power.ts`, a simulation of exactly this comparison (tasks with very different pass rates, a real gain spread over the tasks that fail). The share of comparisons that see a real gain, with 3 runs per skill:
+How many tasks and runs that takes comes from `bun scripts/power.ts`, a simulation of exactly this comparison. Its numbers hold under its assumptions: every task's pass rate drawn from a Beta with the baseline as mean and a low concentration (2, so tasks differ a lot, some always passing and some rarely), runs independent of each other, a real gain spread over the tasks in proportion to how often they fail, 400 bootstrap resamples. They haven't been checked against a real A/A comparison yet, which is the first thing to run on a plugin's data. The share of comparisons that see a real gain, with 3 runs per skill:
 
 | test tasks | baseline 90%, +5 points | +10 | baseline 70%, +5 | +10 | +15 |
 |---|---|---|---|---|---|
@@ -110,12 +110,12 @@ How many tasks and runs that takes comes from `bun scripts/power.ts`, a simulati
 | 80 | 77% | 100% | 44% | 89% | 100% |
 | 120 | 90% | 100% | 56% | 97% | 100% |
 
-With no real gain the comparison claims one 5 to 8% of the time, close to the 5% it's built for. With 5 runs instead of 3, 50 tasks at a 70% baseline see +10 points 92% of the time; with a single run, 37%.
+With no real gain the comparison claims one 3 to 9% of the time across the table's settings, around the 5% it's built for (the bootstrap gets a little loose with few tasks). With 5 runs instead of 3, 50 tasks at a 70% baseline see +10 points 92% of the time; with a single run, 37%.
 
 What that means for a plugin's training data:
 
 - **At least 50 test tasks, 3 runs per skill** to tell a 10-point gain from noise. That's the minimum for any claim. Under 30 tasks no number of runs makes it reliable (16 tasks with 5 runs see +10 points about half the time at a 70% baseline).
 - **At least 80 test tasks with 5 runs, or 120 with 3,** to claim a gain as small as 5 points.
 - **At least 30 val tasks.** SkillOpt's gate accepts an edit when its val score is strictly higher in one run, so with few val tasks it accepts noise as progress.
-- **Tasks the baseline fails sometimes.** A task every skill always passes adds nothing but runtime. Aim for a test baseline between 60% and 80%: near 100% there's no room left to measure.
-- **The time it takes.** A task costs about 25 seconds on the current model (a few take over a minute, when the model wanders), so 50 test tasks, 3 runs, two skills is about 2 hours, and 80 tasks with 5 runs about 5 and a half.
+- **Tasks the baseline fails sometimes.** A task every skill always passes adds nothing but runtime. Aim for a test baseline between 60% and 80%: near 100% there's no room left to measure. Jira's, on the current model, came out at 99%: that's the answer there, the skill doesn't need training.
+- **The time it takes.** A task costs about 40 seconds on the current model (Jira's 132 tasks took 90 minutes; most take 15 to 30, a few over a minute when the model wanders), so 50 test tasks, 3 runs, two skills is about 3 hours and a half, and 80 tasks with 5 runs about 9.
