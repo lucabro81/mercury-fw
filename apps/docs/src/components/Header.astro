@@ -20,7 +20,7 @@ const isCurrent = (match: string | RegExp) => (typeof match === "string" ? path.
 ---
 
 <div class="mfw-header">
-  <a href={`${base}/`} class="site-title">mercury</a>
+  <a href={`${base}/`} class="site-title">mercury framework</a>
   <nav aria-label="Sections" class="mfw-sections">
     {sections.map((s) => (
       <a href={s.href} aria-current={isCurrent(s.match) ? "page" : undefined}>{s.label}</a>

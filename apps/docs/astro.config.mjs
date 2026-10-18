@@ -12,7 +12,7 @@ export default defineConfig({
   trailingSlash: "always",
   integrations: [
     starlight({
-      title: "Mercury",
+      title: "Mercury Framework",
       description: "A framework for building your own agent: you declare what it's made of, Mercury runs the rest.",
       favicon: "/favicon.svg",
       customCss: [

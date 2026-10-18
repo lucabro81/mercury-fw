@@ -41,7 +41,7 @@ function toRelease(raw: GithubRelease): Release | null {
   const framework = FRAMEWORK_TAG.exec(raw.tag_name);
   if (framework) {
     const version = framework[1]!;
-    return { tag: raw.tag_name, kind: "framework", title: `Mercury ${version}`, package: null, version, date, body, url: raw.html_url };
+    return { tag: raw.tag_name, kind: "framework", title: `Mercury Framework ${version}`, package: null, version, date, body, url: raw.html_url };
   }
   const pkg = PACKAGE_TAG.exec(raw.tag_name);
   if (pkg) {

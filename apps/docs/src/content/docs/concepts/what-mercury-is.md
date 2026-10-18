@@ -11,7 +11,7 @@ a function the model may call, such as "search the web" or "create a Jira ticket
 a description and the input it takes.
 
 Writing an agent from scratch means writing the conversation loop, the memory, the connection to each chat service,
-the checks on what the model may do. Mercury is that part, written once: a **framework** you build your agent on.
+the checks on what the model may do. Mercury Framework (Mercury, for short) is that part, written once: a **framework** you build your agent on.
 
 ## The pieces
 

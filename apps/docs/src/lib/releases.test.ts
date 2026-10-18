@@ -22,7 +22,7 @@ describe("parseReleases", () => {
       {
         tag: "v0.52.0",
         kind: "framework",
-        title: "Mercury 0.52.0",
+        title: "Mercury Framework 0.52.0",
         package: null,
         version: "0.52.0",
         date: "2026-10-17",
