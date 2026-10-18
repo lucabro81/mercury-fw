@@ -43,7 +43,7 @@ export const checks = {
   presented: (e: Expect) => e.call("present", (c) => c.ok, "shows the list with present"),
   notPresented: (e: Expect) => e.callCount({ max: 0 }, "present", "doesn't show a list it wasn't asked for"),
   /** The answer has `n` as a number of its own, in figures or (up to twelve) in words. */
-  number: (e: Expect, n: number) => e.answer(new RegExp(`\\b(${n}${WORDS[n] ? `|${WORDS[n]}` : ""})\\b`, "i"), `the answer says ${n}`),
+  number: (e: Expect, n: number) => e.answer(new RegExp(`(?<![\\w-])(${n}${WORDS[n] ? `|${WORDS[n]}` : ""})(?![\\w-])`, "i"), `the answer says ${n}`),
 };
 
 export const task = (id: string, split: Split, taskType: string, turn: string | TrainingTask["turns"], check: (run: Run, e: Expect) => void): TrainingTask => ({
@@ -104,24 +104,31 @@ export const assignTask = (id: string, split: Split, turn: string, key: string, 
 
 /** A filter the user words as Jira doesn't: the right status searched in the end (or every issue's
  * status read and the matching ones counted, an equally right way), the issues counted. */
-export const wordingTask = (id: string, split: Split, turn: string, status: RegExp, n: number) =>
+export const wordingTask = (id: string, split: Split, turn: string, status: RegExp, n: number, project: string) =>
   task(id, split, "status-wording", turn, (run, e) => {
     checks.loadsSkill(e);
     const searches = jiraCalls(run, "issue search").filter((c) => c.ok);
+    const ofProject = new RegExp(`project\\s*(=|in\\s*\\()\\s*["']?${project}\\b`, "i");
     e.that(
       "searches the status by its Jira name, or reads the statuses",
-      searches.some((c) => status.test(jqlOf(c))) || searches.some((c) => /--select[ =]\S*issues\.fields\.status\.name/.test(cmd(c))),
+      searches.some((c) => status.test(jqlOf(c))) ||
+        searches.some((c) => ofProject.test(jqlOf(c)) && /--select[ =]\S*issues\.fields\.status\.name/.test(cmd(c))),
     );
     checks.number(e, n);
     checks.selects(e, run);
   });
 
-/** A filter on dates: Jira's relative syntax, never a date it computed. */
-export const dateTask = (id: string, split: Split, turn: string, keys: string[]) =>
+/** JQL's relative dates: now(), an offset, or a date function. */
+export const RELATIVE_DATE = /now\(\)|[-+]?\d+[dwh]\b|(start|end)of(day|week|month)\(/i;
+
+/** A filter on dates: Jira's relative syntax, never a date it computed; the issues it should find
+ * named, and the ones it shouldn't (`absent`) left out. */
+export const dateTask = (id: string, split: Split, turn: string, keys: string[], absent: string[] = []) =>
   task(id, split, "relative-date", turn, (run, e) => {
     checks.loadsSkill(e);
-    checks.searched(e, /now\(\)|[-+]?\d+[dwh]\b/, "uses JQL's relative dates");
+    checks.searched(e, RELATIVE_DATE, "uses JQL's relative dates");
     e.that("doesn't write a computed date", !jiraCalls(run, "issue search").some((c) => /\d{4}-\d{2}-\d{2}/.test(jqlOf(c))));
     for (const key of keys) e.answer(key);
+    for (const key of absent) e.answerNot(new RegExp(`${key}(?!\\d)`), `leaves ${key} out`);
     checks.selects(e, run);
   });

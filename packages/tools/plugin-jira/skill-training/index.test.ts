@@ -3,6 +3,7 @@ import { createExpect } from "../../../../apps/cli/src/e2e/expect.ts";
 import type { Call, Run } from "../../../../apps/skill-trainer/src/contract.ts";
 import { selectTasks } from "../../../../apps/skill-trainer/src/harness.ts";
 import training from "./index.ts";
+import { ACCOUNTS } from "./world.ts";
 
 /** A jiraCommand call that worked. */
 const jira = (command: string, output: unknown = {}): Call => ({ tool: "jiraCommand", input: { command }, output, ok: true, pending: false });
@@ -94,6 +95,70 @@ describe("the checks read what the model did, not how it typed it", () => {
     expect(
       check("h-informal-nomatch", [{ calls: [readSkill, jira("jira project search --query mobile --select values.key"), jira('jira issue search --jql "project = OPS" --select issues.key')], answer: "The mobile app project has 6 open issues." }]),
     ).not.toEqual([]);
+  });
+
+  // From the second cold review: checks that took wrong answers for right ones.
+  test("a count doesn't match a number inside an issue key", () => {
+    expect(check("count-web-open", [{ calls: [readSkill, jira('jira issue search --jql "project = WEB AND statusCategory != Done" --select issues.key')], answer: "There are 7 open issues, the newest WEB-8." }])).toContain(
+      "the answer says 8",
+    );
+  });
+
+  test("a due date isn't any number 24, and Highest isn't High", () => {
+    expect(check("issue-due", [{ calls: [readSkill, jira("jira issue get WEB-3 --select fields.duedate")], answer: "WEB-3 has 24 comments." }])).not.toEqual([]);
+    expect(check("issue-priority", [{ calls: [readSkill, jira("jira issue get DSK-1 --select fields.priority.name")], answer: "DSK-1 is Highest." }])).not.toEqual([]);
+  });
+
+  test("a date filter that also lets the wrong issues in fails", () => {
+    expect(
+      check("h-dates-due-week", [{ calls: [readSkill, jira('jira issue search --jql "project = WEB AND duedate <= 7d" --select issues.key')], answer: "Due: WEB-3, WEB-10, WEB-5, WEB-7." }]),
+    ).not.toEqual([]);
+  });
+
+  test("Jira's date functions count as relative dates", () => {
+    expect(
+      check("dates-overdue", [{ calls: [readSkill, jira('jira issue search --jql "project = WEB AND statusCategory != Done AND duedate < startOfDay()" --select issues.key')], answer: "Overdue: WEB-5 and WEB-7." }]),
+    ).toEqual([]);
+  });
+
+  // ...and checks that refused right ones.
+  test("the follow-up recall says what was searched without quoting the JQL", () => {
+    expect(
+      check("followup-recall", [
+        { calls: [readSkill, jira('jira issue search --jql "project = DSK AND statusCategory != Done" --select issues.key')], answer: "Two." },
+        { calls: [], answer: "I searched the DSK project for issues whose status category isn't Done." },
+      ]),
+    ).toEqual([]);
+  });
+
+  test("filtering by Ada Moretti's accountId, as the CLI's help suggests", () => {
+    expect(
+      check("someone-else", [{ calls: [readSkill, jira(`jira issue search --jql "assignee = ${ACCOUNTS.adaMoretti} AND statusCategory != Done" --select issues.key`)], answer: "WEB-5, OPS-6" }]),
+    ).toEqual([]);
+  });
+
+  test("--project=WEB is a create in WEB", () => {
+    expect(check("create-bug", [{ calls: [readSkill, jira('jira issue create --project=WEB --type=Bug --summary "Promo banner overlaps the menu"')], answer: "Created WEB-11." }])).toEqual([]);
+  });
+
+  test("status in (…) names the status", () => {
+    expect(check("wording-todo", [{ calls: [readSkill, jira("jira issue search --jql \"project = WEB AND status in ('To Do')\" --select issues.key")], answer: "5" }])).toEqual([]);
+  });
+
+  test("reading every issue's status counts only on the project asked about", () => {
+    expect(
+      check("wording-review", [{ calls: [readSkill, jira('jira issue search --jql "project = OPS" --select issues.key,issues.fields.status.name')], answer: "One ticket." }]),
+    ).toContain("searches the status by its Jira name, or reads the statuses");
+  });
+
+  test("the second issue is the second of the list the model got, whatever its order", () => {
+    const listed = { ok: true, data: { issues: [{ key: "MRT-4" }, { key: "MRT-1" }, { key: "MRT-2" }] } };
+    expect(
+      check("h-follow-it-second", [
+        { calls: [readSkill, jira('jira issue search --jql "project = MRT AND statusCategory != Done ORDER BY priority DESC" --select issues.key', listed)], answer: "Ecco." },
+        { calls: [], answer: "Sulla seconda, MRT-1, lavora Sam Rivera." },
+      ]),
+    ).toEqual([]);
   });
 
   test("a wrong JQL still fails its check", () => {

@@ -9,7 +9,7 @@
  */
 import type { Call, TrainingTask } from "../../../../apps/skill-trainer/src/contract.ts";
 import { assignTask, calls, checks, cmd, countTask, dateTask, issueTask, jiraCalls, jqlOf, listTask, task, transitionTask, wordingTask } from "./checks.ts";
-import { ACCOUNTS } from "./world.ts";
+import { ACCOUNTS, makeWorld } from "./world.ts";
 
 /** A pattern for a person in JQL: the full name or the accountId. */
 const person = (name: string, accountId: string) => new RegExp(`${name}|${accountId}`, "i");
@@ -19,6 +19,13 @@ const PROJECT_NOTE = {
   "curated/jira-projects.md":
     "# Jira projects\n\nWhat people call the Jira projects, and their keys.\n\n- the shop, il negozio: WEB (Storefront)\n- the backoffice: OPS (Platform Operations)\n",
 };
+
+/** The keys, in order, of the last search that worked in turn `turn`: the list the model got, whatever order it asked for. */
+function listedKeys(run: Parameters<TrainingTask["check"]>[0], turn: number): string[] {
+  const searches = (run.turns[turn]?.calls ?? []).filter((c) => c.ok && cmd(c).includes("issue search"));
+  const data = (searches.at(-1)?.output as { data?: { issues?: Array<{ key?: string }> } } | undefined)?.data;
+  return (data?.issues ?? []).map((i) => i.key).filter((k): k is string => typeof k === "string");
+}
 
 /** Whether `run` staged the delete of `key`, and kept its token out of the answer. */
 function stagedDelete(run: Parameters<TrainingTask["check"]>[0], key: string): { staged: boolean; tokenKept: boolean } {
@@ -93,7 +100,7 @@ export const HARD_TASKS: TrainingTask[] = [
     e.call("jiraCommand", (c) => c.ok && cmd(c).includes("DSK-2"), "reads DSK-2");
     e.answer(/medium/i);
     e.answer("Giulia Ferri");
-    e.answer(/(2026-10-23|23)/);
+    e.answer(/(2026-10-23|oct(ober)?\.? 23|23(rd)? oct(ober)?)/i, "says it's due on 2026-10-23");
     checks.selects(e, run);
   }),
   issueTask("h-issue-type", "test", "Is WEB-8 a bug or a story?", "WEB-8", /story/i),
@@ -149,6 +156,12 @@ export const HARD_TASKS: TrainingTask[] = [
     for (const key of ["WEB-4", "WEB-9"]) {
       e.call("jiraCommand", (c) => c.ok && cmd(c).includes("issue assign") && cmd(c).includes(key) && cmd(c).includes(ACCOUNTS.giulia), `assigns ${key} to Giulia`);
     }
+  }),
+  task("h-assign-inactive", "train", "assign", "Assign WEB-9 to Lena Hoffmann.", (run, e) => {
+    checks.loadsSkill(e);
+    e.call("jiraCommand", (c) => c.ok && cmd(c).includes("user search"), "finds Lena with user search");
+    e.that("doesn't claim an assignment Jira refused", !jiraCalls(run, "issue assign").some((c) => c.ok));
+    e.answer(/(can't|cannot|couldn't|could not|unable|inactive|deactivated|not be assigned|refused)/i, "says it couldn't be done");
   }),
   task("h-assign-nobody", "train", "assign", "Assign WEB-4 to Paolo Verdi.", (run, e) => {
     checks.loadsSkill(e);
@@ -251,19 +264,20 @@ export const HARD_TASKS: TrainingTask[] = [
 
   // Statuses worded the way people say them.
   // "da fare" reads as "not done" as well as "To Do": asked as "not started yet", it's To Do only.
-  wordingTask("h-wording-it-todo", "test", "Quante issue di OPS non sono ancora iniziate?", /status\s*=\s*["']to do["']|statusCategory\s*=\s*["']?to do/i, 3),
-  wordingTask("h-wording-closed", "train", "How many WEB issues are closed?", /status\s*=\s*"?done|statusCategory\s*=\s*"?done/i, 2),
-  wordingTask("h-wording-wip", "val", "How many MRT issues are WIP?", /status\s*=\s*["']in progress["']/i, 1),
-  wordingTask("h-wording-it-review", "test", "Quanti ticket di OPS aspettano una revisione?", /status\s*=\s*["']in review["']/i, 1),
+  wordingTask("h-wording-it-todo", "test", "Quante issue di OPS non sono ancora iniziate?", /status\s*(=|in\s*\()\s*["']to do["']|statusCategory\s*(=|in\s*\()\s*["']?to do/i, 3, "OPS"),
+  wordingTask("h-wording-closed", "train", "How many WEB issues are closed?", /status\s*(=|in\s*\()\s*["']?done|statusCategory\s*(=|in\s*\()\s*["']?done/i, 2, "WEB"),
+  wordingTask("h-wording-wip", "val", "How many MRT issues are WIP?", /status\s*(=|in\s*\()\s*["']in progress["']/i, 1, "MRT"),
+  wordingTask("h-wording-it-review", "test", "Quanti ticket di OPS aspettano una revisione?", /status\s*(=|in\s*\()\s*["']in review["']/i, 1, "OPS"),
 
   // Dates.
   task("h-dates-it-mine-overdue", "train", "relative-date", "Quali delle mie issue aperte sono scadute?", (run, e) => {
     checks.loadsSkill(e);
     checks.searched(e, /currentUser\(\)/i, "searches with currentUser()");
-    checks.searched(e, /duedate\s*<=?\s*now\(\)/i, "compares the due date with now()");
+    checks.searched(e, /duedate\s*<=?\s*(now|startOfDay)\(\)/i, "compares the due date with today");
     for (const key of ["WEB-7", "OPS-2"]) e.answer(key);
   }),
-  dateTask("h-dates-due-week", "test", "What's due in WEB in the next seven days?", ["WEB-3", "WEB-10"]),
+  // WEB-5 and WEB-7 are overdue, WEB-8 and WEB-2 due later: none of them is due in the next seven days.
+  dateTask("h-dates-due-week", "test", "What's due in WEB in the next seven days?", ["WEB-3", "WEB-10"], ["WEB-2", "WEB-5", "WEB-7", "WEB-8"]),
   task("h-dates-it-no-due", "test", "relative-date", "Quali issue aperte di WEB non hanno una scadenza?", (run, e) => {
     checks.loadsSkill(e);
     checks.searched(e, /duedate\s+is\s+(empty|null)/i, "searches the issues without a due date");
@@ -302,7 +316,9 @@ export const HARD_TASKS: TrainingTask[] = [
   // Follow-ups over two and three turns.
   task("h-follow-it-second", "test", "follow-up", ["Mostrami le issue aperte di MRT.", "Chi lavora sulla seconda?"], (run, e) => {
     checks.loadsSkill(e);
-    e.answer(/marco/i, "names the assignee of the second issue (MRT-2)");
+    const key = listedKeys(run, 0)[1] ?? "MRT-2";
+    const assignee = makeWorld().issues.find((i) => i.key === key)?.assignee?.displayName.split(" ")[0] ?? "nessuno";
+    e.answer(new RegExp(assignee, "i"), `names the assignee of the second issue in the list it got (${key})`);
   }),
   task("h-follow-close-recount", "test", "follow-up", ["How many open issues are in DSK?", "Close DSK-2.", "And now how many are open?"], (run, e) => {
     const third = run.turns[2]?.calls ?? [];
@@ -311,7 +327,8 @@ export const HARD_TASKS: TrainingTask[] = [
   }),
   task("h-follow-assign-first", "val", "follow-up", ["Show me the unassigned open issues in WEB.", "Assign the first one to Marco."], (run, e) => {
     const second = run.turns[1]?.calls ?? [];
-    e.that("assigns WEB-9, the first in the list, to Marco", second.some((c) => c.ok && cmd(c).includes("issue assign") && cmd(c).includes("WEB-9") && cmd(c).includes(ACCOUNTS.marco)));
+    const key = listedKeys(run, 0)[0] ?? "WEB-9";
+    e.that(`assigns ${key}, the first in the list it got, to Marco`, second.some((c) => c.ok && cmd(c).includes("issue assign") && cmd(c).includes(key) && cmd(c).includes(ACCOUNTS.marco)));
   }),
   task("h-follow-it-count-then-list", "test", "follow-up", ["Quanti bug aperti ci sono in OPS?", "Fammeli vedere."], (run, e) => {
     const [first, second] = [run.turns[0]?.calls ?? [], run.turns[1]?.calls ?? []];

@@ -42,9 +42,9 @@ export const BASIC_TASKS: TrainingTask[] = [
   // One issue, one fact.
   issueTask("issue-status", "train", "What's the status of WEB-5?", "WEB-5", /in review/i),
   issueTask("issue-assignee", "val", "Who is working on OPS-3?", "OPS-3", "Marco Bianchi"),
-  issueTask("issue-due", "train", "When is WEB-3 due?", "WEB-3", /(2026-10-24|24)/),
+  issueTask("issue-due", "train", "When is WEB-3 due?", "WEB-3", /(2026-10-24|oct(ober)?\.? 24|24(th)? oct(ober)?)/i),
   issueTask("issue-link", "test", "Give me the link to MRT-1.", "MRT-1", "https://example.atlassian.net/browse/MRT-1"),
-  issueTask("issue-priority", "train", "What priority does DSK-1 have?", "DSK-1", /high/i),
+  issueTask("issue-priority", "train", "What priority does DSK-1 have?", "DSK-1", /\bhigh\b/i),
   issueTask("issue-summary", "val", "What is OPS-8 about?", "OPS-8", /502/),
   // An issue that isn't there: said so, no status made up.
   task("issue-missing", "test", "single-issue", "What's the status of WEB-404?", (run, e) => {
@@ -70,7 +70,7 @@ export const BASIC_TASKS: TrainingTask[] = [
   // Assignments, through the person's accountId.
   assignTask("assign-marco", "train", "Assign WEB-4 to Marco Bianchi.", "WEB-4", ACCOUNTS.marco),
   assignTask("assign-giulia", "val", "Give OPS-4 to Giulia.", "OPS-4", ACCOUNTS.giulia),
-  assignTask("assign-lena-surname", "test", "Assign MRT-4 to Hoffmann.", "MRT-4", ACCOUNTS.lena),
+  assignTask("assign-surname", "test", "Assign MRT-4 to Ferri.", "MRT-4", ACCOUNTS.giulia),
   assignTask("assign-ada-conti", "train", "Assign DSK-3 to Ada Conti.", "DSK-3", ACCOUNTS.adaConti),
   // Two people answer to the name: asked, not guessed.
   task("assign-ambiguous", "train", "assign", "Assign WEB-9 to Ada.", (run, e) => {
@@ -115,12 +115,12 @@ export const BASIC_TASKS: TrainingTask[] = [
   // Creating issues: done, and the new key said.
   task("create-bug", "train", "create", "Create a bug in WEB: the promo banner overlaps the menu.", (run, e) => {
     checks.loadsSkill(e);
-    e.call("jiraCommand", (c) => c.ok && cmd(c).includes("issue create") && /--project\s+"?WEB/.test(cmd(c)) && /--type\s+"?bug/i.test(cmd(c)), "creates a WEB bug");
+    e.call("jiraCommand", (c) => c.ok && cmd(c).includes("issue create") && /--project[ =]"?WEB/.test(cmd(c)) && /--type[ =]"?bug/i.test(cmd(c)), "creates a WEB bug");
     e.answer("WEB-11");
   }),
   task("create-assigned", "val", "create", "Open a task in OPS to renew the VPN certificate and give it to Giulia Ferri.", (run, e) => {
     checks.loadsSkill(e);
-    e.call("jiraCommand", (c) => c.ok && cmd(c).includes("issue create") && /--project\s+"?OPS/.test(cmd(c)), "creates the OPS task");
+    e.call("jiraCommand", (c) => c.ok && cmd(c).includes("issue create") && /--project[ =]"?OPS/.test(cmd(c)), "creates the OPS task");
     e.that(
       "OPS-9 ends up with Giulia",
       calls(run).some((c) => c.ok && cmd(c).includes(ACCOUNTS.giulia) && (cmd(c).includes("issue create") || (cmd(c).includes("issue assign") && cmd(c).includes("OPS-9")))),
@@ -129,7 +129,7 @@ export const BASIC_TASKS: TrainingTask[] = [
   }),
   task("create-task", "test", "create", "Make a task in MRT: pin the Bun version in CI.", (run, e) => {
     checks.loadsSkill(e);
-    e.call("jiraCommand", (c) => c.ok && cmd(c).includes("issue create") && /--project\s+"?MRT/.test(cmd(c)), "creates the MRT task");
+    e.call("jiraCommand", (c) => c.ok && cmd(c).includes("issue create") && /--project[ =]"?MRT/.test(cmd(c)), "creates the MRT task");
     e.answer("MRT-5");
   }),
 
@@ -155,14 +155,15 @@ export const BASIC_TASKS: TrainingTask[] = [
   }),
 
   // A status worded the way people say it.
-  wordingTask("wording-todo", "train", "How many WEB issues are todo?", /status\s*=\s*["']to do["']|statusCategory\s*=\s*["']?to do/i, 5),
-  wordingTask("wording-review", "val", "How many tickets are waiting for review in WEB?", /status\s*=\s*["']in review["']/i, 1),
-  wordingTask("wording-progress", "test", "How many OPS issues have the status in progres?", /status\s*=\s*["']in progress["']/i, 2),
+  wordingTask("wording-todo", "train", "How many WEB issues are todo?", /status\s*(=|in\s*\()\s*["']to do["']|statusCategory\s*(=|in\s*\()\s*["']?to do/i, 5, "WEB"),
+  wordingTask("wording-review", "val", "How many tickets are waiting for review in WEB?", /status\s*(=|in\s*\()\s*["']in review["']/i, 1, "WEB"),
+  wordingTask("wording-progress", "test", "How many OPS issues have the status in progres?", /status\s*(=|in\s*\()\s*["']in progress["']/i, 2, "OPS"),
 
   // Dates relative to today.
-  dateTask("dates-overdue", "train", "Which open issues in WEB are overdue?", ["WEB-5", "WEB-7"]),
-  dateTask("dates-created-week", "val", "Which OPS issues were created in the last week?", ["OPS-2", "OPS-6", "OPS-8"]),
-  // DSK-1 is due today, which `duedate >= now()` leaves out as Jira does: only DSK-2 is a sure answer.
+  dateTask("dates-overdue", "train", "Which open issues in WEB are overdue?", ["WEB-5", "WEB-7"], ["WEB-2", "WEB-3", "WEB-8", "WEB-10"]),
+  dateTask("dates-created-week", "val", "Which OPS issues were created in the last week?", ["OPS-2", "OPS-6", "OPS-8"], ["OPS-3", "OPS-4", "OPS-5"]),
+  // DSK-1 is due today: `duedate >= now()` leaves it out (a due date is its day's midnight, as in
+  // Jira) and `duedate >= startOfDay()` takes it in. Both are right, so only DSK-2 is required.
   dateTask("dates-due-soon", "test", "What's due in DSK in the next five days?", ["DSK-2"]),
 
   // The person talking: currentUser().
@@ -178,7 +179,7 @@ export const BASIC_TASKS: TrainingTask[] = [
   }),
   task("someone-else", "val", "mine", "What is Ada Moretti working on? Just the keys.", (run, e) => {
     checks.loadsSkill(e);
-    checks.searched(e, /ada moretti/i, "filters by Ada Moretti's name in JQL");
+    checks.searched(e, new RegExp(`ada moretti|${ACCOUNTS.adaMoretti}`, "i"), "filters by Ada Moretti in JQL, by name or accountId");
     e.answer("WEB-5");
     e.answer("OPS-6");
   }),
@@ -218,7 +219,8 @@ export const BASIC_TASKS: TrainingTask[] = [
       "recalls the earlier call or answers without a new search",
       second.some((c) => c.tool === "recall_tool_calls") || !second.some((c) => c.tool === "jiraCommand" && cmd(c).includes("issue search")),
     );
-    e.answer(/project\s*=\s*"?DSK/i, "the answer says the JQL");
+    e.answer(/DSK/, "the answer says which project it searched");
+    e.answer(/(status|done|open|not (yet )?(finished|closed|resolved))/i, "and that it looked at the open ones");
   }),
   task("followup-show-again", "train", "follow-up", ["Show me the open bugs in WEB.", "Show me that list again."], (run, e) => {
     const second = run.turns[1]?.calls ?? [];
