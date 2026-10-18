@@ -36,9 +36,27 @@ describe("the checks read what the model did, not how it typed it", () => {
     ).toEqual([]);
   });
 
+  // In a live run the model's `status ~ "review"` failed, so it read every WEB
+  // issue's status and counted the one in review: a right answer the status
+  // check refused.
+  test("a status count read off the statuses of the project's issues", () => {
+    expect(
+      check("wording-review", [
+        {
+          calls: [
+            readSkill,
+            { ...jira(`jira issue search --jql 'project = WEB AND status ~ "review"' --select issues.key`), ok: false },
+            jira('jira issue search --jql "project = WEB" --max-results 100 --select issues.key,issues.fields.status.name'),
+          ],
+          answer: 'One — WEB-5 is the only WEB ticket in "In Review".',
+        },
+      ]),
+    ).toEqual([]);
+  });
+
   test("a wrong JQL still fails its check", () => {
     expect(check("wording-todo", [{ calls: [readSkill, jira('jira issue search --jql "project = WEB AND status = todo" --select issues.key')], answer: "5" }])).toEqual([
-      "searches the status by its Jira name",
+      "searches the status by its Jira name, or reads the statuses",
     ]);
   });
 });

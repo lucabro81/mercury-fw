@@ -102,11 +102,16 @@ export const assignTask = (id: string, split: Split, turn: string, key: string, 
     checks.selects(e, run);
   });
 
-/** A filter the user words as Jira doesn't: the right status searched in the end, the issues counted. */
+/** A filter the user words as Jira doesn't: the right status searched in the end (or every issue's
+ * status read and the matching ones counted, an equally right way), the issues counted. */
 export const wordingTask = (id: string, split: Split, turn: string, status: RegExp, n: number) =>
   task(id, split, "status-wording", turn, (run, e) => {
     checks.loadsSkill(e);
-    checks.searched(e, status, "searches the status by its Jira name");
+    const searches = jiraCalls(run, "issue search").filter((c) => c.ok);
+    e.that(
+      "searches the status by its Jira name, or reads the statuses",
+      searches.some((c) => status.test(jqlOf(c))) || searches.some((c) => /--select[ =]\S*issues\.fields\.status\.name/.test(cmd(c))),
+    );
     checks.number(e, n);
     checks.selects(e, run);
   });
