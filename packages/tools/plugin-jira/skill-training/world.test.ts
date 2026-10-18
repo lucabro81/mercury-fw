@@ -187,6 +187,17 @@ describe("inactive people and the user search", () => {
     expect(await names("ffmann")).toEqual([]);
     expect(await names("giulia.f")).toEqual(["Giulia Ferri"]);
   });
+
+  // A full name is how the skill teaches the user search (`--query "Jane Doe"`):
+  // the word-start matching made every such query come back empty.
+  test("a query of several words finds who has every word at the start of one of theirs", async () => {
+    const { run } = jira();
+    const names = async (query: string) =>
+      ((await run("user", "search", "--query", query, "--select", "displayName")) as { data: Array<{ displayName: string }> }).data.map((u) => u.displayName);
+    expect(await names("Marco Bianchi")).toEqual(["Marco Bianchi"]);
+    expect(await names("ada c")).toEqual(["Ada Conti"]);
+    expect(await names("Paolo Verdi")).toEqual([]);
+  });
 });
 
 describe("user and project search", () => {

@@ -403,8 +403,13 @@ export function jiraFixtures(world: World): Fixture[] {
       result: (call) => {
         const query = value(call, "--query")?.toLowerCase();
         if (query === undefined) return undefined;
-        // Jira matches the start of a name's words or of the email, not any part of them.
-        const users = world.users.filter((u) => u.displayName.toLowerCase().split(/\s+/).some((w) => w.startsWith(query)) || u.emailAddress.toLowerCase().startsWith(query));
+        // Every word of the query at the start of one of the name's words ("ada c" finds Ada Conti,
+        // a full name finds its person), or the query at the start of the email; not any part of them.
+        const tokens = query.split(/\s+/).filter(Boolean);
+        const users = world.users.filter((u) => {
+          const words = u.displayName.toLowerCase().split(/\s+/);
+          return tokens.every((t) => words.some((w) => w.startsWith(t))) || u.emailAddress.toLowerCase().startsWith(query);
+        });
         return printed(
           users.map((u) => ({ ...u, accountType: "atlassian", self: `${API}/user?accountId=${u.accountId}` })),
           call,
