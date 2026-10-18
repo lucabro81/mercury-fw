@@ -158,6 +158,57 @@ const HELP: Record<string, string> = {
   "issue delete": "Usage: jira issue delete [OPTIONS] <KEY>\n\nOptions:\n      --confirm          Acknowledge that this action is permanent and irreversible\n      --delete-subtasks  Also delete subtasks; required if the issue has any\n\nExample: jira issue delete KAN-5 --confirm",
 };
 
+/** The flags every command takes. */
+const GLOBAL_FLAGS = ["--select", "--select-all", "--user", "--help", "-h"];
+
+/** The command lines the fixtures check the way clap does (from their help): usage, required flags, the command's own flags. */
+const USAGE: Record<string, { usage: string; required: Array<[string, string]>; flags: string[] }> = {
+  "issue create": {
+    usage: "jira issue create [OPTIONS] --project <PROJECT> --type <ISSUE_TYPE> --summary <SUMMARY>",
+    required: [
+      ["--project", "<PROJECT>"],
+      ["--type", "<ISSUE_TYPE>"],
+      ["--summary", "<SUMMARY>"],
+    ],
+    flags: ["--description", "--assignee", "--priority", "--parent"],
+  },
+  "issue transition": { usage: "jira issue transition [OPTIONS] --to <TO> <KEY>", required: [["--to", "<TO>"]], flags: [] },
+  "issue assign": { usage: "jira issue assign [OPTIONS] <KEY>", required: [], flags: ["--assignee", "--unassign"] },
+  "issue comment add": { usage: "jira issue comment add [OPTIONS] --body <BODY> <KEY>", required: [["--body", "<BODY>"]], flags: ["--mention"] },
+};
+
+/** clap's refusal of a command line, exit 2 as the real CLI exits. */
+const usageError = (message: string, usage: string): CliResult => ({
+  ok: false,
+  exitCode: 2,
+  error: `jira exited with code 2: error: ${message}\n\nUsage: ${usage}\n\nFor more information, try '--help'.`,
+});
+
+/** A fixture refusing `command`'s lines clap would refuse: a flag it doesn't
+ * have first, then the required ones left out; passes every other line on. */
+function usageFixture(command: string): Fixture {
+  const spec = USAGE[command]!;
+  return {
+    command: command.split(" "),
+    switches: ["--unassign", "--select-all", "--help", "-h"],
+    result: (call) => {
+      const known = new Set([...GLOBAL_FLAGS, ...spec.flags, ...spec.required.map(([flag]) => flag)]);
+      const unknown = Object.keys(call.flags).find((flag) => !known.has(flag));
+      if (unknown !== undefined) return usageError(`unexpected argument '${unknown}' found`, spec.usage);
+      if (call.flags["--help"] !== undefined || call.flags["-h"] !== undefined) return undefined;
+      const missing = spec.required.filter(([flag]) => typeof call.flags[flag] !== "string");
+      if (missing.length > 0) {
+        return usageError(`the following required arguments were not provided:\n${missing.map(([flag, meta]) => `  ${flag} ${meta}`).join("\n")}`, spec.usage);
+      }
+      // Reconstructed, not recorded: the help says exactly one of the two must be passed.
+      if (command === "issue assign" && (typeof call.flags["--assignee"] === "string") === (call.flags["--unassign"] === true)) {
+        return usageError("the following required arguments were not provided:\n  <--assignee <ASSIGNEE>|--unassign>", spec.usage);
+      }
+      return undefined;
+    },
+  };
+}
+
 /** A comment's body as Jira's document format: the mention first, then the text. */
 function commentBody(world: World, text: string, mention: string | undefined) {
   const paragraphs: unknown[] = [];
@@ -183,6 +234,7 @@ export function jiraFixtures(world: World): Fixture[] {
   });
 
   return [
+    ...Object.keys(USAGE).map(usageFixture),
     ...Object.keys(HELP).map((c) => help(c.split(" "))),
     {
       command: ["issue", "search"],

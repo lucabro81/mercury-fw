@@ -179,6 +179,42 @@ describe("user and project search", () => {
   });
 });
 
+describe("usage errors", () => {
+  // The model wrote `issue transition OPS-4 --transition 41` in a live run: the
+  // real CLI rejects it as clap does (exit 2), it's the model's mistake to
+  // learn from, not a hole in the fixtures.
+  test("a flag the command doesn't have is clap's unexpected argument, exit 2", async () => {
+    const { run, cli } = jira();
+    expect(await run("issue", "transition", "OPS-4", "--transition", "41")).toEqual({
+      ok: false,
+      exitCode: 2,
+      error:
+        "jira exited with code 2: error: unexpected argument '--transition' found\n\nUsage: jira issue transition [OPTIONS] --to <TO> <KEY>\n\nFor more information, try '--help'.",
+    });
+    expect(cli.unmatched()).toEqual([]);
+  });
+
+  test("a required flag left out is clap's missing argument, exit 2", async () => {
+    const { run } = jira();
+    expect(await run("issue", "create", "--project", "WEB", "--summary", "x")).toEqual({
+      ok: false,
+      exitCode: 2,
+      error:
+        "jira exited with code 2: error: the following required arguments were not provided:\n  --type <ISSUE_TYPE>\n\nUsage: jira issue create [OPTIONS] --project <PROJECT> --type <ISSUE_TYPE> --summary <SUMMARY>\n\nFor more information, try '--help'.",
+    });
+  });
+
+  test("the flags every command takes are no usage error", async () => {
+    const { run } = jira();
+    expect((await run("issue", "transition", "WEB-3", "--to", "Done", "--select", "key")).ok).toBe(true);
+  });
+
+  test("assign with neither --assignee nor --unassign is the CLI's own refusal", async () => {
+    const { run } = jira();
+    expect(await run("issue", "assign", "WEB-3")).toMatchObject({ ok: false, exitCode: 2 });
+  });
+});
+
 describe("--help", () => {
   test("a command's help as text", async () => {
     const { run } = jira();
