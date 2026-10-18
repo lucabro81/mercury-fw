@@ -65,6 +65,21 @@ describe("readPage", () => {
     expect(requested.map((r) => r.url)).toEqual(["https://a.test/x"]);
   });
 
+  // Cold review of #194: a redirect hop was looked up in DNS before the
+  // allowlist check, so a page could make the plugin resolve any name.
+  it("never looks up a redirect target that isn't allowed", async () => {
+    const looked: string[] = [];
+    const { fetchFn } = web({ "https://a.test/x": redirect("https://secret.attacker.example/") });
+
+    const result = await readPage(
+      "https://a.test/x",
+      deps(fetchFn, { allowed: (host) => host === "a.test", resolve: async (host) => (looked.push(host), ["93.184.216.34"]) }),
+    );
+
+    expect(result).toEqual({ ok: false, error: "the page redirects to secret.attacker.example, which isn't allowed" });
+    expect(looked).toEqual(["a.test"]);
+  });
+
   it("refuses a redirect to an internal address, without downloading it", async () => {
     const { fetchFn, requested } = web({ "https://a.test/x": redirect("http://internal.test/admin") });
 

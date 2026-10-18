@@ -7,7 +7,7 @@
  * included) gives up after `timeoutMs`, and extracting the text after
  * `extractTimeoutMs`.
  */
-import { checkUrl, type Resolve } from "./ssrf.ts";
+import { checkSyntax, checkUrl, type Resolve } from "./ssrf.ts";
 import type { ExtractedPage } from "./extract.ts";
 
 /** Turns a downloaded page into its title and text; rejects when it can't. */
@@ -121,12 +121,15 @@ export async function readPage(rawUrl: string, deps: ReadPageDeps): Promise<Read
       }),
     ]);
   for (let hop = 0; hop <= deps.maxRedirects; hop++) {
-    const checked = await checkUrl(current, resolveInTime);
-    if (!checked.ok) return checked;
-    const host = checked.url.hostname;
+    // The allowlist before the lookup: a name nobody allowed never reaches DNS.
+    const syntax = checkSyntax(current);
+    if (!syntax.ok) return syntax;
+    const host = syntax.url.hostname;
     if (!deps.allowed(host)) {
       return { ok: false, error: hop === 0 ? `${host} isn't allowed` : `the page redirects to ${host}, which isn't allowed` };
     }
+    const checked = await checkUrl(current, resolveInTime);
+    if (!checked.ok) return checked;
 
     let response: Response;
     try {

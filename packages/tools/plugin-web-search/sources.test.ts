@@ -59,6 +59,11 @@ describe("createSourcesGuard", () => {
     expect(out.text).toBe("A.\n\nFonti:\n- Pay at now, Node.js docs: https://a.test/");
   });
 
+  it("turns a | between parts of a title into a separator, not a glued word", async () => {
+    const out = await guard.run("A.", [step("web_fetch", page("https://bun.sh/docs", "Welcome to Bun | Bun Docs"))]);
+    expect(out.text).toBe("A.\n\nFonti:\n- Welcome to Bun · Bun Docs: https://bun.sh/docs");
+  });
+
   it("keeps a title on one line", async () => {
     const out = await guard.run("A.", [step("web_fetch", page("https://a.test/", "Two\nlines"))]);
     expect(out.text).toBe("A.\n\nFonti:\n- Two lines: https://a.test/");

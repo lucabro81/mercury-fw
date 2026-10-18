@@ -23,7 +23,8 @@ function plainTitle(title: string): string {
     .replace(/\b(?:https?:\/\/|www\.)\S+/gi, "")
     // An address with a path, even without a scheme (a chat client links it); a dotted word like Node.js stays.
     .replace(/\b(?:[a-z0-9-]+\.)+[a-z]{2,}\/\S*/gi, "")
-    .replace(/[*_`~#|<>\[\]()]/g, "")
+    .replace(/\s*\|\s*/g, " · ")
+    .replace(/[*_`~#<>\[\]()]/g, "")
     .replace(/\s+/g, " ")
     .trim();
   return plain.length > MAX_TITLE ? `${plain.slice(0, MAX_TITLE)}…` : plain;
