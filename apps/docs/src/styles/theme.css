@@ -115,3 +115,16 @@ site-search button > kbd {
   max-width: 44rem;
   margin-inline: auto;
 }
+
+/* Wide screens: the "on this page" column keeps the sidebar's width against the
+   right edge, and the text column is centered in the space between the two
+   sidebars, instead of Starlight's split of the leftover space. */
+@media (min-width: 72rem) {
+  .right-sidebar-container {
+    width: var(--sl-sidebar-width);
+  }
+  [data-has-sidebar][data-has-toc] .main-pane {
+    --sl-content-margin-inline: auto;
+    width: calc(100% - var(--sl-sidebar-width));
+  }
+}
