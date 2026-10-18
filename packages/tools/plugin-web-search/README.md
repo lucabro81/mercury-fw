@@ -13,7 +13,7 @@ import { searxngBackend } from "@mercury-fw/web-search-searxng";
 export default defineMercuryConfig({
   plugins: [
     webSearchPlugin({
-      backend: searxngBackend({ url: process.env.SEARXNG_URL! }),
+      backend: searxngBackend({ url: process.env.SEARXNG_URL || "http://searxng:8080" }),
       allowedHosts: ["bun.sh", "developer.mozilla.org"],
     }),
   ],
@@ -22,7 +22,9 @@ export default defineMercuryConfig({
 
 The model gets two tools. `web_search` returns title, URL and snippet of each result, and `web_fetch` reads a page and returns its title and text (the main content, found by Readability; menus, footers and scripts are left out). An answer built on pages ends with a `Fonti:` list of what was read, written by the plugin and not by the model, so it can't be left out or made up (a title is the site's text, so it shows up cut at 120 characters and stripped of links and formatting).
 
-The plugin acts as no one (`actsAs: "anyone"`): there's no login, everyone gets it, and `access.plugins` in the config restricts it to some roles like any other plugin.
+The plugin acts as no one (`actsAs: "anyone"`): there's no login, everyone gets it, and `access.plugins` in the config restricts it to some roles like any other plugin. That needs `@mercury-fw/core` 0.53 or later: an older core doesn't know `"anyone"`, reads it as `"mercury"`, and offers the plugin only to whoever holds `mercury.act-as-self`.
+
+What the person reads in its own words is fixed Italian text, whatever language the assistant speaks: the two choices ("Solo questa volta", "Sempre per \<host\>"), the `Fonti:` heading and the status lines while a tool runs ("Cerco sul web", "Leggo \<host\>").
 
 ## Which pages it reads
 
@@ -34,6 +36,8 @@ For any other host the plugin asks the person, through the same confirmation Mer
 - **Sempre per \<host\>** adds the host to the person's own list, then reads the page (the host stays on the list even if that read fails: the person allowed the host, not the page).
 
 Either way the page goes back to the model, which answers on it in the same conversation. A person's list is theirs alone (nobody else's reads change), and it lives in the plugin's folder on the vault's volume, so it survives a restart; with a core that gives the plugin no folder, only the first choice is offered.
+
+The list is one JSON file per person, `<vault>/.mercury/plugins/web-search/allowlist/<user key>.json`, the user key URL-encoded (`google-chat:users/42` becomes `google-chat%3Ausers%2F42.json`), holding `{ "hosts": [...] }`. No command lists or edits it yet ([#259](https://github.com/lucabro81/mercury-fw/issues/259)): to take a host back, open a shell in the container (`mfw shell`) and edit the file, whose folder is under `WIKI_VAULT_PATH`. A file the plugin can't read as a list is copied aside (`<file>.corrupt-<time>-<id>`) before the next host replaces it, so a hand edit gone wrong loses nothing.
 
 Why not let the model read anything it finds? Because Mercury also reads private data (Jira, the wiki), and a page can carry instructions for the model: an open `web_fetch` would let a hostile page make it send that data out inside a URL. Asking the person for every new host closes that, and the allowlist keeps it from getting in the way on the sites a team actually uses.
 
