@@ -1,5 +1,18 @@
 # @mercury-fw/plugin-types
 
+## 0.53.0
+
+### Minor Changes
+
+- 56e4ed5: - A plugin can act as no one (`actsAs: "anyone"`): for a public service with no login, such as web search. It is offered to everyone (still within `access.plugins`), never with a variant acting as Mercury, and the operator gets it under its own names.
+  - The tools of such a plugin get the turn's `person` all the same (the operator's key on the terminal), to keep what belongs to each person; they can't start a login.
+  - An older core reads `"anyone"` as `"mercury"`: the plugin is offered only to whoever may make Mercury act as itself.
+- c83b129: - New plugin `@mercury-fw/plugin-web-search`: `web_search` through a backend package of the app's choice, and `web_fetch` to read a page and hand the model its title and text.
+  - A page is read right away only on a host the instance allows (`allowedHosts`) or the person allowed; for any other host the person chooses between reading that page only and allowing the host for good (their own list, kept in the plugin's folder), and the page goes back to the model either way.
+  - Internal addresses are never read, redirects included, and only HTML and plain text are, up to 2 MB and 20,000 characters.
+  - An answer built on pages ends with the list of the pages read (`Fonti:`).
+  - A post-turn guard's `shouldRun` gets the turn's steps as a second argument.
+
 ## 0.52.0
 
 ### Minor Changes

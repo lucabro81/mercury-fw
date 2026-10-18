@@ -28,6 +28,8 @@ Each message reaches the core as `google-chat:users/<id>`, the sender's Chat use
 
 When a plugin that acts as the person (Jira, Bitbucket) needs them to log in, the channel sends a card with a button that opens the service's login, visible only to that person: in a direct message the space is already theirs, in a shared space the card is a private message to whoever asked, since anyone else opening it would log their own account in as them. The service sends the browser back to the HTTP channel's `/login/callback`, so the app needs [`@mercury-fw/channel-http`](https://www.npmjs.com/package/@mercury-fw/channel-http) with `HTTP_SURFACE_PUBLIC_URL` too; without it Mercury answers that nobody can log in on this instance.
 
+When a tool stages an action that needs confirming, the channel sends a card with the action and a button per choice the tool offers: one `Conferma` for a plain staging (deleting a Jira issue, say), more when there's a choice to make (the web search plugin offers "Solo questa volta" and "Sempre per \<host\>" before reading a page on a host nobody allowed). Clicking a button confirms that choice and the others die with it; typing the token in the conversation does the same. When the confirmed action's result goes back to the model (a page read after the person allowed it), the channel runs the conversation's turn again instead of sending the raw result, so the answer comes from the model, built on what came back.
+
 ## Table of contents
 
 - [Setting up the Chat app](#setting-up-the-chat-app)

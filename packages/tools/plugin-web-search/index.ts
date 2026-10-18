@@ -7,7 +7,7 @@
  * for the person's permission, given once or for good (see `tools.ts`).
  *
  * ```ts
- * webSearchPlugin({ backend: searxngBackend({ url: process.env.SEARXNG_URL! }), allowedHosts: ["bun.sh"] })
+ * webSearchPlugin({ backend: searxngBackend({ url: process.env.SEARXNG_URL || "http://searxng:8080" }), allowedHosts: ["bun.sh"] })
  * ```
  */
 import { PLUGIN_API_VERSION, type Plugin } from "@mercury-fw/plugin-types";
