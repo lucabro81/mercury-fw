@@ -1,5 +1,11 @@
 # @mercury-fw/channel-http
 
+## 0.10.1
+
+### Patch Changes
+
+- bedb435: - The OpenAPI document parses again: two descriptions added in 0.10.0 broke its YAML.
+
 ## 0.10.0
 
 ### Minor Changes

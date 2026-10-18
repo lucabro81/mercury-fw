@@ -110,7 +110,7 @@
     },
     "packages/channels/channel-http": {
       "name": "@mercury-fw/channel-http",
-      "version": "0.10.0",
+      "version": "0.10.1",
       "devDependencies": {
         "@mercury-fw/channel-types": "workspace:*",
         "@mercury-fw/plugin-types": "workspace:*",
