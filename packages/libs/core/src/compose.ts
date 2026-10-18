@@ -16,7 +16,7 @@
  */
 import { QdrantClient } from "@qdrant/js-client-rest";
 import { getOllamaProvider } from "./model/client.ts";
-import { createConfirmationStore, createStageChoices, createStageConfirmation, type ConfirmationStore } from "@mercury-fw/confirm-engine";
+import { createConfirmationStore, createStageChoices, createStageConfirmation, type ConfirmationStore, type ResumedAction } from "@mercury-fw/confirm-engine";
 import { createDisplayStore } from "./tools/display-store.ts";
 import { createPresentTool } from "./tools/present-tool.ts";
 import { loadPlugins } from "./plugins/plugin-loader.ts";
@@ -98,6 +98,8 @@ export type ConfirmDeps = {
   store: ConfirmationStore;
   vaultPath: string;
   writeConfirmationNoteFn: typeof writeConfirmationNote;
+  /** Keeps a confirmed action's result for the session's resumed turn. */
+  onResume: (sessionKey: string, action: ResumedAction) => void;
 };
 
 /**
@@ -466,6 +468,9 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   }
 
   const confirmationStore = createConfirmationStore();
+  // A confirmed action whose result goes back to the model, kept per session
+  // until the channel resumes that session's turn (see `InboundTurn.resumeAfterConfirm`).
+  const resumes = new Map<string, ResumedAction>();
   // Shared across turns (like confirmationStore): a display artifact stashed
   // while answering can be surfaced by `present` in a later turn, so it's
   // session-scoped, not rebuilt per turn.
@@ -500,6 +505,11 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   // A streaming turn whose model goes silent is stopped (#240); checked here so a bad value stops the app at startup.
   const stallTimeoutMs = parseStallTimeoutMs(process.env.TURN_STALL_TIMEOUT_MS);
   const handleTurn = createTurnRunner({
+    takeResumed: (sessionKey) => {
+      const resumed = resumes.get(sessionKey);
+      resumes.delete(sessionKey);
+      return resumed;
+    },
     sessionLock,
     model,
     systemPrompts: systemPromptsFor({ person: { key: "", roles: [] }, operator: false }),
@@ -553,7 +563,12 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   });
 
   // The confirm capability, bound to this instance's store/vault/note-writer.
-  const confirmDeps: ConfirmDeps = { store: confirmationStore, vaultPath: wikiVaultPath, writeConfirmationNoteFn: writeConfirmationNote };
+  const confirmDeps: ConfirmDeps = {
+    store: confirmationStore,
+    vaultPath: wikiVaultPath,
+    writeConfirmationNoteFn: writeConfirmationNote,
+    onResume: (sessionKey, action) => resumes.set(sessionKey, action),
+  };
 
   // The runtime context each channel's build() gets. The floor (confirm) plus
   // HTTP's optional in-process capabilities (resolveConfirmation, reads, the
