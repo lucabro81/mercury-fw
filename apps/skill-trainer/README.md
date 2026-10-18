@@ -69,7 +69,7 @@ A fixture answers one command, matched on the parsed argv and not on the line, b
 {
   command: ["issue", "search"],
   flags: { "--select": /issues\.key/, "--page-token": false },
-  result: { ok: true, data: { issues: [{ key: "KAN-1" }], issueCount: 1 } },
+  result: { ok: true, data: { isLast: true, issues: [{ key: "KAN-1" }] } },
 }
 ```
 
