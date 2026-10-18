@@ -218,6 +218,14 @@ describe("runBatch", () => {
     expect(seen.closed).toBe(2);
   });
 
+  test("hands over the results so far after every task", async () => {
+    const { training, cli } = trainingWith([task({ id: "a" }), task({ id: "b" })]);
+    const { deps } = fakeDeps(async () => ({ steps: [textStep("done")], text: "done" }), cli);
+    const seen: string[][] = [];
+    await runBatch(training, training.tasks, undefined, deps, async (so_far) => void seen.push(so_far.map((r) => r.id)));
+    expect(seen).toEqual([["a"], ["a", "b"]]);
+  });
+
   test("without a candidate the plugin keeps its own skill", async () => {
     const { training, cli } = trainingWith([task()]);
     const { deps, seen } = fakeDeps(async () => ({ steps: [textStep("done")], text: "done" }), cli);

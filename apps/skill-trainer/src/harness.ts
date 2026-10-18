@@ -138,11 +138,21 @@ async function runTask(training: SkillTraining, task: TrainingTask, candidate: s
 }
 
 /** Runs `tasks` one after the other with the skill body `candidate` (the
- * plugin's own when undefined). A task that fails is scored 0, never stops the
- * batch; a candidate for a skill the plugin lacks stops it before any turn. */
-export async function runBatch(training: SkillTraining, tasks: TrainingTask[], candidate: string | undefined, deps: HarnessDeps): Promise<TaskResult[]> {
+ * plugin's own when undefined), handing the results so far to `onResult`
+ * after each. A task that fails is scored 0, never stops the batch; a
+ * candidate for a skill the plugin lacks stops it before any turn. */
+export async function runBatch(
+  training: SkillTraining,
+  tasks: TrainingTask[],
+  candidate: string | undefined,
+  deps: HarnessDeps,
+  onResult: (soFar: TaskResult[]) => Promise<void> = async () => {},
+): Promise<TaskResult[]> {
   withSkill(training.plugin(createFakeCli([]).run), training.skill, candidate);
   const results: TaskResult[] = [];
-  for (const task of tasks) results.push(await runTask(training, task, candidate, deps));
+  for (const task of tasks) {
+    results.push(await runTask(training, task, candidate, deps));
+    await onResult([...results]);
+  }
   return results;
 }
