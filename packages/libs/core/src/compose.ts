@@ -180,6 +180,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
     assistantName,
     env: process.env,
     log: (msg) => console.error(msg),
+    pluginDataRoot: resolvePath(requireEnv("WIKI_VAULT_PATH"), ".mercury", "plugins"),
   });
 
   // Status labels for the tool-start hook, keyed by tool name: each plugin's
