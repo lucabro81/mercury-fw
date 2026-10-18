@@ -66,6 +66,35 @@ describe("createFakeCli", () => {
     expect((await cli.run("jira", ["issue", "assign", "KAN-4", "--unassign", "--notify", "no"])).ok).toBe(true);
   });
 
+  test("a flag the fixture declares a switch never takes the next token as its value", async () => {
+    const cli = createFakeCli([{ command: ["issue", "assign"], switches: ["--unassign"], args: ["KAN-4"], flags: { "--unassign": true }, result: ok("unassigned") }]);
+    expect((await cli.run("jira", ["issue", "assign", "--unassign", "KAN-4"])).ok).toBe(true);
+  });
+
+  test("without the switch declared, a valueless flag followed by a positional takes it as its value", async () => {
+    const cli = createFakeCli([{ command: ["issue", "assign"], args: ["KAN-4"], result: ok("unassigned") }]);
+    expect((await cli.run("jira", ["issue", "assign", "--unassign", "KAN-4"])).ok).toBe(false);
+  });
+
+  test("a short flag is a flag, its value the token after it", async () => {
+    const cli = createFakeCli([{ command: ["issue", "get"], args: ["KAN-4"], flags: { "-s": "key" }, result: ok({ key: "KAN-4" }) }]);
+    expect((await cli.run("jira", ["issue", "get", "-s", "key", "KAN-4"])).ok).toBe(true);
+  });
+
+  test("a pattern with the g flag matches every time, not every other time", async () => {
+    const cli = createFakeCli([{ command: ["issue", "search"], flags: { "--jql": /KAN/g }, result: ok("hit") }]);
+    for (let i = 0; i < 3; i++) expect((await cli.run("jira", ["issue", "search", "--jql", "project = KAN"])).ok).toBe(true);
+  });
+
+  // Guards determinism across tasks: fixtures are shared module-level data,
+  // and a post-processor changing a result it got must not change the next one.
+  test("every answer is a fresh copy of the fixture's result", async () => {
+    const cli = createFakeCli([{ command: ["issue", "search"], result: ok({ issues: [{ key: "KAN-1" }] }) }]);
+    const first = (await cli.run("jira", ["issue", "search"])) as { ok: true; data: { issues: unknown[] } };
+    first.data.issues.push({ key: "MUTATED" });
+    expect(await cli.run("jira", ["issue", "search"])).toEqual(ok({ issues: [{ key: "KAN-1" }] }));
+  });
+
   test("a value or pattern condition fails on a flag given without a value", async () => {
     const cli = createFakeCli([{ command: ["issue", "search"], flags: { "--select": /issues/ }, result: ok("hit") }]);
     expect((await cli.run("jira", ["issue", "search", "--select"])).ok).toBe(false);

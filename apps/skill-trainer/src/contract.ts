@@ -25,6 +25,9 @@ export type Fixture = {
   /** Conditions on flags: `true` present, `false` absent, a string the exact
    * value, a pattern the value matching. */
   flags?: Record<string, string | RegExp | boolean>;
+  /** Flags that take no value, so the token after one stays a positional
+   * (without this, `--unassign KAN-4` reads KAN-4 as the flag's value). */
+  switches?: string[];
   /** What the CLI answers. */
   result: CliResult;
 };

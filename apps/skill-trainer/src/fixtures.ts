@@ -12,19 +12,22 @@ import type { Fixture, RunCli } from "./contract.ts";
 /** The exit code of an unknown command, as CLIs built on clap use it. */
 const USAGE_EXIT_CODE = 2;
 
-/** An argv split into positionals and flags; a flag without a value is `true`. */
+/** An argv split into positionals and flags (`--name` or `-n`); a flag without a value is `true`. */
 type ParsedArgs = { positionals: string[]; flags: Map<string, string | true> };
+
+/** Whether `token` is a flag: `--name`, or a short `-n`. */
+const isFlag = (token: string) => token.startsWith("--") || /^-[A-Za-z]/.test(token);
 
 /** Splits `args` (already tokenized: a quoted value is one token) after the
  * command's own `commandLength` tokens. A token after a flag is its value
- * unless it's a flag itself. */
-function parse(args: string[], commandLength: number): ParsedArgs {
+ * unless it's a flag itself or the flag is one of `switches`. */
+function parse(args: string[], commandLength: number, switches: string[]): ParsedArgs {
   const positionals: string[] = [];
   const flags = new Map<string, string | true>();
   const rest = args.slice(commandLength);
   for (let i = 0; i < rest.length; i++) {
     const token = rest[i] as string;
-    if (!token.startsWith("--")) {
+    if (!isFlag(token)) {
       positionals.push(token);
       continue;
     }
@@ -34,7 +37,7 @@ function parse(args: string[], commandLength: number): ParsedArgs {
       continue;
     }
     const next = rest[i + 1];
-    if (next !== undefined && !next.startsWith("--")) {
+    if (next !== undefined && !isFlag(next) && !switches.includes(token)) {
       flags.set(token, next);
       i++;
     } else {
@@ -47,14 +50,17 @@ function parse(args: string[], commandLength: number): ParsedArgs {
 /** Whether `value` meets `condition`: equal to a string, matching a pattern. */
 function meets(value: string | undefined, condition: string | RegExp): boolean {
   if (value === undefined) return false;
-  return typeof condition === "string" ? value === condition : condition.test(value);
+  if (typeof condition === "string") return value === condition;
+  // A g or y pattern keeps where it last matched: start over every time.
+  condition.lastIndex = 0;
+  return condition.test(value);
 }
 
 /** Whether `fixture` answers `args`. */
 function matches(fixture: Fixture, args: string[]): boolean {
   if (args.length < fixture.command.length) return false;
   if (fixture.command.some((token, i) => args[i] !== token)) return false;
-  const { positionals, flags } = parse(args, fixture.command.length);
+  const { positionals, flags } = parse(args, fixture.command.length, fixture.switches ?? []);
   const positionalsOk = (fixture.args ?? []).every((condition, i) => meets(positionals[i], condition));
   const flagsOk = Object.entries(fixture.flags ?? {}).every(([name, condition]) => {
     const value = flags.get(name);
@@ -71,7 +77,9 @@ export function createFakeCli(fixtures: Fixture[]): { run: RunCli; unmatched: ()
   const unmatched: string[][] = [];
   const run: RunCli = async (binary, args): Promise<CliResult> => {
     const fixture = fixtures.find((f) => matches(f, args));
-    if (fixture) return fixture.result;
+    // A copy, as the real CLI parses a fresh one: what a post-processor
+    // does to it mustn't reach the next task sharing the fixture.
+    if (fixture) return structuredClone(fixture.result);
     unmatched.push([...args]);
     return {
       ok: false,
