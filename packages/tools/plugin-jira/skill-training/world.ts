@@ -128,7 +128,7 @@ function issueJson(world: World, i: WorldIssue) {
     fields: {
       summary: i.summary,
       status: { name: status.name, statusCategory: { key: status.categoryKey, name: status.category } },
-      assignee: i.assignee && { ...i.assignee, active: true },
+      assignee: i.assignee && { ...i.assignee, active: world.users.find((u) => u.accountId === i.assignee?.accountId)?.active ?? true },
       duedate: i.duedate,
       priority: { name: i.priority },
       issuetype: { name: i.issuetype },
@@ -316,6 +316,7 @@ export function jiraFixtures(world: World): Fixture[] {
         }
         const user = world.users.find((u) => u.accountId === accountId);
         if (!user) return failure(`Jira API returned status 400: {"errorMessages":[],"errors":{"accountId":"Specified user does not exist or you do not have required permissions"}}`);
+        if (!user.active) return failure(`Jira API returned status 400: {"errorMessages":[],"errors":{"assignee":"User '${user.displayName}' cannot be assigned issues."}}`);
         issue.assignee = { accountId: user.accountId, displayName: user.displayName };
         return { ok: true, data: { assigned: true, assignee: user.accountId, key: issue.key } };
       },
@@ -377,7 +378,8 @@ export function jiraFixtures(world: World): Fixture[] {
       result: (call) => {
         const query = value(call, "--query")?.toLowerCase();
         if (query === undefined) return undefined;
-        const users = world.users.filter((u) => u.displayName.toLowerCase().includes(query) || u.emailAddress.toLowerCase().includes(query));
+        // Jira matches the start of a name's words or of the email, not any part of them.
+        const users = world.users.filter((u) => u.displayName.toLowerCase().split(/\s+/).some((w) => w.startsWith(query)) || u.emailAddress.toLowerCase().startsWith(query));
         return printed(
           users.map((u) => ({ ...u, accountType: "atlassian", self: `${API}/user?accountId=${u.accountId}` })),
           call,

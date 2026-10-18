@@ -163,6 +163,32 @@ describe("assign, comment, create", () => {
   });
 });
 
+describe("inactive people and the user search", () => {
+  // Jira doesn't let an issue go to someone whose account is deactivated.
+  test("assigning to an inactive person is Jira's refusal", async () => {
+    const { run } = jira();
+    expect(await run("issue", "assign", "MRT-4", "--assignee", ACCOUNTS.lena)).toEqual({
+      ok: false,
+      exitCode: 1,
+      error: `jira exited with code 1: Jira API returned status 400: {"errorMessages":[],"errors":{"assignee":"User 'Lena Hoffmann' cannot be assigned issues."}}`,
+    });
+  });
+
+  test("an issue's assignee says whether they're active", async () => {
+    const { run } = jira();
+    expect(await run("issue", "get", "OPS-1", "--select", "fields.assignee.active")).toEqual({ ok: true, data: { fields: { assignee: { active: false } } } });
+  });
+
+  test("the user search matches the start of a name's words or of the email, not the middle", async () => {
+    const { run } = jira();
+    const names = async (query: string) =>
+      ((await run("user", "search", "--query", query, "--select", "displayName")) as { data: Array<{ displayName: string }> }).data.map((u) => u.displayName);
+    expect(await names("hoff")).toEqual(["Lena Hoffmann"]);
+    expect(await names("ffmann")).toEqual([]);
+    expect(await names("giulia.f")).toEqual(["Giulia Ferri"]);
+  });
+});
+
 describe("user and project search", () => {
   test("two people answer to Ada", async () => {
     const { run } = jira();
