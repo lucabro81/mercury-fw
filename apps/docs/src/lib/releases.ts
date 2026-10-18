@@ -29,6 +29,8 @@ export type Release = {
   /** Markdown, as the release carries it. */
   body: string;
   url: string;
+  /** Listed on the changelog, never the version the site describes. */
+  prerelease: boolean;
 };
 
 const FRAMEWORK_TAG = /^v(\d+\.\d+\.\d+.*)$/;
@@ -41,12 +43,12 @@ function toRelease(raw: GithubRelease): Release | null {
   const framework = FRAMEWORK_TAG.exec(raw.tag_name);
   if (framework) {
     const version = framework[1]!;
-    return { tag: raw.tag_name, kind: "framework", title: `Mercury Framework ${version}`, package: null, version, date, body, url: raw.html_url };
+    return { tag: raw.tag_name, kind: "framework", title: `Mercury Framework ${version}`, package: null, version, date, body, url: raw.html_url, prerelease: raw.prerelease };
   }
   const pkg = PACKAGE_TAG.exec(raw.tag_name);
   if (pkg) {
     const [, name, version] = pkg as unknown as [string, string, string];
-    return { tag: raw.tag_name, kind: "package", title: `${name} ${version}`, package: name, version, date, body, url: raw.html_url };
+    return { tag: raw.tag_name, kind: "package", title: `${name} ${version}`, package: name, version, date, body, url: raw.html_url, prerelease: raw.prerelease };
   }
   return null;
 }
@@ -59,9 +61,9 @@ export function parseReleases(raw: GithubRelease[]): Release[] {
   return byTime.map(toRelease).filter((r): r is Release => r !== null);
 }
 
-/** The newest framework version among `releases` (newest first), or `null`. */
+/** The newest framework version among `releases` (newest first), pre-releases left out, or `null`. */
 export function latestFrameworkVersion(releases: Release[]): string | null {
-  return releases.find((r) => r.kind === "framework")?.version ?? null;
+  return releases.find((r) => r.kind === "framework" && !r.prerelease)?.version ?? null;
 }
 
 /**
@@ -80,13 +82,17 @@ export function releaseAnchor(r: Release): string {
 }
 
 /**
- * Puts the headings of a rendered release body below the release's own `h2`
- * (two levels down, never past `h6`) and drops their ids, which would repeat
- * across releases ("What's changed" in every one).
+ * Puts the headings of a rendered release body below the release's own `h2`:
+ * the body's highest heading becomes an `h3` and the others keep their
+ * distance from it (never past `h6`), so no level is skipped. Their ids go,
+ * since they'd repeat across releases ("What's changed" in every one).
  */
 export function demoteHeadings(html: string): string {
+  const levels = [...html.matchAll(/<h([1-6])[\s>]/g)].map((m) => Number(m[1]));
+  if (levels.length === 0) return html;
+  const shift = 3 - Math.min(...levels);
   return html.replace(/<(\/?)h([1-6])((?:\s[^>]*)?)>/g, (_, slash: string, level: string, attrs: string) => {
-    const to = Math.min(6, Number(level) + 2);
+    const to = Math.min(6, Math.max(3, Number(level) + shift));
     return `<${slash}h${to}${slash ? "" : attrs.replace(/\s+id="[^"]*"/, "")}>`;
   });
 }

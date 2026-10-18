@@ -32,14 +32,17 @@ it up.
 login (whoever can type in it already holds the container), and it sees every tool. Use it to try things while you
 build, never as the way people reach the agent.
 
-## Conversations
+## Conversations, sessions and turns
 
-A **conversation** is the sequence of messages the model remembers as one thread. What counts as one depends on
+A **turn** is one exchange: a message comes in, the model works on it (calling tools when it needs them), and one
+answer goes out. A **conversation** is the sequence of turns the model remembers as one thread. What counts as one depends on
 the channel: on Google Chat, a direct message or a space is one stream, and a long silence starts a new
 conversation; over HTTP, the person opens as many conversations as they want and comes back to any of them, as in
 any chat app. [Memory](../memory/) explains what the agent keeps of each.
 
-Two messages in the same conversation are answered one after the other, never at once; different people, and
+Inside Mercury a conversation is a **session**: the history the model gets at every turn, kept under a key made of
+who is writing and which conversation it is, so the same conversation id sent by someone else is a session of their
+own. Two messages in the same session are answered one after the other, never at once; different people, and
 different conversations of the same person, run in parallel.
 
 ## Who is writing

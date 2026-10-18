@@ -1,27 +1,25 @@
 /**
- * WCAG 2.2 AA on the built site: an axe audit of one page of every kind, in
- * both themes, plus the keyboard path every page must offer.
+ * WCAG 2.2 AA on the built site: an axe audit of every page written by hand
+ * (and one generated reference page), in both themes, plus the keyboard path
+ * every page must offer.
  */
 import { test, expect, type Page } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
+import { existsSync, readdirSync } from "node:fs";
+import { join } from "node:path";
 
-const PAGES = [
-  "",
-  "getting-started/first-agent/",
-  "getting-started/local-plugin/",
-  "getting-started/public-plugin/",
-  "concepts/what-mercury-is/",
-  "concepts/people/",
-  "reference/config/",
-  "reference/cli/",
-  "reference/environment/",
-  "reference/api/types/plugin-types/type-aliases/plugin/",
-  "plugins/",
-  "plugins/plugin-web-search/",
-  "plugins/channel-http/",
-  "changelog/",
-  "a-page-that-does-not-exist/",
-];
+/** Every page the site writes by hand, plus one generated reference page and a missing one (the 404). */
+const DIST = join(import.meta.dirname, "..", "dist");
+function builtPages(dir: string, prefix = ""): string[] {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    if (!entry.isDirectory()) return [];
+    const path = `${prefix}${entry.name}/`;
+    if (path === "reference/api/" || path === "reference/http-api/" || path === "_astro/" || path === "pagefind/") return [];
+    const nested = builtPages(join(dir, entry.name), path);
+    return existsSync(join(dir, entry.name, "index.html")) ? [path, ...nested] : nested;
+  });
+}
+const PAGES = ["", ...builtPages(DIST), "reference/api/types/plugin-types/type-aliases/plugin/", "a-page-that-does-not-exist/"];
 
 /** Opens `path` with the theme stored the way Starlight's theme picker stores it. */
 async function open(page: Page, path: string, theme: "dark" | "light") {

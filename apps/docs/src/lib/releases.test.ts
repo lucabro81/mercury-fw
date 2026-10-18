@@ -28,6 +28,7 @@ describe("parseReleases", () => {
         date: "2026-10-17",
         body: "- Web search",
         url: "https://github.com/lucabro81/mercury-fw/releases/tag/v0.1.0",
+        prerelease: false,
       },
       {
         tag: "@mercury-fw/plugin-jira@0.6.5",
@@ -38,6 +39,7 @@ describe("parseReleases", () => {
         date: "2026-10-16",
         body: "- Fix",
         url: "https://github.com/lucabro81/mercury-fw/releases/tag/v0.1.0",
+        prerelease: false,
       },
     ]);
   });
@@ -81,6 +83,15 @@ describe("latestFrameworkVersion", () => {
       release({ tag_name: "v0.51.0", published_at: "2026-10-10T00:00:00Z" }),
     ]);
     expect(latestFrameworkVersion(parsed)).toBe("0.52.0");
+  });
+
+  test("a pre-release is never the version the site describes", () => {
+    const parsed = parseReleases([
+      release({ tag_name: "v1.0.0-rc.1", prerelease: true, published_at: "2026-10-18T00:00:00Z" }),
+      release({ tag_name: "v0.53.0", published_at: "2026-10-17T00:00:00Z" }),
+    ]);
+    expect(latestFrameworkVersion(parsed)).toBe("0.53.0");
+    expect(parsed.map((r) => r.tag)).toEqual(["v1.0.0-rc.1", "v0.53.0"]);
   });
 
   test("null when there's no framework release yet", () => {
@@ -152,12 +163,19 @@ describe("releaseAnchor", () => {
 });
 
 describe("demoteHeadings", () => {
-  test("headings inside a release body go below the release's own h2, ids dropped", () => {
-    expect(demoteHeadings('<h1 id="a">A</h1><h2 id="whats-changed">B</h2><h3>C</h3>')).toBe("<h3>A</h3><h4>B</h4><h5>C</h5>");
+  test("the body's highest heading becomes an h3 under the release's h2, the rest keep their distance, ids dropped", () => {
+    // GitHub's own release notes start at h2 ("What's Changed"): that's the case that must not skip a level.
+    expect(demoteHeadings('<h2 id="whats-changed">B</h2><h3>C</h3><h2>D</h2>')).toBe("<h3>B</h3><h4>C</h4><h3>D</h3>");
+    expect(demoteHeadings('<h1 id="a">A</h1><h2>B</h2>')).toBe("<h3>A</h3><h4>B</h4>");
   });
 
   test("never past h6, and the rest of the markup untouched", () => {
-    expect(demoteHeadings('<h5>E</h5><h6 class="x">F</h6><p id="keep">p</p>')).toBe('<h6>E</h6><h6 class="x">F</h6><p id="keep">p</p>');
+    expect(demoteHeadings('<h3>C</h3><h6 class="x">F</h6><p id="keep">p</p>')).toBe('<h3>C</h3><h6 class="x">F</h6><p id="keep">p</p>');
+    expect(demoteHeadings('<h1>A</h1><h5>E</h5>')).toBe("<h3>A</h3><h6>E</h6>");
+  });
+
+  test("a body without headings comes back as it was", () => {
+    expect(demoteHeadings("<ul><li>Fix</li></ul>")).toBe("<ul><li>Fix</li></ul>");
   });
 });
 

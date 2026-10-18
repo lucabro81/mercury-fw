@@ -36,7 +36,7 @@ const entries = await Promise.all(
       <section class="mfw-release" aria-labelledby={releaseAnchor(r)}>
         <h2 id={releaseAnchor(r)}>{r.title}</h2>
         <p class="mfw-release-meta">
-          <time datetime={r.date}>{r.date}</time> · <a href={r.url}>on GitHub</a>
+          <time datetime={r.date}>{r.date}</time>{r.prerelease && " · pre-release"} · <a href={r.url}>on GitHub</a>
         </p>
         <Fragment set:html={r.html} />
       </section>
