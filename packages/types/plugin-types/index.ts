@@ -155,6 +155,16 @@ export type PluginRuntimeContext = {
    * sets it; optional so a plugin also builds against an older one.
    */
   assistantName?: string;
+  /**
+   * A folder for this plugin alone, on the vault's volume (so it survives a
+   * restart) and out of the wiki: `<vault>/.mercury/plugins/<name>/`, created
+   * by the core before `build()`. What goes inside is the plugin's business;
+   * nothing in it reaches the model or the wiki. Two sessions may write at
+   * once, so write a temporary file in the folder and rename it over the old
+   * one. Absent with an older core, or when the folder couldn't be made (the
+   * core logs why): the plugin does without.
+   */
+  dataDir?: string;
 };
 
 /**

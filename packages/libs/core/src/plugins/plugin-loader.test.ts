@@ -1,4 +1,7 @@
 import { describe, it, expect } from "bun:test";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { PLUGIN_API_VERSION, type Plugin } from "@mercury-fw/plugin-types";
 import { loadPlugins, type LoadedPlugins, type PluginLoadContext } from "./plugin-loader.ts";
 
@@ -298,5 +301,78 @@ describe("loadPlugins dependsOn", () => {
     const loaded = await loadPlugins([dependent, a], baseCtx());
     expect(order).toEqual(["a", "dependent"]);
     expect(loaded.activated).toEqual(["a", "dependent"]);
+  });
+});
+
+describe("loadPlugins: a folder of its own for each plugin", () => {
+  /** A plugin that records the dataDir its build() got. */
+  function recording(name: string, seen: Array<string | undefined>): Plugin {
+    return plug({
+      name,
+      build: (ctx) => {
+        seen.push(ctx.dataDir);
+        return {};
+      },
+    });
+  }
+
+  it("creates <root>/<name> before build() and hands it over", async () => {
+    const root = join(mkdtempSync(join(tmpdir(), "plugin-data-")), ".mercury", "plugins");
+    const seen: Array<string | undefined> = [];
+
+    const loaded = await loadPlugins([recording("web-search", seen)], baseCtx({ pluginDataRoot: root }));
+
+    expect(seen).toEqual([join(root, "web-search")]);
+    expect(existsSync(join(root, "web-search"))).toBe(true);
+    expect(loaded.activated).toEqual(["web-search"]);
+  });
+
+  it("keeps what is already in the folder", async () => {
+    const root = mkdtempSync(join(tmpdir(), "plugin-data-"));
+    const seen: Array<string | undefined> = [];
+    await loadPlugins([recording("web-search", seen)], baseCtx({ pluginDataRoot: root }));
+    writeFileSync(join(root, "web-search", "kept.json"), "{}");
+
+    await loadPlugins([recording("web-search", seen)], baseCtx({ pluginDataRoot: root }));
+
+    expect(readFileSync(join(root, "web-search", "kept.json"), "utf8")).toBe("{}");
+  });
+
+  it("hands over no folder when the core has no root for them", async () => {
+    const seen: Array<string | undefined> = [];
+
+    await loadPlugins([recording("web-search", seen)], baseCtx());
+
+    expect(seen).toEqual([undefined]);
+  });
+
+  it("a name that isn't a safe folder name gets no folder and a log line, and the plugin still loads", async () => {
+    const root = mkdtempSync(join(tmpdir(), "plugin-data-"));
+    const seen: Array<string | undefined> = [];
+    const logs: string[] = [];
+
+    const loaded = await loadPlugins(
+      [recording("../escape", seen), recording("Web Search", seen), recording(".hidden", seen)],
+      baseCtx({ pluginDataRoot: root, log: (m) => logs.push(m) }),
+    );
+
+    expect(seen).toEqual([undefined, undefined, undefined]);
+    expect(loaded.activated).toEqual(["../escape", "Web Search", ".hidden"]);
+    expect(logs).toContain(`plugin "../escape" gets no data folder: its name isn't a safe folder name`);
+    expect(existsSync(join(root, "..", "escape"))).toBe(false);
+  });
+
+  it("a folder that can't be created gets no folder and a log line, and the plugin still loads", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "plugin-data-"));
+    const root = join(dir, "not-a-folder");
+    writeFileSync(root, "a file where the root should be");
+    const seen: Array<string | undefined> = [];
+    const logs: string[] = [];
+
+    const loaded = await loadPlugins([recording("web-search", seen)], baseCtx({ pluginDataRoot: root, log: (m) => logs.push(m) }));
+
+    expect(seen).toEqual([undefined]);
+    expect(loaded.activated).toEqual(["web-search"]);
+    expect(logs.some((m) => m.startsWith(`plugin "web-search" gets no data folder: `))).toBe(true);
   });
 });

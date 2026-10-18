@@ -20,6 +20,8 @@
  * the other. This module keeps only the core-runtime pieces: how a hand-listed
  * set of plugins is loaded and what the load produces.
  */
+import { mkdirSync } from "node:fs";
+import { join } from "node:path";
 import type { LanguageModel } from "ai";
 import { PLUGIN_API_VERSION } from "@mercury-fw/plugin-types";
 import type { Plugin, CliPostProcessor, PersonLogin, PostTurnGuard, Skill, SessionToolContext } from "@mercury-fw/plugin-types";
@@ -76,6 +78,31 @@ export interface PluginLoadContext {
   log: (msg: string) => void;
   /** The assistant's name, for what a plugin builds while running (see `PluginRuntimeContext`). */
   assistantName: string;
+  /** Where each plugin's own data folder goes (`<root>/<name>`, see
+   * `PluginRuntimeContext.dataDir`); no plugin gets one when absent. */
+  pluginDataRoot?: string;
+}
+
+/** A plugin name usable as a folder name as is: the rule app names follow too. */
+const SAFE_FOLDER_NAME = /^[a-z0-9][a-z0-9._-]*$/;
+
+/** Creates `plugin`'s data folder under `root` and returns it, or logs why it
+ * gets none: a name that isn't a safe folder name, or a folder that can't be
+ * created. Never throws: a plugin without a folder still loads. */
+function dataDirFor(name: string, root: string | undefined, log: (msg: string) => void): string | undefined {
+  if (root === undefined) return undefined;
+  if (!SAFE_FOLDER_NAME.test(name)) {
+    log(`plugin "${name}" gets no data folder: its name isn't a safe folder name`);
+    return undefined;
+  }
+  const dir = join(root, name);
+  try {
+    mkdirSync(dir, { recursive: true });
+    return dir;
+  } catch (err) {
+    log(`plugin "${name}" gets no data folder: ${err instanceof Error ? err.message : String(err)}`);
+    return undefined;
+  }
 }
 
 /**
@@ -177,7 +204,16 @@ export async function loadPlugins(plugins: Plugin[], ctx: PluginLoadContext): Pr
     try {
       // Stage into locals first: build() can throw, and a plugin must degrade
       // as a unit — nothing of it lands unless all of it succeeds.
-      const contributions = plugin.build ? plugin.build({ model: ctx.model, env: ctx.env, log: ctx.log, assistantName: ctx.assistantName }) : {};
+      const dataDir = plugin.build ? dataDirFor(plugin.name, ctx.pluginDataRoot, ctx.log) : undefined;
+      const contributions = plugin.build
+        ? plugin.build({
+            model: ctx.model,
+            env: ctx.env,
+            log: ctx.log,
+            assistantName: ctx.assistantName,
+            ...(dataDir === undefined ? {} : { dataDir }),
+          })
+        : {};
 
       const bundle: SessionToolBundle | undefined = contributions.sessionTools
         ? {
