@@ -25,6 +25,8 @@ const versions: Record<string, string> = {
   "@mercury-fw/plugin-atlassian-admin": "0.1.0",
   "@mercury-fw/plugin-zitadel": "0.1.0",
   "@mercury-fw/directory-static": "0.1.0",
+  "@mercury-fw/plugin-web-search": "0.1.0",
+  "@mercury-fw/web-search-searxng": "0.1.0",
 };
 
 const input = (over: Partial<RenderInput> = {}): RenderInput => ({
@@ -41,6 +43,7 @@ const EMPTY = input();
 const HTTP_JIRA = input({ channels: ["http"], plugins: ["jira"], auth: "static" });
 const FULL = input({ channels: ["google-chat", "http"], plugins: ["jira", "bitbucket", "atlassian-admin", "zitadel"], auth: "oidc" });
 const HTTP = input({ channels: ["http"], auth: "static" });
+const WEB = input({ channels: ["http"], plugins: ["web-search"], auth: "static" });
 
 /** Every file the template always writes, whatever was chosen. */
 const ALWAYS = [
@@ -63,7 +66,8 @@ const ALWAYS = [
 describe("renderApp: files", () => {
   // #144: no generated entrypoint, the core links the CLI credentials
   // each plugin declares, so the files don't depend on the tool plugins.
-  test("the same set of files whatever was chosen", () => {
+  test("the same set of files whatever was chosen, plus what a chosen entry brings", () => {
+    expect([...renderApp(WEB).keys()].sort()).toEqual([...ALWAYS, "searxng/settings.yml"].sort());
     for (const choice of [EMPTY, HTTP, HTTP_JIRA, FULL]) {
       expect([...renderApp(choice).keys()].sort()).toEqual(ALWAYS);
     }
@@ -423,5 +427,38 @@ describe("renderApp: validation", () => {
   test("rejects an empty assistant name or role", () => {
     expect(() => renderApp(input({ assistantName: "  " }))).toThrow("assistant name");
     expect(() => renderApp(input({ role: "" }))).toThrow("role");
+  });
+});
+
+describe("renderApp: web search", () => {
+  test("the plugin built with the SearXNG backend from its env, and no allowed host to start with", () => {
+    expect(renderApp(WEB).get("mercury.config.ts")).toBe(golden("web-search.mercury.config.ts"));
+  });
+
+  test("depends on the plugin and its backend; the plugin is trusted like every tool plugin, though it has no install script", () => {
+    const manifest = JSON.parse(renderApp(WEB).get("package.json")!) as { dependencies: Record<string, string>; trustedDependencies?: string[] };
+    expect(manifest.dependencies["@mercury-fw/plugin-web-search"]).toBe("^0.1.0");
+    expect(manifest.dependencies["@mercury-fw/web-search-searxng"]).toBe("^0.1.0");
+    expect(manifest.trustedDependencies).toEqual(["@mercury-fw/plugin-web-search"]);
+  });
+
+  test("a SearXNG service in the compose file, the app depending on it, nothing of it published on the host", () => {
+    expect(renderApp(WEB).get("docker-compose.yml")).toBe(golden("web-search.docker-compose.yml"));
+  });
+
+  test("SearXNG's settings: JSON on, no limiter", () => {
+    expect(renderApp(WEB).get("searxng/settings.yml")).toBe(golden("web-search.searxng-settings.yml"));
+  });
+
+  test("the env example says where SearXNG is and asks for its secret", () => {
+    const env = renderApp(WEB).get(".env.example")!;
+    expect(env).toContain("# --- web-search\n");
+    expect(env).toContain("\nSEARXNG_URL=http://searxng:8080\n");
+    expect(env).toContain("\nSEARXNG_SECRET=\n");
+  });
+
+  test("without web search: no SearXNG service and no settings file", () => {
+    expect(renderApp(FULL).get("docker-compose.yml")).not.toContain("searxng");
+    expect(renderApp(FULL).has("searxng/settings.yml")).toBe(false);
   });
 });

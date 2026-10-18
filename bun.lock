@@ -32,8 +32,10 @@
         "@mercury-fw/plugin-atlassian-admin": "workspace:*",
         "@mercury-fw/plugin-bitbucket": "workspace:*",
         "@mercury-fw/plugin-jira": "workspace:*",
+        "@mercury-fw/plugin-web-search": "workspace:*",
         "@mercury-fw/plugin-zitadel": "workspace:*",
         "@mercury-fw/typescript-config": "*",
+        "@mercury-fw/web-search-searxng": "workspace:*",
         "@types/bun": "^1.4.2",
         "typescript": "^6.0.3",
       },
@@ -124,7 +126,7 @@
         "typescript": "^6.0.3",
       },
       "peerDependencies": {
-        "@mercury-fw/channel-types": ">=0.46.0 <1.0.0",
+        "@mercury-fw/channel-types": ">=0.51.0 <1.0.0",
       },
     },
     "packages/channels/channel-http": {
@@ -138,7 +140,7 @@
         "typescript": "^6.0.3",
       },
       "peerDependencies": {
-        "@mercury-fw/channel-types": ">=0.49.0 <1.0.0",
+        "@mercury-fw/channel-types": ">=0.51.0 <1.0.0",
       },
     },
     "packages/config/typescript-config": {

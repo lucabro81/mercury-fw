@@ -118,6 +118,7 @@ mercury/                       # repo root
 │   │   ├── plugin-bitbucket/      # Bitbucket plugin: allowlist + pinned CLI binary (the minimal plugin shape)
 │   │   ├── plugin-atlassian-admin/ # atlassian-admin plugin: allowlist + pinned CLI binary (read-only)
 │   │   ├── plugin-web-search/     # web search plugin (no CLI, acts as no one): web_search through a WebSearchBackend package, web_fetch with host allowlist (instance + per person, in dataDir), SSRF guard, two-choice confirmation for unknown hosts, Readability extraction, sources guard
+│   │   ├── web-search-searxng/    # SearXNG as plugin-web-search's backend (WebSearchBackend); mfw create adds the searxng compose service + searxng/settings.yml
 │   │   └── plugin-zitadel/        # ZITADEL plugin: allowlist + pinned CLI binary (read-only, as the person), plus ZITADEL as the user directory (zitadelDirectory: OIDC subjects, project roles, via the CLI's service user)
 │   ├── formatters/
 │   │   └── formatter/             # @mercury-fw/formatter — applies an instance's per-kind rules to the lists a data plugin emits (formatterPlugin + formatter); holds no format of its own

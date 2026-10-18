@@ -157,7 +157,7 @@ Optional, to have mfw everywhere:
     const dir = join(base, "demo");
     const result = await run("create", dir, "--plugins", "slack", "--yes");
     expect(result.code).toBe(1);
-    expect(result.stderr).toContain('Unknown plugin "slack" (valid: jira, bitbucket, atlassian-admin, zitadel)');
+    expect(result.stderr).toContain('Unknown plugin "slack" (valid: jira, bitbucket, atlassian-admin, zitadel, web-search)');
     expect(existsSync(dir)).toBe(false);
   });
 
