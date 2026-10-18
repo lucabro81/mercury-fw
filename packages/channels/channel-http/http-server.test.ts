@@ -1,6 +1,6 @@
 import { describe, it, expect } from "bun:test";
 import { handleTurnRequest, handleConfirmRequest, handleLinkRequest, handleLoginCallback, openApiResponse, readRoutes, startHttpServer } from "./http-server.ts";
-import type { Admission, Authenticate, HandleTurn, InboundTurn, TurnSink, ChannelHostReads, Principal } from "@mercury-fw/channel-types";
+import { RESUME_AFTER_CONFIRM, type Admission, type Authenticate, type HandleTurn, type InboundTurn, type TurnSink, type ChannelHostReads, type Principal } from "@mercury-fw/channel-types";
 import type { StepInfo } from "@mercury-fw/plugin-types";
 
 /**
@@ -146,6 +146,98 @@ describe("handleTurnRequest", () => {
     expect(body).toContain("event: pending");
     expect(body).toContain("jira issue delete KAN-1");
     expect(body).toContain("TOK-123");
+  });
+
+  it("a pending event carries every choice a staging offers, with its token and label", async () => {
+    const step = {
+      toolCalls: [{ toolCallId: "1", toolName: "web_fetch", input: { url: "https://example.org/a" } }],
+      toolResults: [
+        {
+          toolCallId: "1",
+          toolName: "web_fetch",
+          output: {
+            ok: false,
+            pendingConfirmation: true,
+            token: "T1",
+            summary: "https://example.org/a",
+            choices: [
+              { token: "T1", label: "Solo questa volta" },
+              { token: "T2", label: "Sempre per example.org" },
+            ],
+          },
+        },
+      ],
+      content: [],
+    } as unknown as StepInfo;
+    const res = await handleTurnRequest(turnReq({ text: "leggi", conversationId: "c" }), {
+      handleTurn: async (_turn, sink) => {
+        sink.onStep?.(step);
+        await sink.finalize("");
+      },
+      confirm: async () => null,
+      authenticate: asAlice,
+    });
+    const body = await res.text();
+    expect(body).toContain(
+      `event: pending\ndata: ${JSON.stringify({
+        command: "https://example.org/a",
+        token: "T1",
+        choices: [
+          { token: "T1", label: "Solo questa volta" },
+          { token: "T2", label: "Sempre per example.org" },
+        ],
+      })}\n\n`,
+    );
+  });
+
+  it("a token whose confirmation resumes runs the conversation's turn on the same stream", async () => {
+    const turns: InboundTurn[] = [];
+    const res = await handleTurnRequest(turnReq({ text: "ab12-cd34", conversationId: "c" }), {
+      handleTurn: async (turn, sink) => {
+        turns.push(turn);
+        await sink.finalize("The page says hello.");
+      },
+      confirm: async () => RESUME_AFTER_CONFIRM,
+      authenticate: asAlice,
+    });
+    const body = await res.text();
+    expect(turns).toHaveLength(1);
+    expect(turns[0]).toMatchObject({ text: "", resumeAfterConfirm: true, sessionKey: "alice:c" });
+    expect(body).toContain(`event: final\ndata: ${JSON.stringify({ text: "The page says hello." })}`);
+    expect(body).not.toContain(RESUME_AFTER_CONFIRM);
+  });
+
+  it("resume: true runs the conversation's resumed turn, without text and without resolving anything", async () => {
+    const turns: InboundTurn[] = [];
+    let confirmed = false;
+    const res = await handleTurnRequest(turnReq({ resume: true, conversationId: "c" }), {
+      handleTurn: async (turn, sink) => {
+        turns.push(turn);
+        await sink.finalize("ok");
+      },
+      confirm: async () => {
+        confirmed = true;
+        return null;
+      },
+      authenticate: asAlice,
+    });
+    await res.text();
+    expect(confirmed).toBe(false);
+    expect(turns[0]).toMatchObject({ text: "", resumeAfterConfirm: true, sessionKey: "alice:c" });
+  });
+
+  it("returns 400 for resume: true without a conversationId", async () => {
+    let ran = false;
+    const res = await handleTurnRequest(turnReq({ resume: true }), {
+      handleTurn: async () => {
+        ran = true;
+      },
+      confirm: async () => null,
+      authenticate: asAlice,
+    });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ ok: false, error: "a resumed turn needs a conversationId" });
+    expect(ran).toBe(false);
   });
 
   // #176: the link a person logs in with goes to the client, never through the model.
@@ -458,6 +550,14 @@ describe("handleConfirmRequest", () => {
       resolveConfirmation: async () => ({ status: "not-found" }),
     });
     expect(await res.json()).toEqual({ ok: true, resolved: false });
+  });
+
+  it("maps a resume outcome to resolved:true with resume:true, and no text", async () => {
+    const res = await handleConfirmRequest(confirmReq({ token: "k9m2-x7q4", conversationId: "c" }), {
+      authenticate: asAlice,
+      resolveConfirmation: async () => ({ status: "resume" }),
+    });
+    expect(await res.json()).toEqual({ ok: true, resolved: true, resume: true });
   });
 
   it("maps a failed outcome to resolved:true reporting the failure", async () => {
