@@ -1,0 +1,42 @@
+{
+  "name": "@mercury-fw/docs",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun run api && bunx --bun astro dev",
+    "build": "bun run api && bunx --bun astro build && bun scripts/markdown-pages.ts",
+    "preview": "bunx --bun astro preview",
+    "test": "bun test src",
+    "test:a11y": "bunx --bun playwright test",
+    "typecheck": "bunx --bun astro check",
+    "api": "cd ../../packages/channels/channel-http && bunx --bun @redocly/cli@2 build-docs openapi.yaml -o ../../../apps/docs/public/reference/http-api/index.html"
+  },
+  "dependencies": {
+    "@astrojs/markdown-remark": "^7.3.3",
+    "@astrojs/starlight": "^0.42.6",
+    "@fontsource/ibm-plex-mono": "^5.3.0",
+    "@fontsource/ibm-plex-serif": "^5.3.0",
+    "astro": "^7.4.0",
+    "hast-util-select": "^6.0.4",
+    "hast-util-to-string": "^3.0.1",
+    "rehype-parse": "^9.0.1",
+    "rehype-remark": "^10.0.1",
+    "remark-gfm": "^4.0.1",
+    "remark-stringify": "^11.0.0",
+    "starlight-llms-txt": "^0.12.0",
+    "starlight-typedoc": "^0.23.1",
+    "typedoc": "^0.28.20",
+    "typedoc-plugin-markdown": "^4.14.0",
+    "unified": "^11.0.5",
+    "unist-util-visit": "^5.1.0"
+  },
+  "devDependencies": {
+    "@astrojs/check": "^0.9.10",
+    "@axe-core/playwright": "^4.14.0",
+    "@mercury-fw/typescript-config": "*",
+    "@playwright/test": "^1.64.1",
+    "@types/bun": "^1.4.3",
+    "@types/hast": "^3.0.5",
+    "typescript": "^6.0.3"
+  }
+}

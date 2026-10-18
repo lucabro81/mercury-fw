@@ -1,0 +1,21 @@
+---
+title: Plugins
+description: Every first-party channel, auth provider, directory and tool plugin, with its version and what it does.
+sidebar:
+  order: 0
+  label: All plugins
+---
+
+import CatalogTable from "../../../components/CatalogTable.astro";
+
+These are the packages Mercury's own repository publishes. `mfw create` offers all of them, and each page says what
+the package does, how to add it to an app that already exists, and the settings it reads.
+
+- A **channel** is where people talk to the agent ([Channels](../concepts/channels/)).
+- An **auth provider** tells the HTTP channel who is calling, and a **directory** who that person is and their
+  roles ([People and roles](../concepts/people/)).
+- A **tool plugin** gives the agent things to do ([Plugins and skills](../concepts/plugins/)).
+
+<CatalogTable />
+
+A plugin can also be a file in your app: [Your first plugin](../getting-started/local-plugin/) shows how.

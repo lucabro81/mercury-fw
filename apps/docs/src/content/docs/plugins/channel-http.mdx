@@ -1,0 +1,87 @@
+---
+title: HTTP channel
+description: An HTTP interface to build your own chat on, with answers streamed as they're written.
+---
+
+import PluginFacts from "../../../components/PluginFacts.astro";
+
+<PluginFacts slug="channel-http" />
+
+The HTTP channel lets any program talk to the agent: a web page you build, a mobile app, a script. Each message is
+one request, and the answer comes back as it's written, as a stream of **Server-Sent Events** (a standard way for a
+server to send a sequence of messages over one HTTP response). Next to it there are routes to confirm actions and
+to read what the agent holds: conversations, the wiki, the memory, its plugins.
+
+It needs an [auth provider](../../concepts/people/) to tell who is calling, and doesn't start without one:
+[OpenID Connect](../auth-oidc/) for real people, [static tokens](../auth-static/) to try it on your machine.
+
+## Trying it on your machine
+
+Create an app with the channel and static tokens:
+
+```bash
+bun create mercury-agent http-agent --channels http --auth static --yes
+cd http-agent
+cp .env.example .env
+```
+
+In `.env`, fill in `OLLAMA_MODEL` as in [Your first agent](../../getting-started/first-agent/), and give a test
+user a token:
+
+```bash title=".env"
+AUTH_STATIC_TOKENS={"alice-token": {"id": "alice", "displayName": "Alice"}}
+```
+
+Start it, and the log says the channel is up:
+
+```bash
+bunx mfw start
+bunx mfw logs mercury
+```
+
+```text
+mercury-1  | [channel] http started
+```
+
+Now send a message as Alice. `-N` makes curl print the events as they arrive:
+
+```bash
+curl -N -X POST localhost:4100/turn \
+  -H 'Authorization: Bearer alice-token' \
+  -H 'Content-Type: application/json' \
+  -d '{"text": "Hi! In one sentence, who are you?", "conversationId": "first"}'
+```
+
+The answer arrives in pieces (`text` events), then whole (`final`):
+
+```text
+event: text
+data: {"chunk":" documents"}
+
+event: text
+data: {"chunk":"."}
+
+event: final
+data: {"text":"I am Mercury, an internal assistant with access to the team's wiki documents."}
+```
+
+Send the same `conversationId` again to continue the conversation. A wrong token gets `401` before anything runs.
+
+```text title="Prompt for your coding agent"
+In my Mercury app with the HTTP channel and auth-static, set AUTH_STATIC_TOKENS in .env to one test user
+"alice" with token "alice-token" (without printing the rest of .env), restart with `bunx mfw start`, and send
+one message to POST localhost:4100/turn with curl, showing me the final event.
+```
+
+## What a chat interface needs to know
+
+- **Every conversation belongs to whoever opened it.** The same `conversationId` sent by someone else is a
+  conversation of their own.
+- **Confirmations** arrive as a `pending` event with a token for each choice; send the token back as the next
+  message's `text`, or to `POST /confirm`. See [Confirmations](../../concepts/confirmations/).
+- **Logins** to the services plugins act on as the person arrive as a `login` event with a link. They need
+  `HTTP_SURFACE_PUBLIC_URL`, the address people's browsers reach the channel at, because the service sends them
+  back to `<HTTP_SURFACE_PUBLIC_URL>/login/callback`.
+- **Browsers on another origin** can call it: set `HTTP_SURFACE_CORS_ORIGIN` to your interface's origin.
+
+The [HTTP API reference](../../reference/http-api/) describes every route and event.
