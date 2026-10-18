@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { CATALOG } from "../../../cli/src/catalog.ts";
 import { catalogRows } from "./catalog-data.ts";
@@ -12,14 +12,18 @@ describe("catalogRows, on this repo", () => {
     expect(catalogRows().map((r) => r.package).sort()).toEqual([...new Set(CATALOG.map((e) => e.package))].sort());
   });
 
-  test("every package has its page", () => {
-    const missing = catalogRows().filter((r) => !existsSync(join(DOCS, `${r.slug}.mdx`)));
-    expect(missing.map((r) => r.slug)).toEqual([]);
+  test("every package has its page, and every plugin page belongs to a package", () => {
+    const slugs = catalogRows().map((r) => r.slug).sort();
+    const pages = readdirSync(DOCS).filter((f) => f.endsWith(".mdx") && f !== "index.mdx").map((f) => f.replace(/\.mdx$/, "")).sort();
+    expect(pages).toEqual(slugs);
   });
 
   test("each version is the one in the package's own package.json", () => {
-    const http = catalogRows().find((r) => r.package === "@mercury-fw/channel-http")!;
-    const manifest = JSON.parse(readFileSync(join(PACKAGES, "channels", "channel-http", "package.json"), "utf8"));
-    expect(http.version).toBe(manifest.version);
+    for (const row of catalogRows()) {
+      const manifest = readdirSync(PACKAGES).map((bucket) => join(PACKAGES, bucket, row.slug, "package.json")).find((p) => existsSync(p));
+      expect(manifest, row.package).toBeDefined();
+      const { version } = JSON.parse(readFileSync(manifest!, "utf8"));
+      expect(row.version, row.package).toBe(version === "0.0.0" ? null : version);
+    }
   });
 });

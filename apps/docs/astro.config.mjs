@@ -16,10 +16,10 @@ export default defineConfig({
       description: "A framework for building your own agent: you declare what it's made of, Mercury runs the rest.",
       favicon: "/favicon.svg",
       customCss: [
-        "@fontsource/ibm-plex-serif/400.css",
-        "@fontsource/ibm-plex-serif/400-italic.css",
-        "@fontsource/ibm-plex-serif/700.css",
-        "@fontsource/ibm-plex-mono/400.css",
+        "@fontsource/ibm-plex-serif/latin-400.css",
+        "@fontsource/ibm-plex-serif/latin-400-italic.css",
+        "@fontsource/ibm-plex-serif/latin-700.css",
+        "@fontsource/ibm-plex-mono/latin-400.css",
         "./src/styles/theme.css",
       ],
       components: {
