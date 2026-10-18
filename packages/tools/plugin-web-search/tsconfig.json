@@ -1,0 +1,7 @@
+{
+  "extends": "@mercury-fw/typescript-config/base.json",
+  "compilerOptions": {
+    // The package imports JSON (its allowlist or its own manifest).
+    "resolveJsonModule": true
+  }
+}
