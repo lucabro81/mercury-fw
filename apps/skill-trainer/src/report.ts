@@ -8,6 +8,12 @@ import type { TaskResult } from "./harness.ts";
 /** An argv as typed: arguments with spaces quoted. */
 const asTyped = (args: string[]) => args.map((a) => (/\s/.test(a) ? JSON.stringify(a) : a)).join(" ");
 
+/** The exit code of a batch: 1 when no task ran or one couldn't run (its 0
+ * says nothing about the skill), 0 otherwise, whatever the tasks scored. */
+export function exitCodeFor(results: TaskResult[]): number {
+  return results.length === 0 || results.some((r) => r.error !== undefined) ? 1 : 0;
+}
+
 /** The lines printed for `results`. */
 export function formatReport(results: TaskResult[]): string[] {
   if (results.length === 0) return ["no tasks ran"];

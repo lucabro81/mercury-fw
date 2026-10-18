@@ -9,7 +9,7 @@ import { runBatch, selectTasks, type HarnessDeps } from "./harness.ts";
 import { loadTraining } from "./load.ts";
 import { openMercuryConversation } from "./mercury-conversation.ts";
 import type { RunOptions } from "./program.ts";
-import { formatReport } from "./report.ts";
+import { exitCodeFor, formatReport } from "./report.ts";
 
 /** The harness's real dependencies. */
 const realDeps: HarnessDeps = {
@@ -19,7 +19,8 @@ const realDeps: HarnessDeps = {
   now: () => Date.now(),
 };
 
-/** `skill-trainer run`: the tasks once, the report printed, the results written as JSON when asked. */
+/** `skill-trainer run`: the tasks once, the report printed, the results
+ * written as JSON when asked; exits 1 when a task couldn't run. */
 export async function runCommand(opts: RunOptions, print: (line: string) => void = console.log): Promise<number> {
   const training = await loadTraining(opts.plugin);
   const tasks = selectTasks(training.tasks, {
@@ -30,5 +31,5 @@ export async function runCommand(opts: RunOptions, print: (line: string) => void
   const results = await runBatch(training, tasks, candidate, realDeps);
   if (opts.json !== undefined) await writeFile(opts.json, `${JSON.stringify(results, null, 2)}\n`);
   for (const line of formatReport(results)) print(line);
-  return 0;
+  return exitCodeFor(results);
 }

@@ -51,16 +51,22 @@ const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
 /** The tasks to run: those of `split` when given, those named in `ids` in
  * their order when given, every task otherwise. Throws on a task id that's
- * repeated or unsafe as a file name, and on an id that isn't there. */
+ * repeated or unsafe as a file name, on a task that can't run (no turns, or a
+ * first turn needing one before it), and on an id that isn't there or is
+ * named twice. */
 export function selectTasks(tasks: TrainingTask[], { split, ids }: { split?: Split; ids?: string[] }): TrainingTask[] {
   const byId = new Map<string, TrainingTask>();
   for (const t of tasks) {
     if (!SAFE_ID.test(t.id)) throw new Error(`the task id "${t.id}" isn't safe as a file name`);
     if (byId.has(t.id)) throw new Error(`two tasks have the id "${t.id}"`);
+    if (t.turns.length === 0) throw new Error(`the task "${t.id}" has no turns`);
+    if (typeof t.turns[0] !== "string") throw new Error(`the task "${t.id}" starts with a function turn, which needs a turn before it`);
     byId.set(t.id, t);
   }
   const inSplit = split === undefined ? tasks : tasks.filter((t) => t.split === split);
   if (ids === undefined) return inSplit;
+  const repeated = ids.find((id, i) => ids.indexOf(id) !== i);
+  if (repeated !== undefined) throw new Error(`the task "${repeated}" is named twice`);
   return ids.map((id) => {
     const found = inSplit.find((t) => t.id === id);
     if (!found) throw new Error(split === undefined ? `no task "${id}"` : `no task "${id}" in the ${split} split`);

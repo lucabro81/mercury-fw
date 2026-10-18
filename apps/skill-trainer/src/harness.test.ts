@@ -147,6 +147,8 @@ describe("runBatch", () => {
     expect(seen.removed).toEqual(["/tmp/vault-1"]);
   });
 
+  // The real case: the plugin's build() throwing (JIRA_SITE_URL unset) surfaces
+  // when the conversation opens, and it must fail that task, not the batch.
   test("a failure opening the conversation is the task's, not the batch's", async () => {
     const { training, cli } = trainingWith([task({ id: "a" }), task({ id: "b" })]);
     const { deps, seen } = fakeDeps(async () => ({ steps: [textStep("done")], text: "done" }), cli);
@@ -155,13 +157,13 @@ describe("runBatch", () => {
     deps.open = async (plugin, vault) => {
       if (first) {
         first = false;
-        throw new Error("JIRA_SITE_URL is not set");
+        throw new Error("the jira plugin didn't load: JIRA_SITE_URL is not set");
       }
       return open(plugin, vault);
     };
     const results = await runBatch(training, training.tasks, undefined, deps);
     expect(results.map((r) => [r.id, r.hard, r.error])).toEqual([
-      ["a", 0, "JIRA_SITE_URL is not set"],
+      ["a", 0, "the jira plugin didn't load: JIRA_SITE_URL is not set"],
       ["b", 1, undefined],
     ]);
     expect(seen.removed).toEqual(["/tmp/vault-1", "/tmp/vault-2"]);
@@ -257,6 +259,20 @@ describe("selectTasks", () => {
 
   test("two tasks with one id are an error: results are keyed by id", () => {
     expect(() => selectTasks([task({ id: "a" }), task({ id: "a" })], {})).toThrow('two tasks have the id "a"');
+  });
+
+  test("a task id named twice is an error: results are keyed by id", () => {
+    expect(() => selectTasks(tasks, { ids: ["a", "a"] })).toThrow('the task "a" is named twice');
+  });
+
+  test("a task without turns is an error naming it", () => {
+    expect(() => selectTasks([task({ id: "empty", turns: [] })], {})).toThrow('the task "empty" has no turns');
+  });
+
+  test("a task whose first turn is a function is an error: there's no turn before it", () => {
+    expect(() => selectTasks([task({ id: "f", turns: [(prev) => prev.answer] })], {})).toThrow(
+      'the task "f" starts with a function turn, which needs a turn before it',
+    );
   });
 
   test("an id that isn't safe as a file name is an error", () => {

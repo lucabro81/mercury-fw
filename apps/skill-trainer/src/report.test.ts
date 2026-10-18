@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { TaskResult } from "./harness.ts";
-import { formatReport } from "./report.ts";
+import { exitCodeFor, formatReport } from "./report.ts";
 
 const result = (over: Partial<TaskResult>): TaskResult => ({
   id: "t1",
@@ -58,5 +58,19 @@ describe("formatReport", () => {
 
   test("an empty batch says so", () => {
     expect(formatReport([])).toEqual(["no tasks ran"]);
+  });
+});
+
+describe("exitCodeFor", () => {
+  test("0 when every task ran, whatever it scored", () => {
+    expect(exitCodeFor([result({}), result({ id: "t2", hard: 0, soft: 0 })])).toBe(0);
+  });
+
+  test("1 when a task couldn't run: its score says nothing about the skill", () => {
+    expect(exitCodeFor([result({}), result({ id: "t2", hard: 0, soft: 0, error: "the model sent nothing for 120s" })])).toBe(1);
+  });
+
+  test("1 when no task ran", () => {
+    expect(exitCodeFor([])).toBe(1);
   });
 });
