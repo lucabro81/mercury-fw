@@ -76,6 +76,19 @@ describe("createPersonalLists", () => {
     expect(readFileSync(join(d, "allowlist", aside[0]!), "utf8")).toBe("{not json");
   });
 
+  it("sets aside a file that is JSON but not a list of hosts, before writing", async () => {
+    const d = dir();
+    mkdirSync(join(d, "allowlist"));
+    writeFileSync(join(d, "allowlist", "people%3Aalice.json"), JSON.stringify({ sites: ["a.test"] }));
+    const lists = createPersonalLists(d);
+
+    await lists.add("people:alice", "bun.sh");
+
+    expect(await lists.hostsOf("people:alice")).toEqual(["bun.sh"]);
+    const aside = readdirSync(join(d, "allowlist")).filter((f) => f.startsWith("people%3Aalice.json.corrupt-"));
+    expect(aside).toHaveLength(1);
+  });
+
   it("keeps only well-formed host names read back from a file", async () => {
     const d = dir();
     mkdirSync(join(d, "allowlist"));

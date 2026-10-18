@@ -4,8 +4,8 @@
  * folder (`<dataDir>/allowlist/<encoded key>.json`), so a list survives a
  * restart and never reaches the wiki. A file is replaced whole through a
  * temporary file and a rename, so a reader never sees half of one. What is
- * read back is checked again: a damaged file counts as an empty list (and is
- * set aside, as `<file>.corrupt-<time>`, before the next host is written), and
+ * read back is checked again: a damaged file, or one that isn't a list of
+ * hosts, counts as an empty list (and is set aside, as `<file>.corrupt-<time>`, before the next host is written), and
  * an entry that isn't an acceptable host is ignored. A file that can't be read
  * at all is never overwritten.
  */
@@ -37,16 +37,17 @@ export function createPersonalLists(dataDir: string): PersonalLists {
       if (!strict || (err as NodeJS.ErrnoException).code === "ENOENT") return [];
       throw err;
     }
-    let raw: unknown;
+    let hosts: unknown;
     try {
-      raw = JSON.parse(text);
+      hosts = (JSON.parse(text) as { hosts?: unknown } | null)?.hosts;
     } catch {
-      // Damaged: an add sets it aside before writing a new one, so nothing is lost for good.
+      hosts = undefined;
+    }
+    if (!Array.isArray(hosts)) {
+      // Damaged, or not a list of hosts: an add sets it aside before writing a new one, so nothing is lost for good.
       if (strict) await rename(fileOf(personKey), `${fileOf(personKey)}.corrupt-${Date.now()}`);
       return [];
     }
-    const hosts = (raw as { hosts?: unknown })?.hosts;
-    if (!Array.isArray(hosts)) return [];
     return hosts.flatMap((h) => {
       if (typeof h !== "string") return [];
       const parsed = parseHostEntry(h);

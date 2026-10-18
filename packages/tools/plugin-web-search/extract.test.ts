@@ -40,6 +40,22 @@ describe("extractText", () => {
     expect(page.text).not.toContain("color:red");
   });
 
+  // Found live on rfc-editor.org: a page with no <html> made linkedom take its
+  // first <pre> as the document, leaving the body empty and the text "".
+  it("reads a page that is only bare blocks, with no html or body tags, all of it", () => {
+    const bare = `<pre>Network Working Group      D. Eastlake
+Request for Comments: 2606</pre>
+<hr><pre>
+1. Introduction
+
+The global Internet Domain Name System is documented in [RFC 1034].</pre>`;
+
+    const page = extractText(bare, "text/html", "https://www.rfc-editor.org/rfc/rfc2606.html", 100_000);
+
+    expect(page.text).toContain("Network Working Group");
+    expect(page.text).toContain("The global Internet Domain Name System");
+  });
+
   it("collapses the whitespace of the text", () => {
     const page = extractText("<html><body><p>a\n\n\n   b</p>\n\n\n\n<p>c</p></body></html>", "text/html", "https://example.org/", 100_000);
     expect(page.text).not.toMatch(/\n{3,}/);

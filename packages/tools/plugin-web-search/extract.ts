@@ -43,7 +43,10 @@ export function extractText(body: string, contentType: string, url: string, maxC
   if (/^text\/plain\b/i.test(contentType)) {
     text = body;
   } else {
-    const { document } = parseHTML(body);
+    // Without an <html> tag linkedom takes the first element for the document
+    // and leaves the body empty: a bare page gets a document around it.
+    const html = /<html[\s>]/i.test(body) ? body : `<!doctype html><html><body>${body}</body></html>`;
+    const { document } = parseHTML(html);
     const pageTitle = document.querySelector("title")?.textContent?.trim();
     const article = new Readability(document as unknown as ConstructorParameters<typeof Readability>[0]).parse();
     if (article?.content && article.textContent && article.textContent.trim().length > 0) {
@@ -51,7 +54,7 @@ export function extractText(body: string, contentType: string, url: string, maxC
       text = htmlToText(article.content);
     } else {
       title = pageTitle || url;
-      const { document: whole } = parseHTML(body);
+      const { document: whole } = parseHTML(html);
       for (const el of whole.querySelectorAll(NOT_CONTENT)) el.remove();
       text = htmlToText(whole.body?.innerHTML ?? whole.documentElement?.innerHTML ?? "");
     }
