@@ -120,8 +120,27 @@ describe("filterJql", () => {
     });
   });
 
+  test("OR, and parentheses grouping clauses", () => {
+    expect(keys("project = OPS OR status = Done")).toEqual(["KAN-3", "OPS-1"]);
+    expect(keys("(project = KAN OR project = OPS) AND statusCategory != Done")).toEqual(["KAN-2", "OPS-1", "KAN-1"]);
+    expect(keys("project = KAN AND (assignee is EMPTY OR priority = High)")).toEqual(["KAN-3", "KAN-1"]);
+    expect(keys('(project = KAN AND status = "In Progress") OR project = OPS')).toEqual(["KAN-2", "OPS-1"]);
+  });
+
+  // In a live run the model wrote `created >= startOfDay(-7d)`, valid JQL the
+  // evaluator didn't read, and `startOfd()`, which Jira refuses by name.
+  test("Jira's date functions, with an offset or without", () => {
+    expect(keys("project = KAN AND created >= startOfDay(-7d)")).toEqual(["KAN-3"]);
+    expect(keys('duedate >= startOfDay() AND duedate <= endOfDay("+5d")')).toEqual(["KAN-2"]);
+    expect(keys("duedate < startOfDay()")).toEqual(["KAN-1"]);
+    expect(keys("duedate <= endOfMonth()")).toEqual(["KAN-2", "KAN-1"]);
+  });
+
+  test("a function Jira doesn't have is refused by name", () => {
+    expect(keys("duedate >= startOfd()")).toEqual({ ok: false, error: "Unable to find JQL function 'startOfd()'." });
+  });
+
   test("a clause it doesn't know is reported, never guessed", () => {
     expect(keys("project = KAN AND sprint in openSprints()")).toEqual({ ok: false, unsupported: "sprint in openSprints()" });
-    expect(keys("project = KAN OR project = OPS")).toEqual({ ok: false, unsupported: "project = KAN OR project = OPS" });
   });
 });
