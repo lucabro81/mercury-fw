@@ -38,7 +38,9 @@ export const checks = {
   selects: (e: Expect, run: Run) =>
     e.that(
       "every read has --select",
-      calls(run).filter((c) => c.tool === "jiraCommand" && READS.some((r) => cmd(c).includes(r))).every((c) => /--select(-all)?\b/.test(cmd(c))),
+      calls(run)
+        .filter((c) => c.tool === "jiraCommand" && READS.some((r) => cmd(c).includes(r)) && !/\s(--help|-h)\b/.test(cmd(c)))
+        .every((c) => /--select(-all)?\b/.test(cmd(c))),
     ),
   presented: (e: Expect) => e.call("present", (c) => c.ok, "shows the list with present"),
   notPresented: (e: Expect) => e.callCount({ max: 0 }, "present", "doesn't show a list it wasn't asked for"),

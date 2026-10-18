@@ -161,6 +161,39 @@ describe("the checks read what the model did, not how it typed it", () => {
     ).toEqual([]);
   });
 
+  // From the third cold review.
+  test("the count of a count-then-list follow-up is read on the turn that counted", () => {
+    const presentCall: Call = { tool: "present", input: { ref: "d1" }, output: {}, ok: true, pending: false };
+    const search = jira('jira issue search --jql "project = OPS AND issuetype = Bug AND statusCategory != Done" --select issues.key,issues.fields.summary,issues.fields.status.name');
+    expect(check("h-follow-it-count-then-list", [{ calls: [readSkill, search], answer: "Ci sono 3 bug aperti in OPS." }, { calls: [presentCall], answer: "Ecco." }])).toEqual([]);
+    expect(check("h-follow-it-count-then-list", [{ calls: [readSkill, search], answer: "Il primo è OPS-3." }, { calls: [presentCall], answer: "Ecco." }])).toContain("the count is three");
+  });
+
+  test("asking a read for its help isn't a read without --select", () => {
+    expect(
+      check("count-web-open", [{ calls: [readSkill, jira("jira issue search --help", "Search issues"), jira('jira issue search --jql "project = WEB AND statusCategory != Done" --select issues.key')], answer: "8 open issues." }]),
+    ).toEqual([]);
+  });
+
+  test("WIP in MRT by status category, which is the same there", () => {
+    expect(check("h-wording-wip", [{ calls: [readSkill, jira('jira issue search --jql "project = MRT AND statusCategory = \\"In Progress\\"" --select issues.key')], answer: "1 issue." }])).toEqual([]);
+  });
+
+  test("an issue that doesn't exist, said with 'nothing to do'", () => {
+    expect(check("issue-missing", [{ calls: [readSkill, { ...jira("jira issue get WEB-404 --select key"), ok: false }], answer: "There's nothing to do: WEB-404 doesn't exist." }])).toEqual([]);
+  });
+
+  test("the recount after closing DSK-2 needs DSK-2 actually closed", () => {
+    const recount = jira('jira issue search --jql "project = DSK AND statusCategory != Done" --select issues.key');
+    expect(
+      check("h-follow-close-recount", [
+        { calls: [readSkill, recount], answer: "2" },
+        { calls: [], answer: "Done." },
+        { calls: [recount], answer: "Now 1 is open." },
+      ]),
+    ).toContain("closes DSK-2");
+  });
+
   test("a wrong JQL still fails its check", () => {
     expect(check("wording-todo", [{ calls: [readSkill, jira('jira issue search --jql "project = WEB AND status = todo" --select issues.key')], answer: "5" }])).toEqual([
       "searches the status by its Jira name, or reads the statuses",

@@ -108,7 +108,7 @@ export const HARD_TASKS: TrainingTask[] = [
   task("h-issue-missing-it", "test", "single-issue", "Esiste la issue OPS-99? In che stato è?", (run, e) => {
     checks.loadsSkill(e);
     e.call("jiraCommand", (c) => cmd(c).includes("OPS-99"), "looks OPS-99 up");
-    e.answerNot(/\b(to do|in progress|in review|done)\b/i, "doesn't make a status up");
+    e.answerNot(/(\bis|\bè|stato( è)?:?|status( is)?:?|it's)\s+["'*]*(to do|in progress|in review|done)\b/i, "doesn't make a status up");
   }),
   issueTask("h-issue-project", "val", "Which project is DSK-2 in?", "DSK-2", /customer desk/i),
 
@@ -266,7 +266,8 @@ export const HARD_TASKS: TrainingTask[] = [
   // "da fare" reads as "not done" as well as "To Do": asked as "not started yet", it's To Do only.
   wordingTask("h-wording-it-todo", "test", "Quante issue di OPS non sono ancora iniziate?", /status\s*(=|in\s*\()\s*["']to do["']|statusCategory\s*(=|in\s*\()\s*["']?to do/i, 3, "OPS"),
   wordingTask("h-wording-closed", "train", "How many WEB issues are closed?", /status\s*(=|in\s*\()\s*["']?done|statusCategory\s*(=|in\s*\()\s*["']?done/i, 2, "WEB"),
-  wordingTask("h-wording-wip", "val", "How many MRT issues are WIP?", /status\s*(=|in\s*\()\s*["']in progress["']/i, 1, "MRT"),
+  // MRT has nothing in review, so the In Progress category counts the same as the status.
+  wordingTask("h-wording-wip", "val", "How many MRT issues are WIP?", /(status|statusCategory)\s*(=|in\s*\()\s*["']in progress["']/i, 1, "MRT"),
   wordingTask("h-wording-it-review", "test", "Quanti ticket di OPS aspettano una revisione?", /status\s*(=|in\s*\()\s*["']in review["']/i, 1, "OPS"),
 
   // Dates.
@@ -304,13 +305,12 @@ export const HARD_TASKS: TrainingTask[] = [
     e.that("stages the delete of OPS-7", staged);
     e.that("keeps the token out of the answer", tokenKept);
   }),
-  task("h-delete-two", "train", "delete", "Delete WEB-1 and WEB-6.", (run, e) => {
+  // One delete a turn: the core ends the turn as soon as one is staged for confirmation.
+  task("h-delete-it-final", "train", "delete", "Elimina definitivamente WEB-1, non serve più.", (run, e) => {
     checks.loadsSkill(e);
-    for (const key of ["WEB-1", "WEB-6"]) {
-      const { staged, tokenKept } = stagedDelete(run, key);
-      e.that(`stages the delete of ${key}`, staged);
-      e.that(`keeps ${key}'s token out of the answer`, tokenKept);
-    }
+    const { staged, tokenKept } = stagedDelete(run, "WEB-1");
+    e.that("stages the delete of WEB-1", staged);
+    e.that("keeps the token out of the answer", tokenKept);
   }),
 
   // Follow-ups over two and three turns.
@@ -321,7 +321,8 @@ export const HARD_TASKS: TrainingTask[] = [
     e.answer(new RegExp(assignee, "i"), `names the assignee of the second issue in the list it got (${key})`);
   }),
   task("h-follow-close-recount", "test", "follow-up", ["How many open issues are in DSK?", "Close DSK-2.", "And now how many are open?"], (run, e) => {
-    const third = run.turns[2]?.calls ?? [];
+    const [second, third] = [run.turns[1]?.calls ?? [], run.turns[2]?.calls ?? []];
+    e.that("closes DSK-2", second.some((c) => c.ok && cmd(c).includes("issue transition ") && cmd(c).includes("DSK-2") && /--to[ =]["']?done/i.test(cmd(c))));
     e.that("counts again instead of answering from memory", third.some((c) => c.ok && cmd(c).includes("issue search") && /DSK/i.test(jqlOf(c))));
     checks.number(e, 1);
   }),
@@ -334,7 +335,7 @@ export const HARD_TASKS: TrainingTask[] = [
     const [first, second] = [run.turns[0]?.calls ?? [], run.turns[1]?.calls ?? []];
     e.that("doesn't show a list for the count", !first.some((c) => c.tool === "present"));
     e.that("shows the list when asked", second.some((c) => c.tool === "present" && c.ok));
-    e.answer(/\b(3|three|tre)\b/i, "the count is three");
+    e.that("the count is three", /(?<![\w-])(3|three|tre)(?![\w-])/i.test(run.turns[0]?.answer ?? ""));
   }),
   task("h-follow-assignee", "train", "follow-up", ["What's the status of WEB-5?", "And who is assigned to it?"], (run, e) => {
     e.answer("Ada Moretti");

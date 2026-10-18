@@ -51,7 +51,7 @@ export const BASIC_TASKS: TrainingTask[] = [
     checks.loadsSkill(e);
     e.call("jiraCommand", (c) => cmd(c).includes("WEB-404"), "looks WEB-404 up");
     e.answer("WEB-404");
-    e.answerNot(/\b(to do|in progress|in review|done)\b/i, "doesn't make a status up");
+    e.answerNot(/(\bis|status( is)?:?|it's)\s+["'*]*(to do|in progress|in review|done)\b/i, "doesn't make a status up");
   }),
 
   // Transitions, by the status's name.
@@ -161,7 +161,7 @@ export const BASIC_TASKS: TrainingTask[] = [
 
   // Dates relative to today.
   dateTask("dates-overdue", "train", "Which open issues in WEB are overdue?", ["WEB-5", "WEB-7"], ["WEB-2", "WEB-3", "WEB-8", "WEB-10"]),
-  dateTask("dates-created-week", "val", "Which OPS issues were created in the last week?", ["OPS-2", "OPS-6", "OPS-8"], ["OPS-3", "OPS-4", "OPS-5"]),
+  dateTask("dates-created-week", "val", "Which OPS issues were created in the last seven days?", ["OPS-2", "OPS-6", "OPS-8"], ["OPS-3", "OPS-4", "OPS-5"]),
   // DSK-1 is due today: `duedate >= now()` leaves it out (a due date is its day's midnight, as in
   // Jira) and `duedate >= startOfDay()` takes it in. Both are right, so only DSK-2 is required.
   dateTask("dates-due-soon", "test", "What's due in DSK in the next five days?", ["DSK-2"]),
