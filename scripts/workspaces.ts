@@ -20,6 +20,11 @@ export type Workspace = { dir: string; pkg: Manifest };
 /** The repo root. */
 export const root = join(import.meta.dir, "..");
 
+/** Folders a workspace keeps in the repo but never publishes (a plugin's
+ * skill-training data, read by the skill trainer): out of the pack and out of
+ * the type build, since they may import from outside the package. */
+export const REPO_ONLY_DIRS = ["skill-training"];
+
 /** Every workspace (not the monorepo root), from the git-tracked manifests. */
 export function workspaces(): Workspace[] {
   const proc = Bun.spawnSync(["git", "ls-files", "--", "*package.json"], { cwd: root, stdout: "pipe" });

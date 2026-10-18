@@ -17,6 +17,7 @@
  */
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { REPO_ONLY_DIRS } from "./workspaces.ts";
 
 /** Workspaces that stay private: never published. */
 const PRIVATE = new Set(["testbed", "skill-trainer", "@mercury-fw/typescript-config"]);
@@ -30,8 +31,8 @@ const REPO_ONLY = [
   /^\.turbo\//,
   // The HTTP channel's docs build config (GitHub Pages), not needed at run time.
   /^redocly\.yaml$/,
-  // A plugin's skill-training data, read by the skill trainer in this repo.
-  /^skill-training\//,
+  // The repo-only folders (a plugin's skill-training data), shared with the type build.
+  ...REPO_ONLY_DIRS.map((dir) => new RegExp(`^${dir}/`)),
 ];
 
 /** Runs `cmd` in `cwd`, returning its stdout; throws with stderr on failure. */

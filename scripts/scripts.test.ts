@@ -8,7 +8,8 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { orderByDependencies, workspaces, type Workspace } from "./workspaces.ts";
+import { orderByDependencies, REPO_ONLY_DIRS, workspaces, type Workspace } from "./workspaces.ts";
+import { typesConfig } from "./build-types.ts";
 import { isPublished, publishAction, publishCommand } from "./publish.ts";
 import { comparePack } from "./check-pack.ts";
 import { pendingChangesets, stageRelease } from "./release.ts";
@@ -222,5 +223,20 @@ describe("stageRelease", () => {
       "packages/a/package.json",
       "packages/b/CHANGELOG.md",
     ]);
+  });
+});
+
+// Guards the publish workflow: a plugin's skill-training folder imports from
+// outside the package (the trainer's contract), and building its types with the
+// package's rootDir failed (TS6059), stopping every release.
+describe("the type build", () => {
+  test("leaves the repo-only folders out, as the pack does", () => {
+    const config = typesConfig(true);
+    for (const dir of REPO_ONLY_DIRS) expect(config.exclude).toContain(dir);
+  });
+
+  test("extends the package's own tsconfig when it has one", () => {
+    expect(typesConfig(true).extends).toBe("./tsconfig.json");
+    expect(typesConfig(false).extends).toBe("@mercury-fw/typescript-config/base.json");
   });
 });
