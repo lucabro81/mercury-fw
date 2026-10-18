@@ -44,6 +44,8 @@ The rest of the turn is the real one, post-turn work included: the tool correcti
 
 Confirmations aren't part of a run. On the terminal a pasted token goes to the confirm store before the model sees it; here every turn goes to the model. A task about an irreversible command ends where the skill's part ends: the command staged (a `pending` call) and the token kept out of the answer.
 
+For the same reason a plugin acting as the person never asks anyone to log in: the operator's turns act as Mercury, so a skill's rule about a person's login link has nothing to be scored on here.
+
 A turn's answer is the model's text, as in `mfw e2e`: a list the model shows with `present` is appended to the reply but isn't part of the answer, so check the `present` call rather than the list in the answer.
 
 ## What a plugin provides
@@ -53,9 +55,11 @@ Its training data sits next to its code, in `packages/tools/plugin-<name>/skill-
 The default export is a `SkillTraining` (`src/contract.ts`):
 
 - `skill`, the name of the skill to train, one of the plugin's `skills`;
-- `plugin(runCliFn)`, the plugin built on the CLI runner it's handed (`createJiraPlugin({ runCliFn })`);
-- `fixtures`, what that runner answers;
+- `plugin(runCliFn)`, the plugin built on the CLI runner it's handed, wrapped the way an app's `mercury.config.ts` wraps it (Jira's goes behind the formatter with the rule `mfw create` writes, or its lists have no `displayRef` to `present`);
+- `fixtures`, what that runner answers: a list, or a function making a fresh one for each task when the fixtures hold state;
 - `tasks`.
+
+The plugin doesn't depend on the trainer or the CLI, so its training data imports both the contract and the check types (`Call`, `Expect`, `Run`) from `apps/skill-trainer/src/contract.ts` by a relative path; the plugin's own typecheck covers the folder. Jira's (`packages/tools/plugin-jira/skill-training/`) is the worked example: a made-up Jira (`world.ts`) with a small JQL evaluator (`jql.ts`), printed the way the real CLI prints (`jira-cli.ts`), and the tasks (`index.ts`).
 
 ## Fixtures
 
@@ -70,6 +74,8 @@ A fixture answers one command, matched on the parsed argv and not on the line, b
 ```
 
 `command` is the leading tokens, `args` conditions on the positionals after it, `flags` conditions on flags (`true` present, `false` absent, a string the exact value, a pattern the value matching), and `result` what the CLI answers, a failure included (`{ ok: false, error, exitCode: 3 }` is a CLI that isn't logged in). The first fixture that matches wins: a task's own `fixtures` come before the plugin's, so a task can make the same command answer differently.
+
+`result` can also be a function of the call (`{ args, positionals, flags }`), to answer the way the CLI would: apply `--select`, page a search, change what a later command reads. A function returning `undefined` passes the command on to the next fixture, and to the unmatched ones when none answers: that's how a fixture says "I can't answer this" (a JQL clause it doesn't read, say) instead of making an answer up.
 
 A command no fixture answers fails the way a CLI fails an unknown command (exit code 2), and the report lists it. A run with unmatched commands says more about the fixtures than about the skill, so fill those holes before reading the scores.
 
