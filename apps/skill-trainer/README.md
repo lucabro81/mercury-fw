@@ -12,6 +12,7 @@ It's private: it lives in this repo, works on the plugins in this repo, and neve
 - [What a plugin provides](#what-a-plugin-provides)
 - [Fixtures](#fixtures)
 - [Tasks and scores](#tasks-and-scores)
+- [Measuring a gain](#measuring-a-gain)
 
 ## Before you start
 
@@ -86,3 +87,35 @@ The matcher knows no CLI's schema, so it reads an argv by shape: a token startin
 A task is an e2e case run on fixtures: `turns` sent in one conversation (a turn can be a function of the one before it), and a `check(run, expect)` with the same `expect` as [`mfw e2e`](../cli/README.md). It also has an `id` (it names files, so letters, digits, `.`, `_` and `-`), a `split` (`train`, `val` or `test`) and a `taskType`, which SkillOpt samples by.
 
 `hard` is 1 when every check passed and 0 otherwise, `soft` is the fraction that passed. A task that checks nothing scores 0, and so does one whose turn fails (the error is in the result). A task needs at least one turn and its first one written as text (a function turn gets the turn before it), and `--task` refuses an id named twice. Checks on the answer's exact wording make a noisy score, so check calls, their arguments and the facts the answer has to contain.
+
+## Measuring a gain
+
+A trained skill counts as better only if it beats the original by more than the model's own noise: the same skill on the same tasks doesn't score the same twice (the baseline's runs show how much it moves). So a gain is measured, not read off one run.
+
+**Keep everything but the skill fixed.** Same model (name, weights, quantization), same commit of the fixtures, tasks, checks and of the Mercury code a turn goes through, same skill description. If any of these changes, both skills run again: a baseline from before a fixture fix isn't comparable with a candidate after it.
+
+**Compare on the test split only.** SkillOpt edits the skill on train tasks and accepts edits by their val score, so on those two a trained skill looks better than it is.
+
+**Run each skill several times on every test task**, a task's score being the fraction of its runs that passed, then pair the two skills task by task: the gain is the mean of the per-task differences. Its uncertainty comes from resampling the tasks (a bootstrap over tasks, not over runs, since the runs of one task aren't independent of each other), and a gain is claimed only when the one-sided 95% lower bound is above zero. Below that the honest answer is "not distinguishable", whatever the mean says. Report the gain per task type too, and every task that got worse: a skill that fixes counts and breaks transitions isn't a better skill.
+
+**Check the procedure on itself first.** Compare the baseline with a second run of the baseline: it has to come out as no gain. If it doesn't, the tasks or the checks are noisier than the numbers below assume.
+
+How many tasks and runs that takes comes from `bun scripts/power.ts`, a simulation of exactly this comparison (tasks with very different pass rates, a real gain spread over the tasks that fail). The share of comparisons that see a real gain, with 3 runs per skill:
+
+| test tasks | baseline 90%, +5 points | +10 | baseline 70%, +5 | +10 | +15 |
+|---|---|---|---|---|---|
+| 16 | 25% | 64% | 22% | 39% | 61% |
+| 30 | 41% | 95% | 21% | 54% | 86% |
+| 50 | 58% | 100% | 31% | 75% | 96% |
+| 80 | 77% | 100% | 44% | 89% | 100% |
+| 120 | 90% | 100% | 56% | 97% | 100% |
+
+With no real gain the comparison claims one 5 to 8% of the time, close to the 5% it's built for. With 5 runs instead of 3, 50 tasks at a 70% baseline see +10 points 92% of the time; with a single run, 37%.
+
+What that means for a plugin's training data:
+
+- **At least 50 test tasks, 3 runs per skill** to tell a 10-point gain from noise. That's the minimum for any claim. Under 30 tasks no number of runs makes it reliable (16 tasks with 5 runs see +10 points about half the time at a 70% baseline).
+- **At least 80 test tasks with 5 runs, or 120 with 3,** to claim a gain as small as 5 points.
+- **At least 30 val tasks.** SkillOpt's gate accepts an edit when its val score is strictly higher in one run, so with few val tasks it accepts noise as progress.
+- **Tasks the baseline fails sometimes.** A task every skill always passes adds nothing but runtime. Aim for a test baseline between 60% and 80%: near 100% there's no room left to measure.
+- **The time it takes.** A task costs about 40 seconds on the current model, so 50 test tasks, 3 runs, two skills is about 3 hours and a half, and 80 tasks with 5 runs about 9.
