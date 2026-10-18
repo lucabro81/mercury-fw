@@ -94,6 +94,19 @@ describe("webSearchPlugin", () => {
     expect(logs).toEqual(["web-search: no data folder from the core: nobody can allow a host for good, only one page at a time"]);
   });
 
+  it("asks about a host nobody allowed without looking it up in DNS first", async () => {
+    const looked: string[] = [];
+    const labels: string[][] = [];
+    const built = webSearchPlugin({ backend }, { ...deps, resolve: async (host) => (looked.push(host), ["93.184.216.34"]) }).build!(
+      ctx({ dataDir: mkdtempSync(join(tmpdir(), "ws-")) }),
+    );
+
+    await built.sessionTools!(session(recordingStage(labels))).web_fetch!.execute!({ url: "https://secret.attacker.example/" } as never, {} as never);
+
+    expect(labels).toHaveLength(1);
+    expect(looked).toEqual([]);
+  });
+
   it("with a data folder, offers both choices", async () => {
     const labels: string[][] = [];
     const built = webSearchPlugin({ backend }, deps).build!(ctx({ dataDir: mkdtempSync(join(tmpdir(), "ws-")) }));

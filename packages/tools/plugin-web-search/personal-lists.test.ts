@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { chmodSync, mkdtempSync, readdirSync, writeFileSync, mkdirSync } from "node:fs";
+import { chmodSync, mkdtempSync, readdirSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createPersonalLists } from "./personal-lists.ts";
@@ -70,6 +70,10 @@ describe("createPersonalLists", () => {
     expect(await lists.hostsOf("people:alice")).toEqual([]);
     await lists.add("people:alice", "bun.sh");
     expect(await lists.hostsOf("people:alice")).toEqual(["bun.sh"]);
+    // Cold review of #194: the damaged file was lost; it's set aside instead.
+    const aside = readdirSync(join(d, "allowlist")).filter((f) => f.startsWith("people%3Aalice.json.corrupt-"));
+    expect(aside).toHaveLength(1);
+    expect(readFileSync(join(d, "allowlist", aside[0]!), "utf8")).toBe("{not json");
   });
 
   it("keeps only well-formed host names read back from a file", async () => {

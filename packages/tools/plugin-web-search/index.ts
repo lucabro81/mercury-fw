@@ -14,7 +14,7 @@ import { PLUGIN_API_VERSION, type Plugin } from "@mercury-fw/plugin-types";
 import { WEB_SEARCH_BACKEND_API_VERSION, type WebSearchBackend } from "./backend.ts";
 import { parseHostEntry } from "./hosts.ts";
 import { createPersonalLists } from "./personal-lists.ts";
-import { checkUrl, systemResolve, type Resolve } from "./ssrf.ts";
+import { systemResolve, type Resolve } from "./ssrf.ts";
 import { readPage } from "./fetch-page.ts";
 import { createWebTools } from "./tools.ts";
 import { createSourcesGuard } from "./sources.ts";
@@ -82,7 +82,7 @@ export function webSearchPlugin(options: WebSearchOptions, deps: { resolve?: Res
             ...(lists === undefined ? {} : { lists }),
             person: sctx.person,
             ...(sctx.stageChoices === undefined ? {} : { stageChoices: sctx.stageChoices }),
-            checkUrl: (raw) => checkUrl(raw, resolve),
+            log: ctx.log,
             readPage: (url, allows) => readPage(url, { fetch: fetchFn, resolve, allowed: allows, ...LIMITS }),
             searchLimit: LIMITS.searchLimit,
             searchTimeoutMs: LIMITS.searchTimeoutMs,

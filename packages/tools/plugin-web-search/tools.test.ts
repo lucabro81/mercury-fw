@@ -20,6 +20,7 @@ type Staged = Parameters<StageChoices>[0];
 
 function setup(overrides: Partial<WebToolsDeps> = {}) {
   const staged: Staged[] = [];
+  const logs: string[] = [];
   const reads: Array<{ url: string; allows: (host: string) => boolean }> = [];
   const deps: WebToolsDeps = {
     backend: {
@@ -37,10 +38,7 @@ function setup(overrides: Partial<WebToolsDeps> = {}) {
       staged.push(action);
       return action.choices.map((c, i) => ({ label: c.label, token: `T${i + 1}` }));
     },
-    checkUrl: async (raw) => {
-      if (raw.includes("internal")) return { ok: false, error: "internal is not a public address: internal hosts can't be read" };
-      return { ok: true, url: new URL(raw) };
-    },
+    log: (msg) => logs.push(msg),
     readPage: async (url, allows): Promise<ReadPageResult> => {
       reads.push({ url, allows });
       return { ok: true, url, title: "Page", text: "the text", truncated: false };
@@ -49,7 +47,7 @@ function setup(overrides: Partial<WebToolsDeps> = {}) {
     searchTimeoutMs: 10_000,
     ...overrides,
   };
-  return { tools: createWebTools(deps), staged, reads, deps };
+  return { tools: createWebTools(deps), staged, reads, deps, logs };
 }
 
 const run = (tool: { execute: (input: never, opts: never) => unknown }, input: unknown) => tool.execute(input as never, {} as never);
@@ -122,7 +120,7 @@ describe("web_fetch", () => {
 
   it("refuses an internal URL outright, never asking the person", async () => {
     const { tools, staged, reads } = setup();
-    expect(await run(tools.web_fetch, { url: "http://internal:6333/" })).toEqual({ ok: false, error: "internal is not a public address: internal hosts can't be read" });
+    expect(await run(tools.web_fetch, { url: "http://10.0.0.5:6333/" })).toEqual({ ok: false, error: "10.0.0.5 is not a public address: internal hosts can't be read" });
     expect(staged).toEqual([]);
     expect(reads).toEqual([]);
   });
@@ -204,10 +202,11 @@ describe("web_fetch", () => {
     lists.add = async () => {
       throw new Error("ENOSPC");
     };
-    const { tools, staged } = setup({ lists });
+    const { tools, staged, logs } = setup({ lists });
     await run(tools.web_fetch, { url: "https://example.org/a" });
 
     expect(await staged[0]!.choices[1]!.run()).toMatchObject({ ok: true, data: { ok: true, url: "https://example.org/a" } });
+    expect(logs).toEqual(["web-search: couldn't save example.org for people:alice: ENOSPC"]);
   });
 
   it("a host written with a trailing dot or in capitals is saved, and let in, as the plain host", async () => {

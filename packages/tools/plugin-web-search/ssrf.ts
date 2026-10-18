@@ -79,8 +79,16 @@ export function isPublicAddress(ip: string): boolean {
   return false;
 }
 
-/** Checks that `raw` is a URL `web_fetch` may download (see the module comment). */
-export async function checkUrl(raw: string, resolve: Resolve): Promise<{ ok: true; url: URL } | { ok: false; error: string }> {
+/** A URL's host as an address or name, without IPv6 brackets. */
+const bareHost = (url: URL) => url.hostname.replace(/^\[|\]$/g, "");
+
+/**
+ * What can be checked of `raw` without asking DNS: http or https, no
+ * credentials, and no internal IP address written in it. Used before the
+ * person is asked about a host: looking a name up already tells its DNS
+ * server about it, and a host name can carry data.
+ */
+export function checkSyntax(raw: string): { ok: true; url: URL } | { ok: false; error: string } {
   let url: URL;
   try {
     url = new URL(raw);
@@ -89,8 +97,17 @@ export async function checkUrl(raw: string, resolve: Resolve): Promise<{ ok: tru
   }
   if (url.protocol !== "http:" && url.protocol !== "https:") return { ok: false, error: "only http and https pages can be read" };
   if (url.username !== "" || url.password !== "") return { ok: false, error: "a URL with a user name or password can't be read" };
+  const host = bareHost(url);
+  if (isIP(host) !== 0 && !isPublicAddress(host)) return { ok: false, error: `${host} is not a public address: internal hosts can't be read` };
+  return { ok: true, url };
+}
 
-  const host = url.hostname.replace(/^\[|\]$/g, "");
+/** Checks that `raw` is a URL `web_fetch` may download (see the module comment). */
+export async function checkUrl(raw: string, resolve: Resolve): Promise<{ ok: true; url: URL } | { ok: false; error: string }> {
+  const syntax = checkSyntax(raw);
+  if (!syntax.ok) return syntax;
+  const url = syntax.url;
+  const host = bareHost(url);
   let addresses: string[];
   if (isIP(host) !== 0) {
     addresses = [host];

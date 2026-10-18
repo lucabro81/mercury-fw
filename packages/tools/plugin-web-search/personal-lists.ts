@@ -4,11 +4,12 @@
  * folder (`<dataDir>/allowlist/<encoded key>.json`), so a list survives a
  * restart and never reaches the wiki. A file is replaced whole through a
  * temporary file and a rename, so a reader never sees half of one. What is
- * read back is checked again: a damaged file counts as an empty list, and an
- * entry that isn't an acceptable host is ignored. A file that can't be read
+ * read back is checked again: a damaged file counts as an empty list (and is
+ * set aside, as `<file>.corrupt-<time>`, before the next host is written), and
+ * an entry that isn't an acceptable host is ignored. A file that can't be read
  * at all is never overwritten.
  */
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parseHostEntry } from "./hosts.ts";
 
@@ -40,6 +41,8 @@ export function createPersonalLists(dataDir: string): PersonalLists {
     try {
       raw = JSON.parse(text);
     } catch {
+      // Damaged: an add sets it aside before writing a new one, so nothing is lost for good.
+      if (strict) await rename(fileOf(personKey), `${fileOf(personKey)}.corrupt-${Date.now()}`);
       return [];
     }
     const hosts = (raw as { hosts?: unknown })?.hosts;
@@ -58,8 +61,13 @@ export function createPersonalLists(dataDir: string): PersonalLists {
     await mkdir(folder, { recursive: true });
     const file = fileOf(personKey);
     const temp = `${file}.${crypto.randomUUID()}.tmp`;
-    await writeFile(temp, JSON.stringify({ hosts: [...hosts, host] }, null, 2));
-    await rename(temp, file);
+    try {
+      await writeFile(temp, JSON.stringify({ hosts: [...hosts, host] }, null, 2));
+      await rename(temp, file);
+    } catch (err) {
+      await rm(temp, { force: true });
+      throw err;
+    }
   }
 
   // One add at a time per person: two at once would each read the old list and one host would be lost.

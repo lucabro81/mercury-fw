@@ -111,8 +111,17 @@ export async function readPage(rawUrl: string, deps: ReadPageDeps): Promise<Read
   let current = rawUrl;
   const deadline = AbortSignal.timeout(deps.timeoutMs);
   const extract = deps.extract ?? extractInWorker(deps.extractTimeoutMs);
+  // A lookup that never answers ends with the read: `lookup` itself can't be aborted.
+  const resolveInTime: Resolve = (host) =>
+    Promise.race([
+      deps.resolve(host),
+      new Promise<never>((_, reject) => {
+        if (deadline.aborted) reject(new Error("timed out"));
+        deadline.addEventListener("abort", () => reject(new Error("timed out")), { once: true });
+      }),
+    ]);
   for (let hop = 0; hop <= deps.maxRedirects; hop++) {
-    const checked = await checkUrl(current, deps.resolve);
+    const checked = await checkUrl(current, resolveInTime);
     if (!checked.ok) return checked;
     const host = checked.url.hostname;
     if (!deps.allowed(host)) {
@@ -140,10 +149,16 @@ export async function readPage(rawUrl: string, deps: ReadPageDeps): Promise<Read
       }
       continue;
     }
-    if (!response.ok) return { ok: false, error: `the page answered HTTP ${response.status}` };
+    if (!response.ok) {
+      await response.body?.cancel().catch(() => {});
+      return { ok: false, error: `the page answered HTTP ${response.status}` };
+    }
 
     const contentType = response.headers.get("content-type") ?? "";
-    if (!PAGE_TYPES.test(contentType)) return { ok: false, error: `not a page: ${contentType.split(";")[0] || "unknown type"}` };
+    if (!PAGE_TYPES.test(contentType)) {
+      await response.body?.cancel().catch(() => {});
+      return { ok: false, error: `not a page: ${contentType.split(";")[0] || "unknown type"}` };
+    }
 
     let body: { bytes: Uint8Array; cut: boolean };
     try {

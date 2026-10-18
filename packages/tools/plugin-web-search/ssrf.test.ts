@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { checkUrl, isPublicAddress } from "./ssrf.ts";
+import { checkSyntax, checkUrl, isPublicAddress } from "./ssrf.ts";
 
 describe("isPublicAddress", () => {
   it("accepts public IPv4 and IPv6 addresses", () => {
@@ -98,5 +98,21 @@ describe("checkUrl", () => {
       throw new Error("ENOTFOUND");
     };
     expect(await checkUrl("https://nowhere.example/", failing)).toEqual({ ok: false, error: "nowhere.example doesn't resolve" });
+  });
+});
+
+// Cold review of #194: checking a host the person never allowed looked it up
+// in DNS, so a hostile page could send data out in a host name with no click.
+describe("checkSyntax", () => {
+  it("accepts a host name without looking it up", () => {
+    expect(checkSyntax("https://secret.attacker.example/x")).toEqual({ ok: true, url: new URL("https://secret.attacker.example/x") });
+  });
+
+  it("refuses what checkUrl refuses without a lookup: schemes, credentials, internal IP literals, non-URLs", () => {
+    expect(checkSyntax("file:///etc/passwd")).toEqual({ ok: false, error: "only http and https pages can be read" });
+    expect(checkSyntax("https://u:p@a.test/")).toEqual({ ok: false, error: "a URL with a user name or password can't be read" });
+    expect(checkSyntax("http://10.0.0.5:6333/")).toEqual({ ok: false, error: "10.0.0.5 is not a public address: internal hosts can't be read" });
+    expect(checkSyntax("http://[::1]/")).toEqual({ ok: false, error: "::1 is not a public address: internal hosts can't be read" });
+    expect(checkSyntax("nope")).toEqual({ ok: false, error: "not a URL: nope" });
   });
 });

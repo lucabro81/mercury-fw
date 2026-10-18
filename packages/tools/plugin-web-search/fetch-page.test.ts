@@ -92,6 +92,26 @@ describe("readPage", () => {
     expect(cancelled).toBe(true);
   });
 
+  it("releases the body of an error or of what isn't a page", async () => {
+    const cancelled: string[] = [];
+    const body = (name: string) => new ReadableStream({ cancel: () => void cancelled.push(name) });
+    const { fetchFn } = web({
+      "https://a.test/err": () => new Response(body("err"), { status: 500 }),
+      "https://a.test/bin": () => new Response(body("bin"), { headers: { "content-type": "application/octet-stream" } }),
+    });
+    await readPage("https://a.test/err", deps(fetchFn));
+    await readPage("https://a.test/bin", deps(fetchFn));
+    expect(cancelled).toEqual(["err", "bin"]);
+  });
+
+  it("gives up on a lookup that never answers, within the read's deadline", async () => {
+    const { fetchFn } = web({});
+    const started = Date.now();
+    const result = await readPage("https://a.test/x", deps(fetchFn, { timeoutMs: 100, resolve: () => new Promise(() => {}) }));
+    expect(result).toEqual({ ok: false, error: "a.test doesn't resolve" });
+    expect(Date.now() - started).toBeLessThan(2_000);
+  });
+
   it("stops after too many redirects", async () => {
     const { fetchFn } = web({ "https://a.test/1": redirect("/2"), "https://a.test/2": redirect("/3"), "https://a.test/3": redirect("/1") });
 
