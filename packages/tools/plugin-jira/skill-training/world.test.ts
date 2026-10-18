@@ -29,9 +29,19 @@ describe("issue search", () => {
     expect((result as { error: string }).error).toContain("top-level fields: isLast, issues");
   });
 
-  test("a status wording that isn't Jira's finds nothing", async () => {
+  test("a value Jira doesn't have is its 400, as the CLI prints it", async () => {
     const { run } = jira();
-    expect(await run("issue", "search", "--jql", 'project = WEB AND status = "todo"', "--select", "issues.key,nextPageToken,isLast")).toEqual({
+    expect(await run("issue", "search", "--jql", 'project = WEB AND status = "todo"', "--select", "issues.key")).toEqual({
+      ok: false,
+      exitCode: 1,
+      error: `jira exited with code 1: Jira API returned status 400: {"errorMessages":["The value 'todo' does not exist for the field 'status'."],"errors":{}}`,
+    });
+    expect((await run("issue", "search", "--jql", 'assignee = "Marco"', "--select", "issues.key")).ok).toBe(false);
+  });
+
+  test("nothing matching is an empty last page", async () => {
+    const { run } = jira();
+    expect(await run("issue", "search", "--jql", 'project = WEB AND summary ~ "zzzqqq"', "--select", "issues.key,nextPageToken,isLast")).toEqual({
       ok: true,
       data: { isLast: true, issues: [] },
     });

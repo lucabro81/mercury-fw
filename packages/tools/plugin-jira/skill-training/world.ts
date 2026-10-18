@@ -241,7 +241,16 @@ export function jiraFixtures(world: World): Fixture[] {
       result: (call): CliResult | undefined => {
         const jql = value(call, "--jql");
         if (jql === undefined) return undefined;
-        const found = filterJql(jql, world.issues, { now: NOW, currentUser: world.me });
+        const found = filterJql(jql, world.issues, {
+          now: NOW,
+          currentUser: world.me,
+          projects: world.projects.map((p) => p.key),
+          statuses: WORKFLOW.map((s) => s.name),
+          users: world.users,
+          issuetypes: ["Bug", "Task", "Story", "Epic", "Subtask"],
+          priorities: ["Highest", "High", "Medium", "Low", "Lowest"],
+        });
+        if (!found.ok && "error" in found) return failure(`Jira API returned status 400: ${JSON.stringify({ errorMessages: [found.error], errors: {} })}`);
         if (!found.ok) return undefined;
         const { issues, ...rest } = page(found.issues, call);
         return printed({ ...rest, issues: issues.map((i) => issueJson(world, i)) }, call);
