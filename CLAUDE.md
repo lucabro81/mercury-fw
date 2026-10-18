@@ -18,10 +18,14 @@ in its issue and never restates it.
    `main` directly.
 3. **TDD on the branch**, atomic commits, one changeset per issue; open a PR
    with `Closes #N`.
-4. **Cold-review gate.** Before merge, run the `cold-reviewer` subagent
-   (`.claude/agents/cold-reviewer.md`) over the change — it sees only the issue
-   text and `git diff main...HEAD`, no conversation context. Report its findings
-   and resolve them in-branch.
+4. **Review gate.** Before merge, run two subagents over the change, each by
+   its own subagent type and given only the issue number and the branch name,
+   no conversation context: `cold-reviewer` (`.claude/agents/cold-reviewer.md`),
+   which judges the code against the issue, and `docs-auditor`
+   (`.claude/agents/docs-auditor.md`), which checks both ways that what changed
+   is documented (READMEs, `CLAUDE.md`, the CLI's `--help`, the docs site, the
+   changesets) and that the documentation matches the code. Resolve their
+   findings in-branch and re-run both until each approves.
 5. **Merge on approval:** squash-merge (the issue auto-closes), sync `main`,
    delete the branch.
 6. **Close the loop.** At the end of each unit of work, update project memory
