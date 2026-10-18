@@ -53,6 +53,25 @@
         "typescript": "^6.0.3",
       },
     },
+    "apps/skill-trainer": {
+      "name": "skill-trainer",
+      "version": "0.0.0",
+      "bin": {
+        "skill-trainer": "src/bin.ts",
+      },
+      "dependencies": {
+        "@mercury-fw/cli": "workspace:*",
+        "@mercury-fw/cli-engine": "workspace:*",
+        "@mercury-fw/core": "workspace:*",
+        "@mercury-fw/plugin-types": "workspace:*",
+        "commander": "^15.0.0",
+      },
+      "devDependencies": {
+        "@mercury-fw/typescript-config": "*",
+        "@types/bun": "^1.4.2",
+        "typescript": "^6.0.3",
+      },
+    },
     "apps/testbed": {
       "name": "testbed",
       "version": "0.0.0",
@@ -766,6 +785,8 @@
     "signal-exit": ["signal-exit@4.1.0", "", {}, "sha512-bzyZ1e88w9O1iNJbKnOlvYTrWPDl46O1bG0D3XInv+9tkPrxrN8jUUTiFlDkkmKWgn1M6CfIA13SuGqOa9Korw=="],
 
     "sisteransi": ["sisteransi@1.0.5", "", {}, "sha512-bLGGlR1QxBcynn2d5YmDX4MGjlZvy2MRBDRNHLJ8VI6l6+9FUiyTFNJ0IveOSP0bcXgVDPRcfGqA0pjaqUpfVg=="],
+
+    "skill-trainer": ["skill-trainer@workspace:apps/skill-trainer"],
 
     "slash": ["slash@3.0.0", "", {}, "sha512-g9Q1haeby36OSStwb4ntCGGGaKsaVSjQ68fBxoQcutl5fS1vuY18H3wSt3jFyFtrkx+Kz0V1G85A4MyAdDMi2Q=="],
 

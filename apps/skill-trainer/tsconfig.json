@@ -1,0 +1,4 @@
+{
+  "extends": "@mercury-fw/typescript-config/base.json",
+  "include": ["src"]
+}
