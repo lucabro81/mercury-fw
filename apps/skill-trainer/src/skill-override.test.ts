@@ -20,6 +20,15 @@ describe("withSkill", () => {
     expect(withSkill(plugin(), "jira", file).skills?.[0]).toEqual({ ...jira, body: "candidate body" });
   });
 
+  // Guards the fixed description against a hand-edited candidate saved with
+  // Windows line endings, which a "---\n" check took for a bare body.
+  test("reads a SKILL.md with CRLF line endings as a SKILL.md", () => {
+    const file = "---\r\nname: jira\r\ndescription: Something else.\r\n---\r\nbody\r\n";
+    expect(() => withSkill(plugin(), "jira", file)).toThrow("the candidate's description differs");
+    const own = "---\r\nname: jira\r\ndescription: Query and act on Jira issues.\r\n---\r\nline one\r\nline two\r\n";
+    expect(withSkill(plugin(), "jira", own).skills?.[0]?.body).toBe("line one\nline two");
+  });
+
   test("refuses a SKILL.md with another description: the description isn't trained", () => {
     const file = "---\nname: jira\ndescription: Something else.\n---\nbody\n";
     expect(() => withSkill(plugin(), "jira", file)).toThrow("the candidate's description differs from the jira skill's");

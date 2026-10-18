@@ -5,9 +5,10 @@
  */
 import { parseSkill, type Plugin } from "@mercury-fw/plugin-types";
 
-/** The body in `candidate`: the text itself, or the body of a whole `SKILL.md`
- * whose frontmatter must be the skill's own. */
-function bodyOf(candidate: string, skill: { name: string; description: string }): string {
+/** The body in `candidate` (line endings made `\n`): the text itself, or the
+ * body of a whole `SKILL.md` whose frontmatter must be the skill's own. */
+function bodyOf(raw: string, skill: { name: string; description: string }): string {
+  const candidate = raw.replace(/\r\n/g, "\n");
   if (!candidate.startsWith("---\n")) return candidate;
   const parsed = parseSkill(candidate);
   if (parsed.name !== skill.name) throw new Error(`the candidate is the "${parsed.name}" skill, not "${skill.name}"`);
