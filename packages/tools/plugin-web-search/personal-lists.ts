@@ -27,15 +27,20 @@ export function createPersonalLists(dataDir: string): PersonalLists {
   // A user key holds ":" and "/" (google-chat:users/42): encoded, it's one flat file name.
   const fileOf = (personKey: string) => join(folder, `${encodeURIComponent(personKey)}.json`);
 
-  /** The hosts in `personKey`'s file. A missing or damaged file is an empty
-   * list; a file that can't be read throws when `strict`, so an add never
-   * overwrites a list it couldn't see. */
-  async function readHosts(personKey: string, strict: boolean): Promise<string[]> {
+  /** The hosts in `personKey`'s file, and whether it was set aside. A missing
+   * or damaged file is an empty list; a file that can't be read throws when
+   * `strict`, so an add never overwrites a list it couldn't see. Only `strict`
+   * (an add, which writes right after) sets a file aside. */
+  async function readHosts(personKey: string, strict: boolean): Promise<{ hosts: string[]; setAside: boolean }> {
+    const setAside = async () => {
+      await rename(fileOf(personKey), `${fileOf(personKey)}.corrupt-${Date.now()}`);
+      return true;
+    };
     let text: string;
     try {
       text = await readFile(fileOf(personKey), "utf8");
     } catch (err) {
-      if (!strict || (err as NodeJS.ErrnoException).code === "ENOENT") return [];
+      if (!strict || (err as NodeJS.ErrnoException).code === "ENOENT") return { hosts: [], setAside: false };
       throw err;
     }
     let hosts: unknown;
@@ -46,8 +51,7 @@ export function createPersonalLists(dataDir: string): PersonalLists {
     }
     if (!Array.isArray(hosts)) {
       // Damaged, or not a list of hosts: an add sets it aside before writing a new one, so nothing is lost for good.
-      if (strict) await rename(fileOf(personKey), `${fileOf(personKey)}.corrupt-${Date.now()}`);
-      return [];
+      return { hosts: [], setAside: strict && (await setAside()) };
     }
     const valid = hosts.flatMap((h) => {
       if (typeof h !== "string") return [];
@@ -55,19 +59,20 @@ export function createPersonalLists(dataDir: string): PersonalLists {
       return parsed.ok ? [parsed.host] : [];
     });
     // An entry that isn't a host any more (hand-edited, or a suffix refused since): kept aside, not dropped for good.
-    if (strict && valid.length < hosts.length) await rename(fileOf(personKey), `${fileOf(personKey)}.corrupt-${Date.now()}`);
-    return valid;
+    return { hosts: valid, setAside: strict && valid.length < hosts.length && (await setAside()) };
   }
 
   /** Reads, extends and replaces `personKey`'s file. */
   async function append(personKey: string, host: string): Promise<void> {
-    const hosts = await readHosts(personKey, true);
-    if (hosts.includes(host)) return;
+    const { hosts, setAside } = await readHosts(personKey, true);
+    // A file just set aside is written back, even when the host is already in it.
+    if (hosts.includes(host) && !setAside) return;
+    const next = hosts.includes(host) ? hosts : [...hosts, host];
     await mkdir(folder, { recursive: true });
     const file = fileOf(personKey);
     const temp = `${file}.${crypto.randomUUID()}.tmp`;
     try {
-      await writeFile(temp, JSON.stringify({ hosts: [...hosts, host] }, null, 2));
+      await writeFile(temp, JSON.stringify({ hosts: next }, null, 2));
       await rename(temp, file);
     } catch (err) {
       await rm(temp, { force: true });
@@ -79,7 +84,7 @@ export function createPersonalLists(dataDir: string): PersonalLists {
   const queues = new Map<string, Promise<void>>();
 
   return {
-    hostsOf: (personKey) => readHosts(personKey, false),
+    hostsOf: async (personKey) => (await readHosts(personKey, false)).hosts,
     add(personKey, host) {
       const next = (queues.get(personKey) ?? Promise.resolve()).catch(() => {}).then(() => append(personKey, host));
       queues.set(personKey, next);

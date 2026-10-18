@@ -103,6 +103,18 @@ describe("createPersonalLists", () => {
     expect(await createPersonalLists(d).hostsOf("people:alice")).toEqual(["bun.sh", "python.org"]);
   });
 
+  // Cold review of #194: the file was set aside but not written again when the
+  // host was already on the list, so the person's whole list disappeared.
+  it("adding a host already there, to a file set aside, still writes the list back", async () => {
+    const d = dir();
+    mkdirSync(join(d, "allowlist"));
+    writeFileSync(join(d, "allowlist", "people%3Aalice.json"), JSON.stringify({ hosts: ["bun.sh", "com"] }));
+
+    await createPersonalLists(d).add("people:alice", "bun.sh");
+
+    expect(await createPersonalLists(d).hostsOf("people:alice")).toEqual(["bun.sh"]);
+  });
+
   it("keeps only well-formed host names read back from a file", async () => {
     const d = dir();
     mkdirSync(join(d, "allowlist"));
