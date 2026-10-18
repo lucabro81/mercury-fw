@@ -469,6 +469,11 @@ describe("renderApp: web search", () => {
     expect(renderApp(WEB).get("mercury.config.ts")).toContain('searxngBackend({ url: process.env.SEARXNG_URL || "http://searxng:8080" })');
   });
 
+  test("the README names the variables to fill in before the first start, SearXNG's secret among them", () => {
+    const readme = renderApp(WEB).get("README.md")!;
+    expect(readme).toContain("Before `mfw start`, fill in the variables the chosen pieces require: `AUTH_STATIC_TOKENS`, `SEARXNG_SECRET`.");
+  });
+
   test("without web search: no SearXNG service and no settings file", () => {
     expect(renderApp(FULL).get("docker-compose.yml")).not.toContain("searxng");
     expect(renderApp(FULL).has("searxng/settings.yml")).toBe(false);

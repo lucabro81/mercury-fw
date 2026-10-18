@@ -363,6 +363,13 @@ function renderReadme(
   directory: CatalogEntry | undefined,
 ): string {
   const list = (entries: CatalogEntry[]) => (entries.length > 0 ? entries.map((e) => e.id).join(", ") : "none");
+  // What the app can't start without, named where the reader is about to start it.
+  const required = [...channels, ...(auth ? [auth] : []), ...tools, ...(directory ? [directory] : [])]
+    .flatMap((e) => e.env)
+    .filter((v) => v.comment.startsWith("Required:"))
+    .map((v) => `\`${v.name}\``);
+  const requiredNote =
+    required.length > 0 ? `\nBefore \`mfw start\`, fill in the variables the chosen pieces require: ${required.join(", ")}.\n` : "";
   return `# ${name}
 
 A Mercury app, scaffolded by \`mfw create\`.
@@ -393,7 +400,7 @@ cp .env.example .env
 mfw start
 mfw repl
 \`\`\`
-
+${requiredNote}
 \`bun install\` here gives your editor, \`bun run typecheck\` and the app's own \`mfw\` (the one a global \`mfw\` runs inside the app) the packages (tool plugins download their CLI binary as they install); the image installs its own copy when it builds. \`mfw start\` builds the image and starts the app with Qdrant in the background, \`mfw repl\` opens a terminal conversation with the assistant. \`mfw --help\` lists the rest: stopping and restarting, logs, a shell in the container, the wiki and the memory, and resetting them.
 ${renderHttpSection(channels, auth)}${CREDENTIALS_SECTION}`;
 }
