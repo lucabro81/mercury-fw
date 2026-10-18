@@ -1,8 +1,8 @@
 /**
  * Publishes every public workspace whose current version isn't on the
  * registry yet, dependencies before their dependents. A workspace at 0.0.0
- * (a new package merged before its first release) is skipped. Run from the repo root
- * after `bun run release`:
+ * (a new package merged before its first release) is skipped. Run from the
+ * repo root after `bun run release`:
  *
  *   bun scripts/publish.ts [--registry <url>] [--tag <dist-tag>] [--dry-run]
  *
