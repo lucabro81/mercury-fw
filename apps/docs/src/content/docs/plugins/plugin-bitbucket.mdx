@@ -21,6 +21,10 @@ import { bitbucketPlugin } from "@mercury-fw/plugin-bitbucket";
 plugins: [bitbucketPlugin],
 ```
 
+```text title="Prompt for your coding agent"
+In my Mercury app, add @mercury-fw/plugin-bitbucket: install it, list it in trustedDependencies in package.json, declare bitbucketPlugin in mercury.config.ts, and run `bun run typecheck`. Then list the `mfw credentials` commands I have to run myself, since they ask for secrets.
+```
+
 ## Logins
 
 The plugin acts as the person: every command runs with the Bitbucket account of whoever the agent is talking to. In

@@ -73,3 +73,31 @@ describe("catalogIndex", () => {
     expect(() => catalogIndex(entries, { "@mercury-fw/channel-http": "0.10.1" })).toThrow("@mercury-fw/plugin-zitadel");
   });
 });
+
+describe("catalogIndex ordering", () => {
+  // Every role, ties inside a role, and @x/aaa: first listed as a tool, also a directory. Ranked by its
+  // first role it sits among the tools; ranked by its lowest it would come before @x/dir.
+  const all: CatalogSource[] = [
+    { id: "t-b", kind: "tool", package: "@x/tool-b", env: [] },
+    { id: "dir", kind: "directory", package: "@x/dir", env: [] },
+    { id: "t-a", kind: "tool", package: "@x/tool-a", env: [] },
+    { id: "auth-b", kind: "auth", package: "@x/auth-b", env: [] },
+    { id: "both", kind: "tool", package: "@x/aaa", env: [] },
+    { id: "both", kind: "directory", package: "@x/aaa", env: [] },
+    { id: "auth-a", kind: "auth", package: "@x/auth-a", env: [] },
+    { id: "chan", kind: "channel", package: "@x/chan", env: [] },
+  ];
+  const v = Object.fromEntries(all.map((e) => [e.package, "1.0.0"]));
+
+  test("channels, then auth providers, directories, tools; by name inside each; a package ranks by its first role", () => {
+    expect(catalogIndex(all, v).map((r) => r.package)).toEqual([
+      "@x/chan",
+      "@x/auth-a",
+      "@x/auth-b",
+      "@x/dir",
+      "@x/aaa",
+      "@x/tool-a",
+      "@x/tool-b",
+    ]);
+  });
+});

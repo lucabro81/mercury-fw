@@ -24,3 +24,7 @@ AUTH_STATIC_TOKENS={"alice-token": {"id": "alice", "displayName": "Alice"}, "bob
 A caller sending `Authorization: Bearer alice-token` is `static:alice`; anything else is refused. The tokens are
 secrets even here, so they live in `.env` only. A missing or malformed list stops the provider, and the HTTP channel
 doesn't start.
+
+```text title="Prompt for your coding agent"
+In my Mercury app, add @mercury-fw/auth-static: install it, set auth: staticAuth in mercury.config.ts, add AUTH_STATIC_TOKENS to .env.example with an empty value, set it in .env to two test users, alice with token alice-token and bob with token bob-token, and run `bun run typecheck`. Don't print the contents of .env.
+```

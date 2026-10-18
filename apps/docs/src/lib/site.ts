@@ -10,9 +10,13 @@ export const REPO_URL = `https://github.com/${REPO}`;
 
 let releases: Promise<Release[]> | undefined;
 
-/** The repository's releases, fetched once per build. */
+/** The repository's releases, fetched once per build; `RELEASES_REQUIRED=1` makes a failure stop the build. */
 export function getReleases(): Promise<Release[]> {
-  releases ??= fetchReleases(REPO);
+  releases ??= fetchReleases(REPO, {
+    fetch,
+    token: process.env.GITHUB_TOKEN,
+    required: process.env.RELEASES_REQUIRED === "1",
+  });
   return releases;
 }
 

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { latestFrameworkVersion, parseReleases, type GithubRelease } from "./releases.ts";
+import { demoteHeadings, fetchReleases, latestFrameworkVersion, parseReleases, releaseAnchor, type GithubRelease } from "./releases.ts";
 
 const release = (over: Partial<GithubRelease>): GithubRelease => ({
   tag_name: "v0.1.0",
@@ -85,5 +85,78 @@ describe("latestFrameworkVersion", () => {
 
   test("null when there's no framework release yet", () => {
     expect(latestFrameworkVersion([])).toBeNull();
+  });
+});
+
+describe("fetchReleases", () => {
+  const page = (n: number, from = 0) =>
+    Array.from({ length: n }, (_, i) =>
+      release({ tag_name: `v0.${from + i}.0`, published_at: `2026-01-01T00:00:${String((from + i) % 60).padStart(2, "0")}Z` }),
+    );
+
+  test("follows the pages until one comes back short, and parses what it got", async () => {
+    const urls: string[] = [];
+    const fetchFn = (async (url: string) => {
+      urls.push(url);
+      const n = urls.length;
+      return new Response(JSON.stringify(n === 1 ? page(100) : page(3, 100)), { status: 200 });
+    }) as unknown as typeof fetch;
+    const releases = await fetchReleases("owner/repo", { fetch: fetchFn, token: undefined });
+    expect(urls).toEqual([
+      "https://api.github.com/repos/owner/repo/releases?per_page=100&page=1",
+      "https://api.github.com/repos/owner/repo/releases?per_page=100&page=2",
+    ]);
+    expect(releases).toHaveLength(103);
+  });
+
+  test("sends the token when there is one, and no authorization header when there isn't", async () => {
+    const seen: Array<string | null> = [];
+    const fetchFn = (async (_url: string, init?: RequestInit) => {
+      seen.push(new Headers(init?.headers).get("authorization"));
+      return new Response("[]", { status: 200 });
+    }) as unknown as typeof fetch;
+    await fetchReleases("o/r", { fetch: fetchFn, token: "abc" });
+    await fetchReleases("o/r", { fetch: fetchFn, token: undefined });
+    expect(seen).toEqual(["Bearer abc", null]);
+  });
+
+  test("a refused request or a network failure gives an empty list, never a throw", async () => {
+    const refused = (async () => new Response("rate limited", { status: 403 })) as unknown as typeof fetch;
+    const offline = (async () => {
+      throw new TypeError("fetch failed");
+    }) as unknown as typeof fetch;
+    expect(await fetchReleases("o/r", { fetch: refused, token: undefined })).toEqual([]);
+    expect(await fetchReleases("o/r", { fetch: offline, token: undefined })).toEqual([]);
+  });
+
+  test("with RELEASES_REQUIRED set, a failure throws instead, so a published build can't silently lose its changelog", async () => {
+    const refused = (async () => new Response("", { status: 500 })) as unknown as typeof fetch;
+    await expect(fetchReleases("o/r", { fetch: refused, token: undefined, required: true })).rejects.toThrow("500");
+  });
+});
+
+describe("releaseAnchor", () => {
+  test("a framework release is v<version>, what the footer links to", () => {
+    const [r] = parseReleases([release({ tag_name: "v0.52.0" })]);
+    expect(releaseAnchor(r!)).toBe("v0.52.0");
+  });
+
+  test("a package release keeps name and version, without @ or /", () => {
+    const [scoped, plain] = parseReleases([
+      release({ tag_name: "@mercury-fw/plugin-jira@0.6.5", published_at: "2026-10-02T00:00:00Z" }),
+      release({ tag_name: "create-mercury-agent@0.52.0", published_at: "2026-10-01T00:00:00Z" }),
+    ]);
+    expect(releaseAnchor(scoped!)).toBe("mercury-fw-plugin-jira-0.6.5");
+    expect(releaseAnchor(plain!)).toBe("create-mercury-agent-0.52.0");
+  });
+});
+
+describe("demoteHeadings", () => {
+  test("headings inside a release body go below the release's own h2, ids dropped", () => {
+    expect(demoteHeadings('<h1 id="a">A</h1><h2 id="whats-changed">B</h2><h3>C</h3>')).toBe("<h3>A</h3><h4>B</h4><h5>C</h5>");
+  });
+
+  test("never past h6, and the rest of the markup untouched", () => {
+    expect(demoteHeadings('<h5>E</h5><h6 class="x">F</h6><p id="keep">p</p>')).toBe('<h6>E</h6><h6 class="x">F</h6><p id="keep">p</p>');
   });
 });

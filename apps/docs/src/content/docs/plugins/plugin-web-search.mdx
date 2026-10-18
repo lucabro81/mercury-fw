@@ -37,6 +37,10 @@ plugins: [
 ],
 ```
 
+```text title="Prompt for your coding agent"
+In my Mercury app, add the web search plugin with its SearXNG backend: `bun add @mercury-fw/plugin-web-search @mercury-fw/web-search-searxng`, declare webSearchPlugin with searxngBackend({ url: process.env.SEARXNG_URL! }) in mercury.config.ts, add the searxng service and searxng/settings.yml as the @mercury-fw/web-search-searxng README describes, add SEARXNG_URL and SEARXNG_SECRET to .env.example, then run `bun run typecheck` and tell me how to fill SEARXNG_SECRET in .env. Don't print the contents of .env.
+```
+
 ## Which pages it reads
 
 A page can carry text written to trick the model, and the model also reads private data (your wiki, your Jira), so

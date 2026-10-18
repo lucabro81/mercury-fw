@@ -38,7 +38,7 @@ for (const [name, selector] of [
     const t = readTokens(theme, selector);
 
     test("defines every token the checks below need", () => {
-      for (const key of ["bg", "surface", "text", "text-muted", "accent", "border"]) {
+      for (const key of ["bg", "surface", "text", "text-muted", "accent", "accent-low", "border"]) {
         expect(t[key], `--mfw-${key}`).toMatch(/^#[0-9a-f]{3,6}$/i);
       }
     });
@@ -50,6 +50,15 @@ for (const [name, selector] of [
         });
       }
     }
+
+    test("text on the current page's highlight (accent-low) reaches 4.5:1", () => {
+      expect(contrastRatio(t.text!, t["accent-low"]!)).toBeGreaterThanOrEqual(4.5);
+      expect(contrastRatio(t["text-muted"]!, t["accent-low"]!)).toBeGreaterThanOrEqual(4.5);
+    });
+
+    test("the page color on the accent (the home's call to action) reaches 4.5:1", () => {
+      expect(contrastRatio(t.bg!, t.accent!)).toBeGreaterThanOrEqual(4.5);
+    });
 
     test("the accent, used for the focus ring, reaches 3:1 against the surface it sits next to", () => {
       expect(contrastRatio(t.accent!, t.surface!)).toBeGreaterThanOrEqual(3);

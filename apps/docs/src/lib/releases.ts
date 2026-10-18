@@ -64,26 +64,54 @@ export function latestFrameworkVersion(releases: Release[]): string | null {
   return releases.find((r) => r.kind === "framework")?.version ?? null;
 }
 
+/** The anchor of a release on the changelog page: `v<version>` for the framework (the footer links to it), the tag without `@` and `/` for a package. */
+export function releaseAnchor(r: Release): string {
+  return r.kind === "framework" ? `v${r.version}` : r.tag.replace(/[@/]/g, "-").replace(/^-+/, "");
+}
+
+/**
+ * Puts the headings of a rendered release body below the release's own `h2`
+ * (two levels down, never past `h6`) and drops their ids, which would repeat
+ * across releases ("What's changed" in every one).
+ */
+export function demoteHeadings(html: string): string {
+  return html.replace(/<(\/?)h([1-6])((?:\s[^>]*)?)>/g, (_, slash: string, level: string, attrs: string) => {
+    const to = Math.min(6, Number(level) + 2);
+    return `<${slash}h${to}${slash ? "" : attrs.replace(/\s+id="[^"]*"/, "")}>`;
+  });
+}
+
+/** What `fetchReleases` reads from the world, replaceable in tests. */
+export type FetchReleasesDeps = {
+  fetch: typeof fetch;
+  /** Sent as a bearer token when set (`GITHUB_TOKEN` in CI). */
+  token: string | undefined;
+  /** Throw on a failure instead of returning no releases: for a build about to be published. */
+  required?: boolean;
+};
+
 /**
  * Fetches every release of `repo` (`owner/name`) from the GitHub API, page by
- * page. Uses `GITHUB_TOKEN` when set (CI); without it the anonymous rate limit
- * is plenty for a build. Any failure (offline, rate limited) yields an empty
- * list and a warning: the page then says there's nothing to show yet.
+ * page. A failure (offline, rate limited) yields an empty list and a warning,
+ * and the page then says there's nothing to show yet; with `required` it
+ * throws instead.
  */
-export async function fetchReleases(repo: string): Promise<Release[]> {
+export async function fetchReleases(repo: string, deps: FetchReleasesDeps): Promise<Release[]> {
   const headers: Record<string, string> = { accept: "application/vnd.github+json" };
-  if (process.env.GITHUB_TOKEN) headers.authorization = `Bearer ${process.env.GITHUB_TOKEN}`;
+  if (deps.token) headers.authorization = `Bearer ${deps.token}`;
   const all: GithubRelease[] = [];
   try {
     for (let page = 1; ; page++) {
-      const res = await fetch(`https://api.github.com/repos/${repo}/releases?per_page=100&page=${page}`, { headers });
+      const res = await deps.fetch(`https://api.github.com/repos/${repo}/releases?per_page=100&page=${page}`, { headers });
       if (!res.ok) throw new Error(`GitHub answered ${res.status}`);
       const batch = (await res.json()) as GithubRelease[];
       all.push(...batch);
       if (batch.length < 100) break;
     }
   } catch (err) {
-    console.warn(`[docs] releases not read: ${err instanceof Error ? err.message : String(err)}`);
+    const reason = err instanceof Error ? err.message : String(err);
+    if (deps.required) throw new Error(`releases not read: ${reason}`);
+    console.warn(`[docs] releases not read: ${reason}`);
     return [];
   }
   return parseReleases(all);

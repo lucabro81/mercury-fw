@@ -35,6 +35,10 @@ mfw credentials setup @mercury-fw/plugin-zitadel --user-app
 mfw credentials check @mercury-fw/plugin-zitadel
 ```
 
+```text title="Prompt for your coding agent"
+In my Mercury app, add @mercury-fw/plugin-zitadel as a tool plugin: install it, list it in trustedDependencies in package.json, declare zitadelPlugin in mercury.config.ts, and run `bun run typecheck`. Then list the `mfw credentials` commands I have to run myself, since they ask for secrets.
+```
+
 ## As the directory
 
 `zitadelDirectory` makes ZITADEL decide who the people talking to the agent are and their roles, from a ZITADEL
