@@ -6,6 +6,7 @@
  * The suffixes refused are a short list of the common ones, not the whole
  * Public Suffix List.
  */
+import { isIP } from "node:net";
 
 /** Suffixes under which anyone can have a site of their own. Every single-label name (`com`, `it`) is one too. */
 const PUBLIC_SUFFIXES = new Set([
@@ -23,9 +24,9 @@ function normalize(host: string): string {
   return host.toLowerCase().replace(/\.$/, "");
 }
 
-/** A dotted IPv4 address, or anything with a colon (IPv6, bracketed or not). */
+/** A dotted IPv4 address, or an IPv6 one, bracketed or not. */
 function isIpAddress(host: string): boolean {
-  return /^\d{1,3}(\.\d{1,3}){3}$/.test(host) || host.includes(":") || host.startsWith("[");
+  return /^\d{1,3}(\.\d{1,3}){3}$/.test(host) || isIP(host.replace(/^\[|\]$/g, "")) === 6;
 }
 
 /** Reads one allowlist entry: the normalized host, or why it can't be one. */

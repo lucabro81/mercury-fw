@@ -12,9 +12,14 @@ describe("parseHostEntry", () => {
     }
   });
 
+  it("says a URL isn't a host name, not that it's an IP address", () => {
+    expect(parseHostEntry("https://x.org")).toEqual({ ok: false, reason: '"https://x.org" is not a host name' });
+  });
+
   it("refuses an IP address: pages are allowed by host name", () => {
     expect(parseHostEntry("93.184.216.34")).toEqual({ ok: false, reason: "93.184.216.34 is an IP address, not a host name" });
-    expect(parseHostEntry("[::1]").ok).toBe(false);
+    expect(parseHostEntry("[::1]")).toEqual({ ok: false, reason: "[::1] is an IP address, not a host name" });
+    expect(parseHostEntry("2606:4700::1111")).toEqual({ ok: false, reason: "2606:4700::1111 is an IP address, not a host name" });
   });
 
   it("refuses a public suffix, which would let in every site under it", () => {
