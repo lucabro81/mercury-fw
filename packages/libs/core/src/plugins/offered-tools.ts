@@ -1,9 +1,10 @@
 /**
  * Builds a turn's plugin tools from what the person is offered (see
  * `offering.ts`): each plugin's own tool factory, invoked for the person when
- * it acts as them, with no person when it acts as Mercury. Acting as Mercury
- * for someone (not the operator), the tools say so and log who asked (see
- * `act-as-self.ts`); only a tool acting as the person can start their login.
+ * it acts as them or as no one, with no person when it acts as Mercury. Acting
+ * as Mercury for someone (not the operator), the tools say so and log who
+ * asked (see `act-as-self.ts`); only a tool acting as the person can start
+ * their login.
  */
 import type { Tool } from "ai";
 import type { LoginRequired, PersonLogin, SessionToolContext } from "@mercury-fw/plugin-types";
@@ -27,10 +28,11 @@ export function buildOfferedTools(offering: Offering, who: TurnWho, deps: Offere
     const { bundle } = entry.plugin;
     if (bundle === undefined) continue;
     hasCliTool = true;
-    const person = entry.as === "person" ? { key: who.person.key } : null;
+    // A plugin acting as no one still learns whom the turn is for, to keep what's theirs.
+    const person = entry.as === "person" || entry.as === "anyone" ? { key: who.person.key } : null;
     const { login } = bundle;
     const requireLogin = async (): Promise<LoginRequired> =>
-      person && login
+      person && login && entry.as === "person"
         ? deps.requireLogin(bundle.name, login, person.key)
         : { ok: false, error: `${bundle.name} says the user isn't logged in, and it has no way to log anyone in.` };
     const built = bundle.build({ ...deps.context, person, requireLogin }, bundle.postProcess);

@@ -183,7 +183,9 @@ export type SessionToolContext = {
   /** Stashes a rendered list for the model to `present`, with what it is (`label`: the command that built it), and returns its ref. */
   stashDisplay: (artifact: string, label?: string) => string;
   /** Whom the tools act for, by the person's key, when they act as the
-   * person; `null` when they act as the plugin's own service identity: on the
+   * person, and whom the turn is for when the plugin acts as no one
+   * (`actsAs: "anyone"`, the operator's key on the terminal); `null` when they
+   * act as the plugin's own service identity: on the
    * terminal, where whoever types already holds the container, and for a
    * person allowed to make Mercury act as itself. */
   person: { key: string } | null;
@@ -356,11 +358,13 @@ export type PluginSurface = {
  * - `actsAs`: whose identity the plugin's tools act with at the service they
  *   reach. `"person"`: the person the turn is for, who logs in to it through
  *   Mercury (the plugin contributes `login`). `"mercury"`: Mercury's own
- *   service identity, whoever asks. Undeclared counts as `"mercury"`. A
- *   `"mercury"` plugin is offered to people only once they hold the
- *   permission to make Mercury act as itself, which doesn't exist yet: until
- *   then it's offered on the terminal only, where its prompt fragment, skills
- *   and tools stay.
+ *   service identity, whoever asks. `"anyone"`: no identity at all (a public
+ *   service, no login): offered to everyone, and its tools still get the
+ *   turn's `person`, to keep what belongs to them; an older core reads it as
+ *   `"mercury"`. Undeclared counts as `"mercury"`. A
+ *   `"mercury"` plugin is offered to people only when they hold the
+ *   permission to make Mercury act as itself (`mercury.act-as-self`, or
+ *   `mercury.act-as-self.<plugin>`), and on the terminal.
  *
  * A plugin no longer carries a raw `cliConfig`: the core knows nothing about
  * CLIs. A CLI-based plugin owns its allowlist and, using `@mercury-fw/cli-engine`,
@@ -375,5 +379,5 @@ export type Plugin = {
   build?: (ctx: PluginRuntimeContext) => PluginRuntimeContributions;
   skills?: Skill[];
   surfaces?: PluginSurface[];
-  actsAs?: "person" | "mercury";
+  actsAs?: "person" | "mercury" | "anyone";
 };
