@@ -26,7 +26,7 @@ The plugin acts as no one (`actsAs: "anyone"`): there's no login, everyone gets 
 
 ## Which pages it reads
 
-A page is read right away only when its host is allowed, by the instance (`allowedHosts`) or by the person asking. An entry is a host name and covers its subdomains, so `bun.sh` covers `docs.bun.sh` but neither `python.org` nor `evilbun.sh`. An entry that is an IP address, a URL or a public suffix (`com`, `co.uk`, `github.io`, which would let in every site under it) is dropped when the plugin loads, and the log says why.
+A page is read right away only when its host is allowed, by the instance (`allowedHosts`) or by the person asking. An entry is a host name and covers its subdomains, so `bun.sh` covers `docs.bun.sh` but neither `python.org` nor `evilbun.sh`. An entry that is an IP address, a URL or a public suffix (`com`, `co.uk`, `github.io`, which would let in every site under it) is dropped when the plugin loads, and the log says why. The suffixes it knows are the common ones, not the whole Public Suffix List, so don't put a hosting provider's shared domain in `allowedHosts`.
 
 For any other host the plugin asks the person, through the same confirmation Mercury uses for irreversible actions (a button per choice on Google Chat, a token per choice on the terminal and over HTTP):
 
@@ -41,7 +41,7 @@ Some addresses are never read, allowlist or not: anything that isn't http or htt
 
 ## Limits
 
-A read downloads at most 2 MB and gives up after 15 seconds, and the model gets at most 20,000 characters of text (the result says when it was cut). Only HTML and plain text are read. No JavaScript runs, so a page that builds its content in the browser comes back nearly empty.
+A read downloads at most 2 MB and gives up after 15 seconds, redirects included; extracting the text runs in a worker of its own and gives up after 5 seconds, so a page built to make the parser crawl never holds up the rest of Mercury, and the model gets at most 20,000 characters of text (the result says when it was cut). Only HTML and plain text are read. No JavaScript runs, so a page that builds its content in the browser comes back nearly empty.
 
 ## Writing a backend
 

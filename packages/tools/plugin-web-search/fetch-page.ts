@@ -3,10 +3,48 @@
  * hop goes through the same checks as the first URL: a public address only
  * (`ssrf.ts`) and a host the caller allows, so a page on an allowed host can't
  * bounce the reader somewhere it wasn't let. Only HTML and plain text are
- * read; the download stops at `maxBytes` and gives up after `timeoutMs`.
+ * read; the download stops at `maxBytes`, the whole read (redirects
+ * included) gives up after `timeoutMs`, and extracting the text after
+ * `extractTimeoutMs`.
  */
 import { checkUrl, type Resolve } from "./ssrf.ts";
-import { extractText } from "./extract.ts";
+import type { ExtractedPage } from "./extract.ts";
+
+/** Turns a downloaded page into its title and text; rejects when it can't. */
+export type Extract = (body: string, contentType: string, url: string, maxChars: number) => Promise<ExtractedPage>;
+
+/** Thrown by `extractInWorker` when the page took longer than allowed. */
+class ExtractTimeout extends Error {}
+
+/**
+ * Extracts in a worker of its own (`extract-worker.ts`), terminated after
+ * `timeoutMs`: a page built to make the parser crawl costs that much and no
+ * more, and never holds the main thread.
+ */
+export function extractInWorker(timeoutMs: number): Extract {
+  return (body, contentType, url, maxChars) =>
+    new Promise((resolve, reject) => {
+      const worker = new Worker(new URL("./extract-worker.ts", import.meta.url).href);
+      const done = () => {
+        clearTimeout(timer);
+        worker.terminate();
+      };
+      const timer = setTimeout(() => {
+        done();
+        reject(new ExtractTimeout());
+      }, timeoutMs);
+      worker.onmessage = (event: MessageEvent<{ ok: true; page: ExtractedPage } | { ok: false; error: string }>) => {
+        done();
+        if (event.data.ok) resolve(event.data.page);
+        else reject(new Error(event.data.error));
+      };
+      worker.onerror = (event) => {
+        done();
+        reject(new Error(event.message));
+      };
+      worker.postMessage({ body, contentType, url, maxChars });
+    });
+}
 
 export type ReadPageDeps = {
   fetch: typeof fetch;
@@ -17,6 +55,10 @@ export type ReadPageDeps = {
   maxChars: number;
   timeoutMs: number;
   maxRedirects: number;
+  /** How long extracting a page's text may take. */
+  extractTimeoutMs: number;
+  /** Replaces the extraction in a worker, for tests. */
+  extract?: Extract;
 };
 
 export type ReadPageResult =
@@ -67,6 +109,8 @@ function decoderFor(contentType: string): TextDecoder {
 /** Downloads `rawUrl` (see the module comment) and returns its title and text. */
 export async function readPage(rawUrl: string, deps: ReadPageDeps): Promise<ReadPageResult> {
   let current = rawUrl;
+  const deadline = AbortSignal.timeout(deps.timeoutMs);
+  const extract = deps.extract ?? extractInWorker(deps.extractTimeoutMs);
   for (let hop = 0; hop <= deps.maxRedirects; hop++) {
     const checked = await checkUrl(current, deps.resolve);
     if (!checked.ok) return checked;
@@ -79,7 +123,7 @@ export async function readPage(rawUrl: string, deps: ReadPageDeps): Promise<Read
     try {
       response = await deps.fetch(checked.url.href, {
         redirect: "manual",
-        signal: AbortSignal.timeout(deps.timeoutMs),
+        signal: deadline,
         headers: { accept: "text/html,application/xhtml+xml,text/plain;q=0.9" },
       });
     } catch (err) {
@@ -107,7 +151,13 @@ export async function readPage(rawUrl: string, deps: ReadPageDeps): Promise<Read
     } catch (err) {
       return { ok: false, error: `the page couldn't be downloaded: ${err instanceof Error ? err.message : String(err)}` };
     }
-    const page = extractText(decoderFor(contentType).decode(body.bytes), contentType, checked.url.href, deps.maxChars);
+    let page: ExtractedPage;
+    try {
+      page = await extract(decoderFor(contentType).decode(body.bytes), contentType, checked.url.href, deps.maxChars);
+    } catch (err) {
+      if (err instanceof ExtractTimeout) return { ok: false, error: "the page took too long to read" };
+      return { ok: false, error: `the page couldn't be read: ${err instanceof Error ? err.message : String(err)}` };
+    }
     return { ok: true, url: checked.url.href, title: page.title, text: page.text, truncated: page.truncated || body.cut };
   }
   return { ok: false, error: "too many redirects" };

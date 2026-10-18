@@ -33,6 +33,12 @@ describe("createPersonalLists", () => {
     expect(readdirSync(join(d, "allowlist")).sort()).toEqual(["google-chat%3Ausers%2F42.json", "people%3Abob.json"]);
   });
 
+  it("two hosts added at once by the same person are both kept", async () => {
+    const lists = createPersonalLists(dir());
+    await Promise.all([lists.add("people:alice", "a.test"), lists.add("people:alice", "b.test"), lists.add("people:alice", "c.test")]);
+    expect((await lists.hostsOf("people:alice")).sort()).toEqual(["a.test", "b.test", "c.test"]);
+  });
+
   it("leaves no temporary file behind", async () => {
     const d = dir();
     await createPersonalLists(d).add("people:alice", "bun.sh");

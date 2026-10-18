@@ -26,6 +26,7 @@ function deps(fetchFn: typeof fetch, overrides: Partial<ReadPageDeps> = {}): Rea
     maxChars: 100_000,
     timeoutMs: 5_000,
     maxRedirects: 3,
+    extractTimeoutMs: 10_000,
     ...overrides,
   };
 }
@@ -132,6 +133,29 @@ describe("readPage", () => {
       throw new DOMException("The operation timed out.", "TimeoutError");
     }) as unknown as typeof fetch;
     expect(await readPage("https://a.test/slow", deps(failing))).toEqual({ ok: false, error: "the page couldn't be downloaded: The operation timed out." });
+  });
+
+  // Cold review of #194: extraction ran on the main thread with no bound, so
+  // one deeply nested page froze every channel for tens of seconds.
+  it("gives up on a page whose text takes too long to extract, without blocking the process", async () => {
+    const nested = `<html><body>${"<div>".repeat(4000)}x${"</div>".repeat(4000)}</body></html>`;
+    const { fetchFn } = web({ "https://a.test/deep": page(nested) });
+    let ticks = 0;
+    const timer = setInterval(() => ticks++, 20);
+    const started = Date.now();
+
+    const result = await readPage("https://a.test/deep", deps(fetchFn, { extractTimeoutMs: 300 }));
+
+    clearInterval(timer);
+    expect(result).toEqual({ ok: false, error: "the page took too long to read" });
+    expect(Date.now() - started).toBeLessThan(3_000);
+    expect(ticks).toBeGreaterThan(5);
+  });
+
+  it("reports an extraction that fails as a failure", async () => {
+    const { fetchFn } = web({ "https://a.test/x": page(html("A", "a")) });
+    const result = await readPage("https://a.test/x", deps(fetchFn, { extract: async () => { throw new Error("boom"); } }));
+    expect(result).toEqual({ ok: false, error: "the page couldn't be read: boom" });
   });
 
   it("checks the very first URL too: an internal one is never requested", async () => {

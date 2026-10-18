@@ -12,7 +12,7 @@
  */
 import { tool } from "ai";
 import { z } from "zod";
-import type { ExecutableTool, StageChoices } from "@mercury-fw/plugin-types";
+import type { ActionResult, ExecutableTool, StageChoices } from "@mercury-fw/plugin-types";
 import type { WebSearchBackend } from "./backend.ts";
 import { hostAllowed, parseHostEntry } from "./hosts.ts";
 import type { PersonalLists } from "./personal-lists.ts";
@@ -87,16 +87,25 @@ export function createWebTools(deps: WebToolsDeps): { web_search: ExecutableTool
 
       const allowedWithHost = (h: string) => allowed(h) || h === host;
       const resume = { toolName: "web_fetch", input: { url } };
-      const asResult = async (page: Awaited<ReturnType<typeof read>>) => (page.ok ? { ok: true as const, data: page } : page);
+      // A choice runs inside the confirmation, after the turn: it reports, never throws.
+      const readAsResult = async (): Promise<ActionResult> => {
+        try {
+          const page = await read(checked.url.href, allowedWithHost);
+          return page.ok ? { ok: true, data: page } : page;
+        } catch (err) {
+          return { ok: false, error: `the page couldn't be read: ${err instanceof Error ? err.message : String(err)}` };
+        }
+      };
       const person = deps.person;
       const lists = deps.lists;
-      const choices = [{ label: ONCE, run: async () => asResult(await read(checked.url.href, allowedWithHost)), resume }];
+      const choices = [{ label: ONCE, run: readAsResult, resume }];
       if (person && lists && parseHostEntry(host).ok) {
         choices.push({
           label: ALWAYS(host),
           run: async () => {
-            await lists.add(person.key, host);
-            return asResult(await read(checked.url.href, allowedWithHost));
+            // The person asked for the page too: a host that can't be saved is asked about again next time.
+            await lists.add(person.key, host).catch(() => {});
+            return readAsResult();
           },
           resume,
         });

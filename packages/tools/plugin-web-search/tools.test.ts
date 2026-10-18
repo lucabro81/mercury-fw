@@ -176,6 +176,31 @@ describe("web_fetch", () => {
     expect(lists.lists).toEqual({ "people:alice": ["example.org"] });
   });
 
+  // Cold review of #194: a throw inside a confirmed choice escaped the
+  // confirmation instead of coming back as a failure.
+  it("a confirmed choice never throws: a read that throws comes back as a failure", async () => {
+    const { tools, staged } = setup({
+      readPage: async () => {
+        throw new Error("boom");
+      },
+    });
+    await run(tools.web_fetch, { url: "https://example.org/a" });
+
+    expect(await staged[0]!.choices[0]!.run()).toEqual({ ok: false, error: "the page couldn't be read: boom" });
+    expect(await staged[0]!.choices[1]!.run()).toEqual({ ok: false, error: "the page couldn't be read: boom" });
+  });
+
+  it("always for this host still reads the page when the host can't be saved", async () => {
+    const lists = memoryLists();
+    lists.add = async () => {
+      throw new Error("ENOSPC");
+    };
+    const { tools, staged } = setup({ lists });
+    await run(tools.web_fetch, { url: "https://example.org/a" });
+
+    expect(await staged[0]!.choices[1]!.run()).toMatchObject({ ok: true, data: { ok: true, url: "https://example.org/a" } });
+  });
+
   it("a confirmed read that fails reports the failure", async () => {
     const { tools, staged } = setup({ readPage: async () => ({ ok: false, error: "the page answered HTTP 404" }) });
     await run(tools.web_fetch, { url: "https://example.org/a" });

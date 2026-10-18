@@ -40,16 +40,26 @@ export function createPersonalLists(dataDir: string): PersonalLists {
     });
   }
 
+  /** Reads, extends and replaces `personKey`'s file. */
+  async function append(personKey: string, host: string): Promise<void> {
+    const hosts = await hostsOf(personKey);
+    if (hosts.includes(host)) return;
+    await mkdir(folder, { recursive: true });
+    const file = fileOf(personKey);
+    const temp = `${file}.${crypto.randomUUID()}.tmp`;
+    await writeFile(temp, JSON.stringify({ hosts: [...hosts, host] }, null, 2));
+    await rename(temp, file);
+  }
+
+  // One add at a time per person: two at once would each read the old list and one host would be lost.
+  const queues = new Map<string, Promise<void>>();
+
   return {
     hostsOf,
-    async add(personKey, host) {
-      const hosts = await hostsOf(personKey);
-      if (hosts.includes(host)) return;
-      await mkdir(folder, { recursive: true });
-      const file = fileOf(personKey);
-      const temp = `${file}.${crypto.randomUUID()}.tmp`;
-      await writeFile(temp, JSON.stringify({ hosts: [...hosts, host] }, null, 2));
-      await rename(temp, file);
+    add(personKey, host) {
+      const next = (queues.get(personKey) ?? Promise.resolve()).catch(() => {}).then(() => append(personKey, host));
+      queues.set(personKey, next);
+      return next;
     },
   };
 }
