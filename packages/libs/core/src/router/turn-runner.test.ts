@@ -2105,14 +2105,38 @@ describe("createTurnRunner: a turn resumed after a confirmation", () => {
     });
   });
 
-  test("the verbatim archive keeps the line, never the result", async () => {
+  test("the verbatim archive keeps the answer only: the line isn't something the person said", async () => {
     const { runner, captured } = setup(new Map([["session-1", resumed]]));
 
     await runner(baseTurn({ text: "", resumeAfterConfirm: true, principal: verified("u1") }), baseSink());
 
-    expect(captured).toEqual([
-      { role: "user", content: RESUMED_LINE(resumed) },
-      { role: "assistant", content: "The page says hello." },
-    ]);
+    expect(captured).toEqual([{ role: "assistant", content: "The page says hello." }]);
+  });
+
+  // Cold review of #235: in a shared space the multi-user prompt lets the model
+  // answer NO_REPLY to a line nobody addressed to it, and the kept result was
+  // already taken: the confirmed page was lost with no answer.
+  test("a resumed turn in a shared space runs on the one-to-one prompt: it's always addressed to the assistant", async () => {
+    const systems: string[] = [];
+    const runner = createTurnRunner({
+      model: {} as any,
+      systemPrompts: { singleUser: "single", multiUser: "multi" },
+      buildTools: () => ({}),
+      getOrCreateHistory: () => fakeHistory(),
+      trackSession: () => {},
+      registerCaptureCallback: () => {},
+      maybeCapture: async () => {},
+      processToolCorrections: async () => {},
+      logStep: () => {},
+      takeResumed: () => resumed,
+      runTurnFn: async (_h, _t, deps) => {
+        systems.push(deps.system);
+        return "ok";
+      },
+    });
+
+    await runner(baseTurn({ text: "", multiUser: true, resumeAfterConfirm: true }), baseSink());
+
+    expect(systems[0]?.startsWith("single")).toBe(true);
   });
 });

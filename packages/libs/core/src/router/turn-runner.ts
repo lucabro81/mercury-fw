@@ -345,7 +345,9 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
     /** The turn's prompt; the primer comes with the history: its current state as is, its recap framed as background. */
     const systemFor = (primer: { current: string; recap: string } | undefined) =>
       [
-        turn.multiUser ? prompts.multiUser : prompts.singleUser,
+        // A resumed turn answers the person who confirmed, even in a shared
+        // space: the multi-user prompt would let the model stay silent on it.
+        turn.multiUser && !resumed ? prompts.multiUser : prompts.singleUser,
         ...(primer?.current ? [primer.current] : []),
         ...(primer?.recap ? [RECAP_NOTE(primer.recap)] : []),
         ...(turn.opening ? [OPENING_NOTE] : name === undefined ? [] : [PREFERRED_NAME_NOTE(name)]),
@@ -561,9 +563,9 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
         // user key (the same identity the wiki and the rest of memory use),
         // not the space-scoped session.
         try {
-          // An opening's cue isn't something the person said.
-          if (!turn.opening) {
-            await deps.captureVerbatim({ sessionKey: turn.sessionKey, userId: key, role: "user", content: resumed ? input : turn.text });
+          // An opening's cue and a resumed turn's line aren't something the person said.
+          if (!turn.opening && !resumed) {
+            await deps.captureVerbatim({ sessionKey: turn.sessionKey, userId: key, role: "user", content: turn.text });
           }
           await deps.captureVerbatim({
             sessionKey: turn.sessionKey,

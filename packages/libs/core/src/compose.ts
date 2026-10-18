@@ -22,6 +22,7 @@ import { createPresentTool } from "./tools/present-tool.ts";
 import { loadPlugins } from "./plugins/plugin-loader.ts";
 import { materializeCliCredentials } from "./credentials/materialize.ts";
 import type { MercuryConfig } from "./config/define-config.ts";
+import { createResumeSlots } from "./session/resume-slots.ts";
 import { createSessionHistory, type SessionHistory, type Message, type ResumedConversation } from "./session/history.ts";
 import { createSummarizer } from "./session/summarizer.ts";
 import { createEpisodicSummarizer } from "./session/episodic-summarizer.ts";
@@ -470,7 +471,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   const confirmationStore = createConfirmationStore();
   // A confirmed action whose result goes back to the model, kept per session
   // until the channel resumes that session's turn (see `InboundTurn.resumeAfterConfirm`).
-  const resumes = new Map<string, ResumedAction>();
+  const resumes = createResumeSlots();
   // Shared across turns (like confirmationStore): a display artifact stashed
   // while answering can be surfaced by `present` in a later turn, so it's
   // session-scoped, not rebuilt per turn.
@@ -505,11 +506,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   // A streaming turn whose model goes silent is stopped (#240); checked here so a bad value stops the app at startup.
   const stallTimeoutMs = parseStallTimeoutMs(process.env.TURN_STALL_TIMEOUT_MS);
   const handleTurn = createTurnRunner({
-    takeResumed: (sessionKey) => {
-      const resumed = resumes.get(sessionKey);
-      resumes.delete(sessionKey);
-      return resumed;
-    },
+    takeResumed: (sessionKey) => resumes.take(sessionKey),
     sessionLock,
     model,
     systemPrompts: systemPromptsFor({ person: { key: "", roles: [] }, operator: false }),
@@ -567,7 +564,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
     store: confirmationStore,
     vaultPath: wikiVaultPath,
     writeConfirmationNoteFn: writeConfirmationNote,
-    onResume: (sessionKey, action) => resumes.set(sessionKey, action),
+    onResume: (sessionKey, action) => resumes.keep(sessionKey, action),
   };
 
   // The runtime context each channel's build() gets. The floor (confirm) plus

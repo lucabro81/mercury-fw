@@ -68,6 +68,7 @@ export function createStageChoices(deps: StagingDeps): StageChoices {
   const nowFn = deps.nowFn ?? (() => new Date());
 
   return async (action) => {
+    if (action.choices.length === 0) throw new Error("stageChoices needs at least one choice");
     const requestedAt = nowFn().toISOString();
     const tokens = deps.store.stageGroup(
       deps.sessionKey,

@@ -149,6 +149,17 @@ describe("createStageChoices", () => {
     ]);
   });
 
+  it("refuses a group with no choice, staging nothing", async () => {
+    const writes: string[] = [];
+    const { store, stage } = deps(async (_v, _o, token) => {
+      writes.push(token);
+    });
+
+    await expect(stage({ describe: "x", choices: [] })).rejects.toThrow("at least one choice");
+    expect(writes).toEqual([]);
+    expect(store.pending(OWNER)).toEqual([]);
+  });
+
   it("still returns the tokens when the note can't be written", async () => {
     const { stage } = deps(async () => {
       throw new Error("disk full");
