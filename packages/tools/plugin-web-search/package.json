@@ -11,7 +11,8 @@
     "*.ts",
     "dist",
     "CHANGELOG.md",
-    "!**/*.test.ts"
+    "!**/*.test.ts",
+    "!dist/__fixtures__"
   ],
   "publishConfig": {
     "access": "public"
