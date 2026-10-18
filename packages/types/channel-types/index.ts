@@ -63,6 +63,15 @@ export function loginLinkText(login: LoginRequest): string {
 /** Text shown when a turn ends with no text because it staged an action: stands in for the answer, not model-generated (no token to leak). Every channel suppresses it and shows its own confirm UI. */
 export const PENDING_CONFIRMATION_NOTE = "Azione in sospeso, in attesa di conferma.";
 
+/**
+ * What `confirm` returns when the confirmed action's result goes back to the
+ * model (`ConfirmOutcome`'s `resume`): the core keeps the result for the
+ * session, and the channel resumes the turn (`InboundTurn.resumeAfterConfirm`)
+ * instead of showing a reply. A channel that doesn't know it shows this
+ * sentence, and the result waits for the next resumed turn of that session.
+ */
+export const RESUME_AFTER_CONFIRM = "Confermato, riprendo da dove ero rimasto.";
+
 /** Sentinel the model returns for "not addressed to me" in a multi-person space (see `buildSystemPrompt`'s multiUser block). A multi-user channel suppresses it in `finalize`. */
 export const NO_REPLY = "NO_REPLY";
 
@@ -236,7 +245,8 @@ export type ConfirmOutcome =
   | { status: "not-a-token" }
   | { status: "not-found" }
   | { status: "ok"; data: unknown }
-  | { status: "failed"; error: string };
+  | { status: "failed"; error: string }
+  | { status: "resume" };
 
 /**
  * Read-only introspection getters the core injects for a channel that exposes an
