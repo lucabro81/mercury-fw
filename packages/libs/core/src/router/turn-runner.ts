@@ -497,13 +497,14 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
       // — terminal's dim-print and Google Chat's status-card patching both
       // handle any (label, detail?, toolCallId?) triple generically. A guard
       // that throws is caught here and never blocks delivery.
+      const guardSteps = resumed ? [resumedStep(resumed), ...steps] : steps;
       for (const guard of postTurnGuards) {
-        if (!guard.shouldRun(correctedText)) {
+        if (!guard.shouldRun(correctedText, guardSteps)) {
           continue;
         }
         sink.onToolStart(guard.statusLabel, undefined, guard.statusId);
         try {
-          const guarded = await guard.run(correctedText, resumed ? [resumedStep(resumed), ...steps] : steps);
+          const guarded = await guard.run(correctedText, guardSteps);
           sink.onToolFinish?.(guard.statusId, guarded.outcome);
           if (guarded.log !== undefined) {
             logPostTurnGuard(guarded.log);

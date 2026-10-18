@@ -129,13 +129,15 @@ export type StepInfo = {
  * reaches the user. `shouldRun` gates both the transformation and its status
  * indicator; `run` returns the (possibly unchanged) text plus an `outcome`
  * that drives the status pair and an optional diagnostic `log`. `steps` is
- * offered for guards that need the turn's tool trace; a guard free to ignore
- * it. A guard that throws never blocks delivery — the core wraps each one.
+ * offered to both for guards that need the turn's tool trace (a turn resumed
+ * after a confirmation starts with the confirmed call); a guard is free to
+ * ignore it, and an older core passes none to `shouldRun`. A guard that
+ * throws never blocks delivery — the core wraps each one.
  */
 export type PostTurnGuard = {
   statusLabel: string;
   statusId: string;
-  shouldRun: (text: string) => boolean;
+  shouldRun: (text: string, steps?: StepInfo[]) => boolean;
   run: (text: string, steps: StepInfo[]) => Promise<{ text: string; outcome: "success" | "failed"; log?: string }>;
 };
 
