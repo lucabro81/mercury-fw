@@ -1,6 +1,6 @@
 /**
  * A small JQL evaluator for the made-up Jira the skill is trained on: enough
- * of the language for what the skill teaches (projects, statuses, types,
+ * of the language for what the skill teaches (keys, projects, statuses, types,
  * priorities, assignees, summaries, due and created dates), answering the way
  * Jira does, errors included: a value its field doesn't have is refused, not
  * matched to nothing, and a value of several words needs quotes. A clause it
@@ -97,7 +97,7 @@ function syntaxError(where: string): string | undefined {
 type Predicate = (i: JqlIssue) => boolean;
 
 /** The test `clause` puts on an issue, Jira's error for a value its field doesn't have, or undefined when the evaluator doesn't know the clause. */
-function predicate(clause: string, ctx: JqlContext): Predicate | { error: string } | undefined {
+function predicate(clause: string, ctx: JqlContext, keys: Set<string>): Predicate | { error: string } | undefined {
   const match = CLAUSE.exec(clause.trim());
   if (!match) return undefined;
   const field = match[1]!;
@@ -115,6 +115,10 @@ function predicate(clause: string, ctx: JqlContext): Predicate | { error: string
   };
 
   switch (field.toLowerCase()) {
+    case "key":
+    case "issuekey":
+      if (!keys.has(written.toUpperCase())) return { error: `An issue with key '${written}' does not exist for field 'key'.` };
+      return negate((i) => eq(i.key));
     case "project":
       return among(ctx.projects, (i) => eq(i.project));
     case "status":
@@ -157,8 +161,9 @@ export function filterJql<T extends JqlIssue>(jql: string, issues: T[], ctx: Jql
   const syntax = syntaxError(where);
   if (syntax !== undefined) return { ok: false, error: syntax };
   const tests: Predicate[] = [];
+  const keys = new Set(issues.map((i) => i.key.toUpperCase()));
   for (const clause of where.split(/\s+AND\s+/i)) {
-    const test = predicate(clause, ctx);
+    const test = predicate(clause, ctx, keys);
     if (test === undefined) return { ok: false, unsupported: clause.trim() };
     if (typeof test !== "function") return { ok: false, error: test.error };
     tests.push(test);

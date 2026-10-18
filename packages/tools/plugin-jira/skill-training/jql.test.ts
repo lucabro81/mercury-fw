@@ -92,6 +92,12 @@ describe("filterJql", () => {
     expect(keys("statusCategory = Waiting")).toEqual({ ok: false, error: "The value 'Waiting' does not exist for the field 'statusCategory'." });
   });
 
+  test("an issue by its key, and Jira's error for a key that doesn't exist", () => {
+    expect(keys("key = KAN-2")).toEqual(["KAN-2"]);
+    expect(keys("project = KAN AND key != KAN-2")).toEqual(["KAN-3", "KAN-1"]);
+    expect(keys("key = KAN-404")).toEqual({ ok: false, error: "An issue with key 'KAN-404' does not exist for field 'key'." });
+  });
+
   test("a value of several words without quotes is a syntax error", () => {
     expect(keys("project = KAN AND status = In Progress")).toEqual({
       ok: false,
