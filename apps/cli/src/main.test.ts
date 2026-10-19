@@ -149,8 +149,10 @@ Optional, to have mfw everywhere:
     const dir = join(base, "folder");
     expect((await run("create", dir, "--name", "demo", "--assistant-name", "Hermes", "--role", "a helper", "-y")).code).toBe(0);
     expect(JSON.parse(readFileSync(join(dir, "package.json"), "utf-8")).name).toBe("demo");
-    expect(readFileSync(join(dir, "persona/identity.md"), "utf-8")).toBe("You are {{assistant}}, a helper.\n");
-    expect(readFileSync(join(dir, "mercury.config.ts"), "utf-8")).toContain('persona: { name: "Hermes", identity, tone },');
+    const config = readFileSync(join(dir, "mercury.config.ts"), "utf-8");
+    expect(config).toContain('const name = "Hermes";\n');
+    expect(config).toContain("    identity: `You are ${name}, a helper.`,\n");
+    expect(existsSync(join(dir, "persona"))).toBe(false);
   });
 
   test("an unknown plugin exits 1, lists the valid ones, writes nothing", async () => {
