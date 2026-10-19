@@ -157,7 +157,7 @@
         "typescript": "^6.0.3",
       },
       "peerDependencies": {
-        "@mercury-fw/channel-types": ">=0.51.0 <1.0.0",
+        "@mercury-fw/channel-types": ">=0.53.1 <1.0.0",
       },
     },
     "packages/channels/channel-http": {

@@ -9,7 +9,8 @@ import PluginFacts from "../../../components/PluginFacts.astro";
 
 The agent gets two tools: `web_search`, which returns the title, address and a short excerpt of each result, and
 `web_fetch`, which reads a page and returns its text (the main content, without menus and footers). An answer built
-on pages ends with the list of what was read, written by the plugin, so the model can't leave it out or make it up.
+on pages ends with the list of what was read, written by the plugin, so the model can't leave it out or make it up; a
+list the model writes at the end of its answer anyway is replaced by it.
 
 It needs no login, and everyone may use it (`actsAs: "anyone"`).
 
