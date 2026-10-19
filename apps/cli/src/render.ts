@@ -3,16 +3,15 @@
  * Turns the wizard's answers into the new app's files, as a `path → content`
  * map, without touching the disk (`write.ts` does that). The static files come
  * from `template/` imported as text, so they are bundled with the CLI; the
- * config, the manifest, the env example, the compose file, the persona and the
- * README are generated from the selection. Channels and plugins are always
+ * config (with the persona), the manifest, the env example, the compose file
+ * and the README are generated from the selection. Channels and plugins are always
  * written in catalog order, whatever order they were chosen in; the auth
  * provider, when there is one, after the channels.
  */
-import { DEFAULT_PERSONA_IDENTITY, DEFAULT_PERSONA_TONE, assistantNameOf } from "@mercury-fw/core";
+import { DEFAULT_PERSONA_TONE, assistantNameOf } from "@mercury-fw/core";
 import { CATALOG, type CatalogEntry, type EnvVar } from "./catalog.ts";
 import indexTs from "../template/src/index.ts.tpl" with { type: "text" };
 import replTs from "../template/src/repl.ts.tpl" with { type: "text" };
-import markdownDts from "../template/markdown.d.ts.tpl" with { type: "text" };
 import tsconfigJson from "../template/tsconfig.json.tpl" with { type: "text" };
 import gitignore from "../template/gitignore.tpl" with { type: "text" };
 import dockerignore from "../template/dockerignore.tpl" with { type: "text" };
@@ -86,12 +85,8 @@ export function renderApp(input: RenderInput): Map<string, string> {
     ["Dockerfile", dockerfile],
     ["README.md", renderReadme(input.name, channels, auth, tools, directory)],
     ["docker-compose.yml", renderCompose(input.name, channels.some((c) => c.id === "http"), services)],
-    ["markdown.d.ts", markdownDts],
-    ["mercury.config.ts", renderConfig(assistantName, channels, auth, tools, directory)],
+    ["mercury.config.ts", renderConfig(assistantName, input.role, channels, auth, tools, directory)],
     ["package.json", renderPackageJson(input.name, channels, auth, tools, input.versions, directory)],
-    // The name is persona.name in the config; the persona files refer to it.
-    ["persona/identity.md", `You are {{assistant}}, ${input.role.trim().replace(/\.+$/, "")}.\n`],
-    ["persona/tone.md", `${DEFAULT_PERSONA_TONE}\n`],
     ["src/index.ts", indexTs],
     ["src/repl.ts", replTs],
     ["tsconfig.json", tsconfigJson],
@@ -169,11 +164,41 @@ function selected(kind: CatalogEntry["kind"], ids: string[]): CatalogEntry[] {
   return CATALOG.filter((e) => e.kind === kind && ids.includes(e.id));
 }
 
-/** `mercury.config.ts`: imports, the formatter helpers of the plugins that have
- * any, then the config with each plugin (wrapped in the formatter when it has
- * starting rules) and channel. */
+/** What the core's persona texts write where the assistant's name goes. */
+const ASSISTANT = "{{assistant}}";
+
+/** `text` as the inside of a template literal: backslashes, backticks and `${` stay text. */
+function templateText(text: string): string {
+  return text.replace(/\\/g, "\\\\").replace(/`/g, "\\`").replace(/\$\{/g, "\\${");
+}
+
+/** One line of the persona as config source: a template literal referring to
+ * the config's `name` where the line names the assistant, a string otherwise. */
+function personaLine(line: string): string {
+  if (!line.includes(ASSISTANT)) return JSON.stringify(line);
+  return `\`${line.split(ASSISTANT).map(templateText).join("${name}")}\``;
+}
+
+/** The config's `persona`: the name, the role as the identity, and the core's
+ * default tone written out line by line, so the whole persona is there to edit. */
+function renderPersona(role: string): string[] {
+  return [
+    "  persona: {",
+    "    name,",
+    `    identity: ${personaLine(`You are ${ASSISTANT}, ${role.trim().replace(/\.+$/, "")}.`)},`,
+    "    tone: [",
+    ...DEFAULT_PERSONA_TONE.split("\n").map((line) => `      ${personaLine(line)},`),
+    '    ].join("\\n"),',
+    "  },",
+  ];
+}
+
+/** `mercury.config.ts`: imports, the assistant's name, the formatter helpers of
+ * the plugins that have any, then the config with the persona, each plugin
+ * (wrapped in the formatter when it has starting rules) and channel. */
 function renderConfig(
   assistantName: string,
+  role: string,
   channels: CatalogEntry[],
   auth: CatalogEntry | undefined,
   tools: CatalogEntry[],
@@ -192,8 +217,6 @@ function renderConfig(
   for (const c of [...channels, ...(auth ? [auth] : []), ...(directory ? [directory] : [])]) {
     imports.push(`import { ${c.exportName} } from "${c.package}";`);
   }
-  imports.push('import identity from "./persona/identity.md" with { type: "text" };');
-  imports.push('import tone from "./persona/tone.md" with { type: "text" };');
 
   const helpers = withRules.map((t) => `${t.formatter?.helpers}\n\n`).join("");
 
@@ -207,8 +230,11 @@ function renderConfig(
     CONFIG_HEADER,
     ...imports,
     "",
+    "/** The assistant's name: what the persona calls it, and every text the model reads. */",
+    `const name = ${JSON.stringify(assistantName)};`,
+    "",
     `${helpers}export default defineMercuryConfig({`,
-    `  persona: { name: ${JSON.stringify(assistantName)}, identity, tone },`,
+    ...renderPersona(role),
     plugins,
     channelList,
     ...(auth ? [`  auth: ${auth.exportName},`] : []),
@@ -379,8 +405,7 @@ ${auth ? `- Auth: ${auth.id}\n` : ""}- Tool plugins: ${list(tools)}
 ${directory ? `- Directory: ${directory.id}\n` : ""}
 ## Layout
 
-- \`mercury.config.ts\`: what the app is made of (tool plugins, channels, how their lists read) and the assistant's persona.
-- \`persona/identity.md\`, \`persona/tone.md\`: who the assistant is and how it answers. Edit them freely.
+- \`mercury.config.ts\`: what the app is made of (tool plugins, channels, how their lists read) and the assistant's persona: its name, who it is and how it answers. Edit them freely.
 - \`src/index.ts\`: the service (channels, crons). \`src/repl.ts\`: an interactive terminal for trying things out.
 - \`.env.example\`: every variable the app reads. Copy it to \`.env\` and fill it in.
 

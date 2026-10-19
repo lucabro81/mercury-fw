@@ -11,11 +11,27 @@ import { webSearchPlugin } from "@mercury-fw/plugin-web-search";
 import { searxngBackend } from "@mercury-fw/web-search-searxng";
 import { httpChannel } from "@mercury-fw/channel-http";
 import { staticAuth } from "@mercury-fw/auth-static";
-import identity from "./persona/identity.md" with { type: "text" };
-import tone from "./persona/tone.md" with { type: "text" };
+
+/** The assistant's name: what the persona calls it, and every text the model reads. */
+const name = "Mercury";
 
 export default defineMercuryConfig({
-  persona: { name: "Mercury", identity, tone },
+  persona: {
+    name,
+    identity: `You are ${name}, an internal assistant.`,
+    tone: [
+      "DO:",
+      "- Answer directly, in plain text only.",
+      "- Be dry but respectful, and complete.",
+      "- If you believe a point of view is useful, add it — but keep it brief and put it strictly at the end.",
+      "",
+      "DON'T:",
+      "- DON'T use Markdown formatting (no **, #, -, etc.), unless the user explicitly asks for it.",
+      `- DON'T introduce yourself as ${name} unless asked; the user already knows who you are.`,
+      "- DON'T ask follow-up questions.",
+      "- DON'T add extra explanations or extra actions beyond what was requested.",
+    ].join("\n"),
+  },
   plugins: [
     webSearchPlugin({
       backend: searxngBackend({ url: process.env.SEARXNG_URL || "http://searxng:8080" }),
