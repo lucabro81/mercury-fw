@@ -37,6 +37,8 @@ import {
   loginLinkText,
   PENDING_CONFIRMATION_NOTE,
   RESUME_AFTER_CONFIRM,
+  confirmReply,
+  type ConfirmOutcome,
   NO_REPLY,
   type LoginRequest,
   type PendingConfirmation,
@@ -53,7 +55,9 @@ import {
  * (a single `Conferma` for a plain staging). Each button's parameters carry
  * the token, so a click routes straight into the same `tryConfirm` path
  * a bare token typed on the terminal uses (see `onCardClick`'s `confirm`
- * case, below) — the user never has to see or type the token themselves.
+ * case, below) — the user never has to see or type the token themselves —
+ * plus its label and the summary, so the click can turn the card into
+ * `buildChosenCard` without the channel keeping any state.
  */
 function buildConfirmCard(pending: PendingConfirmation): ChatCard {
   return {
@@ -66,10 +70,34 @@ function buildConfirmCard(pending: PendingConfirmation): ChatCard {
             buttonList: {
               buttons: pending.choices.map((choice) => ({
                 text: choice.label,
-                onClick: { action: { function: "confirm", parameters: [{ key: "token", value: choice.token }] } },
+                onClick: {
+                  action: {
+                    function: "confirm",
+                    parameters: [
+                      { key: "token", value: choice.token },
+                      { key: "label", value: choice.label },
+                      { key: "summary", value: pending.summary },
+                    ],
+                  },
+                },
               })),
             },
           },
+        ],
+      },
+    ],
+  };
+}
+
+/** The confirmation card once a choice is taken: the same request, the choice instead of the buttons. */
+function buildChosenCard(summary: string, label: string | undefined): ChatCard {
+  return {
+    header: { title: "Conferma richiesta" },
+    sections: [
+      {
+        widgets: [
+          { textParagraph: { text: `\`${summary}\`` } },
+          { textParagraph: { text: label === undefined ? "Scelta registrata." : `Scelto: ${label}` } },
         ],
       },
     ],
@@ -221,6 +249,8 @@ export type ParsedMessageEvent = {
 
 export type ParsedCardClickEvent = {
   kind: "card-click";
+  /** The message holding the clicked card, when the event names it. */
+  messageName?: string;
   space: string;
   sender: string;
   senderEmail: string | undefined;
@@ -264,6 +294,7 @@ export function parseChatEvent(raw: unknown): ParsedMessageEvent | ParsedCardCli
     }
     return {
       kind: "card-click",
+      ...(typeof event.message?.name === "string" ? { messageName: event.message.name } : {}),
       space: event.space.name,
       sender: event.user.name,
       senderEmail: emailOf(event.user),
@@ -280,6 +311,7 @@ export type CardClickHandler = (
   sender: string,
   senderEmail?: string,
   isDirectMessage?: boolean,
+  messageName?: string,
 ) => Promise<void>;
 
 export type GoogleChatProviderDeps = {
@@ -288,11 +320,18 @@ export type GoogleChatProviderDeps = {
   /**
    * Resolves a confirmation token against the core's shared store, injected by
    * the channel loader (`ChannelRuntimeContext.confirm`). Returns the reply to
-   * send, or `null` when the input wasn't token-shaped. This is the whole of
-   * the channel's contact with confirmation — the store, vault and note-writer
-   * stay in the core.
+   * send, or `null` when the input wasn't token-shaped. With
+   * `resolveConfirmation` below, the channel's whole contact with confirmation:
+   * the store, vault and note-writer stay in the core.
    */
   confirm: (token: string, sessionKey: string, principal: Principal) => Promise<string | null>;
+  /**
+   * The structured sibling of `confirm` (`ChannelRuntimeContext.resolveConfirmation`).
+   * When it's there, a click resolves through it, and an accepted choice
+   * turns its card into the choice taken; without it, a click goes through
+   * `confirm` and the card stays as it was.
+   */
+  resolveConfirmation?: (token: string, sessionKey: string, principal: Principal) => Promise<ConfirmOutcome>;
   /**
    * Handles a `CARD_CLICKED` event's action parameters. Defaults to resolving
    * the confirm button's token through `deps.confirm` (the same path a bare
@@ -383,11 +422,14 @@ export function createGoogleChatProvider(deps: GoogleChatProviderDeps): GoogleCh
    * Default `onCardClick`: the confirm button's token routes through the exact
    * same `deps.confirm` a bare token typed on the terminal uses — one execution
    * path, one set of valid/expired/wrong-session-token behaviors, regardless of
-   * how the token got here.
+   * how the token got here. A click the core accepted (the action ran, failed,
+   * or the turn resumes) turns its card into the choice taken, before
+   * anything else; one it didn't (`not-found`: expired, used, or someone
+   * else's in a shared space) leaves the card for whoever has to choose.
    */
   const onCardClick: CardClickHandler =
     deps.onCardClick ??
-    (async (params, space, sender, senderEmail, isDirectMessage = false) => {
+    (async (params, space, sender, senderEmail, isDirectMessage = false, messageName) => {
       const token = params.token;
       if (!token) {
         log(`[chat] card click with no token parameter`);
@@ -398,7 +440,23 @@ export function createGoogleChatProvider(deps: GoogleChatProviderDeps): GoogleCh
         provider: "google-chat",
         ...(senderEmail === undefined ? {} : { claims: { email: senderEmail } }),
       };
-      const reply = await deps.confirm(token, deriveSessionKey(space, sender), principal);
+      const sessionKey = deriveSessionKey(space, sender);
+      let reply: string | null;
+      if (deps.resolveConfirmation) {
+        const outcome = await deps.resolveConfirmation(token, sessionKey, principal);
+        const accepted = outcome.status === "ok" || outcome.status === "failed" || outcome.status === "resume";
+        if (accepted && messageName !== undefined && params.summary !== undefined) {
+          try {
+            await updateCardFn(messageName, buildChosenCard(params.summary, params.label), clientDeps);
+            log(`[chat:${space}] [out] confirm card ${messageName} patched to the choice taken`);
+          } catch (err) {
+            log(`[chat:${space}] confirm card patch failed: ${String(err)}`);
+          }
+        }
+        reply = confirmReply(outcome);
+      } else {
+        reply = await deps.confirm(token, sessionKey, principal);
+      }
       if (reply === RESUME_AFTER_CONFIRM && activeHandleTurn) {
         await resumeTurn(activeHandleTurn, space, principal, isDirectMessage);
         return;
@@ -648,7 +706,7 @@ export function createGoogleChatProvider(deps: GoogleChatProviderDeps): GoogleCh
       if (parsed.kind === "message") {
         await processMessageEvent(parsed, handleTurn);
       } else {
-        await onCardClick(parsed.parameters, parsed.space, parsed.sender, parsed.senderEmail, parsed.isDirectMessage);
+        await onCardClick(parsed.parameters, parsed.space, parsed.sender, parsed.senderEmail, parsed.isDirectMessage, parsed.messageName);
       }
     } catch (err) {
       log(`[chat] event handling failed: ${String(err)}`);

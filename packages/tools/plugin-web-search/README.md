@@ -20,7 +20,7 @@ export default defineMercuryConfig({
 });
 ```
 
-The model gets two tools. `web_search` returns title, URL and snippet of each result, and `web_fetch` reads a page and returns its title and text (the main content, found by Readability; menus, footers and scripts are left out). An answer built on pages ends with a `Fonti:` list of what was read, written by the plugin and not by the model, so it can't be left out or made up (a title is the site's text, so it shows up cut at 120 characters and stripped of links and formatting).
+The model gets two tools. `web_search` returns title, URL and snippet of each result, and `web_fetch` reads a page and returns its title and text (the main content, found by Readability; menus, footers and scripts are left out). An answer built on pages ends with a `Fonti:` list of what was read, written by the plugin and not by the model, so it can't be left out or made up; a list the model writes at the end of its answer anyway is replaced by it (a title is the site's text, so it shows up cut at 120 characters and stripped of links and formatting).
 
 The plugin acts as no one (`actsAs: "anyone"`): there's no login, everyone gets it, and `access.plugins` in the config restricts it to some roles like any other plugin. That needs `@mercury-fw/core` 0.53 or later: an older core doesn't know `"anyone"`, reads it as `"mercury"`, and offers the plugin only to whoever holds `mercury.act-as-self`.
 
