@@ -299,6 +299,13 @@ describe("renderApp: persona", () => {
 });
 
 describe("renderApp: README.md", () => {
+  // #271: the persona is in the config; the layout names no persona files.
+  test("the layout puts the persona in mercury.config.ts, with no persona files", () => {
+    const readme = renderApp(EMPTY).get("README.md") ?? "";
+    expect(readme).toContain("- `mercury.config.ts`: what the app is made of (tool plugins, channels, how their lists read) and the assistant's persona: its name, who it is and how it answers. Edit them freely.\n");
+    expect(readme).not.toContain("persona/");
+  });
+
   test("says how to get mfw once, globally, and how to do without", () => {
     const readme = renderApp(HTTP_JIRA).get("README.md") ?? "";
     expect(readme).toContain("bun add -g @mercury-fw/cli");
