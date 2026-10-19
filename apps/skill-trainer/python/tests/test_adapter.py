@@ -48,7 +48,7 @@ class AdapterTest(unittest.TestCase):
         self.assertEqual([i["id"] for i in loader.get_split_items("valid_unseen")], ["d"])
         self.assertEqual(self.adapter.get_task_types(), ["count", "list", "move"])
 
-    def test_eval_envs_are_lists_of_items_eval_only_can_concatenate(self) -> None:
+    def test_eval_envs_are_lists_of_the_splits_items(self) -> None:
         both = self.adapter.build_eval_env(0, "train", 1) + self.adapter.build_eval_env(0, "valid_seen", 1)
         self.assertEqual([i["id"] for i in both], ["a", "b", "c"])
 
@@ -86,21 +86,20 @@ class AdapterTest(unittest.TestCase):
 
 
 class EntrypointTest(unittest.TestCase):
-    def test_registering_adds_the_adapter_to_both_of_skillopts_registries(self) -> None:
-        import scripts.eval_only as eval_only
+    def test_registering_adds_the_adapter_to_skillopts_training_registry_and_it_stays(self) -> None:
         import scripts.train as train
 
-        for module in (train, eval_only):
-            entry.register(module)
-            self.assertIs(module._ENV_REGISTRY[entry.ENV_NAME], MercuryAdapter)
-            module._register_builtins()
-            self.assertIs(module._ENV_REGISTRY[entry.ENV_NAME], MercuryAdapter)
+        entry.register(train)
+        self.assertIs(train._ENV_REGISTRY[entry.ENV_NAME], MercuryAdapter)
+        train._register_builtins()
+        self.assertIs(train._ENV_REGISTRY[entry.ENV_NAME], MercuryAdapter)
 
     def test_the_smoke_check_passes_on_the_pinned_skillopt(self) -> None:
         self.assertEqual(entry.smoke(), [])
 
     def test_an_unknown_command_is_a_usage_error(self) -> None:
         self.assertEqual(entry.main(["frobnicate"]), 2)
+        self.assertEqual(entry.main(["eval"]), 2)
         self.assertEqual(entry.main([]), 2)
 
 

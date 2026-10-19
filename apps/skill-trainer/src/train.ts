@@ -84,11 +84,12 @@ export function trainConfig(defaults: Config, user: Config, env: Record<string, 
 /** `date` as `YYYYMMDD-HHMMSS`, UTC. */
 const stamp = (date: Date) => date.toISOString().replace(/[-:]/g, "").replace("T", "-").slice(0, 15);
 
-/** The real dependencies. */
-export const realTrainDeps = (loadTraining: TrainDeps["loadTraining"]): TrainDeps => ({
+/** The real dependencies; `home` is the user's real home folder. */
+export const realTrainDeps = (loadTraining: TrainDeps["loadTraining"], home: string | undefined): TrainDeps => ({
   loadTraining,
   env: process.env,
-  runSkillOpt: (argv) => Bun.spawn(argv, { stdout: "inherit", stderr: "inherit" }).exited,
+  // The real home, not the run's throwaway one: uv keeps its cache and its Pythons there.
+  runSkillOpt: (argv) => Bun.spawn(argv, { stdout: "inherit", stderr: "inherit", env: { ...process.env, HOME: home } }).exited,
   print: console.log,
 });
 

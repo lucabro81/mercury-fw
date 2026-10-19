@@ -200,7 +200,7 @@ describe("compareCommand", () => {
     const { deps: d, printed } = deps();
     expect(await compareCommand({ baseline: file("b.json", "s1", [true, false]), candidate: file("c.json", "s2", [true, true]) }, d)).toBe(0);
     expect(printed[0]).toBe("2 tasks in common, 1 repeat a task in the baseline, 1 in the candidate");
-    expect(printed[1]).toStartWith("not distinguishable: +50.0 points");
+    expect(printed[1]).toStartWith("not distinguishable: mean +50.0 points");
   });
 
   test("a file that isn't a run's results is refused, naming it", async () => {

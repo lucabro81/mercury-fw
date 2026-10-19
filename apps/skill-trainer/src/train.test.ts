@@ -5,7 +5,8 @@ import { join } from "node:path";
 import { PLUGIN_API_VERSION, parseSkill, type Plugin } from "@mercury-fw/plugin-types";
 import type { SkillTraining, TrainingTask } from "./contract.ts";
 import { withSkill } from "./skill-override.ts";
-import { skillFile, stripSkillOptMarkers, trainCommand, trainConfig, type TrainDeps } from "./train.ts";
+import { realTrainDeps, skillFile, stripSkillOptMarkers, trainCommand, trainConfig, type TrainDeps } from "./train.ts";
+import { realUpdateDeps } from "./update-skillopt.ts";
 
 const SKILL = { name: "jira", description: "Use for Jira: issues, searches, transitions.", body: "# Jira\n\nSearch with JQL." };
 
@@ -182,3 +183,34 @@ describe("trainCommand", () => {
     expect(ran[0]!.at(-1)).toBe(join(dir, "train-jira-20261019-140509", "skillopt-config.yaml"));
   });
 });
+
+// bin.ts gives the process a throwaway HOME for the harness; uv keeps its cache and its Pythons
+// under HOME, so with that one every train and update-skillopt fetched SkillOpt and Python anew.
+describe("the uv runs get the real home", () => {
+  let dir: string;
+  let saved: string | undefined;
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "skill-trainer-home-"));
+    saved = process.env.HOME;
+    process.env.HOME = join(dir, "throwaway");
+  });
+  afterEach(() => {
+    process.env.HOME = saved;
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  const homeSeenBy = async (run: (argv: string[]) => Promise<number>) => {
+    const file = join(dir, "home.txt");
+    expect(await run(["sh", "-c", `printf %s "$HOME" > "${file}"`])).toBe(0);
+    return readFileSync(file, "utf8");
+  };
+
+  test("train's", async () => {
+    expect(await homeSeenBy(realTrainDeps(async () => ({}) as SkillTraining, "/Users/real").runSkillOpt)).toBe("/Users/real");
+  });
+
+  test("update-skillopt's", async () => {
+    expect(await homeSeenBy(realUpdateDeps("/Users/real").run)).toBe("/Users/real");
+  });
+});
+

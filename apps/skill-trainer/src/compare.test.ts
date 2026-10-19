@@ -98,6 +98,10 @@ describe("compareRuns", () => {
     expect(compareRuns(baseline, candidate)).toMatchObject({ gain: -0.5, errors: { baseline: 0, candidate: 1 } });
   });
 
+  test("a run on a tree with uncommitted changes is refused, saying so", () => {
+    expect(() => compareRuns(run({ "count-1": [true] }), run({ "count-1": [true] }, { clean: false, skill: "s2" }))).toThrow("a run was made on a tree with uncommitted changes, so its commit isn't the code that ran");
+  });
+
   test("runs whose conditions differ in anything but the skill are refused, the differences named", () => {
     expect(() => compareRuns(run({ "count-1": [true] }), run({ "count-1": [true] }, { model: "other", data: "d2" }))).toThrow("model, data");
   });
@@ -120,7 +124,7 @@ describe("formatComparison", () => {
     expect(lines).toContain("by task type: count +50.0 points (2 tasks), list -50.0 points (1 task)");
     expect(lines).toContain("got worse: list-1 (list) 100% → 50%");
     expect(lines).toContain("left out, only in the baseline: only-base");
-    expect(lines.some((l) => /^not distinguishable: \+16\.7 points, 95% bounds -?\d+\.\d to \+?\d+\.\d$/.test(l))).toBe(true);
+    expect(lines[1]).toMatch(/^not distinguishable: mean \+16\.7 points, 95% bounds -\d+\.\d to \+\d+\.\d$/);
   });
 
   test("a comparison outside the test split, of the same skill, with failed runs, warns about each", () => {
@@ -135,4 +139,14 @@ describe("formatComparison", () => {
     const one: RunFile = { conditions: CONDITIONS, results: [result("count-1", 1, true)] };
     expect(formatComparison(compareRuns(one, one))[0]).toBe("1 task in common, 1 repeat a task in the baseline, 1 in the candidate");
   });
+
+  test("a gain is stated by its lower bound, a loss by its upper one, the mean and bounds after", () => {
+    const fail = run({ ...tasks("count", 20, 3, true), ...tasks("list", 20, 3, false) });
+    const pass = run({ ...tasks("count", 20, 3, true), ...tasks("list", 20, 3, true) }, { skill: "s2" });
+    const gain = compareRuns(fail, pass);
+    expect(formatComparison(gain)[1]).toBe(`gain of at least +${(gain.lower * 100).toFixed(1)} points (mean +50.0, 95% bounds +${(gain.lower * 100).toFixed(1)} to +${(gain.upper * 100).toFixed(1)})`);
+    const loss = compareRuns({ ...pass, conditions: { ...CONDITIONS, skill: "s1" } }, { ...fail, conditions: { ...CONDITIONS, skill: "s2" } });
+    expect(formatComparison(loss)[1]).toBe(`worse by at least ${(-loss.upper * 100).toFixed(1)} points (mean -50.0, 95% bounds ${(loss.lower * 100).toFixed(1)} to ${(loss.upper * 100).toFixed(1)})`);
+  });
 });
+

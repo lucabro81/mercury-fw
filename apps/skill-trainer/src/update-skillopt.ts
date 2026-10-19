@@ -40,16 +40,17 @@ async function gitLsRemote(repository: string, ref: string): Promise<string> {
   return out;
 }
 
-export const realUpdateDeps: UpdateDeps = {
+/** The real dependencies; `home` is the user's real home folder, where uv keeps its cache and its Pythons. */
+export const realUpdateDeps = (home: string | undefined): UpdateDeps => ({
   readPin,
   writePin: (pin) => writeFile(PIN_PATH, `${JSON.stringify(pin, null, 2)}\n`),
   lsRemote: gitLsRemote,
-  run: (argv) => Bun.spawn(argv, { stdout: "inherit", stderr: "inherit" }).exited,
+  run: (argv) => Bun.spawn(argv, { stdout: "inherit", stderr: "inherit", env: { ...process.env, HOME: home } }).exited,
   print: console.log,
-};
+});
 
 /** `skill-trainer update-skillopt`; 0 when the pin moved or was already there, 1 when the new commit failed a check. */
-export async function updateSkillOptCommand(opts: UpdateOptions, deps: UpdateDeps = realUpdateDeps): Promise<number> {
+export async function updateSkillOptCommand(opts: UpdateOptions, deps: UpdateDeps): Promise<number> {
   const pin = await deps.readPin();
   const ref = opts.ref ?? "main";
   const commit = FULL_COMMIT.test(ref) ? ref : resolveRef(await deps.lsRemote(pin.repository, ref), ref);

@@ -57,6 +57,9 @@ export function compareRuns(baseline: RunFile, candidate: RunFile, { resamples =
   if (baseline.conditions === null || candidate.conditions === null) {
     throw new Error("a run has no conditions: it was cut short before they were taken, or it was written by an older skill-trainer");
   }
+  if (!baseline.conditions.clean || !candidate.conditions.clean) {
+    throw new Error("a run was made on a tree with uncommitted changes, so its commit isn't the code that ran: commit, then run again");
+  }
   const differ = conditionsDiffer(baseline.conditions, candidate.conditions);
   if (differ.length > 0) throw new Error(`the runs weren't made under the same conditions, so their difference isn't the skill's: ${differ.join(", ")}`);
   const base = scores(baseline.results);
@@ -101,7 +104,10 @@ const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 /** The comparison as the lines `compare` prints. */
 export function formatComparison(c: Comparison): string[] {
   const lines = [`${plural(c.tasks, "task")} in common, ${plural(c.repeats.baseline, "repeat")} a task in the baseline, ${c.repeats.candidate} in the candidate`];
-  lines.push(`${c.verdict}: ${points(c.gain)} points, 95% bounds ${points(c.lower)} to ${points(c.upper)}`);
+  const spread = `95% bounds ${points(c.lower)} to ${points(c.upper)}`;
+  if (c.verdict === "gain") lines.push(`gain of at least ${points(c.lower)} points (mean ${points(c.gain)}, ${spread})`);
+  else if (c.verdict === "worse") lines.push(`worse by at least ${(-c.upper * 100).toFixed(1)} points (mean ${points(c.gain)}, ${spread})`);
+  else lines.push(`not distinguishable: mean ${points(c.gain)} points, ${spread}`);
   lines.push(`by task type: ${c.byType.map((t) => `${t.taskType} ${points(t.gain)} points (${plural(t.tasks, "task")})`).join(", ")}`);
   for (const t of c.worse) lines.push(`got worse: ${t.id} (${t.taskType}) ${percent(t.baseline)} → ${percent(t.candidate)}`);
   if (c.missing.baseline.length > 0) lines.push(`left out, only in the baseline: ${c.missing.baseline.join(", ")}`);
