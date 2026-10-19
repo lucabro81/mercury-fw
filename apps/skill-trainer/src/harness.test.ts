@@ -59,6 +59,7 @@ function fakeDeps(reply: (text: string, cli: RunCli) => Promise<{ steps: unknown
     },
     makeVault: async () => `/tmp/vault-${++vaults}`,
     removeVault: async (path) => void seen.removed.push(path),
+    seedVault: async () => {},
     now: () => (clock += 500),
   };
   return { deps, seen };
@@ -207,6 +208,25 @@ describe("runBatch", () => {
     expect(results.map((r) => r.unmatched)).toEqual([[["sprint", "list"]], [["sprint", "list"]]]);
   });
 
+  // Fixtures given as functions hold state (a transition moves an issue): each
+  // task must start from a fresh one, or one task's writes reach the next.
+  test("fixtures given as functions are made anew for every task", async () => {
+    let made = 0;
+    const counter = (): Fixture[] => {
+      const n = ++made;
+      return [{ command: ["whoami"], result: ok(n) }];
+    };
+    const { training, cli } = trainingWith([task({ id: "a", fixtures: counter }), task({ id: "b", fixtures: counter })]);
+    training.fixtures = () => [{ command: ["shared"], result: ok("shared") }];
+    const outputs: unknown[] = [];
+    const { deps } = fakeDeps(async (_text, run) => {
+      outputs.push(await run("jira", ["whoami"]), await run("jira", ["shared"]));
+      return { steps: [textStep("done")], text: "done" };
+    }, cli);
+    await runBatch(training, training.tasks, undefined, deps);
+    expect(outputs).toEqual([ok(1), ok("shared"), ok(2), ok("shared")]);
+  });
+
   test("each task gets its own vault, its own plugin and the candidate skill", async () => {
     const { training, cli } = trainingWith([task({ id: "a" }), task({ id: "b" })]);
     const { deps, seen } = fakeDeps(async () => ({ steps: [textStep("done")], text: "done" }), cli);
@@ -224,6 +244,42 @@ describe("runBatch", () => {
     const seen: string[][] = [];
     await runBatch(training, training.tasks, undefined, deps, async (so_far) => void seen.push(so_far.map((r) => r.id)));
     expect(seen).toEqual([["a"], ["a", "b"]]);
+  });
+
+  test("a task's vault notes are written into its vault before the conversation opens", async () => {
+    const { training, cli } = trainingWith([task({ id: "a", vault: { "curated/projects.md": "The shop is WEB." } }), task({ id: "b" })]);
+    const { deps, seen } = fakeDeps(async () => ({ steps: [textStep("done")], text: "done" }), cli);
+    const seeded: Array<[string, Record<string, string>]> = [];
+    // An expect inside seedVault would be caught by runTask as a task error and prove nothing:
+    // the order is recorded there and asserted out here.
+    const openedBeforeSeeding: boolean[] = [];
+    deps.seedVault = async (vault, files) => {
+      seeded.push([vault, files]);
+      openedBeforeSeeding.push(seen.vaults.includes(vault));
+    };
+    await runBatch(training, training.tasks, undefined, deps);
+    expect(seeded).toEqual([["/tmp/vault-1", { "curated/projects.md": "The shop is WEB." }]]);
+    expect(openedBeforeSeeding).toEqual([false]);
+    expect(seen.vaults).toEqual(["/tmp/vault-1", "/tmp/vault-2"]);
+  });
+
+  // Guards against a task's fixture factory running outside runTask's try, where one that throws rejects the whole batch.
+  test("a task whose fixtures throw fails with the error, and the batch goes on", async () => {
+    const broken = task({
+      id: "a",
+      fixtures: () => {
+        throw new Error("no world for this task");
+      },
+    });
+    const { training, cli } = trainingWith([broken, task({ id: "b" })]);
+    const { deps, seen } = fakeDeps(async () => ({ steps: [textStep("done")], text: "done" }), cli);
+    const results = await runBatch(training, training.tasks, undefined, deps);
+    expect(results.map((r) => [r.id, r.hard, r.error])).toEqual([
+      ["a", 0, "no world for this task"],
+      ["b", 1, undefined],
+    ]);
+    expect(seen.vaults).toEqual(["/tmp/vault-2"]);
+    expect(seen.removed).toEqual(["/tmp/vault-1", "/tmp/vault-2"]);
   });
 
   test("without a candidate the plugin keeps its own skill", async () => {
@@ -283,7 +339,19 @@ describe("selectTasks", () => {
     );
   });
 
+  test("a vault note outside the vault is an error naming it", () => {
+    expect(() => selectTasks([task({ id: "v", vault: { "../escape.md": "x" } })], {})).toThrow('the task "v" has a vault note outside the vault: ../escape.md');
+    expect(() => selectTasks([task({ id: "w", vault: { "/etc/x.md": "x" } })], {})).toThrow("outside the vault: /etc/x.md");
+  });
+
   test("an id that isn't safe as a file name is an error", () => {
     expect(() => selectTasks([task({ id: "../x" })], {})).toThrow('the task id "../x" isn\'t safe as a file name');
+  });
+
+  // SkillOpt writes every task under predictions/<id>/ and accepts only these ids there.
+  test("an id SkillOpt couldn't use as a folder is an error: over 128 characters, or with ..", () => {
+    expect(() => selectTasks([task({ id: `a${"b".repeat(128)}` })], {})).toThrow("isn't safe as a file name");
+    expect(() => selectTasks([task({ id: "a..b" })], {})).toThrow("isn't safe as a file name");
+    expect(selectTasks([task({ id: `a${"b".repeat(127)}` })], {})).toHaveLength(1);
   });
 });

@@ -1,0 +1,49 @@
+name: CI
+
+# Checks every pull request before it reaches main: the typecheck, every test,
+# and the pack check publishing runs (type declarations built, every public
+# package's pack as expected, every private one on check-pack's list). Without
+# it the first to see a broken pack was the publish after the merge. The skill
+# trainer's SkillOpt adapter is tested in a job of its own, inside the SkillOpt
+# commit it's pinned to, since it needs uv.
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.x"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Install
+        run: bun install --frozen-lockfile
+      - name: Typecheck
+        run: bun run typecheck
+      - name: Test
+        run: bun run test
+      - name: Pack check
+        run: bun scripts/build-types.ts && bun scripts/check-pack.ts --types
+
+  skill-trainer-python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.x"
+      # setup-uv publishes no major tag since v8, only exact versions; pipx
+      # (on the runner already) gets the latest uv instead of a pinned one.
+      - name: Install uv
+        run: pipx install uv
+      - name: The SkillOpt adapter's tests
+        working-directory: apps/skill-trainer
+        run: bun run test:python

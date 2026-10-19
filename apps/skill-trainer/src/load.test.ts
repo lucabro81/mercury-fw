@@ -36,6 +36,11 @@ describe("loadTraining", () => {
     expect(training.tasks).toHaveLength(1);
   });
 
+  test("loads a training whose fixtures are made by a function", async () => {
+    writeTraining("fresh", `export default { skill: "fresh", plugin: () => ({}), fixtures: () => [], tasks: [] };`);
+    expect(typeof (await loadTraining("fresh", root)).fixtures).toBe("function");
+  });
+
   test("a plugin without training data says where it looked", async () => {
     await expect(loadTraining("nothing", root)).rejects.toThrow(
       `the nothing plugin has no training data: no ${join(root, "packages/tools/plugin-nothing/skill-training/index.ts")}`,

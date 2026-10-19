@@ -2,7 +2,10 @@
  * Checks what each workspace would publish, before anything is published.
  *
  * - Every workspace is public except the ones that must never reach a
- *   registry (the reference app, the monorepo root, the shared tsconfig).
+ *   registry (the test bed, the skill trainer, the docs site, the shared
+ *   tsconfig; the monorepo root isn't a workspace). `bun run test` checks every
+ *   workspace against that list too, and CI runs this check on every pull
+ *   request (`.github/workflows/ci.yml`), so a mismatch shows up before a publish.
  * - A public workspace's pack (`bun pm pack --dry-run`) contains exactly its
  *   git-tracked files minus what only matters in this repo (tests, fixtures,
  *   tsconfig, Turbo logs, downloaded binaries), plus its package.json: nothing
@@ -17,9 +20,18 @@
  */
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { REPO_ONLY_DIRS } from "./workspaces.ts";
 
-/** Workspaces that stay private: never published. */
-const PRIVATE = new Set(["testbed", "skill-trainer", "@mercury-fw/typescript-config"]);
+/** Workspaces that stay private: never published. A new private workspace goes
+ * here too, or the publish stops on it: the list guards both ways. */
+const PRIVATE = new Set(["testbed", "skill-trainer", "@mercury-fw/typescript-config", "@mercury-fw/docs"]);
+
+/** What's wrong with `pkg`'s `private` flag: a workspace on the list that isn't
+ * private would be published, a private one not on it would never be. */
+export function privacyProblem(pkg: { name: string; private?: boolean }): string | undefined {
+  if (PRIVATE.has(pkg.name)) return pkg.private ? undefined : `${pkg.name}: must stay private`;
+  return pkg.private ? `${pkg.name}: is private, but it's meant to be published` : undefined;
+}
 
 /** Tracked files that belong to the repo, not to a published package. */
 const REPO_ONLY = [
@@ -30,8 +42,8 @@ const REPO_ONLY = [
   /^\.turbo\//,
   // The HTTP channel's docs build config (GitHub Pages), not needed at run time.
   /^redocly\.yaml$/,
-  // A plugin's skill-training data, read by the skill trainer in this repo.
-  /^skill-training\//,
+  // The repo-only folders (a plugin's skill-training data), shared with the type build.
+  ...REPO_ONLY_DIRS.map((dir) => new RegExp(`^${dir}/`)),
 ];
 
 /** Runs `cmd` in `cwd`, returning its stdout; throws with stderr on failure. */
@@ -94,14 +106,9 @@ if (import.meta.main) {
       private?: boolean;
       exports?: unknown;
     };
-    if (PRIVATE.has(pkg.name)) {
-      if (!pkg.private) problems.push(`${pkg.name}: must stay private`);
-      continue;
-    }
-    if (pkg.private) {
-      problems.push(`${pkg.name}: is private, but it's meant to be published`);
-      continue;
-    }
+    const privacy = privacyProblem(pkg);
+    if (privacy !== undefined) problems.push(privacy);
+    if (privacy !== undefined || pkg.private) continue;
     const packed = packedFiles(dir);
     const expected = expectedFiles(root, dir);
     if (withTypes && pkg.exports) {

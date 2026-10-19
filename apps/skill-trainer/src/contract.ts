@@ -6,6 +6,10 @@
  * are an e2e case's (`@mercury-fw/cli/e2e`), so one is written the same way.
  */
 import type { Expect, Run, TurnText } from "@mercury-fw/cli/e2e";
+
+// What a task's checks are written with, for a plugin's training data to
+// import from here: the plugin itself doesn't depend on the CLI.
+export type { Call, Expect, Run, TurnText } from "@mercury-fw/cli/e2e";
 import type { runCli } from "@mercury-fw/cli-engine";
 import type { CliResult, Plugin } from "@mercury-fw/plugin-types";
 
@@ -28,11 +32,22 @@ export type Fixture = {
   /** Flags that take no value, so the token after one stays a positional
    * (without this, `--unassign KAN-4` reads KAN-4 as the flag's value). */
   switches?: string[];
-  /** What the CLI answers. */
-  result: CliResult;
+  /** What the CLI answers: a fixed result, or one computed from the call
+   * (applying `--select` or paging the way the real CLI does), undefined when
+   * this fixture can't answer it after all (the next one is tried). */
+  result: CliResult | ((call: FixtureCall) => CliResult | undefined);
 };
 
-/** The splits SkillOpt trains, gates and tests on. */
+/** Fixtures as given: a list, or a function making a fresh one for each task
+ * (for fixtures holding state, like an issue a transition moves). */
+export type Fixtures = Fixture[] | (() => Fixture[]);
+
+/** A command as a fixture's result function sees it: the whole argv, and the
+ * positionals and flags after the fixture's `command` (a flag without a value
+ * is `true`). */
+export type FixtureCall = { args: string[]; positionals: string[]; flags: Record<string, string | true> };
+
+/** The splits: tasks to tune a skill on, to accept a change by, and to measure it on. */
 export type Split = "train" | "val" | "test";
 
 /** One task: the turns sent in a fresh session, and the checks on them. */
@@ -40,11 +55,13 @@ export type TrainingTask = {
   /** Unique within the plugin, safe as a file name. */
   id: string;
   split: Split;
-  /** What SkillOpt samples by: tasks of the same kind share one. */
+  /** The kind of task, shown next to its result in the report: tasks of the same kind share one. */
   taskType: string;
   turns: TurnText[];
   /** Fixtures for this task only, tried before the plugin's own. */
-  fixtures?: Fixture[];
+  fixtures?: Fixtures;
+  /** Notes in the wiki when the task starts, by vault-relative path (`curated/projects.md`). */
+  vault?: Record<string, string>;
   check: (run: Run, expect: Expect) => void;
 };
 
@@ -54,7 +71,7 @@ export type SkillTraining = {
   skill: string;
   /** The plugin built on `runCliFn`. */
   plugin: (runCliFn: RunCli) => Plugin;
-  fixtures: Fixture[];
+  fixtures: Fixtures;
   tasks: TrainingTask[];
 };
 

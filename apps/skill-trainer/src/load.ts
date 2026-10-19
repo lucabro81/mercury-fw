@@ -22,7 +22,8 @@ export function trainingPath(plugin: string, root: string = REPO_ROOT): string {
 function isTraining(value: unknown): value is SkillTraining {
   if (typeof value !== "object" || value === null) return false;
   const t = value as Record<string, unknown>;
-  return typeof t.skill === "string" && typeof t.plugin === "function" && Array.isArray(t.fixtures) && Array.isArray(t.tasks);
+  const fixtures = Array.isArray(t.fixtures) || typeof t.fixtures === "function";
+  return typeof t.skill === "string" && typeof t.plugin === "function" && fixtures && Array.isArray(t.tasks);
 }
 
 /** `plugin`'s training, the default export of its `skill-training/index.ts`. */

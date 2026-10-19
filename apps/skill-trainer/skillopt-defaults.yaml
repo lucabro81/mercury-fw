@@ -1,0 +1,54 @@
+# SkillOpt's settings for `skill-trainer train`, before a run's own --config.
+# Complete on purpose: SkillOpt's own base config isn't installed with it, and
+# its trainer reads most of these without a fallback. `train` adds what it
+# computes (the env section, the model from OLLAMA_HOST and OLLAMA_MODEL), then
+# the run's --config on top. Keys and meanings are SkillOpt's: see its
+# configs/_base_/default.yaml at the pinned commit (skillopt.json).
+
+train:
+  num_epochs: 2
+  train_size: 0 # 0: the whole train split
+  batch_size: 8 # tasks per step
+  accumulation: 1
+  seed: 42
+
+gradient:
+  minibatch_size: 4 # rollouts one analyst call reads
+  merge_batch_size: 4
+  analyst_workers: 2 # parallel optimizer calls: few, for one Ollama
+  failure_only: false
+
+optimizer:
+  learning_rate: 3 # the most edits a step applies
+  min_learning_rate: 1
+  lr_scheduler: cosine
+  lr_control_mode: fixed
+  skill_update_mode: patch # bounded edits, never a full rewrite
+  # Both run extra rollouts on train tasks at every epoch's end: off, since a
+  # rollout here is a real model turn per task.
+  use_slow_update: false
+  slow_update_samples: 20
+  slow_update_gate_with_selection: false
+  longitudinal_pair_policy: mixed
+  use_meta_skill: false
+  use_skill_aware_reflection: false
+
+evaluation:
+  use_gate: true
+  # A candidate replaces the skill only when this score on the val split is
+  # strictly higher: soft (the fraction of checks passed) moves before hard
+  # (every check passed) does, which matters when the skill is near its ceiling.
+  gate_metric: soft
+  sel_env_num: 0 # 0: the whole val split
+  test_env_num: 0 # 0: the whole test split
+  # Off: SkillOpt would run the whole test split with three skills at the end,
+  # hours of real turns, and judging on the test split is compare's job.
+  eval_test: false
+
+model:
+  backend: openai_compatible
+  # The analyst prompts are long and thinking models spend tokens before
+  # answering; a local model on one GPU is slow.
+  openai_compatible_max_tokens: 32000
+  openai_compatible_timeout_seconds: 900
+  reasoning_effort: medium

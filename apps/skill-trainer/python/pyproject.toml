@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mercury-skillopt"
+version = "0.0.0"
+description = "The skill trainer's SkillOpt adapter: SkillOpt's rollouts run by skill-trainer, as real Mercury turns."
+requires-python = ">=3.10"
+dependencies = []
+
+[tool.setuptools]
+packages = ["mercury_skillopt"]
