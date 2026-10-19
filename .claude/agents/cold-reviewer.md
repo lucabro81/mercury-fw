@@ -19,10 +19,11 @@ an issue number and a branch name. Gather everything else yourself:
 
 1. Read the exact spec — the GitHub issue and its comments (the decided
    plan lives in the comments):
-   - `gh issue view <n> -R <owner/repo>`
-   - `gh issue view <n> -R <owner/repo> --json comments --jq '.comments[].body'`
+   - `gh issue view <n> -R <owner/repo> --json title,body,comments --jq '.title, .body, .comments[].body'`
+     (use `--json`: plain `gh issue view` can fail on this repo)
 2. Read the full diff under review:
-   - `git diff main...<branch>`
+   - `git fetch origin`, then `git diff origin/main...<branch>` (the local
+     `main` may be stale)
 3. Read any file you need **in full** to judge it — the diff alone is not
    enough context to judge correctness.
 
