@@ -19,10 +19,11 @@ an issue number and a branch name. Gather everything else yourself:
 
 1. Read the exact spec — the GitHub issue and its comments (the decided
    plan lives in the comments):
-   - `gh issue view <n> -R <owner/repo>`
-   - `gh issue view <n> -R <owner/repo> --json comments --jq '.comments[].body'`
+   - `gh issue view <n> -R <owner/repo> --json title,body,comments --jq '.title, .body, .comments[].body'`
+     (use `--json`: plain `gh issue view` can fail on this repo)
 2. Read the full diff under review:
-   - `git diff main...<branch>`
+   - `git fetch origin`, then `git diff origin/main...<branch>` (the local
+     `main` may be stale)
 3. Read any file you need **in full** to judge it — the diff alone is not
    enough context to judge correctness.
 
@@ -48,9 +49,9 @@ it; you can still be wrong, so distinguish confirmed from suspected.
 
 ## For the caller (mandatory)
 
-This review is a gate for the **user** to see, not a to-do list to auto-apply.
-Whoever ran this reviewer MUST surface the verdict and every finding to the user
-— verbatim or faithfully summarized, nothing dropped — **before touching a
-single finding**. No fix, no commit, no merge on the strength of this report
-until the user has read it and said how to proceed. The user decides which
-findings to act on; the caller waits for that decision.
+Fix every finding in-branch yourself, unless it's severe or hides a decision
+that belongs to the user: bring those to the user first, and wait for their
+decision before touching them. Then re-run this reviewer on the same issue and
+branch, and repeat until it returns APPROVE. List the findings and their fixes
+in the final report to the user. An APPROVE is not a go to merge: the merge
+still waits for the user.

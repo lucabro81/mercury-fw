@@ -1,0 +1,58 @@
+---
+title: Web search
+description: Searches the web and reads the pages it finds, asking the person before reading a site nobody allowed.
+---
+
+import PluginFacts from "../../../components/PluginFacts.astro";
+
+<PluginFacts slug="plugin-web-search" />
+
+The agent gets two tools: `web_search`, which returns the title, address and a short excerpt of each result, and
+`web_fetch`, which reads a page and returns its text (the main content, without menus and footers). An answer built
+on pages ends with the list of what was read, written by the plugin, so the model can't leave it out or make it up.
+
+It needs no login, and everyone may use it (`actsAs: "anyone"`).
+
+## The search engine
+
+The plugin doesn't search by itself: it takes a **backend** that turns a query into results. The one Mercury ships
+is [`@mercury-fw/web-search-searxng`](https://www.npmjs.com/package/@mercury-fw/web-search-searxng), for
+[SearXNG](https://docs.searxng.org), a search engine you run yourself that asks the big ones and merges what they
+answer, with no API key. `mfw create --plugins web-search` adds a SearXNG service next to the app; fill in
+`SEARXNG_SECRET` in `.env` with a long random string:
+
+```bash
+openssl rand -hex 32
+```
+
+```ts title="mercury.config.ts"
+import { webSearchPlugin } from "@mercury-fw/plugin-web-search";
+import { searxngBackend } from "@mercury-fw/web-search-searxng";
+
+plugins: [
+  webSearchPlugin({
+    backend: searxngBackend({ url: process.env.SEARXNG_URL! }),
+    allowedHosts: ["bun.sh", "developer.mozilla.org"],
+  }),
+],
+```
+
+```text title="Prompt for your coding agent"
+In my Mercury app, add the web search plugin with its SearXNG backend: `bun add @mercury-fw/plugin-web-search @mercury-fw/web-search-searxng`, declare webSearchPlugin with searxngBackend({ url: process.env.SEARXNG_URL! }) in mercury.config.ts, add the searxng service and searxng/settings.yml as the @mercury-fw/web-search-searxng README describes, add SEARXNG_URL and SEARXNG_SECRET to .env.example, then run `bun run typecheck` and tell me how to fill SEARXNG_SECRET in .env. Don't print the contents of .env.
+```
+
+## Which pages it reads
+
+A page can carry text written to trick the model, and the model also reads private data (your wiki, your Jira), so
+reading any page it finds would let a hostile one make it send that data away. So a page is read right away only
+when its host is allowed:
+
+- by the app, in `allowedHosts` (an entry covers its subdomains: `bun.sh` covers `docs.bun.sh`);
+- or by the person asking. For any other host the agent asks them first, with a choice: read this page only, or
+  always allow the host. Each choice is a [confirmation](../../concepts/confirmations/), a button on Google Chat
+  and a token elsewhere, and a host they allow stays on their own list.
+
+Some addresses are never read, allowed or not: anything other than http and https, and any host that resolves to an
+address inside your network (the app's own database, the model's server). A read downloads at most 2 MB, gives up
+after 15 seconds, and hands the model at most 20,000 characters. No JavaScript runs, so a page that builds itself
+in the browser comes back nearly empty.

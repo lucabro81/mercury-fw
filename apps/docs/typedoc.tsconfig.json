@@ -1,0 +1,4 @@
+{
+  "extends": "@mercury-fw/typescript-config/base.json",
+  "include": ["../../packages/libs/core/index.ts", "../../packages/types/plugin-types/index.ts", "../../packages/types/channel-types/index.ts"]
+}

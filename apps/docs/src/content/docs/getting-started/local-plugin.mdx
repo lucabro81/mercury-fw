@@ -1,0 +1,124 @@
+---
+title: Your first plugin
+description: Write a plugin inside your app, give it a tool the model can call, and read its settings from .env.
+sidebar:
+  order: 2
+---
+
+A **plugin** is how an agent gets to do something. It's a plain object that tells Mercury its name, a few lines
+for the model about what it offers, and the **tools** it contributes: functions the model can decide to call, with
+a description of what they do and of the input they take.
+
+This page writes one inside your app, the guest Wi-Fi plugin from [Your first agent](../first-agent/). A plugin
+living in your app is for your app only; to share one with every Mercury user, see
+[Proposing a plugin](../public-plugin/).
+
+:::caution[The plugin contract will change]
+The shape of a plugin is still settling, and a later version of Mercury will add helpers that make this shorter.
+What follows works with the current one.
+:::
+
+## The packages
+
+```bash
+bun add @mercury-fw/kit ai zod
+```
+
+- `@mercury-fw/kit` is the plugin contract: the `Plugin` type, and the version of the contract your plugin is
+  written against.
+- `ai` is the [AI SDK](https://ai-sdk.dev), which Mercury uses to talk to the model; its `tool()` builds a tool.
+- `zod` describes the tool's input, so the model knows what to send.
+
+## The plugin
+
+Create `src/plugins/guest-wifi.ts`. It has to be under `src/`, the folder the app's Docker image copies:
+
+```ts title="src/plugins/guest-wifi.ts"
+import { PLUGIN_API_VERSION, type Plugin } from "@mercury-fw/kit";
+import { tool } from "ai";
+import { z } from "zod";
+
+export const guestWifiPlugin: Plugin = {
+  apiVersion: PLUGIN_API_VERSION,
+  name: "guest-wifi",
+  actsAs: "anyone",
+  systemPromptFragment:
+    "## Guest Wi-Fi\n{{assistant}} can look up the office guest Wi-Fi with `guest_wifi`. Use it when someone asks how to get online.",
+  build: (ctx) => {
+    const network = ctx.env.GUEST_WIFI_NAME;
+    const password = ctx.env.GUEST_WIFI_PASSWORD;
+    if (!network || !password) {
+      ctx.log("guest-wifi: GUEST_WIFI_NAME or GUEST_WIFI_PASSWORD is not set: no tools");
+      return {};
+    }
+    return {
+      sessionTools: () => ({
+        guest_wifi: tool({
+          description: "Returns the name and password of the office guest Wi-Fi.",
+          inputSchema: z.object({}),
+          execute: async () => ({ ok: true, network, password }),
+        }),
+      }),
+    };
+  },
+};
+```
+
+Field by field:
+
+- **`apiVersion`** is the version of the contract the plugin was written for. Mercury checks it when it loads the
+  plugin and skips one it can't run, saying why in the log, instead of failing later in a stranger way.
+- **`name`** is what the logs call the plugin.
+- **`actsAs`** says whose identity the tools use at the service they reach. `"anyone"` means none: there's no
+  login, and everyone may use it. [People and roles](../../concepts/people/) explains the other two.
+- **`systemPromptFragment`** goes into the instructions the model reads before every conversation, so it knows the
+  tool exists and when to use it. `{{assistant}}` becomes the assistant's name.
+- **`build`** runs once at startup, with the environment in `ctx.env`. It reads the two settings and, when one is
+  missing, logs it and contributes nothing: the agent starts anyway, without the tool. That's how every plugin
+  behaves, so one plugin set up wrong never stops the rest.
+- **`sessionTools`** returns the tools by name. `description` is what the model reads to decide whether to call
+  it, `inputSchema` the input it must send (none here), and `execute` what runs.
+
+What `execute` returns goes back to the model, which writes the answer from it.
+
+## Declare it
+
+A plugin does nothing until the app declares it. In `mercury.config.ts`, import it and put it in `plugins`:
+
+```ts title="mercury.config.ts" ins={4,8}
+import { defineMercuryConfig } from "@mercury-fw/core";
+import identity from "./persona/identity.md" with { type: "text" };
+import tone from "./persona/tone.md" with { type: "text" };
+import { guestWifiPlugin } from "./src/plugins/guest-wifi.ts";
+
+export default defineMercuryConfig({
+  persona: { name: "Mercury", identity, tone },
+  plugins: [guestWifiPlugin],
+  channels: [],
+});
+```
+
+## Its settings
+
+The password is a secret, so it goes in `.env` and nowhere else:
+
+```bash title=".env"
+GUEST_WIFI_NAME=Office-Guest
+GUEST_WIFI_PASSWORD=correct-horse-battery
+```
+
+Then `bunx mfw restart`, and ask the agent about the Wi-Fi: [step 6 of Your first agent](../first-agent/#6-check-it-uses-the-tool)
+shows what comes back.
+
+```text title="Prompt for your coding agent"
+In my Mercury app, write a local plugin in src/plugins/guest-wifi.ts with @mercury-fw/kit, ai and zod: one tool,
+guest_wifi, returning the network name and password read from GUEST_WIFI_NAME and GUEST_WIFI_PASSWORD in the
+plugin's build context, contributing nothing and logging why when either is missing. Declare it in
+mercury.config.ts, add both variables to .env.example with empty values, then run `bun run typecheck`.
+Don't print the contents of .env.
+```
+
+## Where to go next
+
+- [Plugins and skills](../../concepts/plugins/) explains what else a plugin can contribute.
+- The [contract reference](../../reference/api/) lists every field, generated from the source.

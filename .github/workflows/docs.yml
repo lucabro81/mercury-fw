@@ -1,0 +1,54 @@
+name: Docs site
+
+# Checks the documentation site (apps/docs) on every change that can alter it:
+# its unit tests (catalog, changelog, theme contrast), the typecheck, the build,
+# and on the built site an axe audit of every kind of page in both themes plus
+# the internal links. A failure blocks the change. Publishing the site is not
+# here: it will run after a release, from publish.yml.
+
+on:
+  pull_request:
+    paths:
+      # The catalog and the CLI reference come from apps/cli, the versions,
+      # the contracts' reference and the HTTP API from packages.
+      - apps/docs/**
+      - apps/cli/**
+      - packages/**
+      - .github/workflows/docs.yml
+  push:
+    branches: [main]
+    paths:
+      # The catalog and the CLI reference come from apps/cli, the versions,
+      # the contracts' reference and the HTTP API from packages.
+      - apps/docs/**
+      - apps/cli/**
+      - packages/**
+      - .github/workflows/docs.yml
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/docs
+    env:
+      # The changelog page reads the repository's releases; failing to read
+      # them fails the build here instead of checking an empty changelog.
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      RELEASES_REQUIRED: "1"
+      CI: "true"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.x"
+      - run: bun install --frozen-lockfile
+        working-directory: .
+      - run: bun test src
+      - run: bun run typecheck
+      - run: bun run build
+      - run: bunx --bun playwright install --with-deps chromium
+      - run: bun run test:a11y

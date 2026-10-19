@@ -1,0 +1,94 @@
+---
+/**
+ * The home page body: what Mercury is, what it isn't, what you need, and the
+ * way in. Written for someone who has never heard of it.
+ */
+const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+---
+
+<div class="mfw-home">
+  <p class="mfw-lede">
+    Mercury Framework (Mercury, for short) is a framework for building your own <strong>agent</strong>: a program that talks with people in a chat,
+    understands what they ask with a language model, and does it with the tools you give it, such as searching the
+    web or opening a ticket.
+  </p>
+
+  <p>
+    You describe the agent in one file: what it's called, where people can talk to it, what it's allowed to do.
+    Mercury takes care of the rest, from the conversation to the memory of what was said, and it runs on your own
+    machine or server, in Docker.
+  </p>
+
+  <h2>What you get</h2>
+  <dl>
+    <dt>Channels</dt>
+    <dd>Where people talk to the agent: Google Chat, or an HTTP interface for a chat of your own. A terminal is always there for you.</dd>
+    <dt>Plugins</dt>
+    <dd>What the agent can do. Each plugin adds tools (Jira, Bitbucket, web search…) and the agent can use nothing it wasn't given.</dd>
+    <dt>Confirmations</dt>
+    <dd>An action that can't be undone never runs because the model decided so: the person gets a one-time code and the action runs only when they send it back.</dd>
+    <dt>Memory</dt>
+    <dd>The agent remembers the conversation, keeps notes in a wiki, and recalls earlier conversations. Each person has their own.</dd>
+  </dl>
+
+  <h2>What it isn't</h2>
+  <p>
+    It isn't a service you sign up for, and it doesn't come with a language model. The model is yours: Mercury talks
+    to any server that speaks <a href="https://ollama.com">Ollama</a>'s protocol, on your laptop or on a machine in
+    your network, so the conversations never leave your hands.
+  </p>
+
+  <h2>What you need</h2>
+  <ul>
+    <li><a href="https://bun.sh">Bun</a>, the JavaScript runtime Mercury is written for.</li>
+    <li><a href="https://www.docker.com/products/docker-desktop/">Docker</a>, where the agent runs.</li>
+    <li>An Ollama server with a model that can call tools, reachable from Docker.</li>
+  </ul>
+
+  <p class="mfw-cta">
+    <a href={`${base}/getting-started/first-agent/`}>Build your first agent</a>
+    <span>from an empty folder to the first answer</span>
+  </p>
+</div>
+
+<style>
+  .mfw-home {
+    max-width: 44rem;
+    padding-block: 0 4rem;
+  }
+  .mfw-lede {
+    font-size: var(--sl-text-xl);
+    line-height: 1.5;
+    color: var(--mfw-text);
+  }
+  .mfw-home dt {
+    font-family: var(--sl-font-mono);
+    color: var(--mfw-text);
+    margin-top: 1rem;
+  }
+  .mfw-home dd {
+    margin-inline-start: 0;
+  }
+  .mfw-cta {
+    margin-top: 2.5rem;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.5rem 1.25rem;
+    font-family: var(--sl-font-mono);
+  }
+  .mfw-cta a {
+    color: var(--mfw-bg);
+    background: var(--mfw-accent);
+    padding: 0.6rem 1.1rem;
+    border-radius: 4px;
+    text-decoration: none;
+  }
+  .mfw-cta a:hover {
+    text-decoration: underline;
+  }
+  .mfw-cta span {
+    color: var(--mfw-text-muted);
+    font-size: var(--sl-text-sm);
+  }
+</style>

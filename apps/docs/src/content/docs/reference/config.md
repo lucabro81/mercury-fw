@@ -1,0 +1,94 @@
+---
+title: mercury.config.ts
+description: Every field of an app's configuration file.
+sidebar:
+  order: 1
+---
+
+`mercury.config.ts`, at the root of the app, declares what the agent is made of. It exports the result of
+`defineMercuryConfig`, which does nothing at runtime: it's there so your editor and `tsc` check every field.
+
+```ts title="mercury.config.ts"
+import { defineMercuryConfig } from "@mercury-fw/core";
+import { httpChannel } from "@mercury-fw/channel-http";
+import { oidcAuth } from "@mercury-fw/auth-oidc";
+import { staticDirectory } from "@mercury-fw/directory-static";
+import identity from "./persona/identity.md" with { type: "text" };
+import tone from "./persona/tone.md" with { type: "text" };
+
+export default defineMercuryConfig({
+  persona: { name: "Hermes", identity, tone },
+  plugins: [],
+  channels: [httpChannel],
+  auth: oidcAuth,
+  directory: staticDirectory,
+  access: { unknown: "refuse" },
+});
+```
+
+Settings that change between machines, and secrets, never go here: they go in `.env`, and each piece reads its own
+(see [Environment variables](../environment/)).
+
+## `plugins`
+
+**Required.** The tool plugins, each active as soon as it's listed. An empty list is fine: the agent talks, with no
+tools. A plugin that can't load (a missing setting, a contract version the core doesn't run) is skipped and the log
+says why. See [Plugins and skills](../../concepts/plugins/).
+
+A plugin that hands the person lists goes through the formatter, which applies the app's rules to them:
+
+```ts
+import { formatterPlugin, formatter } from "@mercury-fw/formatter";
+import { jiraPlugin, type JiraDisplays } from "@mercury-fw/plugin-jira";
+
+plugins: [
+  formatterPlugin(
+    jiraPlugin,
+    formatter<JiraDisplays>({
+      "issue-list": { item: (issue) => `${issue.key} ${issue.summary}\n${issue.url}`, empty: "No matching issues." },
+    }),
+  ),
+],
+```
+
+`formatter` takes one rule per kind of list the plugin declares: the text of each item, or `{ item, empty }` when an
+empty list needs its own text. A kind with no rule isn't shown.
+
+## `channels`
+
+The channels people reach the agent through. Left out, the agent has only the terminal. A channel with no settings
+stays silent and says so in the log. See [Channels](../../concepts/channels/).
+
+## `auth`
+
+The auth provider that tells a channel like HTTP who is calling: one, or a list tried in order (the first that
+recognizes the caller decides). The HTTP channel doesn't start without one. See
+[People and roles](../../concepts/people/).
+
+## `directory`
+
+Who the people are, and their roles. Without one, a person is whoever the channel says, with no roles; with one, the
+agent talks only to the people it knows, and to nobody while the directory can't be reached.
+
+## `access`
+
+Who may talk to the agent and use what, on top of the directory.
+
+| Field | |
+|---|---|
+| `unknown` | What to do with someone the directory doesn't know: `"refuse"` (the default) or `"allow"`, taking them as the channel says, with no roles. |
+| `unknownMessage` | What a refused person is told. |
+| `plugins` | Restricts a plugin, by name, to people holding one of the roles: `{ jira: { roles: ["support"] } }`. The terminal is exempt. |
+
+## `persona`
+
+Who the assistant is. Every field is optional, and a field left out takes the default.
+
+| Field | |
+|---|---|
+| `name` | What the assistant is called (`Mercury` by default). At most 40 characters, on one line. |
+| `identity` | The opening of the model's instructions: `You are {{assistant}}, …`. |
+| `tone` | The closing rules on how to answer. |
+
+`{{assistant}}` in any text the model reads (the persona, the plugins' fragments and skills) becomes `name`. A
+scaffolded app keeps `identity` and `tone` in `persona/identity.md` and `persona/tone.md`, imported as text.

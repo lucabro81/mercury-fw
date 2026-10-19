@@ -1,0 +1,62 @@
+---
+title: ZITADEL
+description: Reads users, roles, organizations and projects from ZITADEL, and can be the directory of who's who.
+---
+
+import PluginFacts from "../../../components/PluginFacts.astro";
+
+<PluginFacts slug="plugin-zitadel" />
+
+[ZITADEL](https://zitadel.com) is a service that manages users and logins. This package does two separate things
+with it.
+
+## As a tool plugin
+
+The agent reads users (by email, username or id), their project roles and the accounts they sign in with,
+organizations and projects, through the `zitadel` command-line tool, which the package downloads when it installs.
+Nothing it runs changes ZITADEL.
+
+`bun add @mercury-fw/plugin-zitadel`, list it in `trustedDependencies` in the app's `package.json`, and declare it:
+
+```ts title="mercury.config.ts"
+import { zitadelPlugin } from "@mercury-fw/plugin-zitadel";
+
+plugins: [zitadelPlugin],
+```
+
+The plugin acts as the person, so ZITADEL decides what each one can read. In the terminal, commands run as a
+ZITADEL **service user** (`ORG_OWNER_VIEWER` on the organization is enough). Set up the service user and the app
+people log in through once (the [zitadel tool's README](https://github.com/lucabro81/CLI-monorepo/tree/main/crates/zitadel)
+has the steps on ZITADEL's side):
+
+```bash
+mfw credentials setup @mercury-fw/plugin-zitadel
+mfw credentials setup @mercury-fw/plugin-zitadel --user-app
+mfw credentials check @mercury-fw/plugin-zitadel
+```
+
+```text title="Prompt for your coding agent"
+In my Mercury app, add @mercury-fw/plugin-zitadel as a tool plugin: install it, list it in trustedDependencies in package.json, declare zitadelPlugin in mercury.config.ts, and run `bun run typecheck`. Then list the `mfw credentials` commands I have to run myself, since they ask for secrets.
+```
+
+## As the directory
+
+`zitadelDirectory` makes ZITADEL decide who the people talking to the agent are and their roles, from a ZITADEL
+project's roles. Declare it next to the OIDC auth provider pointing at the same ZITADEL:
+
+```ts title="mercury.config.ts"
+import { zitadelDirectory } from "@mercury-fw/plugin-zitadel";
+import { oidcAuth } from "@mercury-fw/auth-oidc";
+
+auth: oidcAuth,
+directory: zitadelDirectory,
+```
+
+Someone calling with a token from that ZITADEL is the ZITADEL user it names, with the roles assigned to them on the
+project (`ZITADEL_PROJECT_ID`); someone ZITADEL doesn't find, or who isn't active, is refused. Create the roles
+`mercury.act-as-self` and `mercury.act-as-self.<plugin>` in the project for the people who may make the agent act
+as itself, and assign them in ZITADEL's console (the user's **Role Assignments**). A change counts within five
+minutes.
+
+A Google Chat sender is recognized when they signed in to ZITADEL with the same Google account at least once: set
+`ZITADEL_GOOGLE_IDP_ID` to the id ZITADEL gives its Google login.
