@@ -80,7 +80,10 @@ function skillBodyOf(training: SkillTraining, candidate: string | undefined): st
  */
 export async function runCommand(opts: RunOptions, deps: CommandDeps = realDeps): Promise<number> {
   const json = opts.json;
-  if (json !== undefined) await writeRun(json, { conditions: null, results: [] });
+  if (json !== undefined) {
+    await mkdir(dirname(json), { recursive: true });
+    await writeRun(json, { conditions: null, results: [] });
+  }
   const training = await deps.loadTraining(opts.plugin);
   const tasks = selectTasks(training.tasks, {
     ...(opts.split === undefined ? {} : { split: opts.split }),

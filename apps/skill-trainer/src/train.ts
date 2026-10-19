@@ -8,6 +8,7 @@
  * description put back. Nothing is written into the plugin: adopting a
  * trained skill is a change made by hand, after `compare` on the test split.
  */
+import { existsSync } from "node:fs";
 import { mkdir, readdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Skill } from "@mercury-fw/plugin-types";
@@ -23,8 +24,8 @@ export type TrainOptions = { plugin: string; config?: string; out?: string };
 export type TrainDeps = {
   loadTraining: (plugin: string) => Promise<SkillTraining>;
   env: Record<string, string | undefined>;
-  /** Runs `argv` (uv running SkillOpt) and returns its exit code. */
-  runSkillOpt: (argv: string[]) => Promise<number>;
+  /** Runs `argv` (uv running SkillOpt) with `secrets` added to its environment, and returns its exit code. */
+  runSkillOpt: (argv: string[], secrets: Record<string, string>) => Promise<number>;
   print: (line: string) => void;
   now?: () => Date;
   /** Where an output folder goes when none is given. */
@@ -81,6 +82,19 @@ export function trainConfig(defaults: Config, user: Config, env: Record<string, 
   return { ...cfg, env };
 }
 
+/** `cfg` without its API keys, and the keys as the environment variables SkillOpt reads them from
+ * (`model.optimizer_openai_compatible_api_key` is `OPTIMIZER_OPENAI_COMPATIBLE_API_KEY`): a key never
+ * lands in the config file the output folder keeps. */
+export function splitKeys(cfg: Config): { config: Config; secrets: Record<string, string> } {
+  const secrets: Record<string, string> = {};
+  const model: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(cfg.model ?? {})) {
+    if (/(^|_)openai_compatible_api_key$/.test(key)) secrets[key.toUpperCase()] = String(value);
+    else model[key] = value;
+  }
+  return { config: { ...cfg, model }, secrets };
+}
+
 /** `date` as `YYYYMMDD-HHMMSS`, UTC. */
 const stamp = (date: Date) => date.toISOString().replace(/[-:]/g, "").replace("T", "-").slice(0, 15);
 
@@ -89,18 +103,18 @@ export const realTrainDeps = (loadTraining: TrainDeps["loadTraining"], home: str
   loadTraining,
   env: process.env,
   // The real home, not the run's throwaway one: uv keeps its cache and its Pythons there.
-  runSkillOpt: (argv) => Bun.spawn(argv, { stdout: "inherit", stderr: "inherit", env: { ...process.env, HOME: home } }).exited,
+  runSkillOpt: (argv, secrets) => Bun.spawn(argv, { stdout: "inherit", stderr: "inherit", env: { ...process.env, HOME: home, ...secrets } }).exited,
   print: console.log,
 });
 
 /** `skill-trainer train`; returns SkillOpt's exit code. */
 export async function trainCommand(opts: TrainOptions, deps: TrainDeps): Promise<number> {
   const out = opts.out ?? join(deps.resultsDir ?? RESULTS_DIR, `train-${opts.plugin}-${stamp((deps.now ?? (() => new Date()))())}`);
-  await mkdir(out, { recursive: true });
-  if ((await readdir(out)).length > 0) throw new Error(`${out} isn't empty: SkillOpt would resume from what's there, so give train a new folder`);
+  if (existsSync(out) && (await readdir(out)).length > 0) throw new Error(`${out} isn't empty: SkillOpt would resume from what's there, so give train a new folder`);
 
   const training = await deps.loadTraining(opts.plugin);
   const tasks = selectTasks(training.tasks, {});
+  await mkdir(out, { recursive: true });
   const plugin = withSkill(training.plugin(async () => ({ ok: false, exitCode: 1, error: "no CLI" })), training.skill, undefined);
   const skill = plugin.skills!.find((s) => s.name === training.skill)!;
 
@@ -126,11 +140,14 @@ export async function trainCommand(opts: TrainOptions, deps: TrainDeps): Promise
   const user = opts.config === undefined ? {} : ((Bun.YAML.parse(await Bun.file(opts.config).text()) ?? {}) as Config);
   const config = join(out, "skillopt-config.yaml");
   // JSON is YAML too, and leaves nothing to SkillOpt's YAML parser to guess.
-  await writeFile(config, `${JSON.stringify(trainConfig(defaults, user, env, deps.env), null, 2)}\n`);
+  const { config: written, secrets } = splitKeys(trainConfig(defaults, user, env, deps.env));
+  await writeFile(config, `${JSON.stringify(written, null, 2)}\n`);
 
-  const code = await deps.runSkillOpt(skilloptArgv(await readPin(), ["-m", "mercury_skillopt", "train", "--config", config]));
+  const code = await deps.runSkillOpt(skilloptArgv(await readPin(), ["-m", "mercury_skillopt", "train", "--config", config]), secrets);
   if (code !== 0) return code;
-  const best = await Bun.file(join(skilloptOut, "best_skill.md")).text();
+  const bestPath = join(skilloptOut, "best_skill.md");
+  if (!existsSync(bestPath)) throw new Error(`SkillOpt wrote no best skill in ${skilloptOut}, though it exited 0`);
+  const best = await Bun.file(bestPath).text();
   const trained = join(out, "SKILL.md");
   await writeFile(trained, skillFile(skill, stripSkillOptMarkers(best)));
   deps.print(`trained skill: ${trained} (SkillOpt's run: ${skilloptOut})`);

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PLUGIN_API_VERSION, type Plugin } from "@mercury-fw/plugin-types";
@@ -94,9 +94,17 @@ describe("runCommand", () => {
     expect(seen).toEqual([[], ["a"]]);
   });
 
+  // The README's results/ is ignored by git, so on a fresh clone it isn't there.
+  test("the JSON file's folder is made when it's missing", async () => {
+    const path = join(dir, "results", "nested", "baseline.json");
+    await runCommand({ plugin: "jira", json: path }, deps().deps);
+    expect(readJson(path).map((r) => r.id)).toEqual(["a", "b"]);
+  });
+
   test("a JSON file it can't write stops the run before any task", async () => {
     let opened = false;
-    const path = join(dir, "missing", "results.json");
+    const path = join(dir, "is-a-folder");
+    mkdirSync(path);
     await expect(runCommand({ plugin: "jira", json: path }, deps(() => void (opened = true)).deps)).rejects.toThrow();
     expect(opened).toBe(false);
   });

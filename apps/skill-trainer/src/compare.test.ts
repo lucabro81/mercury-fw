@@ -148,5 +148,16 @@ describe("formatComparison", () => {
     const loss = compareRuns({ ...pass, conditions: { ...CONDITIONS, skill: "s1" } }, { ...fail, conditions: { ...CONDITIONS, skill: "s2" } });
     expect(formatComparison(loss)[1]).toBe(`worse by at least ${(-loss.upper * 100).toFixed(1)} points (mean -50.0, 95% bounds ${(loss.lower * 100).toFixed(1)} to ${(loss.upper * 100).toFixed(1)})`);
   });
+
+  // A run cut short keeps its conditions and fewer repeats of some tasks; its scores then weigh unevenly.
+  test("repeats that differ from task to task, or between the runs, are warned about", () => {
+    const even = run({ "count-1": [true, true, true], "count-2": [true, true, true] });
+    const cut = run({ "count-1": [true, true, true], "count-2": [true] }, { skill: "s2" });
+    const lines = formatComparison(compareRuns(even, cut));
+    expect(lines).toContain("warning: tasks were run a different number of times (the baseline 3, the candidate 1 to 3): a run cut short weighs its tasks unevenly");
+    const fewer = run({ "count-1": [true], "count-2": [true] }, { skill: "s2" });
+    expect(formatComparison(compareRuns(even, fewer))).toContain("warning: tasks were run a different number of times (the baseline 3, the candidate 1): a run cut short weighs its tasks unevenly");
+    expect(formatComparison(compareRuns(even, run({ "count-1": [true, false, true], "count-2": [true, true, false] }, { skill: "s2" }))).filter((l) => l.includes("different number of times"))).toEqual([]);
+  });
 });
 

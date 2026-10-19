@@ -18,6 +18,8 @@ export type Comparison = {
   tasks: number;
   /** The most repeats a task has in each run. */
   repeats: { baseline: number; candidate: number };
+  /** The fewest and the most repeats a task has in each run: equal everywhere in a whole run. */
+  repeatRange: { baseline: [number, number]; candidate: [number, number] };
   /** The mean per-task difference, candidate minus baseline (a fraction: 0.05 is 5 points). */
   gain: number;
   /** The one-sided 95% bounds of the gain. */
@@ -80,9 +82,11 @@ export function compareRuns(baseline: RunFile, candidate: RunFile, { resamples =
     .filter((t) => t.candidate < t.baseline)
     .sort((a, b) => b.baseline - b.candidate - (a.baseline - a.candidate));
 
+  const range = (s: Map<string, TaskScore>): [number, number] => [Math.min(...common.map((id) => s.get(id)!.repeats)), Math.max(...common.map((id) => s.get(id)!.repeats))];
   return {
     tasks: common.length,
-    repeats: { baseline: Math.max(...common.map((id) => base.get(id)!.repeats)), candidate: Math.max(...common.map((id) => cand.get(id)!.repeats)) },
+    repeats: { baseline: range(base)[1], candidate: range(cand)[1] },
+    repeatRange: { baseline: range(base), candidate: range(cand) },
     gain,
     lower,
     upper,
@@ -112,6 +116,12 @@ export function formatComparison(c: Comparison): string[] {
   for (const t of c.worse) lines.push(`got worse: ${t.id} (${t.taskType}) ${percent(t.baseline)} → ${percent(t.candidate)}`);
   if (c.missing.baseline.length > 0) lines.push(`left out, only in the baseline: ${c.missing.baseline.join(", ")}`);
   if (c.missing.candidate.length > 0) lines.push(`left out, only in the candidate: ${c.missing.candidate.join(", ")}`);
+  const [bMin, bMax] = c.repeatRange.baseline;
+  const [cMin, cMax] = c.repeatRange.candidate;
+  if (new Set([bMin, bMax, cMin, cMax]).size > 1) {
+    const span = (min: number, max: number) => (min === max ? `${min}` : `${min} to ${max}`);
+    lines.push(`warning: tasks were run a different number of times (the baseline ${span(bMin, bMax)}, the candidate ${span(cMin, cMax)}): a run cut short weighs its tasks unevenly`);
+  }
   if (!c.onlyTest) lines.push("warning: not every task is in the test split, where a trained skill must be judged");
   if (c.sameSkill) lines.push("note: both runs used the same skill (an A/A comparison: it shows the noise)");
   if (c.errors.baseline + c.errors.candidate > 0) {

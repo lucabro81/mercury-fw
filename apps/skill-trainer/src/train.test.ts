@@ -113,23 +113,25 @@ describe("trainCommand", () => {
     tasks: [task("a", "train"), task("b", "val"), task("c", "test")],
   };
 
-  /** Deps whose SkillOpt writes `best` as its best skill and exits `code`; the argv it got lands in `ran`. */
-  function deps({ best = "# Jira\n\nTrained.\n<!-- SLOW_UPDATE_START -->\nx\n<!-- SLOW_UPDATE_END -->", code = 0 } = {}) {
+  /** Deps whose SkillOpt writes `best` as its best skill (none when null) and exits `code`; the argv it got lands in `ran`, the secrets in `secrets`. */
+  function deps({ best = "# Jira\n\nTrained.\n<!-- SLOW_UPDATE_START -->\nx\n<!-- SLOW_UPDATE_END -->" as string | null, code = 0 } = {}) {
     const ran: string[][] = [];
+    const secrets: Array<Record<string, string>> = [];
     const printed: string[] = [];
     const d: TrainDeps = {
       loadTraining: async () => training,
       env: { OLLAMA_HOST: "http://h:11434", OLLAMA_MODEL: "m" },
-      runSkillOpt: async (argv) => {
+      runSkillOpt: async (argv, env) => {
         ran.push(argv);
+        secrets.push(env);
         const cfg = Bun.YAML.parse(readFileSync(argv[argv.indexOf("--config") + 1]!, "utf8")) as { env: { out_root: string } };
         mkdirSync(cfg.env.out_root, { recursive: true });
-        writeFileSync(join(cfg.env.out_root, "best_skill.md"), best);
+        if (best !== null) writeFileSync(join(cfg.env.out_root, "best_skill.md"), best);
         return code;
       },
       print: (l) => void printed.push(l),
     };
-    return { d, ran, printed };
+    return { d, ran, printed, secrets };
   }
 
   test("writes the tasks, the skill's body and SkillOpt's config into the output folder, runs SkillOpt on it, and writes the trained SKILL.md", async () => {
@@ -166,6 +168,35 @@ describe("trainCommand", () => {
     const { d, ran } = deps();
     await expect(trainCommand({ plugin: "jira", out }, d)).rejects.toThrow("isn't empty");
     expect(ran).toEqual([]);
+  });
+
+  // An API key in skillopt-config.yaml sat in clear text in the output folder: keys go to SkillOpt through its environment.
+  test("no API key is written into the config: SkillOpt gets them in its environment", async () => {
+    const out = join(dir, "out");
+    const config = join(dir, "hosted.yaml");
+    writeFileSync(config, "model:\n  optimizer_openai_compatible_base_url: https://api.example.com/v1\n  optimizer_openai_compatible_api_key: sk-test\n");
+    const { d, secrets } = deps();
+    await trainCommand({ plugin: "jira", out, config }, d);
+    const written = readFileSync(join(out, "skillopt-config.yaml"), "utf8");
+    expect(written).not.toContain("sk-test");
+    expect(written).not.toContain("api_key");
+    expect(secrets).toEqual([{ OPENAI_COMPATIBLE_API_KEY: "ollama", OPTIMIZER_OPENAI_COMPATIBLE_API_KEY: "sk-test" }]);
+  });
+
+  test("a SkillOpt that ends well but writes no best skill is an error saying so", async () => {
+    const out = join(dir, "out");
+    const { d } = deps({ best: null });
+    await expect(trainCommand({ plugin: "jira", out }, d)).rejects.toThrow(`SkillOpt wrote no best skill in ${join(out, "skillopt")}`);
+  });
+
+  test("a plugin that can't be loaded leaves no output folder behind", async () => {
+    const out = join(dir, "out");
+    const { d } = deps();
+    d.loadTraining = async () => {
+      throw new Error("the nope plugin has no training data");
+    };
+    await expect(trainCommand({ plugin: "nope", out }, d)).rejects.toThrow("no training data");
+    expect(existsSync(out)).toBe(false);
   });
 
   test("a SkillOpt that fails leaves no SKILL.md and its exit code is the command's", async () => {
@@ -206,7 +237,14 @@ describe("the uv runs get the real home", () => {
   };
 
   test("train's", async () => {
-    expect(await homeSeenBy(realTrainDeps(async () => ({}) as SkillTraining, "/Users/real").runSkillOpt)).toBe("/Users/real");
+    expect(await homeSeenBy((argv) => realTrainDeps(async () => ({}) as SkillTraining, "/Users/real").runSkillOpt(argv, {}))).toBe("/Users/real");
+  });
+
+  test("train's gets the keys it's handed in its environment", async () => {
+    const file = join(dir, "key.txt");
+    const runSkillOpt = realTrainDeps(async () => ({}) as SkillTraining, "/Users/real").runSkillOpt;
+    expect(await runSkillOpt(["sh", "-c", `printf %s "$OPTIMIZER_OPENAI_COMPATIBLE_API_KEY" > "${file}"`], { OPTIMIZER_OPENAI_COMPATIBLE_API_KEY: "sk-test" })).toBe(0);
+    expect(readFileSync(file, "utf8")).toBe("sk-test");
   });
 
   test("update-skillopt's", async () => {
