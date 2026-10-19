@@ -96,6 +96,12 @@ describe("web_search", () => {
 });
 
 describe("web_fetch", () => {
+  // #269: nothing told the model the sources are listed for it, and it wrote its own list too.
+  it("tells the model the pages it reads are listed under the answer for it", () => {
+    const { tools } = setup();
+    expect(tools.web_fetch.description).toContain("The pages you read are listed under your answer automatically: don't list them yourself.");
+  });
+
   it("reads a page on an instance host right away, marked as untrusted content", async () => {
     const { tools, staged, reads } = setup();
 

@@ -3,7 +3,8 @@
  * with `web_fetch` (the one read after the person allowed it included), the
  * answer ends with "Fonti:" and the title and URL of each page, in the order
  * they were read, once each. Written by the plugin from the turn's tool
- * results, never by the model, so it can't be left out or made up.
+ * results, never by the model, so it can't be left out or made up; a list the
+ * model wrote at the end of its answer anyway is dropped.
  */
 import type { PostTurnGuard, StepInfo } from "@mercury-fw/plugin-types";
 
@@ -44,6 +45,27 @@ function pagesRead(steps: StepInfo[] = []): ReadPage[] {
   return [...pages.values()];
 }
 
+/** A heading the model gives its own list of sources: `Fonti`/`Sources`, bold or a Markdown heading, colon or not. */
+const SOURCES_HEADING = /^\s*(?:#{1,6}\s+)?[*_]*(?:fonti|sources)[*_]*\s*:?\s*[*_]*\s*$/i;
+/** A line of such a list: a bulleted or numbered item, or a bare URL. */
+const LIST_LINE = /^\s*(?:(?:[-*•]|\d+[.)])\s+\S|<?https?:\/\/\S)/;
+
+/**
+ * `text` without the list of sources the model wrote at its end (a heading,
+ * then only list lines and blank lines), so the guard's list is the only one.
+ * Anything else, prose after the list included, stays as it is.
+ */
+function withoutModelSources(text: string): string {
+  const lines = text.split("\n");
+  let end = lines.length;
+  while (end > 0 && lines[end - 1]!.trim() === "") end--;
+  let start = end;
+  while (start > 0 && (LIST_LINE.test(lines[start - 1]!) || lines[start - 1]!.trim() === "")) start--;
+  const listed = lines.slice(start, end).some((line) => LIST_LINE.test(line));
+  if (!listed || start === 0 || !SOURCES_HEADING.test(lines[start - 1]!)) return text;
+  return lines.slice(0, start - 1).join("\n").trimEnd();
+}
+
 /** The guard that lists the sources (see the module comment). */
 export function createSourcesGuard(): PostTurnGuard {
   return {
@@ -52,7 +74,9 @@ export function createSourcesGuard(): PostTurnGuard {
     shouldRun: (text, steps) => text.trim() !== "" && text.trim() !== "NO_REPLY" && pagesRead(steps).length > 0,
     run: async (text, steps) => {
       const lines = pagesRead(steps).map((p) => (p.title === "" || p.title === p.url ? `- ${p.url}` : `- ${p.title}: ${p.url}`));
-      return { text: `${text}\n\nFonti:\n${lines.join("\n")}`, outcome: "success" };
+      const answer = withoutModelSources(text);
+      const sources = `Fonti:\n${lines.join("\n")}`;
+      return { text: answer === "" ? sources : `${answer}\n\n${sources}`, outcome: "success" };
     },
   };
 }

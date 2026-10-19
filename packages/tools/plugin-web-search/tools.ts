@@ -90,7 +90,7 @@ export function createWebTools(deps: WebToolsDeps): { web_search: ExecutableTool
 
   const web_fetch = tool({
     description:
-      "Reads a web page and returns its title and text. Pages on hosts nobody allowed yet need the user's permission, which this tool asks for on its own.",
+      "Reads a web page and returns its title and text. Pages on hosts nobody allowed yet need the user's permission, which this tool asks for on its own. The pages you read are listed under your answer automatically: don't list them yourself.",
     inputSchema: z.object({ url: z.string().min(1).describe("The page's full URL, http or https") }),
     execute: async ({ url }) => {
       // No DNS before the person's choice: `readPage` resolves and checks the
