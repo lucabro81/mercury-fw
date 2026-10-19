@@ -27,7 +27,7 @@ Every command below runs from `apps/skill-trainer`: Bun reads `.env` from the fo
 ```bash
 bun src/bin.ts run jira
 bun src/bin.ts run jira --split val
-bun src/bin.ts run jira --task open-issues-count --skill /tmp/candidate.md
+bun src/bin.ts run jira --task count-web-open --skill /tmp/candidate.md
 bun src/bin.ts run jira --json /tmp/results.json
 ```
 
