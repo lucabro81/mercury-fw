@@ -6,6 +6,7 @@
 import { Command, CommanderError, InvalidArgumentError, Option, type OutputConfiguration } from "commander";
 import type { Split } from "./contract.ts";
 import type { TrainOptions } from "./train.ts";
+import type { UpdateOptions } from "./update-skillopt.ts";
 
 /** What `run` was asked for. */
 export type RunOptions = {
@@ -39,6 +40,8 @@ export type ProgramHandlers = {
   compare: (opts: CompareOptions) => Promise<number>;
   /** `skill-trainer train`; returns the exit code. */
   train: (opts: TrainOptions) => Promise<number>;
+  /** `skill-trainer update-skillopt`; returns the exit code. */
+  updateSkillOpt: (opts: UpdateOptions) => Promise<number>;
 };
 
 /** The command line, bound to `handlers`; a command's exit code lands in `result`. */
@@ -97,6 +100,17 @@ function buildProgram(handlers: ProgramHandlers, result: { code: number }): Comm
         ...(opts.config === undefined ? {} : { config: opts.config }),
         ...(opts.out === undefined ? {} : { out: opts.out }),
       });
+    });
+
+  program
+    .command("update-skillopt")
+    .description(
+      "Moves the SkillOpt pin (skillopt.json) to a new commit, after the adapter's smoke check and its tests pass on it; a commit that fails either leaves the pin where it was.",
+    )
+    .option("--ref <ref>", "a branch, a tag or a full commit of SkillOpt's repository", "main")
+    .addHelpText("after", "\nExamples:\n  skill-trainer update-skillopt\n  skill-trainer update-skillopt --ref v0.3.0")
+    .action(async (opts: { ref: string }) => {
+      result.code = await handlers.updateSkillOpt(opts.ref === "main" ? {} : { ref: opts.ref });
     });
 
   return program;

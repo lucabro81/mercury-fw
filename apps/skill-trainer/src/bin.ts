@@ -11,6 +11,7 @@ import { loadTraining } from "./load.ts";
 import { compareCommand, runCommand } from "./main.ts";
 import { runProgram } from "./program.ts";
 import { realTrainDeps, trainCommand } from "./train.ts";
+import { updateSkillOptCommand } from "./update-skillopt.ts";
 
 const home = mkdtempSync(join(tmpdir(), "skill-trainer-home-"));
 process.env.HOME = home;
@@ -19,6 +20,7 @@ try {
     run: (opts) => runCommand(opts),
     compare: (opts) => compareCommand(opts),
     train: (opts) => trainCommand(opts, realTrainDeps((plugin) => loadTraining(plugin))),
+    updateSkillOpt: (opts) => updateSkillOptCommand(opts),
   });
 } finally {
   rmSync(home, { recursive: true, force: true });

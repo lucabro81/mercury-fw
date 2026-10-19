@@ -1,12 +1,14 @@
 import { describe, expect, test } from "bun:test";
 import { runProgram, type CompareOptions, type RunOptions } from "./program.ts";
 import type { TrainOptions } from "./train.ts";
+import type { UpdateOptions } from "./update-skillopt.ts";
 
 /** Runs `argv` with handlers returning `code` (or throwing `throws`), collecting what each got and what was written. */
 async function parse(argv: string[], { code = 0, throws }: { code?: number; throws?: string } = {}) {
   let received: RunOptions | undefined;
   let compared: CompareOptions | undefined;
   let trained: TrainOptions | undefined;
+  let updated: UpdateOptions | undefined;
   let err = "";
   const answer = async () => {
     if (throws !== undefined) throw new Error(throws);
@@ -27,10 +29,14 @@ async function parse(argv: string[], { code = 0, throws }: { code?: number; thro
         trained = opts;
         return answer();
       },
+      updateSkillOpt: async (opts) => {
+        updated = opts;
+        return answer();
+      },
     },
     { writeErr: (s) => void (err += s), writeOut: () => {} },
   );
-  return { received, compared, trained, exit, err };
+  return { received, compared, trained, updated, exit, err };
 }
 
 describe("skill-trainer run", () => {
@@ -127,5 +133,12 @@ describe("skill-trainer train", () => {
 
   test("SkillOpt's exit code is the command's", async () => {
     expect((await parse(["train", "jira"], { code: 2 })).exit).toBe(2);
+  });
+});
+
+describe("skill-trainer update-skillopt", () => {
+  test("latest main by default, or the --ref given", async () => {
+    expect((await parse(["update-skillopt"])).updated).toEqual({});
+    expect((await parse(["update-skillopt", "--ref", "v0.3.0"])).updated).toEqual({ ref: "v0.3.0" });
   });
 });
