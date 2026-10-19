@@ -35,11 +35,11 @@ Every command below runs from `apps/skill-trainer`: Bun reads `.env` from the fo
 bun src/bin.ts run jira
 bun src/bin.ts run jira --split val
 bun src/bin.ts run jira --task count-web-open --skill /tmp/candidate.md
-bun src/bin.ts run jira --json results/baseline.json
+bun src/bin.ts run jira --json results/all.json
 bun src/bin.ts run jira --split test --repeat 3 --json results/baseline.json
 ```
 
-`run` sends every task of the plugin (or those of `--split`, or those named by `--task`, in that order) once, prints each task's checks and the commands no fixture answered, then the scores. `--skill` swaps in a candidate: its body alone, or a whole `SKILL.md` whose name and description are the skill's own (the description isn't trained, since it decides whether the model loads the skill at all, so a candidate with another one is refused). `--repeat <n>` runs every task n times, each result carrying its repeat. `--json` also writes the results to a file, turns and calls included, with the run's conditions: the repo's commit and whether the tree had changes, `OLLAMA_MODEL` and `OLLAMA_HOST`, and a hash of the skill body that ran and of the plugin's training data (its `skill-training/` folder, tests left out) (`compare` refuses two runs whose conditions differ in anything but the skill). It's a file and not stdout because the core logs there too. The file is emptied before anything runs and rewritten as each task ends, so a run cut short keeps the tasks it finished. `results/` is ignored by git, so a run writing there leaves the tree clean for the next one. `--skillopt-out <dir>` also writes what SkillOpt reads of the run (see [SkillOpt](#skillopt)), and doesn't go with `--repeat`, since SkillOpt runs each task once a step; `train` uses it, a person doesn't need to.
+`run` sends every task of the plugin (or those of `--split`, or those named by `--task`, in that order) once, prints each task's checks and the commands no fixture answered, then the scores. `--skill` swaps in a candidate: its body alone, or a whole `SKILL.md` whose name and description are the skill's own (the description isn't trained, since it decides whether the model loads the skill at all, so a candidate with another one is refused). `--repeat <n>` runs every task n times, each result carrying its repeat. `--json` also writes the results to a file, turns and calls included, with the run's conditions: the repo's commit and whether the tree had changes, `OLLAMA_MODEL` and `OLLAMA_HOST`, and a hash of the skill body that ran and of the plugin's training data (its `skill-training/` folder, tests left out) (`compare` refuses two runs whose conditions differ in anything but the skill). It's a file and not stdout because the core logs there too. The file (and its folder, when missing) is made or emptied before anything runs, and rewritten as each task ends, so a run cut short keeps the tasks it finished. `results/` is ignored by git, so a run writing there leaves the tree clean for the next one. `--skillopt-out <dir>` also writes what SkillOpt reads of the run (see [SkillOpt](#skillopt)), and doesn't go with `--repeat`, since SkillOpt runs each task once a step; `train` uses it, a person doesn't need to.
 
 The process runs with a throwaway home folder, so composing Mercury never links anything into yours, and each task gets a fresh conversation on a throwaway vault, removed when the task ends (a run interrupted with Ctrl-C leaves both in the system's temp folder).
 
@@ -127,6 +127,10 @@ model:
 
 SkillOpt never calls the target model here: the rollouts are this trainer's, on `OLLAMA_MODEL`.
 
+An API key never goes into the output folder: `train` takes every `*openai_compatible_api_key` out of the config it writes and hands it to SkillOpt as the environment variable SkillOpt reads it from (`OPTIMIZER_OPENAI_COMPATIBLE_API_KEY` for `optimizer_openai_compatible_api_key`). Keep a `--config` with a key outside the repo too.
+
+A task that couldn't run during a training (a stalled model, an unreachable endpoint) counts as failed in that rollout, as in `run`: it lowers the score of whichever skill it ran with, and the gate can reject or accept an edit because of it. Its conversation says it couldn't run, so the optimizer doesn't learn from it, but a training on an endpoint that keeps failing is noise: watch `skillopt/` for rollouts full of them.
+
 `train` exits with SkillOpt's exit code, and writes no `SKILL.md` when SkillOpt failed.
 
 ## Comparing two skills
@@ -137,7 +141,7 @@ bun src/bin.ts run jira --split test --repeat 3 --skill results/jira-try-1/SKILL
 bun src/bin.ts compare results/baseline.json results/candidate.json
 ```
 
-`compare` applies the procedure in [Measuring a gain](#measuring-a-gain) to two `run --json` files: each task's score is the fraction of its repeats that passed, the gain is the mean per-task difference, and its one-sided 95% bounds come from a bootstrap over tasks (seeded, so the same two files always give the same answer). It prints the verdict (a gain only when the lower bound is above zero, worse only when the upper one is below it, not distinguishable otherwise), the gain per task type, every task that got worse, and the tasks only one of the runs had, which it leaves out. It warns when the tasks aren't all from the test split, when both runs used the same skill (an A/A comparison, which shows the noise alone), and when results of tasks that couldn't run were counted as failures.
+`compare` applies the procedure in [Measuring a gain](#measuring-a-gain) to two `run --json` files: each task's score is the fraction of its repeats that passed, the gain is the mean per-task difference, and its one-sided 95% bounds come from a bootstrap over tasks (seeded, so the same two files always give the same answer). It prints the verdict (a gain only when the lower bound is above zero, worse only when the upper one is below it, not distinguishable otherwise), the gain per task type, every task that got worse, and the tasks only one of the runs had, which it leaves out. It warns when tasks were run a different number of times (a run cut short keeps the repeats it finished, and its tasks then weigh unevenly), when the tasks aren't all from the test split, when both runs used the same skill (an A/A comparison, which shows the noise alone), and when results of tasks that couldn't run were counted as failures.
 
 It refuses two runs made under different conditions (another commit, another model or host, other training data), and any run made on a tree with changes, since its commit isn't the code that ran: commit, then run.
 
