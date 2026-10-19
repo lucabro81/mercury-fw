@@ -4,7 +4,8 @@
  * - Every workspace is public except the ones that must never reach a
  *   registry (the test bed, the skill trainer, the docs site, the shared
  *   tsconfig; the monorepo root isn't a workspace). `bun run test` checks every
- *   workspace against that list too, so a PR finds a mismatch before a publish does.
+ *   workspace against that list too, and CI runs this check on every pull
+ *   request (`.github/workflows/ci.yml`), so a mismatch shows up before a publish.
  * - A public workspace's pack (`bun pm pack --dry-run`) contains exactly its
  *   git-tracked files minus what only matters in this repo (tests, fixtures,
  *   tsconfig, Turbo logs, downloaded binaries), plus its package.json: nothing

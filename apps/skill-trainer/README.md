@@ -203,4 +203,4 @@ The adapter's tests run inside the pinned SkillOpt, with a stand-in harness and 
 bun run test:python
 ```
 
-They need uv, so they're kept out of `bun run test` and CI.
+They need uv, so they're kept out of `bun run test`; CI runs them in a job of their own on every pull request (`.github/workflows/ci.yml`).
