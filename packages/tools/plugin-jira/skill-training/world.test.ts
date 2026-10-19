@@ -62,7 +62,7 @@ describe("issue search", () => {
     const second = (await run("issue", "search", "--jql", "project = LOG AND statusCategory != Done", "--max-results", "100", "--page-token", first.data.nextPageToken, "--select", "issues.key,nextPageToken")) as {
       data: { issues: unknown[]; nextPageToken?: string };
     };
-    expect(second.data.issues.length).toBeGreaterThan(0);
+    expect(second.data.issues).toHaveLength(20);
     expect(second.data.nextPageToken).toBeUndefined();
   });
 
@@ -160,6 +160,47 @@ describe("assign, comment, create", () => {
   test("create in a project that doesn't exist is Jira's 400", async () => {
     const { run } = jira();
     expect((await run("issue", "create", "--project", "NOPE", "--type", "Task", "--summary", "x")).ok).toBe(false);
+  });
+});
+
+// From the fifth cold review: inventions the fixtures accepted.
+describe("what Jira and the CLI refuse", () => {
+  test("create refuses a type, a priority or an assignee that doesn't exist", async () => {
+    const { run } = jira();
+    for (const extra of [["--type", "Banana"], ["--priority", "Urgentissima"], ["--assignee", "nobody-123"]]) {
+      const args = ["issue", "create", "--project", "WEB", "--type", "Task", "--summary", "x"];
+      const at = args.indexOf(extra[0]!);
+      if (at === -1) args.push(...extra);
+      else args[at + 1] = extra[1]!;
+      expect((await run(...args)).ok).toBe(false);
+    }
+  });
+
+  test("a command needing an issue key without one is clap's missing argument", async () => {
+    const { run } = jira();
+    for (const args of [["issue", "get", "--select", "key"], ["issue", "transition", "--to", "Done"], ["issue", "transitions"], ["issue", "assign", "--unassign"], ["issue", "comment", "add", "--body", "x"]]) {
+      expect(await run(...args)).toMatchObject({ ok: false, exitCode: 2, error: expect.stringContaining("<KEY>") });
+    }
+  });
+
+  test("a --max-results that isn't a whole number is clap's invalid value, and above 100 gets 100", async () => {
+    const { run } = jira();
+    expect(await run("issue", "search", "--jql", "project = LOG", "--max-results", "abc", "--select", "issues.key")).toMatchObject({ ok: false, exitCode: 2 });
+    expect(await run("issue", "search", "--jql", "project = LOG", "--max-results", "-5", "--select", "issues.key")).toMatchObject({ ok: false, exitCode: 2 });
+    const capped = (await run("issue", "search", "--jql", "project = LOG", "--max-results", "150", "--select", "issues.key")) as { data: { issues: unknown[] } };
+    expect(capped.data.issues).toHaveLength(100);
+  });
+
+  test("an inline {{mention:ID}} comes back as a mention node where it was written", async () => {
+    const { run } = jira();
+    const result = (await run("issue", "comment", "add", "WEB-3", "--body", `Thanks {{mention:${ACCOUNTS.giulia}}} for the fix`)) as {
+      data: { body: { content: Array<{ content: Array<{ type: string; text?: string; attrs?: { id: string; text: string; accessLevel: string } }> }> } };
+    };
+    expect(result.data.body.content[0]!.content).toEqual([
+      { type: "text", text: "Thanks " },
+      { type: "mention", attrs: { id: ACCOUNTS.giulia, text: "@Giulia Ferri", accessLevel: "" } },
+      { type: "text", text: " for the fix" },
+    ]);
   });
 });
 

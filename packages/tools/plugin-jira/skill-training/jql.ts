@@ -11,9 +11,12 @@
  * `summary ~` matches a substring (Jira matches stemmed words, so "log"
  * doesn't find "login" there); `created = <date>` compares timestamps, so a
  * bare day never matches; the reserved characters checked are a subset of
- * Jira's (not `.`, `,`, `/`); ORDER BY is found without regard to quotes. The
- * value errors are Jira's wording, the syntax errors follow its format; none
- * was recorded from a real instance.
+ * Jira's (not `.`, `,`, `/`); ORDER BY is found without regard to quotes;
+ * empty values sort last whatever the direction, which wasn't checked against
+ * Jira; without an ORDER BY, issues of different projects are ordered by
+ * number and then project key, where Jira orders them by creation. The value
+ * errors and the refusal of an unbounded query are Jira's wording, the syntax
+ * errors follow its format; none was recorded from a real instance.
  */
 
 /** An issue as the evaluator reads it. */
@@ -327,10 +330,11 @@ export function filterJql<T extends JqlIssue>(jql: string, issues: T[], ctx: Jql
   const ordered = /^(.*?)\s*\bORDER\s+BY\s+(.+)$/is.exec(jql.trim());
   const where = ordered ? ordered[1]! : jql.trim();
   const orderBy = ordered?.[2];
+  if (where === "") return { ok: false, error: "Unbounded JQL queries are not allowed here. Please add a search restriction to your query." };
   const syntax = syntaxError(where);
   if (syntax !== undefined) return { ok: false, error: syntax };
   const keys = new Set(issues.map((i) => i.key.toUpperCase()));
-  const test = where === "" ? () => true : parseCondition(where, 0, ctx, keys);
+  const test = parseCondition(where, 0, ctx, keys);
   if (typeof test !== "function") return { ok: false, ...test };
   const order = sortOf(orderBy);
   if (typeof order !== "function") return { ok: false, unsupported: `ORDER BY ${orderBy}` };

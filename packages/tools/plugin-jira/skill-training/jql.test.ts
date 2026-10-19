@@ -61,8 +61,19 @@ describe("filterJql", () => {
     expect(keys("project = KAN AND assignee is EMPTY")).toEqual(["KAN-3"]);
   });
 
-  test("summary ~ is a case-insensitive word match", () => {
+  // From the fifth cold review: the title said "word match" while the code matches a substring,
+  // a known difference from Jira declared in jql.ts.
+  test("summary ~ is a case-insensitive substring match", () => {
     expect(keys('summary ~ "login"')).toEqual(["OPS-1", "KAN-1"]);
+    expect(keys('summary ~ "LOG"')).toEqual(["OPS-1", "KAN-1"]);
+  });
+
+  // From the fifth cold review: an empty query returned every issue; Jira's search refuses an unbounded one.
+  test("a query with no restriction is Jira's refusal, with or without an ORDER BY", () => {
+    for (const jql of ["", "   ", "ORDER BY created DESC"]) {
+      const result = filterJql(jql, issues, ctx);
+      expect(result).toEqual({ ok: false, error: expect.stringContaining("Unbounded JQL queries are not allowed") });
+    }
   });
 
   test("dates against now(), relative offsets, and EMPTY or null", () => {

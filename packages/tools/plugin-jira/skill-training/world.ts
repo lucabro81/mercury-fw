@@ -19,8 +19,13 @@
  *   isn't there); `project search`; the help texts, trimmed; a 403 as
  *   `Jira API returned status 403: …`;
  * - reconstructed: the 404 and 400 texts (Jira's usual wording, including
- *   "cannot be assigned issues" for a deactivated person), the usage errors
- *   (clap's format), the page token (opaque, here base64 of an offset), user
+ *   "cannot be assigned issues" for a deactivated person, and `issue create`
+ *   refusing a type this world's issues don't have, a priority outside Jira's
+ *   default five, an assignee who doesn't exist or is inactive), the usage
+ *   errors (clap's format: a missing `<KEY>`, a `--max-results` that isn't a
+ *   whole number), `--max-results` above 100 giving 100, an inline
+ *   `{{mention:ID}}` in a comment's body coming back as a mention node where
+ *   it was written, the page token (opaque, here base64 of an offset), user
  *   search matching every word of the query at the start of one of the name's
  *   (and inactive people included) and project search any part of the key or
  *   name, `--fields` accepted with no effect on the answer;
@@ -216,9 +221,10 @@ const HELP: Record<string, string> = {
 const GLOBAL_FLAGS = ["--select", "--select-all", "--user", "--help", "-h"];
 
 /** The command lines the fixtures check the way clap does (from their help): usage, required flags, the command's own flags. */
-const USAGE: Record<string, { usage: string; required: Array<[string, string]>; flags: string[] }> = {
+const USAGE: Record<string, { usage: string; required: Array<[string, string]>; flags: string[]; key?: boolean }> = {
   "issue search": { usage: "jira issue search [OPTIONS] --jql <JQL>", required: [["--jql", "<JQL>"]], flags: ["--max-results", "--page-token", "--fields", "--stale-days"] },
-  "issue get": { usage: "jira issue get [OPTIONS] <KEY>", required: [], flags: [] },
+  "issue get": { usage: "jira issue get [OPTIONS] <KEY>", required: [], flags: [], key: true },
+  "issue transitions": { usage: "jira issue transitions [OPTIONS] <KEY>", required: [], flags: [], key: true },
   "issue create": {
     usage: "jira issue create [OPTIONS] --project <PROJECT> --type <ISSUE_TYPE> --summary <SUMMARY>",
     required: [
@@ -228,9 +234,9 @@ const USAGE: Record<string, { usage: string; required: Array<[string, string]>; 
     ],
     flags: ["--description", "--assignee", "--priority", "--parent"],
   },
-  "issue transition": { usage: "jira issue transition [OPTIONS] --to <TO> <KEY>", required: [["--to", "<TO>"]], flags: [] },
-  "issue assign": { usage: "jira issue assign [OPTIONS] <KEY>", required: [], flags: ["--assignee", "--unassign"] },
-  "issue comment add": { usage: "jira issue comment add [OPTIONS] --body <BODY> <KEY>", required: [["--body", "<BODY>"]], flags: ["--mention"] },
+  "issue transition": { usage: "jira issue transition [OPTIONS] --to <TO> <KEY>", required: [["--to", "<TO>"]], flags: [], key: true },
+  "issue assign": { usage: "jira issue assign [OPTIONS] <KEY>", required: [], flags: ["--assignee", "--unassign"], key: true },
+  "issue comment add": { usage: "jira issue comment add [OPTIONS] --body <BODY> <KEY>", required: [["--body", "<BODY>"]], flags: ["--mention"], key: true },
 };
 
 /** clap's refusal of a command line, exit 2 as the real CLI exits. */
@@ -252,9 +258,14 @@ function usageFixture(command: string): Fixture {
       const unknown = Object.keys(call.flags).find((flag) => !known.has(flag));
       if (unknown !== undefined) return usageError(`unexpected argument '${unknown}' found`, spec.usage);
       if (call.flags["--help"] !== undefined || call.flags["-h"] !== undefined) return undefined;
-      const missing = spec.required.filter(([flag]) => typeof call.flags[flag] !== "string");
+      const missing = spec.required.filter(([flag]) => typeof call.flags[flag] !== "string").map(([flag, meta]) => `${flag} ${meta}`);
+      if (spec.key && call.positionals.length === 0) missing.push("<KEY>");
       if (missing.length > 0) {
-        return usageError(`the following required arguments were not provided:\n${missing.map(([flag, meta]) => `  ${flag} ${meta}`).join("\n")}`, spec.usage);
+        return usageError(`the following required arguments were not provided:\n${missing.map((m) => `  ${m}`).join("\n")}`, spec.usage);
+      }
+      const max = call.flags["--max-results"];
+      if (typeof max === "string" && !/^\d+$/.test(max)) {
+        return usageError(`invalid value '${max}' for '--max-results <MAX_RESULTS>': invalid digit found in string`, spec.usage);
       }
       // Reconstructed, not recorded: the help says exactly one of the two must be passed.
       if (command === "issue assign" && (typeof call.flags["--assignee"] === "string") === (call.flags["--unassign"] === true)) {
@@ -265,16 +276,36 @@ function usageFixture(command: string): Fixture {
   };
 }
 
-/** A comment's body as Jira's document format: the mention first, then the text. */
+/** A mention node for an account id, as Jira's document format writes it. */
+function mentionNode(world: World, id: string) {
+  const user = world.users.find((u) => u.accountId === id);
+  return { type: "mention", attrs: { id, text: `@${user?.displayName ?? "Unknown"}`, accessLevel: "" } };
+}
+
+/** A comment's body as Jira's document format: the `--mention` first, then the text, each inline `{{mention:ID}}` a mention node where it was written. */
 function commentBody(world: World, text: string, mention: string | undefined) {
   const paragraphs: unknown[] = [];
-  if (mention !== undefined) {
-    const user = world.users.find((u) => u.accountId === mention);
-    paragraphs.push({ type: "paragraph", content: [{ type: "mention", attrs: { id: mention, text: `@${user?.displayName ?? "Unknown"}`, accessLevel: "" } }, { type: "text", text: " " }] });
-  }
-  paragraphs.push({ type: "paragraph", content: [{ type: "text", text }] });
+  if (mention !== undefined) paragraphs.push({ type: "paragraph", content: [mentionNode(world, mention), { type: "text", text: " " }] });
+  const content = text
+    .split(/\{\{mention:([^}]+)\}\}/)
+    .map((part, n) => (n % 2 === 1 ? mentionNode(world, part) : { type: "text", text: part }))
+    .filter((node) => node.type === "mention" || ("text" in node && node.text !== ""));
+  paragraphs.push({ type: "paragraph", content });
   return { type: "doc", version: 1, content: paragraphs };
 }
+
+/** Why Jira refuses `accountId` as an issue's assignee, or undefined when it can be one. */
+function assigneeRefusal(world: World, accountId: string, field: string): CliResult | undefined {
+  const user = world.users.find((u) => u.accountId === accountId);
+  if (!user) return failure(`Jira API returned status 400: {"errorMessages":[],"errors":{"${field}":"Specified user does not exist or you do not have required permissions"}}`);
+  if (!user.active) return failure(`Jira API returned status 400: {"errorMessages":[],"errors":{"assignee":"User '${user.displayName}' cannot be assigned issues."}}`);
+  return undefined;
+}
+
+/** The issue types an issue can be created with: the ones this world's issues have. */
+const ISSUE_TYPES = [...new Set(SEEDS.map((s) => s[6]))];
+/** Jira's default priority scheme. */
+const PRIORITIES = ["Highest", "High", "Medium", "Low", "Lowest"];
 
 /** The fixtures answering the jira CLI from `world`, writes included. */
 export function jiraFixtures(world: World): Fixture[] {
@@ -356,9 +387,9 @@ export function jiraFixtures(world: World): Fixture[] {
           issue.assignee = null;
           return { ok: true, data: { assigned: true, assignee: null, key: issue.key } };
         }
-        const user = world.users.find((u) => u.accountId === accountId);
-        if (!user) return failure(`Jira API returned status 400: {"errorMessages":[],"errors":{"accountId":"Specified user does not exist or you do not have required permissions"}}`);
-        if (!user.active) return failure(`Jira API returned status 400: {"errorMessages":[],"errors":{"assignee":"User '${user.displayName}' cannot be assigned issues."}}`);
+        const refusal = assigneeRefusal(world, accountId!, "accountId");
+        if (refusal) return refusal;
+        const user = world.users.find((u) => u.accountId === accountId)!;
         issue.assignee = { accountId: user.accountId, displayName: user.displayName };
         return { ok: true, data: { assigned: true, assignee: user.accountId, key: issue.key } };
       },
@@ -395,8 +426,16 @@ export function jiraFixtures(world: World): Fixture[] {
         if (!world.projects.some((p) => p.key === projectKey)) {
           return failure('Jira API returned status 400: {"errorMessages":[],"errors":{"project":"valid project is required"}}');
         }
+        const issuetype = ISSUE_TYPES.find((t) => t.toLowerCase() === type.toLowerCase());
+        if (!issuetype) return failure('Jira API returned status 400: {"errorMessages":[],"errors":{"issuetype":"Specify a valid issue type"}}');
+        const priorityName = value(call, "--priority");
+        const priority = priorityName === undefined ? "Medium" : PRIORITIES.find((p) => p.toLowerCase() === priorityName.toLowerCase());
+        if (!priority) return failure(`Jira API returned status 400: {"errorMessages":[],"errors":{"priority":"Priority name '${priorityName}' is not valid"}}`);
+        const assigneeId = value(call, "--assignee");
+        const refusal = assigneeId === undefined ? undefined : assigneeRefusal(world, assigneeId, "assignee");
+        if (refusal) return refusal;
         const number = 1 + Math.max(0, ...world.issues.filter((i) => i.project === projectKey).map((i) => Number(i.key.split("-")[1])));
-        const assignee = world.users.find((u) => u.accountId === value(call, "--assignee"));
+        const assignee = world.users.find((u) => u.accountId === assigneeId);
         const issue: WorldIssue = {
           key: `${projectKey}-${number}`,
           id: String(20000 + world.issues.length),
@@ -407,8 +446,8 @@ export function jiraFixtures(world: World): Fixture[] {
           assignee: assignee ? { accountId: assignee.accountId, displayName: assignee.displayName } : null,
           duedate: null,
           created: NOW.toISOString(),
-          priority: value(call, "--priority") ?? "Medium",
-          issuetype: type,
+          priority,
+          issuetype,
           comments: [],
         };
         world.issues.push(issue);
