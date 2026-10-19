@@ -48,14 +48,22 @@ import { defineMercuryConfig } from "@mercury-fw/core";
 import { formatterPlugin, formatter } from "@mercury-fw/formatter";
 import { jiraPlugin, type JiraDisplays } from "@mercury-fw/plugin-jira";
 import { httpChannel } from "@mercury-fw/channel-http";
-import identity from "./persona/identity.md" with { type: "text" };
-import tone from "./persona/tone.md" with { type: "text" };
+
+const name = "Hermes";
 
 const jiraIssueLine = (issue: JiraDisplays["issue-list"]) =>
   `${issue.key} ${issue.status ? `[${issue.status}] ` : ""}${issue.summary}\n${issue.url}`;
 
 export default defineMercuryConfig({
-  persona: { name: "Hermes", identity, tone },
+  persona: {
+    name,
+    identity: `You are ${name}, the platform team's release assistant.`,
+    tone: [
+      "DO:",
+      "- Answer directly, in plain text only.",
+      // …
+    ].join("\n"),
+  },
   plugins: [
     formatterPlugin(
       jiraPlugin,
@@ -74,7 +82,7 @@ A plugin can hand the user a list (Jira does, for `issue search`), and how that 
 
 `directory` says who the people are and what they may do. Every channel brings an identity of its own (a Google Chat user, the subject of an OIDC token), and the directory turns it into one person with their roles, so someone reaching Mercury from two channels keeps one private area. A person can also link their accounts themselves, with a one-time code they get on one and send from the other, and the operator can with `mfw identity`. Without a directory the person is whoever the channel says, with no roles; with one, the instance talks only to the people it knows (unless `access.unknown` is `"allow"`) and refuses everyone while the directory can't be reached. Plugins act as the person by default, or as no one when they reach a public service with no login: the role `mercury.act-as-self` (or `mercury.act-as-self.<plugin>`) lets someone make Mercury act with its own identity, and `access.plugins` restricts a plugin to some roles.
 
-`persona` sets who the assistant is: `name` is what it's called (Mercury when left out), `identity` opens the system prompt ("You are {{assistant}}, …") and `tone` closes it with the rules on how to answer. Identity and tone are plain strings, kept here in Markdown files imported as text, and a field left out falls back to the default. Everything between them, the rules tied to the tools, stays with the core. No text the model reads writes a name in: they say `{{assistant}}`, the core puts the persona's name there, and where the one acting is the system around the model they say so, so the model never takes the framework's name for its own.
+`persona` sets who the assistant is: `name` is what it's called (Mercury when left out), `identity` opens the system prompt ("You are Hermes, …") and `tone` closes it with the rules on how to answer. Identity and tone are plain strings written in the config, and a field left out falls back to the default; a scaffolded app writes the name once, as a `const` both refer to, and the tone in full, one string per line. Everything between them, the rules tied to the tools, stays with the core. No text the model reads writes a name in: they say `{{assistant}}`, the core puts the persona's name there, and where the one acting is the system around the model they say so, so the model never takes the framework's name for its own.
 
 ## Packages
 
