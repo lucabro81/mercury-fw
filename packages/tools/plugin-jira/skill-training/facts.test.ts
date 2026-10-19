@@ -1,8 +1,9 @@
 /**
  * The facts the tasks expect, held against the made-up Jira: for each task
- * with a count or a set of issues to find, a reference run (the right JQL,
- * answered by the real fixtures, every page read) has to pass its checks. A
- * seed changed in world.ts moves the reference answer; a task whose number
+ * with a count, a set of issues to find or a key a create gets, a reference
+ * run (the right JQL or create, answered by the real fixtures, every page
+ * read, a follow-up's writes made on the same world) has to pass its checks.
+ * A seed changed in world.ts moves the reference answer; a task whose number
  * didn't move with it fails here.
  */
 import { describe, expect, test } from "bun:test";
@@ -10,13 +11,12 @@ import { createExpect } from "../../../../apps/cli/src/e2e/expect.ts";
 import { createFakeCli } from "../../../../apps/skill-trainer/src/fixtures.ts";
 import type { Call, Run } from "../../../../apps/skill-trainer/src/contract.ts";
 import training from "./index.ts";
-import { jiraFixtures, makeWorld } from "./world.ts";
+import { ACCOUNTS, jiraFixtures, makeWorld } from "./world.ts";
 
 const readSkill: Call = { tool: "read_skill", input: { name: "jira" }, output: {}, ok: true, pending: false };
 
 /** The searches a careful model makes for `jql`, every page of it, as calls with their real answers; and the keys found. */
-async function searchAll(jql: string): Promise<{ calls: Call[]; keys: string[] }> {
-  const cli = createFakeCli(jiraFixtures(makeWorld()));
+async function searchAll(jql: string, cli = createFakeCli(jiraFixtures(makeWorld()))): Promise<{ calls: Call[]; keys: string[] }> {
   const calls: Call[] = [];
   const keys: string[] = [];
   let token: string | undefined;
@@ -33,17 +33,21 @@ async function searchAll(jql: string): Promise<{ calls: Call[]; keys: string[] }
   return { calls, keys };
 }
 
-/** The failed checks of task `id` on a reference run of `jql` (after the `before` calls: a wiki grep,
- * a project search), answered with the count and the keys found. */
-async function reference(id: string, jql: string, before: Call[] = []): Promise<string[]> {
-  const { calls, keys } = await searchAll(jql);
-  const turn = { calls: [readSkill, ...before, ...calls], answer: `${keys.length} issues: ${keys.join(", ")}.`, seconds: 1 };
-  const run: Run = { turns: [turn], last: turn };
+/** The failed checks of task `id` on the turns of a reference run. */
+function failedChecks(id: string, turns: Array<{ calls: Call[]; answer: string }>): string[] {
+  const run: Run = { turns: turns.map((t) => ({ ...t, seconds: 1 })), last: { ...turns.at(-1)!, seconds: 1 } };
   const recorder = createExpect(run);
   const task = training.tasks.find((t) => t.id === id);
   if (!task) throw new Error(`no task ${id}`);
   task.check(run, recorder.expect);
   return recorder.checks().filter((c) => !c.ok).map((c) => `${c.label}${c.detail ? ` (${c.detail.slice(0, 80)})` : ""}`);
+}
+
+/** The failed checks of task `id` on a reference run of `jql` (after the `before` calls: a wiki grep,
+ * a project search), answered with the count and the keys found. */
+async function reference(id: string, jql: string, before: Call[] = []): Promise<string[]> {
+  const { calls, keys } = await searchAll(jql);
+  return failedChecks(id, [{ calls: [readSkill, ...before, ...calls], answer: `${keys.length} issues: ${keys.join(", ")}.` }]);
 }
 
 const OPEN = "statusCategory != Done";
@@ -84,6 +88,7 @@ const CASES: Array<[string, string]> = [
   ["h-mine-in-progress", 'assignee = currentUser() AND status = "In Progress"'],
   ["h-dates-it-mine-overdue", `assignee = currentUser() AND ${OPEN} AND duedate < now()`],
   ["h-list-keys-only", `project = OPS AND issuetype = Bug AND ${OPEN}`],
+  ["h-mine-it-high", `assignee = currentUser() AND ${OPEN} AND priority in (High, Highest)`],
 ];
 
 /** A tool call that worked, for the steps a reference run takes before its search. */
@@ -96,6 +101,25 @@ const CASES_AFTER_LOOKUP: Array<[string, string, Call[]]> = [
   ["h-wiki-hit", `project = WEB AND ${OPEN}`, [grep("shop")]],
   ["h-informal-it-desk", `project = DSK AND ${OPEN}`, [grep("help desk"), projectSearch("desk")]],
   ["informal-project-logs", `project = LOG AND ${OPEN}`, [grep("log archive"), projectSearch("log")]],
+  ["h-wiki-hit-backoffice", `project = OPS AND issuetype = Bug AND ${OPEN}`, [grep("backoffice")]],
+];
+
+/** A jira command run on `cli`, as the call a model's run records. */
+async function jiraCall(cli: ReturnType<typeof createFakeCli>, args: string[]): Promise<Call> {
+  const output = await cli.run("jira", args);
+  const command = `jira ${args.map((a) => (/\s/.test(a) ? JSON.stringify(a) : a)).join(" ")}`;
+  return { tool: "jiraCommand", input: { command }, output, ok: output.ok, pending: false };
+}
+
+/** Tasks creating an issue: the create they need, made on a fresh world, and the key it gets. */
+const CREATES: Array<[string, string[], string, Call[]]> = [
+  ["create-bug", ["--project", "WEB", "--type", "Bug", "--summary", "Promo banner overlaps the menu"], "WEB-11", []],
+  ["create-assigned", ["--project", "OPS", "--type", "Task", "--summary", "Renew the VPN certificate", "--assignee", ACCOUNTS.giulia], "OPS-9", []],
+  ["create-task", ["--project", "MRT", "--type", "Task", "--summary", "Pin the Bun version in CI"], "MRT-5", []],
+  ["h-create-it-bug", ["--project", "DSK", "--type", "Bug", "--summary", "Il PDF della fattura non si scarica"], "DSK-4", []],
+  ["h-create-priority", ["--project", "WEB", "--type", "Task", "--summary", "Update the cookie banner", "--priority", "High"], "WEB-11", []],
+  ["h-create-informal", ["--project", "MRT", "--type", "Task", "--summary", "Document the release steps"], "MRT-5", [projectSearch("tooling")]],
+  ["h-create-for-marco", ["--project", "OPS", "--type", "Bug", "--summary", "The backup job hangs at 90%", "--assignee", ACCOUNTS.marco], "OPS-9", []],
 ];
 
 describe("the tasks' facts follow from the made-up Jira", () => {
@@ -109,4 +133,41 @@ describe("the tasks' facts follow from the made-up Jira", () => {
       expect(await reference(id, jql, before)).toEqual([]);
     });
   }
+
+  for (const [id, args, key, before] of CREATES) {
+    test(`${id}: the create on a fresh world gets ${key}, and answered with it passes`, async () => {
+      const create = await jiraCall(createFakeCli(jiraFixtures(makeWorld())), ["issue", "create", ...args]);
+      expect((create.output as { data?: { key?: string } }).data?.key).toBe(key);
+      expect(failedChecks(id, [{ calls: [readSkill, ...before, create], answer: `Created ${key}.` }])).toEqual([]);
+    });
+  }
+
+  test("count-log-done: 17 done and 120 left, every page read", async () => {
+    const done = await searchAll("project = LOG AND statusCategory = Done");
+    const left = await searchAll(`project = LOG AND ${OPEN}`);
+    expect([done.keys.length, left.keys.length]).toEqual([17, 120]);
+    expect(failedChecks("count-log-done", [{ calls: [readSkill, ...done.calls, ...left.calls], answer: "17 are done and 120 are left." }])).toEqual([]);
+  });
+
+  test("h-follow-it-count-then-list: three open bugs in OPS", async () => {
+    const bugs = await searchAll(`project = OPS AND issuetype = Bug AND ${OPEN}`);
+    expect(bugs.keys).toHaveLength(3);
+    const show: Call = { tool: "present", input: { ref: "d1" }, output: {}, ok: true, pending: false };
+    expect(failedChecks("h-follow-it-count-then-list", [{ calls: [readSkill, ...bugs.calls], answer: `Ci sono ${bugs.keys.length} bug aperti in OPS.` }, { calls: [show], answer: "Eccoli." }])).toEqual([]);
+  });
+
+  test("h-follow-close-recount: two open in DSK, one once DSK-2 is closed in the same world", async () => {
+    const cli = createFakeCli(jiraFixtures(makeWorld()));
+    const before = await searchAll(`project = DSK AND ${OPEN}`, cli);
+    const close = await jiraCall(cli, ["issue", "transition", "DSK-2", "--to", "Done"]);
+    const after = await searchAll(`project = DSK AND ${OPEN}`, cli);
+    expect([before.keys.length, close.ok, after.keys.length]).toEqual([2, true, 1]);
+    expect(
+      failedChecks("h-follow-close-recount", [
+        { calls: [readSkill, ...before.calls], answer: `${before.keys.length} are open.` },
+        { calls: [close], answer: "DSK-2 is Done." },
+        { calls: after.calls, answer: `Now ${after.keys.length} is open.` },
+      ]),
+    ).toEqual([]);
+  });
 });
