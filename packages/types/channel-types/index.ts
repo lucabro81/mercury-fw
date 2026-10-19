@@ -276,6 +276,27 @@ export type ConfirmOutcome =
   | { status: "resume" };
 
 /**
+ * The reply to a resolved confirmation, the one `confirm` gives: `null` when
+ * the input wasn't a token, `RESUME_AFTER_CONFIRM` when the turn resumes. For a
+ * channel that resolves through `resolveConfirmation` and still tells the
+ * person what `confirm` would.
+ */
+export function confirmReply(outcome: ConfirmOutcome): string | null {
+  switch (outcome.status) {
+    case "not-a-token":
+      return null;
+    case "not-found":
+      return "Nessuna conferma in sospeso per questo token — potrebbe essere scaduta, già usata, o mai esistita.";
+    case "failed":
+      return `Confermato, ma l'esecuzione è fallita: ${outcome.error}`;
+    case "ok":
+      return `Confermato ed eseguito: ${JSON.stringify(outcome.data)}`;
+    case "resume":
+      return RESUME_AFTER_CONFIRM;
+  }
+}
+
+/**
  * Read-only introspection getters the core injects for a channel that exposes an
  * API/UI (the HTTP surface today). Every getter reads state that already exists
  * in-process — nothing computes anything new — so these can't come from `env`.
