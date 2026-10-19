@@ -84,7 +84,7 @@ The matcher knows no CLI's schema, so it reads an argv by shape: a token startin
 
 ## Tasks and scores
 
-A task is an e2e case run on fixtures: `turns` sent in one conversation (a turn can be a function of the one before it), and a `check(run, expect)` with the same `expect` as [`mfw e2e`](../cli/README.md). It also has an `id` (it names files, so letters, digits, `.`, `_` and `-`), a `split` (`train`, `val` or `test`) and a `taskType`, which SkillOpt samples by.
+A task is an e2e case run on fixtures: `turns` sent in one conversation (a turn can be a function of the one before it), and a `check(run, expect)` with the same `expect` as [`mfw e2e`](../cli/README.md). It also has an `id` (it names files, so letters, digits, `.`, `_` and `-`), a `split` (`train`, `val` or `test`) and a `taskType`, the kind of task, shown next to its result in the report.
 
 `hard` is 1 when every check passed and 0 otherwise, `soft` is the fraction that passed. A task that checks nothing scores 0, and so does one whose turn fails (the error is in the result). A task needs at least one turn and its first one written as text (a function turn gets the turn before it), and `--task` refuses an id named twice. Checks on the answer's exact wording make a noisy score, so check calls, their arguments and the facts the answer has to contain.
 

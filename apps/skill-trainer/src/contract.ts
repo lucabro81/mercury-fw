@@ -47,7 +47,7 @@ export type Fixtures = Fixture[] | (() => Fixture[]);
  * is `true`). */
 export type FixtureCall = { args: string[]; positionals: string[]; flags: Record<string, string | true> };
 
-/** The splits SkillOpt trains, gates and tests on. */
+/** The splits: tasks to tune a skill on, to accept a change by, and to measure it on. */
 export type Split = "train" | "val" | "test";
 
 /** One task: the turns sent in a fresh session, and the checks on them. */
@@ -55,7 +55,7 @@ export type TrainingTask = {
   /** Unique within the plugin, safe as a file name. */
   id: string;
   split: Split;
-  /** What SkillOpt samples by: tasks of the same kind share one. */
+  /** The kind of task, shown next to its result in the report: tasks of the same kind share one. */
   taskType: string;
   turns: TurnText[];
   /** Fixtures for this task only, tried before the plugin's own. */

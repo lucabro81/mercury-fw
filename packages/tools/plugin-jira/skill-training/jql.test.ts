@@ -61,14 +61,13 @@ describe("filterJql", () => {
     expect(keys("project = KAN AND assignee is EMPTY")).toEqual(["KAN-3"]);
   });
 
-  // From the fifth cold review: the title said "word match" while the code matches a substring,
-  // a known difference from Jira declared in jql.ts.
+  // A substring, not a word as in Jira: a known difference declared in jql.ts.
   test("summary ~ is a case-insensitive substring match", () => {
     expect(keys('summary ~ "login"')).toEqual(["OPS-1", "KAN-1"]);
     expect(keys('summary ~ "LOG"')).toEqual(["OPS-1", "KAN-1"]);
   });
 
-  // From the fifth cold review: an empty query returned every issue; Jira's search refuses an unbounded one.
+  // Guards against an empty query returning every issue: Jira's search refuses an unbounded one.
   test("a query with no restriction is Jira's refusal, with or without an ORDER BY", () => {
     for (const jql of ["", "   ", "ORDER BY created DESC"]) {
       const result = filterJql(jql, issues, ctx);

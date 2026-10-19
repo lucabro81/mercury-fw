@@ -240,8 +240,7 @@ describe("the type build", () => {
     expect(typesConfig(false).extends).toBe("@mercury-fw/typescript-config/base.json");
   });
 
-  // From the fifth cold review: the tests above couldn't catch TS6059 itself. This one asks tsc
-  // which files the build would take: a source outside the packages (the trainer's, under apps/)
+  // The tests above can't catch TS6059 itself. This one asks tsc which files the build would take: a source outside the packages (the trainer's, under apps/)
   // is what TS6059 refuses. Other packages' sources are listed only because their dist/ isn't
   // built here; the real build reads their declarations.
   test("plugin-jira's type build takes no file from outside the packages, and would without the exclusion", () => {

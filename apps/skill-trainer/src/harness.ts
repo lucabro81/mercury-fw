@@ -48,7 +48,7 @@ export type TaskResult = {
   error?: string;
 };
 
-/** What a task id may be: it names files (SkillOpt's `predictions/<id>/`). */
+/** What a task id may be: safe as a file name. */
 const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
 /** The tasks to run: those of `split` when given, those named in `ids` in

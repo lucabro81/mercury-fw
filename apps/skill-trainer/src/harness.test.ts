@@ -250,8 +250,8 @@ describe("runBatch", () => {
     const { training, cli } = trainingWith([task({ id: "a", vault: { "curated/projects.md": "The shop is WEB." } }), task({ id: "b" })]);
     const { deps, seen } = fakeDeps(async () => ({ steps: [textStep("done")], text: "done" }), cli);
     const seeded: Array<[string, Record<string, string>]> = [];
-    // From the fifth cold review: an expect inside seedVault was caught by runTask as a task error,
-    // so the order was never proven. The flag is asserted out here instead.
+    // An expect inside seedVault would be caught by runTask as a task error and prove nothing:
+    // the order is recorded there and asserted out here.
     const openedBeforeSeeding: boolean[] = [];
     deps.seedVault = async (vault, files) => {
       seeded.push([vault, files]);
@@ -263,7 +263,7 @@ describe("runBatch", () => {
     expect(seen.vaults).toEqual(["/tmp/vault-1", "/tmp/vault-2"]);
   });
 
-  // From the fifth cold review: a task's fixture factory ran before runTask's try, so one that threw rejected the whole batch.
+  // Guards against a task's fixture factory running outside runTask's try, where one that throws rejects the whole batch.
   test("a task whose fixtures throw fails with the error, and the batch goes on", async () => {
     const broken = task({
       id: "a",

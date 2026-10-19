@@ -13,7 +13,7 @@ export type RunOptions = {
   skill?: string;
   split?: Split;
   ids?: string[];
-  /** A file to write the results to as JSON (what the SkillOpt adapter reads),
+  /** A file to write the results to as JSON, for comparing runs,
    * besides the report: not stdout, where the core logs too. */
   json?: string;
 };
