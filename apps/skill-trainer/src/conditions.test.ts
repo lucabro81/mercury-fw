@@ -34,6 +34,14 @@ describe("collectConditions", () => {
     });
   });
 
+  // run --json writes its file before the conditions are taken; in a folder git doesn't ignore, that
+  // untracked file made every such run "not clean", and compare refused it.
+  test("files git doesn't track don't count: only changes to tracked ones do", async () => {
+    const asked: string[][] = [];
+    await collectConditions("b", dir, deps({ git: async (args) => (asked.push(args), args[0] === "rev-parse" ? "abc123\n" : "") }));
+    expect(asked).toContainEqual(["status", "--porcelain", "--untracked-files=no"]);
+  });
+
   test("a tree with changes isn't clean", async () => {
     const conditions = await collectConditions("b", dir, deps({ git: async (args) => (args[0] === "rev-parse" ? "abc123\n" : " M src/x.ts\n") }));
     expect(conditions.clean).toBe(false);

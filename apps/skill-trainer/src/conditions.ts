@@ -11,7 +11,9 @@ import { join, relative } from "node:path";
 export type RunConditions = {
   /** The repo's commit. */
   commit: string;
-  /** Whether the tree had no changes: only then is the commit the code that ran. */
+  /** Whether the tracked files had no changes: only then is the commit the code that ran. Files git
+   * doesn't track don't count (a run's own --json file, a candidate skill): the skill and the training
+   * data have hashes of their own. */
   clean: boolean;
   /** `OLLAMA_MODEL`, empty when unset. */
   model: string;
@@ -53,7 +55,7 @@ async function dataHash(dir: string): Promise<string> {
 
 /** The conditions of a run of `skillBody` on the training data in `dataDir`. */
 export async function collectConditions(skillBody: string, dataDir: string, deps: ConditionsDeps): Promise<RunConditions> {
-  const [commit, status, data] = await Promise.all([deps.git(["rev-parse", "HEAD"]), deps.git(["status", "--porcelain"]), dataHash(dataDir)]);
+  const [commit, status, data] = await Promise.all([deps.git(["rev-parse", "HEAD"]), deps.git(["status", "--porcelain", "--untracked-files=no"]), dataHash(dataDir)]);
   return {
     commit: commit.trim(),
     clean: status.trim() === "",
