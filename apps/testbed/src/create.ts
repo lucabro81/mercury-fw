@@ -2,7 +2,7 @@
  * `bun run create <name>`: a test bed app in `apps/<name>`, scaffolded with
  * this repo's `mfw create` and installing this repo's packages from their
  * tarballs (`mfw local-packages`). Run again on an app that exists, it only
- * packs and installs anew, keeping its config, persona and `.env`; `--fresh`
+ * packs and installs anew, keeping its config and `.env`; `--fresh`
  * removes the app and makes it again (its Docker volumes stay).
  */
 import { existsSync, rmSync } from "node:fs";

@@ -85,14 +85,20 @@ What `execute` returns goes back to the model, which writes the answer from it.
 
 A plugin does nothing until the app declares it. In `mercury.config.ts`, import it and put it in `plugins`:
 
-```ts title="mercury.config.ts" ins={4,8}
+```ts title="mercury.config.ts" ins={2,14}
 import { defineMercuryConfig } from "@mercury-fw/core";
-import identity from "./persona/identity.md" with { type: "text" };
-import tone from "./persona/tone.md" with { type: "text" };
 import { guestWifiPlugin } from "./src/plugins/guest-wifi.ts";
 
+const name = "Mercury";
+
 export default defineMercuryConfig({
-  persona: { name: "Mercury", identity, tone },
+  persona: {
+    name,
+    identity: `You are ${name}, an internal assistant.`,
+    tone: [
+      // …
+    ].join("\n"),
+  },
   plugins: [guestWifiPlugin],
   channels: [],
 });

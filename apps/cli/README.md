@@ -47,7 +47,7 @@ Without a global install: `bun create mercury-agent my-agent` creates an app, an
 Writes a new Mercury app into `<folder>`, which has to be missing or empty; the folder's own name is turned into kebab case (`My Agent` becomes `my-agent`, the path above it stays as typed). Without flags it asks:
 
 - the app name (the `name` in `package.json`, defaulting to the folder's);
-- the assistant's name and role: the name becomes `persona.name` in the config, the role `persona/identity.md` ("You are {{assistant}}, the platform team's release assistant.", the core putting the name in place of `{{assistant}}`), next to a `persona/tone.md` to edit;
+- the assistant's name and role: the whole persona goes in the config, the name written once as a `const` and referred to by the identity (`` `You are ${name}, the platform team's release assistant.` ``) and by the tone, written out in full to edit;
 - which channels and which tool plugins to include (none is fine: the REPL always works);
 - the git remote for `origin`, which you can leave empty (most of the time it doesn't exist yet when you scaffold).
 

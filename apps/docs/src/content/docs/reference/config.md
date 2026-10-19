@@ -13,11 +13,19 @@ import { defineMercuryConfig } from "@mercury-fw/core";
 import { httpChannel } from "@mercury-fw/channel-http";
 import { oidcAuth } from "@mercury-fw/auth-oidc";
 import { staticDirectory } from "@mercury-fw/directory-static";
-import identity from "./persona/identity.md" with { type: "text" };
-import tone from "./persona/tone.md" with { type: "text" };
+
+const name = "Hermes";
 
 export default defineMercuryConfig({
-  persona: { name: "Hermes", identity, tone },
+  persona: {
+    name,
+    identity: `You are ${name}, the platform team's release assistant.`,
+    tone: [
+      "DO:",
+      "- Answer directly, in plain text only.",
+      // …
+    ].join("\n"),
+  },
   plugins: [],
   channels: [httpChannel],
   auth: oidcAuth,
@@ -87,8 +95,9 @@ Who the assistant is. Every field is optional, and a field left out takes the de
 | Field | |
 |---|---|
 | `name` | What the assistant is called (`Mercury` by default). At most 40 characters, on one line. |
-| `identity` | The opening of the model's instructions: `You are {{assistant}}, …`. |
+| `identity` | The opening of the model's instructions: `You are Hermes, …`. |
 | `tone` | The closing rules on how to answer. |
 
-`{{assistant}}` in any text the model reads (the persona, the plugins' fragments and skills) becomes `name`. A
-scaffolded app keeps `identity` and `tone` in `persona/identity.md` and `persona/tone.md`, imported as text.
+A scaffolded app writes the name once, as a `const`, and refers to it in `identity` and `tone`; the tone is written out
+in full, one string per line, ready to edit. `{{assistant}}` in any text the model reads also becomes `name`: that's how
+the plugins' fragments and skills, written without knowing what the assistant will be called, refer to it.

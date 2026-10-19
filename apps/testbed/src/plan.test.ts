@@ -72,7 +72,7 @@ describe("planCreate", () => {
     expect(plan[1]).toEqual({ step: "run", argv: ["mfw", "create", "apps/prova", "--plugins", "", "--channels", "", "--local-packages", ".packs", "--yes"], cwd: ROOT });
   });
 
-  test("an app that exists: only pack and install again, keeping its config, persona and .env", () => {
+  test("an app that exists: only pack and install again, keeping its config and .env", () => {
     expect(planCreate({ name: "prova", fresh: false }, { root: ROOT, exists: true })).toEqual([
       { step: "pack" },
       { step: "run", argv: ["mfw", "local-packages", "../../.packs"], cwd: `${ROOT}/apps/prova` },

@@ -89,7 +89,7 @@ A case on the HTTP surface talks to the running service, so `bunx mfw start` com
 ## The loop: change, repack, check
 
 1. Change the sources in the repo.
-2. From `apps/testbed`: `bun run create prova`. On an app that exists it only packs and installs again: its config, persona and `.env` stay, and `--plugins`, `--channels` or `--from` given for it change nothing (it says so; `--fresh` makes the app anew with them).
+2. From `apps/testbed`: `bun run create prova`. On an app that exists it only packs and installs again: its config and `.env` stay, and `--plugins`, `--channels` or `--from` given for it change nothing (it says so; `--fresh` makes the app anew with them).
 3. From the app's folder: `bunx mfw start`, which rebuilds the image with the new packages.
 4. `bunx mfw e2e ../../tests/<test>.e2e.ts`, or `bunx mfw repl` to look around by hand.
 
