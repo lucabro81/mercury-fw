@@ -8,7 +8,7 @@
  * project's informal name. Values follow from world.ts.
  */
 import type { Call, TrainingTask } from "../../../../apps/skill-trainer/src/contract.ts";
-import { assignTask, calls, checks, cmd, countTask, dateTask, issueTask, jiraCalls, jqlOf, listTask, task, transitionTask, wordingTask } from "./checks.ts";
+import { RELATIVE_DATE, assignTask, calls, checks, cmd, countTask, dateTask, issueTask, jiraCalls, jqlOf, listTask, task, transitionTask, wordingTask } from "./checks.ts";
 import { ACCOUNTS, makeWorld } from "./world.ts";
 
 /** A pattern for a person in JQL: the full name or the accountId. */
@@ -133,7 +133,7 @@ export const HARD_TASKS: TrainingTask[] = [
   }),
   task("h-move-reopen", "train", "transition", "Reopen DSK-3.", (run, e) => {
     checks.loadsSkill(e);
-    e.call("jiraCommand", (c) => c.ok && cmd(c).includes("issue transition ") && cmd(c).includes("DSK-3") && !/--to[ =]["']?done/i.test(cmd(c)), "moves DSK-3 out of Done");
+    e.call("jiraCommand", (c) => c.ok && cmd(c).includes("issue transition ") && cmd(c).includes("DSK-3") && /--to[ =]["']?to do["']?(\s|$)/i.test(cmd(c)), "moves DSK-3 back to To Do");
   }),
   task("h-move-missing", "test", "transition", "Move WEB-404 to Done.", (run, e) => {
     checks.loadsSkill(e);
@@ -281,8 +281,10 @@ export const HARD_TASKS: TrainingTask[] = [
   task("h-dates-it-mine-overdue", "train", "relative-date", "Quali delle mie issue aperte sono scadute?", (run, e) => {
     checks.loadsSkill(e);
     checks.searched(e, /currentUser\(\)/i, "searches with currentUser()");
-    checks.searched(e, /duedate\s*<=?\s*(now|startOfDay)\(\)/i, "compares the due date with today");
+    checks.searched(e, RELATIVE_DATE, "uses JQL's relative dates");
     for (const key of ["WEB-7", "OPS-2"]) e.answer(key);
+    // Sam's other open issues are due later.
+    checks.foundOnly(e, run, ["WEB-7", "OPS-2"], ["WEB-3", "MRT-1"]);
   }),
   // WEB-5 and WEB-7 are overdue, WEB-8 and WEB-2 due later: none of them is due in the next seven days.
   dateTask("h-dates-due-week", "test", "What's due in WEB in the next seven days?", ["WEB-3", "WEB-10"], ["WEB-2", "WEB-5", "WEB-7", "WEB-8"]),
@@ -304,7 +306,7 @@ export const HARD_TASKS: TrainingTask[] = [
     checks.searched(e, /currentUser\(\)/i, "searches with currentUser()");
     for (const key of ["WEB-3", "OPS-2"]) e.answer(key);
     // Sam's other open issues are Medium.
-    for (const key of ["WEB-7", "MRT-1"]) e.answerNot(new RegExp(`${key}(?!\\d)`), `leaves ${key} out`);
+    checks.foundOnly(e, run, ["WEB-3", "OPS-2"], ["WEB-7", "MRT-1"]);
   }),
 
   // Deletes: staged, tokens kept out.

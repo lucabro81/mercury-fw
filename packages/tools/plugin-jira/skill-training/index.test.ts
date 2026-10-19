@@ -8,6 +8,9 @@ import { ACCOUNTS } from "./world.ts";
 /** A jiraCommand call that worked. */
 const jira = (command: string, output: unknown = {}): Call => ({ tool: "jiraCommand", input: { command }, output, ok: true, pending: false });
 const readSkill: Call = { tool: "read_skill", input: { name: "jira" }, output: {}, ok: true, pending: false };
+/** A search's output that found `keys`; `next` when more pages follow. */
+const found = (keys: string[], next?: string) => ({ ok: true, data: { isLast: next === undefined, issues: keys.map((key) => ({ key })), ...(next === undefined ? {} : { nextPageToken: next }) } });
+const keysOf = (project: string, numbers: number[]) => numbers.map((n) => `${project}-${n}`);
 
 /** The checks of the task `id` on turns made of `calls` and `answers`. */
 function check(id: string, turns: Array<{ calls: Call[]; answer: string }>) {
@@ -117,7 +120,7 @@ describe("the checks read what the model did, not how it typed it", () => {
 
   test("Jira's date functions count as relative dates", () => {
     expect(
-      check("dates-overdue", [{ calls: [readSkill, jira('jira issue search --jql "project = WEB AND statusCategory != Done AND duedate < startOfDay()" --select issues.key')], answer: "Overdue: WEB-5 and WEB-7." }]),
+      check("dates-overdue", [{ calls: [readSkill, jira('jira issue search --jql "project = WEB AND statusCategory != Done AND duedate < startOfDay()" --select issues.key', found(["WEB-7", "WEB-5"]))], answer: "Overdue: WEB-5 and WEB-7." }]),
     ).toEqual([]);
   });
 
@@ -171,7 +174,7 @@ describe("the checks read what the model did, not how it typed it", () => {
 
   test("asking a read for its help isn't a read without --select", () => {
     expect(
-      check("count-web-open", [{ calls: [readSkill, jira("jira issue search --help", "Search issues"), jira('jira issue search --jql "project = WEB AND statusCategory != Done" --select issues.key')], answer: "8 open issues." }]),
+      check("count-web-open", [{ calls: [readSkill, jira("jira issue search --help", "Search issues"), jira('jira issue search --jql "project = WEB AND statusCategory != Done" --select issues.key', found(keysOf("WEB", [10, 9, 8, 7, 5, 4, 3, 2])))], answer: "8 open issues." }]),
     ).toEqual([]);
   });
 
@@ -198,7 +201,6 @@ describe("the checks read what the model did, not how it typed it", () => {
   // so a search that found the wrong issues passed.
   test("a list task checks which issues the search found", () => {
     const presentCall: Call = { tool: "present", input: { ref: "d1" }, output: {}, ok: true, pending: false };
-    const found = (keys: string[]) => ({ ok: true, data: { isLast: true, issues: keys.map((key) => ({ key })) } });
     const allBugs = jira('jira issue search --jql "issuetype = Bug" --select issues.key,issues.fields.summary,issues.fields.status.name', found(["WEB-10", "WEB-7", "WEB-5", "WEB-3", "WEB-1"]));
     expect(check("list-web-bugs", [{ calls: [readSkill, allBugs, presentCall], answer: "Here." }])).toContain("finds the issues asked for");
     const webOpenBugs = jira(
@@ -229,6 +231,54 @@ describe("the checks read what the model did, not how it typed it", () => {
 
   test("a create in a project that doesn't exist, without a word about it, fails", () => {
     expect(check("h-create-unknown-project", [{ calls: [readSkill], answer: "Sorry, I can't." }])).not.toEqual([]);
+  });
+
+  // From the fifth cold review: issues to leave out were checked as keys absent
+  // from the answer, so a right answer explaining why one was left out failed.
+  test("a date filter's answer may name an issue it explains leaving out", () => {
+    const overdue = jira('jira issue search --jql "project = WEB AND statusCategory != Done AND duedate < startOfDay()" --select issues.key', found(["WEB-7", "WEB-5"]));
+    expect(check("dates-overdue", [{ calls: [readSkill, overdue], answer: "Overdue: WEB-5 and WEB-7. WEB-3 is due on the 24th, so not yet." }])).toEqual([]);
+  });
+
+  test("a date filter whose search let a wrong issue in fails, whatever the answer says", () => {
+    const tooMany = jira('jira issue search --jql "project = WEB AND statusCategory != Done AND duedate < 7d" --select issues.key', found(["WEB-10", "WEB-7", "WEB-5", "WEB-3"]));
+    expect(check("dates-overdue", [{ calls: [readSkill, tooMany], answer: "Overdue: WEB-5 and WEB-7." }])).toEqual(["finds those issues and leaves the others out"]);
+  });
+
+  test("my high-priority issues, with the medium ones mentioned as such", () => {
+    const high = jira('jira issue search --jql "assignee = currentUser() AND statusCategory != Done AND priority in (High, Highest)" --select issues.key', found(["WEB-3", "OPS-2"]));
+    expect(check("h-mine-it-high", [{ calls: [readSkill, high], answer: "Sì: WEB-3 (Highest) e OPS-2 (High). WEB-7 e MRT-1 sono Medium." }])).toEqual([]);
+    const all = jira('jira issue search --jql "assignee = currentUser() AND statusCategory != Done" --select issues.key', found(["WEB-7", "WEB-3", "OPS-2", "MRT-1"]));
+    expect(check("h-mine-it-high", [{ calls: [readSkill, all], answer: "Sì: WEB-3 e OPS-2." }])).toEqual(["finds those issues and leaves the others out"]);
+  });
+
+  test("my overdue issues, with today's boundary written another way", () => {
+    const overdue = jira('jira issue search --jql "assignee = currentUser() AND statusCategory != Done AND duedate < endOfDay(-1d)" --select issues.key', found(["OPS-2", "WEB-7"]));
+    expect(check("h-dates-it-mine-overdue", [{ calls: [readSkill, overdue], answer: "Sono scadute WEB-7 e OPS-2." }])).toEqual([]);
+    const withFuture = jira('jira issue search --jql "assignee = currentUser() AND statusCategory != Done AND duedate < 7d" --select issues.key', found(["OPS-2", "WEB-7", "WEB-3"]));
+    expect(check("h-dates-it-mine-overdue", [{ calls: [readSkill, withFuture], answer: "Sono scadute WEB-7 e OPS-2." }])).toEqual(["finds those issues and leaves the others out"]);
+  });
+
+  // From the fifth cold review: "reopen" accepted a move to any status but Done.
+  test("reopening is a move back to To Do", () => {
+    expect(check("h-move-reopen", [{ calls: [readSkill, jira('jira issue transition DSK-3 --to "To Do"')], answer: "DSK-3 is open again." }])).toEqual([]);
+    expect(check("h-move-reopen", [{ calls: [readSkill, jira('jira issue transition DSK-3 --to "In Review"')], answer: "DSK-3 is open again." }])).not.toEqual([]);
+  });
+
+  // From the fifth cold review: a count was any matching number in the answer, tied to nothing the model read.
+  test("a count is the number of issues the search returned", () => {
+    const eight = jira('jira issue search --jql "project = WEB AND statusCategory != Done" --select issues.key', found(keysOf("WEB", [10, 9, 8, 7, 5, 4, 3, 2])));
+    expect(check("count-web-open", [{ calls: [readSkill, eight], answer: "8 open issues." }])).toEqual([]);
+    const five = jira('jira issue search --jql "project = WEB AND statusCategory != Done" --max-results 5 --select issues.key,nextPageToken', found(keysOf("WEB", [10, 9, 8, 7, 5]), "b2Zmc2V0OjU="));
+    expect(check("count-web-open", [{ calls: [readSkill, five], answer: "8 open issues." }])).toEqual(["the count is what the search returned"]);
+  });
+
+  test("a count over two pages adds them up, a page read twice once", () => {
+    const jql = '"project = WEB AND statusCategory != Done"';
+    const first = jira(`jira issue search --jql ${jql} --max-results 5 --select issues.key,nextPageToken`, found(keysOf("WEB", [10, 9, 8, 7, 5]), "b2Zmc2V0OjU="));
+    const second = jira(`jira issue search --jql ${jql} --max-results 5 --page-token b2Zmc2V0OjU= --select issues.key,nextPageToken`, found(keysOf("WEB", [4, 3, 2])));
+    expect(check("count-web-open", [{ calls: [readSkill, first, second], answer: "8 open issues." }])).toEqual([]);
+    expect(check("count-web-open", [{ calls: [readSkill, first, first, second], answer: "8 open issues." }])).toEqual([]);
   });
 
   test("a wrong JQL still fails its check", () => {

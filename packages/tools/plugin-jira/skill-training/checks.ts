@@ -53,7 +53,43 @@ export const checks = {
   notPresented: (e: Expect) => e.callCount({ max: 0 }, "present", "doesn't show a list it wasn't asked for"),
   /** The answer has `n` as a number of its own, in figures or (up to twelve) in words. */
   number: (e: Expect, n: number) => e.answer(new RegExp(`(?<![\\w-])(${n}${WORDS[n] ? `|${WORDS[n]}` : ""})(?![\\w-])`, "i"), `the answer says ${n}`),
+  /** A search that worked returned every one of `keys` and none of `absent`: what the list is, not what the answer mentions. */
+  foundOnly: (e: Expect, run: Run, keys: string[], absent: string[]) =>
+    e.that(
+      "finds those issues and leaves the others out",
+      jiraCalls(run, "issue search").some((c) => {
+        const got = new Set(returnedKeys(c));
+        return c.ok && keys.every((k) => got.has(k)) && !absent.some((k) => got.has(k));
+      }),
+    ),
+  /** The searches that worked with a JQL matching `jql` returned `n` issues, the pages of one query added up and a page read twice counted once. */
+  counted: (e: Expect, run: Run, jql: RegExp, n: number) => {
+    const pages = new Map<string, Map<string, number>>();
+    for (const c of jiraCalls(run, "issue search")) {
+      const query = jqlOf(c);
+      if (!c.ok || !jql.test(query)) continue;
+      const ofQuery = pages.get(query) ?? new Map<string, number>();
+      ofQuery.set(pageTokenOf(c), issueCount(c));
+      pages.set(query, ofQuery);
+    }
+    e.that("the count is what the search returned", [...pages.values()].some((p) => [...p.values()].reduce((a, b) => a + b, 0) === n));
+  },
 };
+
+/** A search call's `--page-token`, empty for the first page. */
+function pageTokenOf(c: Call): string {
+  const parsed = parseCommand(cmd(c));
+  if (!parsed.ok) return "";
+  const at = parsed.args.indexOf("--page-token");
+  if (at !== -1) return parsed.args[at + 1] ?? "";
+  return parsed.args.find((a) => a.startsWith("--page-token="))?.slice("--page-token=".length) ?? "";
+}
+
+/** How many issues a search call returned, whatever paths it selected. */
+function issueCount(c: Call): number {
+  const data = (c.output as { data?: { issues?: unknown[] } } | undefined)?.data;
+  return data?.issues?.length ?? 0;
+}
 
 export const task = (id: string, split: Split, taskType: string, turn: string | TrainingTask["turns"], check: (run: Run, e: Expect) => void): TrainingTask => ({
   id,
@@ -87,11 +123,12 @@ export function returnedKeys(c: Call): string[] {
   return (data?.issues ?? []).map((i) => i.key).filter((k): k is string => typeof k === "string");
 }
 
-/** A count: searched as asked, answered as a number, no list shown. */
+/** A count: searched as asked, answered with the number of issues the search returned, no list shown. */
 export const countTask = (id: string, split: Split, turn: string, jql: RegExp, n: number) =>
   task(id, split, "count", turn, (run, e) => {
     checks.loadsSkill(e);
     checks.searched(e, jql, "searches the right issues");
+    checks.counted(e, run, jql, n);
     checks.number(e, n);
     checks.notPresented(e);
     checks.selects(e, run);
@@ -145,13 +182,13 @@ export const wordingTask = (id: string, split: Split, turn: string, status: RegE
 export const RELATIVE_DATE = /now\(\)|[-+]?\d+[dwh]\b|(start|end)of(day|week|month)\(/i;
 
 /** A filter on dates: Jira's relative syntax, never a date it computed; the issues it should find
- * named, and the ones it shouldn't (`absent`) left out. */
+ * named, and the search finding them without the ones it shouldn't (`absent`). */
 export const dateTask = (id: string, split: Split, turn: string, keys: string[], absent: string[] = []) =>
   task(id, split, "relative-date", turn, (run, e) => {
     checks.loadsSkill(e);
     checks.searched(e, RELATIVE_DATE, "uses JQL's relative dates");
     e.that("doesn't write a computed date", !jiraCalls(run, "issue search").some((c) => /\d{4}-\d{2}-\d{2}/.test(jqlOf(c))));
     for (const key of keys) e.answer(key);
-    for (const key of absent) e.answerNot(new RegExp(`${key}(?!\\d)`), `leaves ${key} out`);
+    if (absent.length > 0) checks.foundOnly(e, run, keys, absent);
     checks.selects(e, run);
   });
