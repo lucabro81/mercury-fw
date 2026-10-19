@@ -74,3 +74,20 @@ describe("exitCodeFor", () => {
     expect(exitCodeFor([])).toBe(1);
   });
 });
+
+// With --repeat a task appears once a repeat: unlabelled, the lines couldn't be told apart.
+describe("formatReport with repeats", () => {
+  const result = (repeat: number, hard: 0 | 1) => ({ id: "a", split: "train" as const, taskType: "t", hard, soft: hard, checks: [], turns: [], unmatched: [], seconds: 1, repeat });
+
+  test("each task line says its repeat when the run had several", () => {
+    const lines = formatReport([result(1, 1), result(2, 0)]);
+    expect(lines[0]).toStartWith("a #1 (train, t): passed");
+    expect(lines[1]).toStartWith("a #2 (train, t): FAILED");
+    expect(lines.at(-1)).toBe("hard 1/2 results, soft 0.50");
+  });
+
+  test("a run of one repeat keeps the lines as they were", () => {
+    expect(formatReport([result(1, 1)])[0]).toStartWith("a (train, t): passed");
+  });
+});
+

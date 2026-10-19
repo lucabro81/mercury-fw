@@ -116,7 +116,7 @@ describe("formatComparison", () => {
     const baseline = run({ "count-1": [true, true], "count-2": [false, false], "list-1": [true, true], "only-base": [true, true] });
     const candidate = run({ "count-1": [true, true], "count-2": [true, true], "list-1": [true, false] }, { skill: "s2" });
     const lines = formatComparison(compareRuns(baseline, candidate, { resamples: 2000 }));
-    expect(lines[0]).toMatch(/^3 tasks in common, 2 repeats each \(baseline\), 2 \(candidate\)$/);
+    expect(lines[0]).toBe("3 tasks in common, 2 repeats a task in the baseline, 2 in the candidate");
     expect(lines).toContain("by task type: count +50.0 points (2 tasks), list -50.0 points (1 task)");
     expect(lines).toContain("got worse: list-1 (list) 100% → 50%");
     expect(lines).toContain("left out, only in the baseline: only-base");
@@ -129,5 +129,10 @@ describe("formatComparison", () => {
     expect(lines).toContain("warning: not every task is in the test split, where a trained skill must be judged");
     expect(lines).toContain("note: both runs used the same skill (an A/A comparison: it shows the noise)");
     expect(lines).toContain("warning: 1 result couldn't run in the baseline and 1 in the candidate, counted as failures");
+  });
+
+  test("one repeat and one task are said in the singular", () => {
+    const one: RunFile = { conditions: CONDITIONS, results: [result("count-1", 1, true)] };
+    expect(formatComparison(compareRuns(one, one))[0]).toBe("1 task in common, 1 repeat a task in the baseline, 1 in the candidate");
   });
 });

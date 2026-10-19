@@ -100,7 +100,7 @@ const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
 /** The comparison as the lines `compare` prints. */
 export function formatComparison(c: Comparison): string[] {
-  const lines = [`${c.tasks} tasks in common, ${c.repeats.baseline} repeats each (baseline), ${c.repeats.candidate} (candidate)`];
+  const lines = [`${plural(c.tasks, "task")} in common, ${plural(c.repeats.baseline, "repeat")} a task in the baseline, ${c.repeats.candidate} in the candidate`];
   lines.push(`${c.verdict}: ${points(c.gain)} points, 95% bounds ${points(c.lower)} to ${points(c.upper)}`);
   lines.push(`by task type: ${c.byType.map((t) => `${t.taskType} ${points(t.gain)} points (${plural(t.tasks, "task")})`).join(", ")}`);
   for (const t of c.worse) lines.push(`got worse: ${t.id} (${t.taskType}) ${percent(t.baseline)} → ${percent(t.candidate)}`);

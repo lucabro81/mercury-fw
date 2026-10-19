@@ -48,9 +48,8 @@ function merge(base: Record<string, unknown>, over: Record<string, unknown>): Re
 /** `text` without SkillOpt's slow-update and appendix blocks, trimmed. */
 export function stripSkillOptMarkers(text: string): string {
   return text
-    .replace(/<!-- SLOW_UPDATE_START -->[\s\S]*?<!-- SLOW_UPDATE_END -->/g, "")
-    .replace(/<!-- APPENDIX_START -->[\s\S]*?<!-- APPENDIX_END -->/g, "")
-    .replace(/\n{3,}/g, "\n\n")
+    .replace(/\n*<!-- SLOW_UPDATE_START -->[\s\S]*?<!-- SLOW_UPDATE_END -->\n*/g, "\n\n")
+    .replace(/\n*<!-- APPENDIX_START -->[\s\S]*?<!-- APPENDIX_END -->\n*/g, "\n\n")
     .trim();
 }
 
@@ -69,12 +68,14 @@ export function skillFile(skill: Pick<Skill, "name" | "description">, body: stri
 export function trainConfig(defaults: Config, user: Config, env: Record<string, unknown>, vars: Record<string, string | undefined>): Config {
   const host = vars.OLLAMA_HOST?.replace(/\/+$/, "");
   const model = vars.OLLAMA_MODEL;
+  const ollama = host === undefined || host === "" ? undefined : `${host}/v1`;
   const fromOllama: Record<string, unknown> = {};
-  if (host !== undefined && host !== "") fromOllama.openai_compatible_base_url = `${host}/v1`;
+  if (ollama !== undefined) fromOllama.openai_compatible_base_url = ollama;
   if (model !== undefined && model !== "") Object.assign(fromOllama, { optimizer: model, target: model, openai_compatible_model: model });
-  if (Object.keys(fromOllama).length > 0) fromOllama.openai_compatible_api_key = "ollama";
   const cfg = merge(merge(defaults, { model: fromOllama }), user) as Config;
   const chosen = cfg.model ?? {};
+  // Ollama asks for no key but the client sends one: a placeholder, only to Ollama.
+  if (chosen.openai_compatible_base_url === ollama && chosen.openai_compatible_api_key === undefined) chosen.openai_compatible_api_key = "ollama";
   if (!chosen.openai_compatible_base_url) throw new Error("no model endpoint: set OLLAMA_HOST, or model.openai_compatible_base_url in --config");
   if (!chosen.optimizer || !chosen.openai_compatible_model) throw new Error("no model: set OLLAMA_MODEL, or model.optimizer and model.openai_compatible_model in --config");
   return { ...cfg, env };

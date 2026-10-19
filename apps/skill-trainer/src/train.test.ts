@@ -32,6 +32,12 @@ describe("stripSkillOptMarkers", () => {
     expect(stripSkillOptMarkers(trained)).toBe("# Jira\n\nSearch with JQL.\n\nCount with the search.");
   });
 
+  // Collapsing every run of blank lines rewrote the rest of the body too, a code block's included.
+  test("blank lines elsewhere in the body stay as they were", () => {
+    const body = "# Jira\n\n```\na\n\n\n\nb\n```\n\n<!-- APPENDIX_START -->\nx\n<!-- APPENDIX_END -->\n\nEnd.";
+    expect(stripSkillOptMarkers(body)).toBe("# Jira\n\n```\na\n\n\n\nb\n```\n\nEnd.");
+  });
+
   test("a skill without markers is only trimmed", () => {
     expect(stripSkillOptMarkers("\n# Jira\n\nBody.\n\n")).toBe("# Jira\n\nBody.");
   });
@@ -63,6 +69,13 @@ describe("trainConfig", () => {
     });
     expect(cfg.env).toEqual(env);
     expect(cfg.train).toEqual({ num_epochs: 2, batch_size: 8 });
+  });
+
+  // The placeholder key went to whatever endpoint the run's config chose, a hosted one included.
+  test("a run's config that moves the endpoint gets no placeholder key: its own, or none", () => {
+    const vars = { OLLAMA_HOST: "http://h:11434", OLLAMA_MODEL: "m" };
+    expect(trainConfig(defaults, { model: { openai_compatible_base_url: "https://api.example.com/v1" } }, env, vars).model).not.toHaveProperty("openai_compatible_api_key");
+    expect(trainConfig(defaults, { model: { openai_compatible_base_url: "https://api.example.com/v1", openai_compatible_api_key: "sk-x" } }, env, vars).model).toMatchObject({ openai_compatible_api_key: "sk-x" });
   });
 
   test("the run's config goes over the defaults and the model, a hosted optimizer with its key included", () => {
