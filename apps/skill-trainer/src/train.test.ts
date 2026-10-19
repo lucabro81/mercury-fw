@@ -1,0 +1,171 @@
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { PLUGIN_API_VERSION, parseSkill, type Plugin } from "@mercury-fw/plugin-types";
+import type { SkillTraining, TrainingTask } from "./contract.ts";
+import { withSkill } from "./skill-override.ts";
+import { skillFile, stripSkillOptMarkers, trainCommand, trainConfig, type TrainDeps } from "./train.ts";
+
+const SKILL = { name: "jira", description: "Use for Jira: issues, searches, transitions.", body: "# Jira\n\nSearch with JQL." };
+
+describe("stripSkillOptMarkers", () => {
+  test("SkillOpt's slow-update and appendix blocks go, markers and all, the rest stays", () => {
+    const trained = [
+      "# Jira",
+      "",
+      "Search with JQL.",
+      "",
+      "<!-- SLOW_UPDATE_START -->",
+      "## Lessons",
+      "- prefer statusCategory",
+      "<!-- SLOW_UPDATE_END -->",
+      "",
+      "Count with the search.",
+      "",
+      "<!-- APPENDIX_START -->",
+      "## Execution Notes Appendix",
+      "- note",
+      "<!-- APPENDIX_END -->",
+      "",
+    ].join("\n");
+    expect(stripSkillOptMarkers(trained)).toBe("# Jira\n\nSearch with JQL.\n\nCount with the search.");
+  });
+
+  test("a skill without markers is only trimmed", () => {
+    expect(stripSkillOptMarkers("\n# Jira\n\nBody.\n\n")).toBe("# Jira\n\nBody.");
+  });
+});
+
+describe("skillFile", () => {
+  test("the plugin's name and description over a trained body: a SKILL.md the trainer and the core read back as the same skill", () => {
+    const file = skillFile(SKILL, "# Jira\n\nTrained.");
+    expect(parseSkill(file)).toEqual({ ...SKILL, body: "# Jira\n\nTrained." });
+    const plugin = { apiVersion: PLUGIN_API_VERSION, name: "jira", skills: [SKILL] } as unknown as Plugin;
+    expect(withSkill(plugin, "jira", file).skills![0]!.body).toBe("# Jira\n\nTrained.");
+  });
+});
+
+describe("trainConfig", () => {
+  const defaults = { train: { num_epochs: 2, batch_size: 8 }, model: { backend: "openai_compatible", openai_compatible_max_tokens: 32000 } };
+  const env = { name: "mercury", skill_init: "/out/skill_init.md", split_mode: "split_dir", split_dir: "/out/splits", out_root: "/out/skillopt", mercury_command: ["bun", "/repo/bin.ts"], mercury_plugin: "jira" };
+
+  test("the model is the one the skill runs on, Ollama's OpenAI-compatible endpoint, for the optimizer and the target", () => {
+    const cfg = trainConfig(defaults, {}, env, { OLLAMA_HOST: "http://192.168.90.217:11434/", OLLAMA_MODEL: "qwen3.8:27b" });
+    expect(cfg.model).toEqual({
+      backend: "openai_compatible",
+      openai_compatible_max_tokens: 32000,
+      optimizer: "qwen3.8:27b",
+      target: "qwen3.8:27b",
+      openai_compatible_model: "qwen3.8:27b",
+      openai_compatible_base_url: "http://192.168.90.217:11434/v1",
+      openai_compatible_api_key: "ollama",
+    });
+    expect(cfg.env).toEqual(env);
+    expect(cfg.train).toEqual({ num_epochs: 2, batch_size: 8 });
+  });
+
+  test("the run's config goes over the defaults and the model, a hosted optimizer with its key included", () => {
+    const user = { train: { num_epochs: 4 }, model: { optimizer: "gpt-5.5", optimizer_openai_compatible_base_url: "https://api.example.com/v1", optimizer_openai_compatible_api_key: "sk-test", optimizer_openai_compatible_model: "gpt-5.5" } };
+    const cfg = trainConfig(defaults, user, env, { OLLAMA_HOST: "http://h:11434", OLLAMA_MODEL: "m" });
+    expect(cfg.train).toEqual({ num_epochs: 4, batch_size: 8 });
+    expect(cfg.model).toMatchObject({ optimizer: "gpt-5.5", target: "m", optimizer_openai_compatible_base_url: "https://api.example.com/v1", openai_compatible_base_url: "http://h:11434/v1" });
+  });
+
+  test("the env section is the trainer's: a run's config can't point SkillOpt at other tasks or another harness", () => {
+    const cfg = trainConfig(defaults, { env: { split_dir: "/elsewhere", mercury_command: ["rm"] } }, env, { OLLAMA_HOST: "http://h:11434", OLLAMA_MODEL: "m" });
+    expect(cfg.env).toEqual(env);
+  });
+
+  test("without OLLAMA_HOST or OLLAMA_MODEL, and no model in the run's config, there's no model to train with", () => {
+    expect(() => trainConfig(defaults, {}, env, { OLLAMA_MODEL: "m" })).toThrow("OLLAMA_HOST");
+    expect(() => trainConfig(defaults, {}, env, { OLLAMA_HOST: "http://h" })).toThrow("OLLAMA_MODEL");
+    expect(trainConfig(defaults, { model: { optimizer: "o", target: "o", openai_compatible_model: "o", openai_compatible_base_url: "http://x/v1" } }, env, {}).model).toMatchObject({ optimizer: "o" });
+  });
+});
+
+describe("trainCommand", () => {
+  let dir: string;
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "skill-trainer-train-"));
+  });
+  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+
+  const task = (id: string, split: TrainingTask["split"]): TrainingTask => ({ id, split, taskType: "count", turns: [`question ${id}`], check: () => {} });
+  const training: SkillTraining = {
+    skill: "jira",
+    plugin: () => ({ apiVersion: PLUGIN_API_VERSION, name: "jira", skills: [SKILL] }) as unknown as Plugin,
+    fixtures: [],
+    tasks: [task("a", "train"), task("b", "val"), task("c", "test")],
+  };
+
+  /** Deps whose SkillOpt writes `best` as its best skill and exits `code`; the argv it got lands in `ran`. */
+  function deps({ best = "# Jira\n\nTrained.\n<!-- SLOW_UPDATE_START -->\nx\n<!-- SLOW_UPDATE_END -->", code = 0 } = {}) {
+    const ran: string[][] = [];
+    const printed: string[] = [];
+    const d: TrainDeps = {
+      loadTraining: async () => training,
+      env: { OLLAMA_HOST: "http://h:11434", OLLAMA_MODEL: "m" },
+      runSkillOpt: async (argv) => {
+        ran.push(argv);
+        const cfg = Bun.YAML.parse(readFileSync(argv[argv.indexOf("--config") + 1]!, "utf8")) as { env: { out_root: string } };
+        mkdirSync(cfg.env.out_root, { recursive: true });
+        writeFileSync(join(cfg.env.out_root, "best_skill.md"), best);
+        return code;
+      },
+      print: (l) => void printed.push(l),
+    };
+    return { d, ran, printed };
+  }
+
+  test("writes the tasks, the skill's body and SkillOpt's config into the output folder, runs SkillOpt on it, and writes the trained SKILL.md", async () => {
+    const out = join(dir, "out");
+    const { d, ran, printed } = deps();
+    expect(await trainCommand({ plugin: "jira", out }, d)).toBe(0);
+    expect(readFileSync(join(out, "skill_init.md"), "utf8")).toBe("# Jira\n\nSearch with JQL.\n");
+    expect(JSON.parse(readFileSync(join(out, "splits", "val", "items.json"), "utf8"))).toEqual([{ id: "b", task_type: "count", question: "question b" }]);
+    const config = join(out, "skillopt-config.yaml");
+    expect(ran).toHaveLength(1);
+    expect(ran[0]!.slice(-5)).toEqual(["-m", "mercury_skillopt", "train", "--config", config]);
+    const cfg = Bun.YAML.parse(readFileSync(config, "utf8")) as { env: Record<string, unknown>; evaluation: { gate_metric: string } };
+    expect(cfg.env).toMatchObject({ name: "mercury", skill_init: join(out, "skill_init.md"), split_dir: join(out, "splits"), out_root: join(out, "skillopt"), mercury_plugin: "jira" });
+    expect(cfg.env.mercury_command).toEqual([process.execPath, join(import.meta.dir, "bin.ts")]);
+    expect(cfg.evaluation.gate_metric).toBe("soft");
+    expect(readFileSync(join(out, "SKILL.md"), "utf8")).toBe(skillFile(SKILL, "# Jira\n\nTrained."));
+    expect(printed.at(-1)).toBe(`trained skill: ${join(out, "SKILL.md")} (SkillOpt's run: ${join(out, "skillopt")})`);
+  });
+
+  test("a --config file goes over the defaults", async () => {
+    const out = join(dir, "out");
+    const config = join(dir, "mine.yaml");
+    writeFileSync(config, "train:\n  num_epochs: 5\n");
+    const { d } = deps();
+    await trainCommand({ plugin: "jira", out, config }, d);
+    expect((Bun.YAML.parse(readFileSync(join(out, "skillopt-config.yaml"), "utf8")) as { train: { num_epochs: number } }).train.num_epochs).toBe(5);
+  });
+
+  // SkillOpt resumes from an output folder it has used before, reusing its cached patches.
+  test("an output folder that isn't empty is refused before anything runs", async () => {
+    const out = join(dir, "out");
+    mkdirSync(out);
+    writeFileSync(join(out, "old.txt"), "x");
+    const { d, ran } = deps();
+    await expect(trainCommand({ plugin: "jira", out }, d)).rejects.toThrow("isn't empty");
+    expect(ran).toEqual([]);
+  });
+
+  test("a SkillOpt that fails leaves no SKILL.md and its exit code is the command's", async () => {
+    const out = join(dir, "out");
+    const { d } = deps({ code: 3 });
+    expect(await trainCommand({ plugin: "jira", out }, d)).toBe(3);
+    expect(existsSync(join(out, "SKILL.md"))).toBe(false);
+  });
+
+  test("without an output folder, a new one under results/ named after the plugin and the time", async () => {
+    const { d, ran } = deps();
+    d.now = () => new Date("2026-10-19T14:05:09Z");
+    d.resultsDir = dir;
+    await trainCommand({ plugin: "jira" }, d);
+    expect(ran[0]!.at(-1)).toBe(join(dir, "train-jira-20261019-140509", "skillopt-config.yaml"));
+  });
+});

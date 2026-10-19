@@ -5,6 +5,7 @@
  */
 import { Command, CommanderError, InvalidArgumentError, Option, type OutputConfiguration } from "commander";
 import type { Split } from "./contract.ts";
+import type { TrainOptions } from "./train.ts";
 
 /** What `run` was asked for. */
 export type RunOptions = {
@@ -36,6 +37,8 @@ export type ProgramHandlers = {
   run: (opts: RunOptions) => Promise<number>;
   /** `skill-trainer compare`; returns the exit code. */
   compare: (opts: CompareOptions) => Promise<number>;
+  /** `skill-trainer train`; returns the exit code. */
+  train: (opts: TrainOptions) => Promise<number>;
 };
 
 /** The command line, bound to `handlers`; a command's exit code lands in `result`. */
@@ -77,6 +80,23 @@ function buildProgram(handlers: ProgramHandlers, result: { code: number }): Comm
     .addHelpText("after", "\nExample:\n  skill-trainer compare results/baseline.json results/candidate.json")
     .action(async (baseline: string, candidate: string) => {
       result.code = await handlers.compare({ baseline, candidate });
+    });
+
+  program
+    .command("train")
+    .description(
+      "Trains a plugin's skill with SkillOpt (run with uv, pinned in skillopt.json): its rollouts are this trainer's runs, its optimizer the model in OLLAMA_HOST/OLLAMA_MODEL unless --config sets another. Writes the trained SKILL.md into the output folder, never into the plugin.",
+    )
+    .argument("<plugin>", "the plugin, by the name of its folder after plugin-")
+    .option("--config <file>", "SkillOpt settings over skillopt-defaults.yaml (epochs, batch size, gate, the optimizer model and its endpoint or API key)")
+    .option("--out <dir>", "a new or empty output folder (default: results/train-<plugin>-<time>)")
+    .addHelpText("after", "\nExamples:\n  skill-trainer train jira\n  skill-trainer train jira --config my-training.yaml --out results/jira-try-1")
+    .action(async (plugin: string, opts: { config?: string; out?: string }) => {
+      result.code = await handlers.train({
+        plugin,
+        ...(opts.config === undefined ? {} : { config: opts.config }),
+        ...(opts.out === undefined ? {} : { out: opts.out }),
+      });
     });
 
   return program;

@@ -1,10 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import { runProgram, type CompareOptions, type RunOptions } from "./program.ts";
+import type { TrainOptions } from "./train.ts";
 
 /** Runs `argv` with handlers returning `code` (or throwing `throws`), collecting what each got and what was written. */
 async function parse(argv: string[], { code = 0, throws }: { code?: number; throws?: string } = {}) {
   let received: RunOptions | undefined;
   let compared: CompareOptions | undefined;
+  let trained: TrainOptions | undefined;
   let err = "";
   const answer = async () => {
     if (throws !== undefined) throw new Error(throws);
@@ -21,10 +23,14 @@ async function parse(argv: string[], { code = 0, throws }: { code?: number; thro
         compared = opts;
         return answer();
       },
+      train: async (opts) => {
+        trained = opts;
+        return answer();
+      },
     },
     { writeErr: (s) => void (err += s), writeOut: () => {} },
   );
-  return { received, compared, exit, err };
+  return { received, compared, trained, exit, err };
 }
 
 describe("skill-trainer run", () => {
@@ -105,5 +111,21 @@ describe("skill-trainer compare", () => {
     const { compared, exit, err } = await parse(["compare", "results/baseline.json"]);
     expect([compared, exit]).toEqual([undefined, 1]);
     expect(err).toContain("missing required argument 'candidate'");
+  });
+});
+
+describe("skill-trainer train", () => {
+  test("a plugin alone: the defaults, a new folder under results/", async () => {
+    const { trained, exit } = await parse(["train", "jira"]);
+    expect([trained, exit]).toEqual([{ plugin: "jira" }, 0]);
+  });
+
+  test("a config over the defaults and an output folder", async () => {
+    const { trained } = await parse(["train", "jira", "--config", "train.yaml", "--out", "out/jira"]);
+    expect(trained).toEqual({ plugin: "jira", config: "train.yaml", out: "out/jira" });
+  });
+
+  test("SkillOpt's exit code is the command's", async () => {
+    expect((await parse(["train", "jira"], { code: 2 })).exit).toBe(2);
   });
 });
