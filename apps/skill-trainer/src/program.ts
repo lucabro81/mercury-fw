@@ -26,7 +26,7 @@ export type ProgramHandlers = {
 /** The command line, bound to `handlers`; a command's exit code lands in `result`. */
 function buildProgram(handlers: ProgramHandlers, result: { code: number }): Command {
   const program = new Command("skill-trainer").description(
-    "Scores and trains a plugin's skill: its training tasks run as real Mercury turns on the configured model, its CLI answered by fixtures.",
+    "Scores a plugin's skill: its training tasks run as real Mercury turns on the configured model, its CLI answered by fixtures.",
   );
 
   program

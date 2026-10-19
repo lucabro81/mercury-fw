@@ -1,6 +1,6 @@
 # Skill trainer
 
-Scores a plugin's skill on the model Mercury actually runs, and, once the SkillOpt bridge lands (#246), trains it. Each training task runs as a real Mercury turn: the core composed with only the plugin under training, the model from this folder's env file, the plugin's CLI replaced by fixtures that answer for it, so nothing reaches a real service and the same task gets the same data every time.
+Scores a plugin's skill on the model Mercury actually runs, and measures whether another version of it does better. It doesn't train skills: a bridge to a trainer such as SkillOpt was planned in #246 and dropped for Jira, whose skill already passed nearly every task. Each training task runs as a real Mercury turn: the core composed with only the plugin under training, the model from this folder's env file, the plugin's CLI replaced by fixtures that answer for it, so nothing reaches a real service and the same task gets the same data every time.
 
 It's private: it lives in this repo, works on the plugins in this repo, and never goes to npm.
 
@@ -94,7 +94,7 @@ A trained skill counts as better only if it beats the original by more than the 
 
 **Keep everything but the skill fixed.** Same model (name, weights, quantization), same commit of the fixtures, tasks, checks and of the Mercury code a turn goes through, same skill description. If any of these changes, both skills run again: a baseline from before a fixture fix isn't comparable with a candidate after it.
 
-**Compare on the test split only.** SkillOpt edits the skill on train tasks and accepts edits by their val score, so on those two a trained skill looks better than it is.
+**Compare on the test split only.** A trainer such as SkillOpt edits the skill on train tasks and accepts edits by their val score, so on those two a trained skill looks better than it is.
 
 **Run each skill several times on every test task**, a task's score being the fraction of its runs that passed, then pair the two skills task by task: the gain is the mean of the per-task differences. Its uncertainty comes from resampling the tasks (a bootstrap over tasks, not over runs, since the runs of one task aren't independent of each other), and a gain is claimed only when the one-sided 95% lower bound is above zero. Below that the honest answer is "not distinguishable", whatever the mean says. Report the gain per task type too, and every task that got worse: a skill that fixes counts and breaks transitions isn't a better skill.
 
@@ -116,6 +116,6 @@ What that means for a plugin's training data:
 
 - **At least 50 test tasks, 3 runs per skill** to tell a 10-point gain from noise. That's the minimum for any claim. Under 30 tasks no number of runs makes it reliable (16 tasks with 5 runs see +10 points about half the time at a 70% baseline).
 - **At least 80 test tasks with 5 runs, or 120 with 3,** to claim a gain as small as 5 points, and that only near a 90% baseline: at 70% even those see a 5-point gain only about 60% of the time, and a smaller gain isn't worth measuring.
-- **At least 30 val tasks.** SkillOpt's gate accepts an edit when its val score is strictly higher in one run, so with few val tasks it accepts noise as progress.
+- **At least 30 val tasks.** A trainer such as SkillOpt accepts an edit when its val score is strictly higher in one run, so with few val tasks it accepts noise as progress.
 - **Tasks the baseline fails sometimes.** A task every skill always passes adds nothing but runtime. Aim for a test baseline between 60% and 80%: near 100% there's no room left to measure. Jira's first run (2026-10-18, `qwen3.8:27b`, the training data as it was then) passed 123 of 132 tasks, and 127 of 128 once the checks it showed to be wrong were fixed: the skill didn't need training. The data has changed since (the user search, ORDER BY, EMPTY, tighter checks), so that figure isn't the current data's baseline until it runs again.
 - **The time it takes.** A task costs about 40 seconds on the current model (a run of Jira's 132 tasks took 90 minutes; most take 15 to 30, a few over a minute when the model wanders), so 50 test tasks, 3 runs, two skills is about 3 hours and a half, and 80 tasks with 5 runs about 9.
