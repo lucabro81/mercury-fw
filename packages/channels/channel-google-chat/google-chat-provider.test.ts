@@ -1566,12 +1566,42 @@ describe("createGoogleChatProvider — the confirmation card after a click", () 
   });
 
   test("a click that matched nothing leaves the card alone: in a shared space it may be someone else's", async () => {
-    const t = setup({ status: "not-found" });
+    const t = setup({ status: "not-found" }, {
+      confirm: async () => "Nessuna conferma in sospeso per questo token — potrebbe essere scaduta, già usata, o mai esistita.",
+    });
     await t.start();
     await t.emit(click({ spaceType: "SPACE" }));
 
     expect(t.patched).toEqual([]);
     expect(t.sent).toEqual(["Nessuna conferma in sospeso per questo token — potrebbe essere scaduta, già usata, o mai esistita."]);
+  });
+
+  // Cold review of #269: resolveConfirmation says only not-found for someone the
+  // core won't talk to, where confirm answers with the core's own message for them.
+  test("a click that matched nothing gets confirm's reply, the core's message for someone it won't talk to included", async () => {
+    const confirmed: string[] = [];
+    const t = setup({ status: "not-found" }, {
+      confirm: async (token) => {
+        confirmed.push(token);
+        return "Non ti conosco: chiedi a chi gestisce questa istanza di aggiungerti.";
+      },
+    });
+    await t.start();
+    await t.emit(click());
+
+    expect(confirmed).toEqual(["T2"]);
+    expect(t.patched).toEqual([]);
+    expect(t.sent).toEqual(["Non ti conosco: chiedi a chi gestisce questa istanza di aggiungerti."]);
+  });
+
+  test("a click whose token isn't token-shaped sends nothing and leaves the card", async () => {
+    const t = setup({ status: "not-a-token" });
+    await t.start();
+    await t.emit(click());
+
+    expect(t.patched).toEqual([]);
+    expect(t.sent).toEqual([]);
+    expect(t.turns).toHaveLength(0);
   });
 
   test("a card sent before buttons carried their label still updates, without naming the choice", async () => {

@@ -453,7 +453,10 @@ export function createGoogleChatProvider(deps: GoogleChatProviderDeps): GoogleCh
             log(`[chat:${space}] confirm card patch failed: ${String(err)}`);
           }
         }
-        reply = confirmReply(outcome);
+        // On not-found nothing was taken, so `confirm` gives the reply as it
+        // always did: the core's own message for someone it won't talk to,
+        // which the outcome doesn't carry.
+        reply = outcome.status === "not-found" ? await deps.confirm(token, sessionKey, principal) : confirmReply(outcome);
       } else {
         reply = await deps.confirm(token, sessionKey, principal);
       }
