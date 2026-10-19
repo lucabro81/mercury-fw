@@ -11,7 +11,7 @@ import { join } from "node:path";
 import { orderByDependencies, REPO_ONLY_DIRS, root, workspaces, type Workspace } from "./workspaces.ts";
 import { typesConfig } from "./build-types.ts";
 import { isPublished, publishAction, publishCommand } from "./publish.ts";
-import { comparePack } from "./check-pack.ts";
+import { comparePack, privacyProblem } from "./check-pack.ts";
 import { pendingChangesets, stageRelease } from "./release.ts";
 
 const ws = (name: string, deps: Record<string, string> = {}, peers: Record<string, string> = {}): Workspace => ({
@@ -69,6 +69,22 @@ describe("isPublished", () => {
     }) as unknown as typeof fetch;
     await isPublished("@mercury-fw/core", "0.25.0", "https://r.test", fetchFn);
     expect(asked).toBe("https://r.test/@mercury-fw%2Fcore/0.25.0");
+  });
+});
+
+// Guards the publish workflow: the docs site came in private but missing from
+// check-pack's list of private workspaces, and nothing before publishing ran
+// that check, so the first publish after its merge stopped there.
+describe("privacyProblem", () => {
+  test("a workspace meant to stay private must be private, and a private one must be meant to", () => {
+    expect(privacyProblem({ name: "testbed", private: true })).toBeUndefined();
+    expect(privacyProblem({ name: "testbed" })).toBe("testbed: must stay private");
+    expect(privacyProblem({ name: "@mercury-fw/core" })).toBeUndefined();
+    expect(privacyProblem({ name: "@mercury-fw/new-thing", private: true })).toBe("@mercury-fw/new-thing: is private, but it's meant to be published");
+  });
+
+  test.each(workspaces().map((w) => [w.pkg.name, w] as const))("%s is as private as check-pack expects", (_name, w) => {
+    expect(privacyProblem(w.pkg)).toBeUndefined();
   });
 });
 
