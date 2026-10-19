@@ -26,20 +26,25 @@ function positiveInteger(value: string): number {
   return Number(value);
 }
 
+/** What `compare` was asked for: two `run --json` files. */
+export type CompareOptions = { baseline: string; candidate: string };
+
 export type ProgramHandlers = {
   /** `skill-trainer run`; returns the exit code. */
   run: (opts: RunOptions) => Promise<number>;
+  /** `skill-trainer compare`; returns the exit code. */
+  compare: (opts: CompareOptions) => Promise<number>;
 };
 
 /** The command line, bound to `handlers`; a command's exit code lands in `result`. */
 function buildProgram(handlers: ProgramHandlers, result: { code: number }): Command {
   const program = new Command("skill-trainer").description(
-    "Scores a plugin's skill: its training tasks run as real Mercury turns on the configured model, its CLI answered by fixtures.",
+    "Scores and trains a plugin's skill: its training tasks run as real Mercury turns on the configured model, its CLI answered by fixtures.",
   );
 
   program
     .command("run")
-    .description("Runs a plugin's training tasks once with a skill (the plugin's own by default) and prints every check and every command no fixture answered.")
+    .description("Runs a plugin's training tasks with a skill (the plugin's own by default), once or --repeat times, and prints every check and every command no fixture answered.")
     .argument("<plugin>", "the plugin, by the name of its folder after plugin- (jira for packages/tools/plugin-jira)")
     .option("--skill <file>", "a candidate skill: its body, or a whole SKILL.md with the skill's own name and description")
     .addOption(new Option("--split <split>", "only the tasks of this split").choices(["train", "val", "test"]))
@@ -56,6 +61,18 @@ function buildProgram(handlers: ProgramHandlers, result: { code: number }): Comm
         ...(opts.json === undefined ? {} : { json: opts.json }),
         ...(opts.repeat === undefined ? {} : { repeat: opts.repeat }),
       });
+    });
+
+  program
+    .command("compare")
+    .description(
+      "Whether a candidate skill does better than a baseline, from two runs' --json files made under the same conditions: the mean per-task gain, its 95% bounds from a bootstrap over tasks, the gain per task type and every task that got worse.",
+    )
+    .argument("<baseline>", "the results of the baseline skill (run --json)")
+    .argument("<candidate>", "the results of the candidate skill (run --json)")
+    .addHelpText("after", "\nExample:\n  skill-trainer compare results/baseline.json results/candidate.json")
+    .action(async (baseline: string, candidate: string) => {
+      result.code = await handlers.compare({ baseline, candidate });
     });
 
   return program;

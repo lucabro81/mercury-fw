@@ -1,22 +1,30 @@
 import { describe, expect, test } from "bun:test";
-import { runProgram, type RunOptions } from "./program.ts";
+import { runProgram, type CompareOptions, type RunOptions } from "./program.ts";
 
-/** Runs `argv` with a `run` handler returning `code` (or throwing `throws`), collecting what it got and what was written. */
+/** Runs `argv` with handlers returning `code` (or throwing `throws`), collecting what each got and what was written. */
 async function parse(argv: string[], { code = 0, throws }: { code?: number; throws?: string } = {}) {
   let received: RunOptions | undefined;
+  let compared: CompareOptions | undefined;
   let err = "";
+  const answer = async () => {
+    if (throws !== undefined) throw new Error(throws);
+    return code;
+  };
   const exit = await runProgram(
     argv,
     {
       run: async (opts) => {
         received = opts;
-        if (throws !== undefined) throw new Error(throws);
-        return code;
+        return answer();
+      },
+      compare: async (opts) => {
+        compared = opts;
+        return answer();
       },
     },
     { writeErr: (s) => void (err += s), writeOut: () => {} },
   );
-  return { received, exit, err };
+  return { received, compared, exit, err };
 }
 
 describe("skill-trainer run", () => {
@@ -72,5 +80,19 @@ describe("skill-trainer run", () => {
     const { exit, err } = await parse([]);
     expect(exit).toBe(1);
     expect(err).toContain("Usage: skill-trainer");
+  });
+});
+
+describe("skill-trainer compare", () => {
+  test("a baseline's results file and a candidate's", async () => {
+    const { compared, exit } = await parse(["compare", "results/baseline.json", "results/candidate.json"]);
+    expect(compared).toEqual({ baseline: "results/baseline.json", candidate: "results/candidate.json" });
+    expect(exit).toBe(0);
+  });
+
+  test("one file alone is refused", async () => {
+    const { compared, exit, err } = await parse(["compare", "results/baseline.json"]);
+    expect([compared, exit]).toEqual([undefined, 1]);
+    expect(err).toContain("missing required argument 'candidate'");
   });
 });

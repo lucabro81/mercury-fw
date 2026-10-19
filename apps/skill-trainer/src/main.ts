@@ -6,12 +6,13 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { compareRuns, formatComparison } from "./compare.ts";
 import { collectConditions, type RunConditions } from "./conditions.ts";
 import type { SkillTraining } from "./contract.ts";
 import { runBatch, selectTasks, type HarnessDeps, type TaskResult } from "./harness.ts";
 import { loadTraining, REPO_ROOT, trainingPath } from "./load.ts";
 import { openMercuryConversation } from "./mercury-conversation.ts";
-import type { RunOptions } from "./program.ts";
+import type { CompareOptions, RunOptions } from "./program.ts";
 import { exitCodeFor, formatReport } from "./report.ts";
 import { withSkill } from "./skill-override.ts";
 
@@ -95,4 +96,19 @@ export async function runCommand(opts: RunOptions, deps: CommandDeps = realDeps)
   if (json !== undefined) await writeRun(json, { conditions, results: done });
   for (const line of formatReport(done)) deps.print(line);
   return exitCodeFor(done);
+}
+
+/** The run file at `path`; throws, naming it, when it isn't one. */
+async function readRun(path: string): Promise<RunFile> {
+  const data = (await Bun.file(path).json()) as unknown;
+  const ok = typeof data === "object" && data !== null && "conditions" in data && Array.isArray((data as RunFile).results);
+  if (!ok) throw new Error(`${path} isn't the results of a skill-trainer run (run --json)`);
+  return data as RunFile;
+}
+
+/** `skill-trainer compare`: the comparison of the two runs printed; exits 0 whatever the verdict. */
+export async function compareCommand(opts: CompareOptions, deps: Pick<CommandDeps, "print"> = realDeps): Promise<number> {
+  const [baseline, candidate] = await Promise.all([readRun(opts.baseline), readRun(opts.candidate)]);
+  for (const line of formatComparison(compareRuns(baseline, candidate))) deps.print(line);
+  return 0;
 }

@@ -10,16 +10,8 @@
 // score is its pass fraction. Decision: the one-sided 95% lower bound of the
 // mean per-task difference (bootstrap over tasks) is above 0.
 
-/** A seeded PRNG, so the table is reproducible. */
-function mulberry32(seed: number) {
-  return () => {
-    seed |= 0;
-    seed = (seed + 0x6d2b79f5) | 0;
-    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
+import { bootstrapMeans, mulberry32 } from "../src/stats.ts";
+
 const rand = mulberry32(246);
 
 /** A Gamma(shape, 1) draw (Marsaglia–Tsang), for the Beta. */
@@ -54,15 +46,7 @@ const runs = (p: number, k: number) => {
 
 /** Whether the comparison calls a gain: bootstrap lower bound of the mean difference above 0. */
 function detects(diffs: number[], resamples = 400): boolean {
-  const n = diffs.length;
-  const means: number[] = [];
-  for (let r = 0; r < resamples; r++) {
-    let s = 0;
-    for (let i = 0; i < n; i++) s += diffs[Math.floor(rand() * n)]!;
-    means.push(s / n);
-  }
-  means.sort((a, b) => a - b);
-  return means[Math.floor(0.05 * resamples)]! > 0;
+  return bootstrapMeans(diffs, resamples, rand)[Math.floor(0.05 * resamples)]! > 0;
 }
 
 /** The fraction of `trials` simulated comparisons that call a gain. */

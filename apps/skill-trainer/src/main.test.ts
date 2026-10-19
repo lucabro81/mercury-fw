@@ -6,7 +6,7 @@ import { PLUGIN_API_VERSION, type Plugin } from "@mercury-fw/plugin-types";
 import type { RunConditions } from "./conditions.ts";
 import type { SkillTraining, TrainingTask } from "./contract.ts";
 import type { HarnessDeps } from "./harness.ts";
-import { runCommand, seedVaultFiles, type CommandDeps } from "./main.ts";
+import { compareCommand, runCommand, seedVaultFiles, type CommandDeps, type RunFile } from "./main.ts";
 
 let dir: string;
 beforeEach(() => {
@@ -170,5 +170,28 @@ describe("runCommand", () => {
     const path = join(dir, "results.json");
     await runCommand({ plugin: "jira", json: path }, deps().deps);
     expect(readJson(path).map((r) => r.repeat)).toEqual([1, 1]);
+  });
+});
+
+describe("compareCommand", () => {
+  /** A run file of two tasks, `pass` saying which passed. */
+  const file = (name: string, skill: string, pass: [boolean, boolean]) => {
+    const path = join(dir, name);
+    const results = (["count-1", "count-2"] as const).map((id, i) => ({ id, split: "test" as const, taskType: "count", hard: pass[i] ? (1 as const) : (0 as const), soft: 0, checks: [], turns: [], unmatched: [], seconds: 1, repeat: 1 }));
+    writeFileSync(path, JSON.stringify({ conditions: { ...CONDITIONS, skill }, results } satisfies RunFile));
+    return path;
+  };
+
+  test("prints the comparison of the two files and exits 0, whatever the verdict", async () => {
+    const { deps: d, printed } = deps();
+    expect(await compareCommand({ baseline: file("b.json", "s1", [true, false]), candidate: file("c.json", "s2", [true, true]) }, d)).toBe(0);
+    expect(printed[0]).toBe("2 tasks in common, 1 repeats each (baseline), 1 (candidate)");
+    expect(printed[1]).toStartWith("not distinguishable: +50.0 points");
+  });
+
+  test("a file that isn't a run's results is refused, naming it", async () => {
+    const path = join(dir, "notes.json");
+    writeFileSync(path, JSON.stringify([{ id: "a" }]));
+    await expect(compareCommand({ baseline: path, candidate: file("c.json", "s2", [true, true]) }, deps().deps)).rejects.toThrow(`${path} isn't the results of a skill-trainer run`);
   });
 });
