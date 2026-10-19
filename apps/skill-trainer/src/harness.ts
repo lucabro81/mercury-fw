@@ -94,13 +94,22 @@ function score(checks: Check[]): { hard: 0 | 1; soft: number } {
 /** Runs `task` with the plugin `training` builds, its skill body `candidate` (the plugin's own when undefined). */
 async function runTask(training: SkillTraining, task: TrainingTask, candidate: string | undefined, deps: HarnessDeps): Promise<TaskResult> {
   const started = deps.now();
-  const cli = createFakeCli([...fixturesOf(task.fixtures), ...fixturesOf(training.fixtures)]);
+  // The fixture factories are the task's own code: one that throws fails its task, below, not the batch.
+  let fixtures: Fixture[] = [];
+  let fixturesError: unknown;
+  try {
+    fixtures = [...fixturesOf(task.fixtures), ...fixturesOf(training.fixtures)];
+  } catch (err) {
+    fixturesError = err;
+  }
+  const cli = createFakeCli(fixtures);
   const plugin = withSkill(training.plugin(cli.run), training.skill, candidate);
   const turns: SentTurn[] = [];
   let checks: Check[];
   let error: string | undefined;
   const vault = await deps.makeVault();
   try {
+    if (fixturesError !== undefined) throw fixturesError;
     if (task.vault !== undefined) await deps.seedVault(vault, task.vault);
     const conversation = await deps.open(plugin, vault);
     try {

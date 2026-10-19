@@ -250,12 +250,36 @@ describe("runBatch", () => {
     const { training, cli } = trainingWith([task({ id: "a", vault: { "curated/projects.md": "The shop is WEB." } }), task({ id: "b" })]);
     const { deps, seen } = fakeDeps(async () => ({ steps: [textStep("done")], text: "done" }), cli);
     const seeded: Array<[string, Record<string, string>]> = [];
+    // From the fifth cold review: an expect inside seedVault was caught by runTask as a task error,
+    // so the order was never proven. The flag is asserted out here instead.
+    const openedBeforeSeeding: boolean[] = [];
     deps.seedVault = async (vault, files) => {
       seeded.push([vault, files]);
-      expect(seen.vaults).not.toContain(vault);
+      openedBeforeSeeding.push(seen.vaults.includes(vault));
     };
     await runBatch(training, training.tasks, undefined, deps);
     expect(seeded).toEqual([["/tmp/vault-1", { "curated/projects.md": "The shop is WEB." }]]);
+    expect(openedBeforeSeeding).toEqual([false]);
+    expect(seen.vaults).toEqual(["/tmp/vault-1", "/tmp/vault-2"]);
+  });
+
+  // From the fifth cold review: a task's fixture factory ran before runTask's try, so one that threw rejected the whole batch.
+  test("a task whose fixtures throw fails with the error, and the batch goes on", async () => {
+    const broken = task({
+      id: "a",
+      fixtures: () => {
+        throw new Error("no world for this task");
+      },
+    });
+    const { training, cli } = trainingWith([broken, task({ id: "b" })]);
+    const { deps, seen } = fakeDeps(async () => ({ steps: [textStep("done")], text: "done" }), cli);
+    const results = await runBatch(training, training.tasks, undefined, deps);
+    expect(results.map((r) => [r.id, r.hard, r.error])).toEqual([
+      ["a", 0, "no world for this task"],
+      ["b", 1, undefined],
+    ]);
+    expect(seen.vaults).toEqual(["/tmp/vault-2"]);
+    expect(seen.removed).toEqual(["/tmp/vault-1", "/tmp/vault-2"]);
   });
 
   test("without a candidate the plugin keeps its own skill", async () => {
