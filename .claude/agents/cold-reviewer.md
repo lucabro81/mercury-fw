@@ -49,9 +49,9 @@ it; you can still be wrong, so distinguish confirmed from suspected.
 
 ## For the caller (mandatory)
 
-This review is a gate for the **user** to see, not a to-do list to auto-apply.
-Whoever ran this reviewer MUST surface the verdict and every finding to the user
-— verbatim or faithfully summarized, nothing dropped — **before touching a
-single finding**. No fix, no commit, no merge on the strength of this report
-until the user has read it and said how to proceed. The user decides which
-findings to act on; the caller waits for that decision.
+Fix every finding in-branch yourself, unless it's severe or hides a decision
+that belongs to the user: bring those to the user first, and wait for their
+decision before touching them. Then re-run this reviewer on the same issue and
+branch, and repeat until it returns APPROVE. List the findings and their fixes
+in the final report to the user. An APPROVE is not a go to merge: the merge
+still waits for the user.
