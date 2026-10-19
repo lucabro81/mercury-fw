@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { orderByDependencies, REPO_ONLY_DIRS, workspaces, type Workspace } from "./workspaces.ts";
+import { orderByDependencies, REPO_ONLY_DIRS, root, workspaces, type Workspace } from "./workspaces.ts";
 import { typesConfig } from "./build-types.ts";
 import { isPublished, publishAction, publishCommand } from "./publish.ts";
 import { comparePack } from "./check-pack.ts";
@@ -239,4 +239,28 @@ describe("the type build", () => {
     expect(typesConfig(true).extends).toBe("./tsconfig.json");
     expect(typesConfig(false).extends).toBe("@mercury-fw/typescript-config/base.json");
   });
+
+  // From the fifth cold review: the tests above couldn't catch TS6059 itself. This one asks tsc
+  // which files the build would take: a source outside the packages (the trainer's, under apps/)
+  // is what TS6059 refuses. Other packages' sources are listed only because their dist/ isn't
+  // built here; the real build reads their declarations.
+  test("plugin-jira's type build takes no file from outside the packages, and would without the exclusion", () => {
+    const pkg = join(root, "packages/tools/plugin-jira");
+    const outside = (config: ReturnType<typeof typesConfig>) => {
+      const file = join(pkg, `tsconfig.types-test-${process.pid}.json`);
+      writeFileSync(file, JSON.stringify(config));
+      try {
+        const listed = Bun.spawnSync([join(root, "node_modules/.bin/tsc"), "-p", file, "--listFilesOnly"], { cwd: pkg }).stdout.toString();
+        return listed
+          .split("\n")
+          .filter((f) => f.endsWith(".ts") && !f.includes("/node_modules/"))
+          .filter((f) => !f.startsWith(`${join(root, "packages")}/`));
+      } finally {
+        rmSync(file);
+      }
+    };
+    expect(outside(typesConfig(true))).toEqual([]);
+    const withoutExclusion = { ...typesConfig(true), exclude: typesConfig(true).exclude.filter((d) => !REPO_ONLY_DIRS.includes(d)) };
+    expect(outside(withoutExclusion)).toContain(join(root, "apps/skill-trainer/src/contract.ts"));
+  }, 30_000);
 });
