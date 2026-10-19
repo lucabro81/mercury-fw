@@ -71,10 +71,14 @@ workspace globs), installing this repo's packages packed as they'd go to npm
 Dockerfile with real credentials, and `mfw e2e` checks what its model does.
 The procedure is in `apps/testbed/README.md`.
 
-`apps/skill-trainer` (private) scores a plugin's skill (#246): it composes the core in-process with only that plugin, built
+`apps/skill-trainer` (private) trains a plugin's skill with SkillOpt and
+scores it (#246): it composes the core in-process with only that plugin, built
 on a fake CLI answering from fixtures, and runs the tasks in the plugin's
 `skill-training/index.ts` (repo-only, kept out of its npm package) as real
-turns on the model in its own `.env`. See `apps/skill-trainer/README.md`.
+turns on the model in its own `.env`. `run` scores a skill, `compare` tells a
+candidate's gain from noise, `train` runs SkillOpt (pinned in `skillopt.json`,
+run with uv, never installed) through the Python adapter in `python/`, whose
+rollouts are `run`s. See `apps/skill-trainer/README.md`.
 
 `apps/cli` is the Mercury CLI (`@mercury-fw/cli`, bin `mfw`): `mfw create
 <folder>` writes a new app from its `template/` plus a hand-written catalog of
@@ -133,7 +137,7 @@ mercury/                       # repo root
     ├── create-mercury-agent/     # what `bun create mercury-agent` runs: `mfw create`, nothing of its own
     ├── cli/                   # @mercury-fw/cli — program.ts (the command line, commander), `mfw create <folder>`: catalog.ts (channels/auth providers/plugins it offers), render.ts (template + selection → files), write.ts, wizard.ts (@clack/prompts), finish.ts (install + first commit), template/*.tpl (static files, imported as text); app/ (find-app.ts, commands.ts: the commands that operate an app; credentials.ts: env-file writes and the service account key for google-chat set-key; local-packages.ts); e2e/ (the e2e test format, runner, and the REPL and HTTP sessions behind `mfw e2e`, `@mercury-fw/cli/e2e`)
     ├── testbed/               # private: create.ts/pack.ts make apps under apps/ (ignored) on this repo's packed packages; tests/example.e2e.ts, a template; README.md, the procedure
-    └── skill-trainer/         # private: contract.ts (a plugin's skill-training/index.ts), fixtures.ts (the fake CLI), harness.ts (runs and scores tasks), mercury-conversation.ts (the core composed in-process), program.ts (`run`); scripts/power.ts (the simulation behind the README's dataset sizes); README.md
+    └── skill-trainer/         # private: contract.ts (a plugin's skill-training/index.ts), fixtures.ts (the fake CLI), harness.ts (runs and scores tasks), mercury-conversation.ts (the core composed in-process), program.ts (`run`, `compare`, `train`, `update-skillopt`), conditions.ts (what a run was made under), compare.ts + stats.ts (the gain and its bootstrap), train.ts + skillopt.ts + skillopt-out.ts (SkillOpt's config, its uv argv, what it reads of a run), update-skillopt.ts; python/ (the SkillOpt adapter, `bun run test:python`); skillopt.json (the pin), skillopt-defaults.yaml; scripts/power.ts (the simulation behind the README's dataset sizes); README.md
 ```
 
 Naming: every workspace is `@mercury-fw/*`. The role is read from the bucket
