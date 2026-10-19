@@ -52,7 +52,7 @@ export const checks = {
   presented: (e: Expect) => e.call("present", (c) => c.ok, "shows the list with present"),
   notPresented: (e: Expect) => e.callCount({ max: 0 }, "present", "doesn't show a list it wasn't asked for"),
   /** The answer has `n` as a number of its own, in figures or (up to twelve) in words. */
-  number: (e: Expect, n: number) => e.answer(new RegExp(`(?<![\\w-])(${n}${WORDS[n] ? `|${WORDS[n]}` : ""})(?![\\w-])`, "i"), `the answer says ${n}`),
+  number: (e: Expect, n: number) => e.answer(new RegExp(`(?<![\\w-])(?<!\\bno\\s)(${n}${WORDS[n] ? `|${WORDS[n]}` : ""})(?![\\w-])`, "i"), `the answer says ${n}`),
   /** A search that worked returned every one of `keys` and none of `absent`: what the list is, not what the answer mentions. */
   foundOnly: (e: Expect, run: Run, keys: string[], absent: string[]) =>
     e.that(

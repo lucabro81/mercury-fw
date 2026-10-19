@@ -252,6 +252,7 @@ export const HARD_TASKS: TrainingTask[] = [
     checks.loadsSkill(e);
     e.call("grep", undefined, "greps the wiki for the name first");
     checks.searched(e, /project\s*=\s*"?OPS/i, "searches OPS, as the wiki says");
+    checks.foundOnly(e, run, ["OPS-2", "OPS-4", "OPS-8"], ["OPS-3", "OPS-5", "OPS-6"]);
     e.that(
       "names the three bugs, or shows them",
       ["OPS-2", "OPS-4", "OPS-8"].every((key) => run.last.answer.includes(key)) || calls(run).some((c) => c.tool === "present" && c.ok),
@@ -327,7 +328,9 @@ export const HARD_TASKS: TrainingTask[] = [
   // Follow-ups over two and three turns.
   task("h-follow-it-second", "test", "follow-up", ["Mostrami le issue aperte di MRT.", "Chi lavora sulla seconda?"], (run, e) => {
     checks.loadsSkill(e);
-    const key = listedKeys(run, 0)[1] ?? "MRT-2";
+    const listed = listedKeys(run, 0);
+    e.that("the first turn got a list", listed.length > 0);
+    const key = listed[1] ?? "MRT-2";
     const assignee = makeWorld().issues.find((i) => i.key === key)?.assignee?.displayName.split(" ")[0] ?? "nessuno";
     e.answer(new RegExp(assignee, "i"), `names the assignee of the second issue in the list it got (${key})`);
   }),
@@ -339,7 +342,9 @@ export const HARD_TASKS: TrainingTask[] = [
   }),
   task("h-follow-assign-first", "val", "follow-up", ["Show me the unassigned open issues in WEB.", "Assign the first one to Marco."], (run, e) => {
     const second = run.turns[1]?.calls ?? [];
-    const key = listedKeys(run, 0)[0] ?? "WEB-9";
+    const listed = listedKeys(run, 0);
+    e.that("the first turn got a list", listed.length > 0);
+    const key = listed[0] ?? "WEB-9";
     e.that(`assigns ${key}, the first in the list it got, to Marco`, second.some((c) => c.ok && cmd(c).includes("issue assign") && cmd(c).includes(key) && cmd(c).includes(ACCOUNTS.marco)));
   }),
   task("h-follow-it-count-then-list", "test", "follow-up", ["Quanti bug aperti ci sono in OPS?", "Fammeli vedere."], (run, e) => {

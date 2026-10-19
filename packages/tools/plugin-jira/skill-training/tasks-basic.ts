@@ -237,6 +237,8 @@ export const BASIC_TASKS: TrainingTask[] = [
   task("followup-show-again", "train", "follow-up", ["Show me the open bugs in WEB.", "Show me that list again."], (run, e) => {
     const second = run.turns[1]?.calls ?? [];
     e.that("shows the list again with present", second.some((c) => c.tool === "present" && c.ok));
-    e.that("doesn't type the list out", !/WEB-3[\s\S]*WEB-5[\s\S]*WEB-7/.test(run.last.answer));
+    // Three of the four bugs in the text, in any order, is the list typed out.
+    const typed = ["WEB-10", "WEB-7", "WEB-5", "WEB-3"].filter((key) => new RegExp(`${key}(?!\\d)`).test(run.last.answer));
+    e.that("doesn't type the list out", typed.length < 3);
   }),
 ];

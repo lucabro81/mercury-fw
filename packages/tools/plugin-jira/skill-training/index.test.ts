@@ -76,7 +76,7 @@ describe("the checks read what the model did, not how it typed it", () => {
     expect(
       check("h-wiki-hit-backoffice", [
         {
-          calls: [readSkill, { tool: "grep", input: { pattern: "backoffice" }, output: {}, ok: true, pending: false }, jira('jira issue search --jql "project = OPS AND issuetype = Bug AND statusCategory != Done" --select issues.key'), { tool: "present", input: { ref: "d1" }, output: {}, ok: true, pending: false }],
+          calls: [readSkill, { tool: "grep", input: { pattern: "backoffice" }, output: {}, ok: true, pending: false }, jira('jira issue search --jql "project = OPS AND issuetype = Bug AND statusCategory != Done" --select issues.key', found(keysOf("OPS", [8, 4, 2]))), { tool: "present", input: { ref: "d1" }, output: {}, ok: true, pending: false }],
           answer: "Three open bugs in the backoffice (OPS).",
         },
       ]),
@@ -292,6 +292,42 @@ describe("the checks read what the model did, not how it typed it", () => {
     }
   });
 
+  // Guards against a list typed out in the order Jira returned it (newest first) slipping past a check
+  // that looked for the keys in ascending order.
+  test("showing a list again with present, without typing it out in either order", () => {
+    const show: Call = { tool: "present", input: { ref: "d1" }, output: {}, ok: true, pending: false };
+    const first = { calls: [readSkill, jira('jira issue search --jql "project = WEB AND issuetype = Bug AND statusCategory != Done" --select issues.key')], answer: "Here." };
+    expect(check("followup-show-again", [first, { calls: [show], answer: "Here it is again." }])).toEqual([]);
+    for (const typed of ["WEB-10, WEB-7, WEB-5, WEB-3", "WEB-3, WEB-5, WEB-7, WEB-10"]) {
+      expect(check("followup-show-again", [first, { calls: [show], answer: `Again: ${typed}.` }])).toEqual(["doesn't type the list out"]);
+    }
+  });
+
+  // Guards against "any bugs in the backoffice?" passing with every OPS issue shown.
+  test("the backoffice's bugs, not every OPS issue", () => {
+    const show: Call = { tool: "present", input: { ref: "d1" }, output: {}, ok: true, pending: false };
+    const grepCall: Call = { tool: "grep", input: { pattern: "backoffice" }, output: {}, ok: true, pending: false };
+    const all = jira('jira issue search --jql "project = OPS AND statusCategory != Done" --select issues.key', found(keysOf("OPS", [8, 6, 5, 4, 3, 2])));
+    expect(check("h-wiki-hit-backoffice", [{ calls: [readSkill, grepCall, all, show], answer: "Here." }])).toEqual(["finds those issues and leaves the others out"]);
+    const bugs = jira('jira issue search --jql "project = OPS AND issuetype = Bug AND statusCategory != Done" --select issues.key', found(keysOf("OPS", [8, 4, 2])));
+    expect(check("h-wiki-hit-backoffice", [{ calls: [readSkill, grepCall, bugs, show], answer: "Here." }])).toEqual([]);
+  });
+
+  // Guards against a follow-up about "the second one" passing on a hard-coded key when no list was ever fetched.
+  test("a follow-up on the list fails when the first turn got no list", () => {
+    expect(check("h-follow-it-second", [{ calls: [readSkill], answer: "Ecco." }, { calls: [], answer: "Ci lavora Marco." }])).toContain("the first turn got a list");
+    expect(check("h-follow-assign-first", [{ calls: [readSkill], answer: "Here." }, { calls: [jira(`jira issue assign WEB-9 --assignee ${ACCOUNTS.marco}`)], answer: "Done." }])).toContain(
+      "the first turn got a list",
+    );
+  });
+
+  // Guards against "no one" being read as a count of one.
+  test("'no one' isn't one", () => {
+    const recount = jira('jira issue search --jql "project = OPS AND status = \\"In Review\\"" --select issues.key', found(["OPS-5"]));
+    expect(check("h-wording-it-review", [{ calls: [readSkill, recount], answer: "Nessuno: no one is in review." }])).toContain("the answer says 1");
+    expect(check("h-wording-it-review", [{ calls: [readSkill, recount], answer: "One issue, OPS-5." }])).toEqual([]);
+  });
+
   test("a wrong JQL still fails its check", () => {
     expect(check("wording-todo", [{ calls: [readSkill, jira('jira issue search --jql "project = WEB AND status = todo" --select issues.key')], answer: "5" }])).toEqual([
       "searches the status by its Jira name, or reads the statuses",
@@ -306,6 +342,10 @@ describe("the Jira skill's training data", () => {
 
   // The sizes the comparison needs (the trainer's README, "Measuring a gain"):
   // fewer test or val tasks can't tell a 10-point gain from noise.
+  test("the wiki note goes to exactly the tasks that look a project up in it", () => {
+    expect(training.tasks.filter((t) => t.vault !== undefined).map((t) => t.id).sort()).toEqual(["h-wiki-hit", "h-wiki-hit-backoffice", "h-wiki-hit-it"]);
+  });
+
   test("at least 50 test tasks and 30 val tasks", () => {
     expect(training.tasks.filter((t) => t.split === "test").length).toBeGreaterThanOrEqual(50);
     expect(training.tasks.filter((t) => t.split === "val").length).toBeGreaterThanOrEqual(30);
