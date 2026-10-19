@@ -122,6 +122,7 @@ export function formatComparison(c: Comparison): string[] {
     const span = (min: number, max: number) => (min === max ? `${min}` : `${min} to ${max}`);
     lines.push(`warning: tasks were run a different number of times (the baseline ${span(bMin, bMax)}, the candidate ${span(cMin, cMax)}): a run cut short weighs its tasks unevenly`);
   }
+  if (c.tasks < 30) lines.push(`warning: only ${plural(c.tasks, "task")} in common: fewer than 30 can't tell a gain from noise, whatever the bounds say`);
   if (!c.onlyTest) lines.push("warning: not every task is in the test split, where a trained skill must be judged");
   if (c.sameSkill) lines.push("note: both runs used the same skill (an A/A comparison: it shows the noise)");
   if (c.errors.baseline + c.errors.candidate > 0) {

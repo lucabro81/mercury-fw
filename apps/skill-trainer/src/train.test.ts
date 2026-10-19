@@ -199,6 +199,18 @@ describe("trainCommand", () => {
     expect(existsSync(out)).toBe(false);
   });
 
+  // The folder was made and filled before the config was built, so a run that failed on it left a
+  // folder the next try with the same --out refused as not empty.
+  test("no model, or a --config that can't be read, leaves no output folder behind", async () => {
+    const out = join(dir, "out");
+    const noModel = deps();
+    noModel.d.env = {};
+    await expect(trainCommand({ plugin: "jira", out }, noModel.d)).rejects.toThrow("no model endpoint");
+    expect(existsSync(out)).toBe(false);
+    await expect(trainCommand({ plugin: "jira", out, config: join(dir, "missing.yaml") }, deps().d)).rejects.toThrow();
+    expect(existsSync(out)).toBe(false);
+  });
+
   test("a SkillOpt that fails leaves no SKILL.md and its exit code is the command's", async () => {
     const out = join(dir, "out");
     const { d } = deps({ code: 3 });

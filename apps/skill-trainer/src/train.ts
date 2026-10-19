@@ -112,20 +112,14 @@ export async function trainCommand(opts: TrainOptions, deps: TrainDeps): Promise
   const out = opts.out ?? join(deps.resultsDir ?? RESULTS_DIR, `train-${opts.plugin}-${stamp((deps.now ?? (() => new Date()))())}`);
   if (existsSync(out) && (await readdir(out)).length > 0) throw new Error(`${out} isn't empty: SkillOpt would resume from what's there, so give train a new folder`);
 
+  // Everything that can fail on the input comes before the first write: a run that stops there leaves
+  // no folder behind, which the next try with the same --out would refuse as not empty.
   const training = await deps.loadTraining(opts.plugin);
   const tasks = selectTasks(training.tasks, {});
-  await mkdir(out, { recursive: true });
   const plugin = withSkill(training.plugin(async () => ({ ok: false, exitCode: 1, error: "no CLI" })), training.skill, undefined);
   const skill = plugin.skills!.find((s) => s.name === training.skill)!;
-
   const skillInit = join(out, "skill_init.md");
-  await writeFile(skillInit, `${skill.body}\n`);
   const splits = join(out, "splits");
-  for (const [split, items] of Object.entries(skillOptItems(tasks))) {
-    await mkdir(join(splits, split), { recursive: true });
-    await writeFile(join(splits, split, "items.json"), `${JSON.stringify(items, null, 2)}\n`);
-  }
-
   const skilloptOut = join(out, "skillopt");
   const env = {
     name: "mercury",
@@ -138,9 +132,16 @@ export async function trainCommand(opts: TrainOptions, deps: TrainDeps): Promise
   };
   const defaults = Bun.YAML.parse(await Bun.file(DEFAULTS_PATH).text()) as Config;
   const user = opts.config === undefined ? {} : ((Bun.YAML.parse(await Bun.file(opts.config).text()) ?? {}) as Config);
+  const { config: written, secrets } = splitKeys(trainConfig(defaults, user, env, deps.env));
+
+  await mkdir(out, { recursive: true });
+  await writeFile(skillInit, `${skill.body}\n`);
+  for (const [split, items] of Object.entries(skillOptItems(tasks))) {
+    await mkdir(join(splits, split), { recursive: true });
+    await writeFile(join(splits, split, "items.json"), `${JSON.stringify(items, null, 2)}\n`);
+  }
   const config = join(out, "skillopt-config.yaml");
   // JSON is YAML too, and leaves nothing to SkillOpt's YAML parser to guess.
-  const { config: written, secrets } = splitKeys(trainConfig(defaults, user, env, deps.env));
   await writeFile(config, `${JSON.stringify(written, null, 2)}\n`);
 
   const code = await deps.runSkillOpt(skilloptArgv(await readPin(), ["-m", "mercury_skillopt", "train", "--config", config]), secrets);

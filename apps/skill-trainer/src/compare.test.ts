@@ -159,5 +159,15 @@ describe("formatComparison", () => {
     expect(formatComparison(compareRuns(even, fewer))).toContain("warning: tasks were run a different number of times (the baseline 3, the candidate 1): a run cut short weighs its tasks unevenly");
     expect(formatComparison(compareRuns(even, run({ "count-1": [true, false, true], "count-2": [true, true, false] }, { skill: "s2" }))).filter((l) => l.includes("different number of times"))).toEqual([]);
   });
+
+  // A handful of tasks that all moved the same way leave the bootstrap no spread: any gain looks certain.
+  test("fewer than 30 tasks in common are warned about, 30 or more aren't", () => {
+    const few = run(tasks("count", 3, 1, false));
+    const fewBetter = run(tasks("count", 3, 1, true), { skill: "s2" });
+    expect(formatComparison(compareRuns(few, fewBetter))).toContain("warning: only 3 tasks in common: fewer than 30 can't tell a gain from noise, whatever the bounds say");
+    const many = run(tasks("count", 30, 1, false));
+    const manyBetter = run(tasks("count", 30, 1, true), { skill: "s2" });
+    expect(formatComparison(compareRuns(many, manyBetter)).filter((l) => l.includes("tasks in common:"))).toEqual([]);
+  });
 });
 
