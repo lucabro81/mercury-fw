@@ -173,6 +173,20 @@ describe("runCommand", () => {
   });
 });
 
+describe("runCommand --skillopt-out", () => {
+  test("writes what SkillOpt reads of the run into the folder: a conversation per task, and the results", async () => {
+    const out = join(dir, "rollout");
+    await runCommand({ plugin: "jira", skilloptOut: out }, deps().deps);
+    const results = JSON.parse(readFileSync(join(out, "results.json"), "utf8")) as Array<{ id: string; hard: number }>;
+    expect(results.map((r) => [r.id, r.hard])).toEqual([
+      ["a", 1],
+      ["b", 0],
+    ]);
+    expect(existsSync(join(out, "predictions", "a", "conversation.json"))).toBe(true);
+    expect(existsSync(join(out, "predictions", "b", "conversation.json"))).toBe(true);
+  });
+});
+
 describe("compareCommand", () => {
   /** A run file of two tasks, `pass` saying which passed. */
   const file = (name: string, skill: string, pass: [boolean, boolean]) => {

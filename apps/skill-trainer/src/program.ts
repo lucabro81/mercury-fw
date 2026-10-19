@@ -18,6 +18,8 @@ export type RunOptions = {
   json?: string;
   /** How many times every task runs; once when absent. */
   repeat?: number;
+  /** A folder to write what SkillOpt reads of the run into (the adapter's rollout). */
+  skilloptOut?: string;
 };
 
 /** A whole number of at least 1, for `--repeat`. */
@@ -51,8 +53,9 @@ function buildProgram(handlers: ProgramHandlers, result: { code: number }): Comm
     .option("--task <ids...>", "only these tasks, in this order")
     .option("--json <file>", "also write the results to this file as JSON, with the run's conditions (commit, model, skill and data hashes)")
     .option("--repeat <n>", "run every task n times", positiveInteger)
+    .addOption(new Option("--skillopt-out <dir>", "also write what SkillOpt reads of the run into this folder (used by train)").conflicts("repeat"))
     .addHelpText("after", "\nExamples:\n  skill-trainer run jira\n  skill-trainer run jira --skill out/SKILL.md --split test --repeat 3 --json results/candidate.json")
-    .action(async (plugin: string, opts: { skill?: string; split?: Split; task?: string[]; json?: string; repeat?: number }) => {
+    .action(async (plugin: string, opts: { skill?: string; split?: Split; task?: string[]; json?: string; repeat?: number; skilloptOut?: string }) => {
       result.code = await handlers.run({
         plugin,
         ...(opts.skill === undefined ? {} : { skill: opts.skill }),
@@ -60,6 +63,7 @@ function buildProgram(handlers: ProgramHandlers, result: { code: number }): Comm
         ...(opts.task === undefined ? {} : { ids: opts.task }),
         ...(opts.json === undefined ? {} : { json: opts.json }),
         ...(opts.repeat === undefined ? {} : { repeat: opts.repeat }),
+        ...(opts.skilloptOut === undefined ? {} : { skilloptOut: opts.skilloptOut }),
       });
     });
 

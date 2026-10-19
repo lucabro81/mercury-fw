@@ -347,4 +347,11 @@ describe("selectTasks", () => {
   test("an id that isn't safe as a file name is an error", () => {
     expect(() => selectTasks([task({ id: "../x" })], {})).toThrow('the task id "../x" isn\'t safe as a file name');
   });
+
+  // SkillOpt writes every task under predictions/<id>/ and accepts only these ids there.
+  test("an id SkillOpt couldn't use as a folder is an error: over 128 characters, or with ..", () => {
+    expect(() => selectTasks([task({ id: `a${"b".repeat(128)}` })], {})).toThrow("isn't safe as a file name");
+    expect(() => selectTasks([task({ id: "a..b" })], {})).toThrow("isn't safe as a file name");
+    expect(selectTasks([task({ id: `a${"b".repeat(127)}` })], {})).toHaveLength(1);
+  });
 });

@@ -48,8 +48,8 @@ export type TaskResult = {
   error?: string;
 };
 
-/** What a task id may be: safe as a file name. */
-const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+/** What a task id may be: safe as a file name, and as SkillOpt's `predictions/<id>/` folder (at most 128 characters, no `..`). */
+const SAFE_ID = /^(?!.*\.\.)[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 
 /** The tasks to run: those of `split` when given, those named in `ids` in
  * their order when given, every task otherwise. Throws on a task id that's

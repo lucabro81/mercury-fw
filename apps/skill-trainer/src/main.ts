@@ -15,6 +15,7 @@ import { openMercuryConversation } from "./mercury-conversation.ts";
 import type { CompareOptions, RunOptions } from "./program.ts";
 import { exitCodeFor, formatReport } from "./report.ts";
 import { withSkill } from "./skill-override.ts";
+import { writeSkillOptRollout } from "./skillopt-out.ts";
 
 export type CommandDeps = {
   loadTraining: (plugin: string) => Promise<SkillTraining>;
@@ -94,6 +95,7 @@ export async function runCommand(opts: RunOptions, deps: CommandDeps = realDeps)
     done.push(...results.map((r) => ({ ...r, repeat })));
   }
   if (json !== undefined) await writeRun(json, { conditions, results: done });
+  if (opts.skilloptOut !== undefined) await writeSkillOptRollout(opts.skilloptOut, done);
   for (const line of formatReport(done)) deps.print(line);
   return exitCodeFor(done);
 }

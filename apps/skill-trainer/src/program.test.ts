@@ -52,6 +52,17 @@ describe("skill-trainer run", () => {
     }
   });
 
+  test("--skillopt-out: a folder for what SkillOpt reads of the run", async () => {
+    const { received } = await parse(["run", "jira", "--task", "a", "--skillopt-out", "out/step/rollout"]);
+    expect(received).toEqual({ plugin: "jira", ids: ["a"], skilloptOut: "out/step/rollout" });
+  });
+
+  test("--skillopt-out with --repeat is refused: SkillOpt runs every task once a step", async () => {
+    const { received, exit, err } = await parse(["run", "jira", "--repeat", "2", "--skillopt-out", "out"]);
+    expect([received, exit]).toEqual([undefined, 1]);
+    expect(err).toContain("cannot be used with option '--repeat <n>'");
+  });
+
   test("a split that isn't one is refused before anything runs", async () => {
     const { received, exit, err } = await parse(["run", "jira", "--split", "dev"]);
     expect(received).toBeUndefined();
