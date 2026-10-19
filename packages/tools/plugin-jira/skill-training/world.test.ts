@@ -163,7 +163,7 @@ describe("assign, comment, create", () => {
   });
 });
 
-// From the fifth cold review: inventions the fixtures accepted.
+// What the fixtures must refuse instead of inventing an answer.
 describe("what Jira and the CLI refuse", () => {
   test("create refuses a type, a priority or an assignee that doesn't exist", async () => {
     const { run } = jira();
@@ -189,6 +189,16 @@ describe("what Jira and the CLI refuse", () => {
     expect(await run("issue", "search", "--jql", "project = LOG", "--max-results", "-5", "--select", "issues.key")).toMatchObject({ ok: false, exitCode: 2 });
     const capped = (await run("issue", "search", "--jql", "project = LOG", "--max-results", "150", "--select", "issues.key")) as { data: { issues: unknown[] } };
     expect(capped.data.issues).toHaveLength(100);
+  });
+
+  // A bare --max-results read as a page of one (Number(true)), which skewed a count.
+  test("a --max-results with no value is clap's missing value", async () => {
+    const { run } = jira();
+    expect(await run("issue", "search", "--jql", "project = LOG", "--select", "issues.key", "--max-results")).toMatchObject({
+      ok: false,
+      exitCode: 2,
+      error: expect.stringContaining("a value is required for '--max-results <MAX_RESULTS>'"),
+    });
   });
 
   test("an inline {{mention:ID}} comes back as a mention node where it was written", async () => {

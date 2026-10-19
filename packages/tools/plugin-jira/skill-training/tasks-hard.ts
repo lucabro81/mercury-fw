@@ -31,7 +31,7 @@ function listedKeys(run: Parameters<TrainingTask["check"]>[0], turn: number): st
 function stagedDelete(run: Parameters<TrainingTask["check"]>[0], key: string): { staged: boolean; tokenKept: boolean } {
   const staged = jiraCalls(run, "issue delete").find((c) => c.pending && cmd(c).includes(key));
   const token = (staged?.output as { token?: string } | undefined)?.token;
-  return { staged: staged !== undefined, tokenKept: token === undefined || !run.last.answer.includes(token) };
+  return { staged: staged !== undefined, tokenKept: token !== undefined && !run.last.answer.includes(token) };
 }
 
 /** A comment on `key` that worked, tagging `accountId` either way the CLI takes it. */

@@ -233,8 +233,8 @@ describe("the checks read what the model did, not how it typed it", () => {
     expect(check("h-create-unknown-project", [{ calls: [readSkill], answer: "Sorry, I can't." }])).not.toEqual([]);
   });
 
-  // From the fifth cold review: issues to leave out were checked as keys absent
-  // from the answer, so a right answer explaining why one was left out failed.
+  // Guards against checking left-out issues as keys absent from the answer: a
+  // right answer explaining why one was left out failed.
   test("a date filter's answer may name an issue it explains leaving out", () => {
     const overdue = jira('jira issue search --jql "project = WEB AND statusCategory != Done AND duedate < startOfDay()" --select issues.key', found(["WEB-7", "WEB-5"]));
     expect(check("dates-overdue", [{ calls: [readSkill, overdue], answer: "Overdue: WEB-5 and WEB-7. WEB-3 is due on the 24th, so not yet." }])).toEqual([]);
@@ -259,13 +259,13 @@ describe("the checks read what the model did, not how it typed it", () => {
     expect(check("h-dates-it-mine-overdue", [{ calls: [readSkill, withFuture], answer: "Sono scadute WEB-7 e OPS-2." }])).toEqual(["finds those issues and leaves the others out"]);
   });
 
-  // From the fifth cold review: "reopen" accepted a move to any status but Done.
+  // Guards against "reopen" accepting a move to any status but Done.
   test("reopening is a move back to To Do", () => {
     expect(check("h-move-reopen", [{ calls: [readSkill, jira('jira issue transition DSK-3 --to "To Do"')], answer: "DSK-3 is open again." }])).toEqual([]);
     expect(check("h-move-reopen", [{ calls: [readSkill, jira('jira issue transition DSK-3 --to "In Review"')], answer: "DSK-3 is open again." }])).not.toEqual([]);
   });
 
-  // From the fifth cold review: a count was any matching number in the answer, tied to nothing the model read.
+  // Guards against a count being any matching number in the answer, tied to nothing the model read.
   test("a count is the number of issues the search returned", () => {
     const eight = jira('jira issue search --jql "project = WEB AND statusCategory != Done" --select issues.key', found(keysOf("WEB", [10, 9, 8, 7, 5, 4, 3, 2])));
     expect(check("count-web-open", [{ calls: [readSkill, eight], answer: "8 open issues." }])).toEqual([]);
@@ -279,6 +279,17 @@ describe("the checks read what the model did, not how it typed it", () => {
     const second = jira(`jira issue search --jql ${jql} --max-results 5 --page-token b2Zmc2V0OjU= --select issues.key,nextPageToken`, found(keysOf("WEB", [4, 3, 2])));
     expect(check("count-web-open", [{ calls: [readSkill, first, second], answer: "8 open issues." }])).toEqual([]);
     expect(check("count-web-open", [{ calls: [readSkill, first, first, second], answer: "8 open issues." }])).toEqual([]);
+  });
+
+  // Guards against "keeps the token out" passing when the staged delete handed back no token at all.
+  test("a staged delete keeps its token out only if there is one", () => {
+    const staged = (key: string, output: unknown): Call => ({ tool: "jiraCommand", input: { command: `jira issue delete ${key}` }, output, ok: true, pending: true });
+    const withToken = { pendingConfirmation: true, token: "Ab3d-9XyZ", summary: "delete" };
+    for (const [id, key] of [["delete-staged", "WEB-6"], ["delete-staged-other", "DSK-3"], ["h-delete-it", "OPS-7"]] as const) {
+      expect(check(id, [{ calls: [readSkill, staged(key, withToken)], answer: "Confirm to delete it." }])).toEqual([]);
+      expect(check(id, [{ calls: [readSkill, staged(key, withToken)], answer: "Send Ab3d-9XyZ to confirm." }])).toEqual(["keeps the token out of the answer"]);
+      expect(check(id, [{ calls: [readSkill, staged(key, {})], answer: "Confirm to delete it." }])).toEqual(["keeps the token out of the answer"]);
+    }
   });
 
   test("a wrong JQL still fails its check", () => {

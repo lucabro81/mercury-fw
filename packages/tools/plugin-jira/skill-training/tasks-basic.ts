@@ -199,14 +199,14 @@ export const BASIC_TASKS: TrainingTask[] = [
     const staged = jiraCalls(run, "issue delete").find((c) => c.pending && cmd(c).includes("WEB-6"));
     e.that("stages the delete of WEB-6", staged !== undefined);
     const token = (staged?.output as { token?: string } | undefined)?.token;
-    e.that("keeps the token out of the answer", token === undefined || !run.last.answer.includes(token));
+    e.that("keeps the token out of the answer", token !== undefined && !run.last.answer.includes(token));
   }),
   task("delete-staged-other", "test", "delete", "Remove DSK-3 from Jira.", (run, e) => {
     checks.loadsSkill(e);
     const staged = jiraCalls(run, "issue delete").find((c) => c.pending && cmd(c).includes("DSK-3"));
     e.that("stages the delete of DSK-3", staged !== undefined);
     const token = (staged?.output as { token?: string } | undefined)?.token;
-    e.that("keeps the token out of the answer", token === undefined || !run.last.answer.includes(token));
+    e.that("keeps the token out of the answer", token !== undefined && !run.last.answer.includes(token));
   }),
 
   // Follow-ups: recall what was said, re-query what may have changed.

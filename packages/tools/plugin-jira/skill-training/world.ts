@@ -25,7 +25,8 @@
  *   errors (clap's format: a missing `<KEY>`, a `--max-results` that isn't a
  *   whole number), `--max-results` above 100 giving 100, an inline
  *   `{{mention:ID}}` in a comment's body coming back as a mention node where
- *   it was written, the page token (opaque, here base64 of an offset), user
+ *   it was written, the commands exempt from `--select` printing in full even
+ *   when it's given (the help says they print in full regardless), the page token (opaque, here base64 of an offset), user
  *   search matching every word of the query at the start of one of the name's
  *   (and inactive people included) and project search any part of the key or
  *   name, `--fields` accepted with no effect on the answer;
@@ -264,6 +265,7 @@ function usageFixture(command: string): Fixture {
         return usageError(`the following required arguments were not provided:\n${missing.map((m) => `  ${m}`).join("\n")}`, spec.usage);
       }
       const max = call.flags["--max-results"];
+      if (max === true) return usageError("a value is required for '--max-results <MAX_RESULTS>' but none was supplied", spec.usage);
       if (typeof max === "string" && !/^\d+$/.test(max)) {
         return usageError(`invalid value '${max}' for '--max-results <MAX_RESULTS>': invalid digit found in string`, spec.usage);
       }
