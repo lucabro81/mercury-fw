@@ -16,7 +16,8 @@ exact token comes back, from that person.
 
 ## How the person confirms
 
-- **On Google Chat**, the agent's message carries a button: clicking it sends the token.
+- **On Google Chat**, the agent's message carries a button: clicking it sends the token, and the card then shows
+  the choice taken instead of the buttons.
 - **In the terminal**, the agent prints the token: paste it back, alone, as your next message.
 - **Over HTTP**, the interface you built sends the token to the confirmation endpoint.
 

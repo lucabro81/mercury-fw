@@ -68,4 +68,52 @@ describe("createSourcesGuard", () => {
     const out = await guard.run("A.", [step("web_fetch", page("https://a.test/", "Two\nlines"))]);
     expect(out.text).toBe("A.\n\nFonti:\n- Two lines: https://a.test/");
   });
+
+  // #269: the model sometimes lists the sources itself, and the answer ended
+  // with two "Fonti:" blocks (seen live on Google Chat). The guard's list is the
+  // only one: a trailing list the model wrote goes.
+  describe("a list of sources the model wrote itself", () => {
+    const steps = [step("web_fetch", page("https://bun.com/docs/test", "Test runner"))];
+    const ours = "Fonti:\n- Test runner: https://bun.com/docs/test";
+
+    it("is replaced by the guard's, as seen live", async () => {
+      const out = await guard.run("The answer.\n\nFonti:\n- Test runner · Bun Docs: https://bun.com/docs/test", steps);
+      expect(out.text).toBe(`The answer.\n\n${ours}`);
+    });
+
+    it.each([
+      ["bold", "**Fonti:**\n- https://bun.com/docs/test"],
+      ["bold, colon outside", "**Fonti**:\n- https://bun.com/docs/test"],
+      ["a Markdown heading", "## Fonti\n\n- [Test runner](https://bun.com/docs/test)"],
+      ["in English", "Sources:\n* https://bun.com/docs/test"],
+      ["lower case, no colon", "fonti\n1. https://bun.com/docs/test\n2. https://bun.com/docs"],
+      ["bare URLs and trailing blank lines", "Fonti:\nhttps://bun.com/docs/test\n\n  \n"],
+      ["bullets with •", "Fonti:\n• Test runner — https://bun.com/docs/test"],
+    ])("is replaced when %s", async (_, block) => {
+      const out = await guard.run(`The answer.\n\n${block}`, steps);
+      expect(out.text).toBe(`The answer.\n\n${ours}`);
+    });
+
+    it("leaves only the guard's list when the answer was nothing else", async () => {
+      const out = await guard.run("Fonti:\n- https://bun.com/docs/test", steps);
+      expect(out.text).toBe(ours);
+    });
+
+    it("stays when prose follows it", async () => {
+      const text = "The answer.\n\nFonti:\n- https://bun.com/docs/test\n\nSpero ti sia utile.";
+      const out = await guard.run(text, steps);
+      expect(out.text).toBe(`${text}\n\n${ours}`);
+    });
+
+    it("stays when the heading opens a sentence, not a list", async () => {
+      const text = "Fonti: la documentazione ufficiale dice che il runner è compatibile con Jest.";
+      const out = await guard.run(text, steps);
+      expect(out.text).toBe(`${text}\n\n${ours}`);
+    });
+
+    it("stays when it's a heading with nothing under it", async () => {
+      const out = await guard.run("The answer.\n\nFonti:", steps);
+      expect(out.text).toBe(`The answer.\n\nFonti:\n\n${ours}`);
+    });
+  });
 });

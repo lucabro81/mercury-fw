@@ -39,6 +39,7 @@ export const googleChatChannel: ChannelPlugin = {
       },
       subscription,
       confirm: ctx.confirm,
+      ...(ctx.resolveConfirmation === undefined ? {} : { resolveConfirmation: ctx.resolveConfirmation }),
       log: ctx.log,
     });
   },

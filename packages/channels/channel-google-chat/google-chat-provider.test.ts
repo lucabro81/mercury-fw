@@ -5,7 +5,14 @@ import {
   parseChatEvent,
   type GoogleChatProviderDeps,
 } from "./google-chat-provider.ts";
-import { PENDING_CONFIRMATION_NOTE, RESUME_AFTER_CONFIRM, type HandleTurn, type InboundTurn, type TurnSink } from "@mercury-fw/channel-types";
+import {
+  PENDING_CONFIRMATION_NOTE,
+  RESUME_AFTER_CONFIRM,
+  type ConfirmOutcome,
+  type HandleTurn,
+  type InboundTurn,
+  type TurnSink,
+} from "@mercury-fw/channel-types";
 
 const creds = { clientEmail: "bot@test.iam.gserviceaccount.com", privateKey: "fake" };
 
@@ -153,6 +160,18 @@ describe("parseChatEvent", () => {
       parameters: { token: "ABC123" },
       isDirectMessage: false,
     });
+  });
+
+  // #269: the click names the message holding the card, so the card can be updated once the choice is taken.
+  test("a CARD_CLICKED event carries the name of the message its card is in", () => {
+    const raw = {
+      type: "CARD_CLICKED",
+      message: { name: "spaces/X/messages/card1" },
+      space: { name: "spaces/X" },
+      user: { name: "users/42", type: "HUMAN" },
+      action: { parameters: [{ key: "token", value: "ABC123" }] },
+    };
+    expect(parseChatEvent(raw)).toMatchObject({ kind: "card-click", messageName: "spaces/X/messages/card1" });
   });
 
   test("a CARD_CLICKED event in a DM space is a direct message", () => {
@@ -623,9 +642,15 @@ describe("createGoogleChatProvider — StreamingPull", () => {
       sections: Array<{ widgets: Array<{ buttonList?: { buttons: Array<{ text: string; onClick: unknown }> } }> }>;
     };
     const buttons = card.sections[0]!.widgets.find((w) => w.buttonList)!.buttonList!.buttons;
+    // #269: label and summary ride along, so the click can update the card to the choice taken.
+    const params = (token: string, label: string) => [
+      { key: "token", value: token },
+      { key: "label", value: label },
+      { key: "summary", value: "https://example.org/a" },
+    ];
     expect(buttons).toEqual([
-      { text: "Solo questa volta", onClick: { action: { function: "confirm", parameters: [{ key: "token", value: "T1" }] } } },
-      { text: "Sempre per example.org", onClick: { action: { function: "confirm", parameters: [{ key: "token", value: "T2" }] } } },
+      { text: "Solo questa volta", onClick: { action: { function: "confirm", parameters: params("T1", "Solo questa volta") } } },
+      { text: "Sempre per example.org", onClick: { action: { function: "confirm", parameters: params("T2", "Sempre per example.org") } } },
     ]);
   });
 
@@ -1436,5 +1461,195 @@ describe("createSink — login card", () => {
     expect(cards[1]!.card).toEqual({
       sections: [{ widgets: [{ buttonList: { buttons: [{ text: "Accedi a bitbucket", onClick: { openLink: { url: "https://bb.example/authorize" } } }] } }] }],
     });
+  });
+});
+
+// #269: after a click the confirmation card stayed as it was, both buttons
+// still clickable. Once the choice is taken, the card shows it instead.
+describe("createGoogleChatProvider — the confirmation card after a click", () => {
+  const CARD = "spaces/X/messages/card1";
+
+  /** A click on the card's "Sempre per example.org" button, as Google Chat sends it. */
+  function click(overrides: { messageName?: string | null; label?: string | null; spaceType?: string } = {}) {
+    const parameters = [{ key: "token", value: "T2" }];
+    if (overrides.label !== null) parameters.push({ key: "label", value: overrides.label ?? "Sempre per example.org" });
+    parameters.push({ key: "summary", value: "https://example.org/a" });
+    return {
+      type: "CARD_CLICKED",
+      ...(overrides.messageName === null ? {} : { message: { name: overrides.messageName ?? CARD } }),
+      space: { name: "spaces/X", type: overrides.spaceType ?? "DM" },
+      user: { name: "users/42", email: "luca@example.com", type: "HUMAN" },
+      action: { parameters },
+    };
+  }
+
+  /** The card a taken choice leaves: the request, the choice, no buttons. */
+  const chosen = (line: string) => ({
+    header: { title: "Conferma richiesta" },
+    sections: [{ widgets: [{ textParagraph: { text: "`https://example.org/a`" } }, { textParagraph: { text: line } }] }],
+  });
+
+  function setup(outcome: ConfirmOutcome | undefined, overrides: Partial<GoogleChatProviderDeps> = {}) {
+    const sub = fakeSubscription();
+    const order: string[] = [];
+    const patched: Array<{ name: string; card: unknown }> = [];
+    const sent: string[] = [];
+    const resolved: unknown[] = [];
+    const logs: string[] = [];
+    const provider = createGoogleChatProvider(
+      baseDeps({
+        subscriptionFn: () => sub as any,
+        ...(outcome === undefined
+          ? {}
+          : {
+              resolveConfirmation: async (token, sessionKey, principal) => {
+                resolved.push([token, sessionKey, principal]);
+                return outcome;
+              },
+            }),
+        updateCardFn: async (name, card) => {
+          order.push("patch");
+          patched.push({ name, card });
+          return { name };
+        },
+        sendMessageFn: async (_space, text) => {
+          sent.push(text);
+          return { name: `spaces/X/messages/${sent.length}` };
+        },
+        log: (msg) => logs.push(msg),
+        ...overrides,
+      }),
+    );
+    const turns: InboundTurn[] = [];
+    const start = () =>
+      provider.start(async (turn, sink) => {
+        order.push("turn");
+        turns.push(turn);
+        await sink.finalize("Done.");
+      });
+    const emit = async (event: unknown) => {
+      sub.emit("message", fakeMessage(event, []));
+      await new Promise((r) => setTimeout(r, 30));
+    };
+    return { start, emit, order, patched, sent, resolved, turns, logs };
+  }
+
+  test("a choice that resumes the turn shows on the card before the turn runs again", async () => {
+    const t = setup({ status: "resume" });
+    await t.start();
+    await t.emit(click());
+
+    expect(t.resolved).toEqual([["T2", "spaces/X:users/42", { id: "users/42", provider: "google-chat", claims: { email: "luca@example.com" } }]]);
+    expect(t.patched).toEqual([{ name: CARD, card: chosen("Scelto: Sempre per example.org") }]);
+    expect(t.order).toEqual(["patch", "turn"]);
+    expect(t.turns[0]).toMatchObject({ resumeAfterConfirm: true, sessionKey: "spaces/X:users/42" });
+    expect(t.sent).not.toContain(RESUME_AFTER_CONFIRM);
+  });
+
+  test("a choice whose action ran shows on the card, and the reply is sent as before", async () => {
+    const t = setup({ status: "ok", data: { deleted: true } });
+    await t.start();
+    await t.emit(click());
+
+    expect(t.patched).toEqual([{ name: CARD, card: chosen("Scelto: Sempre per example.org") }]);
+    expect(t.sent).toEqual(['Confermato ed eseguito: {"deleted":true}']);
+    expect(t.turns).toHaveLength(0);
+  });
+
+  test("a choice whose action failed shows on the card too, the reply says it failed", async () => {
+    const t = setup({ status: "failed", error: "boom" });
+    await t.start();
+    await t.emit(click());
+
+    expect(t.patched).toEqual([{ name: CARD, card: chosen("Scelto: Sempre per example.org") }]);
+    expect(t.sent).toEqual(["Confermato, ma l'esecuzione è fallita: boom"]);
+  });
+
+  test("a click that matched nothing leaves the card alone: in a shared space it may be someone else's", async () => {
+    const t = setup({ status: "not-found" }, {
+      confirm: async () => "Nessuna conferma in sospeso per questo token — potrebbe essere scaduta, già usata, o mai esistita.",
+    });
+    await t.start();
+    await t.emit(click({ spaceType: "SPACE" }));
+
+    expect(t.patched).toEqual([]);
+    expect(t.sent).toEqual(["Nessuna conferma in sospeso per questo token — potrebbe essere scaduta, già usata, o mai esistita."]);
+  });
+
+  // Cold review of #269: resolveConfirmation says only not-found for someone the
+  // core won't talk to, where confirm answers with the core's own message for them.
+  test("a click that matched nothing gets confirm's reply, the core's message for someone it won't talk to included", async () => {
+    const confirmed: string[] = [];
+    const t = setup({ status: "not-found" }, {
+      confirm: async (token) => {
+        confirmed.push(token);
+        return "Non ti conosco: chiedi a chi gestisce questa istanza di aggiungerti.";
+      },
+    });
+    await t.start();
+    await t.emit(click());
+
+    expect(confirmed).toEqual(["T2"]);
+    expect(t.patched).toEqual([]);
+    expect(t.sent).toEqual(["Non ti conosco: chiedi a chi gestisce questa istanza di aggiungerti."]);
+  });
+
+  test("a click whose token isn't token-shaped sends nothing and leaves the card", async () => {
+    const t = setup({ status: "not-a-token" });
+    await t.start();
+    await t.emit(click());
+
+    expect(t.patched).toEqual([]);
+    expect(t.sent).toEqual([]);
+    expect(t.turns).toHaveLength(0);
+  });
+
+  test("a card sent before buttons carried their label still updates, without naming the choice", async () => {
+    const t = setup({ status: "resume" });
+    await t.start();
+    await t.emit(click({ label: null }));
+
+    expect(t.patched).toEqual([{ name: CARD, card: chosen("Scelta registrata.") }]);
+  });
+
+  test("a click without the card's message resolves as before, with nothing to update", async () => {
+    const t = setup({ status: "resume" });
+    await t.start();
+    await t.emit(click({ messageName: null }));
+
+    expect(t.patched).toEqual([]);
+    expect(t.turns).toHaveLength(1);
+  });
+
+  test("a card that can't be updated is logged, and the turn resumes anyway", async () => {
+    const t = setup(
+      { status: "resume" },
+      {
+        updateCardFn: async () => {
+          throw new Error("Chat API 500");
+        },
+      },
+    );
+    await t.start();
+    await t.emit(click());
+
+    expect(t.turns).toHaveLength(1);
+    expect(t.logs.some((l) => l.includes("Chat API 500"))).toBe(true);
+  });
+
+  test("without resolveConfirmation the click goes through confirm, and the card stays", async () => {
+    const confirmed: string[] = [];
+    const t = setup(undefined, {
+      confirm: async (token) => {
+        confirmed.push(token);
+        return RESUME_AFTER_CONFIRM;
+      },
+    });
+    await t.start();
+    await t.emit(click());
+
+    expect(confirmed).toEqual(["T2"]);
+    expect(t.patched).toEqual([]);
+    expect(t.turns).toHaveLength(1);
   });
 });

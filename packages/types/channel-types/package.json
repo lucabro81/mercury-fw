@@ -10,7 +10,8 @@
   "files": [
     "*.ts",
     "dist",
-    "CHANGELOG.md"
+    "CHANGELOG.md",
+    "!**/*.test.ts"
   ],
   "publishConfig": {
     "access": "public"
@@ -26,7 +27,8 @@
     "@mercury-fw/plugin-types": "workspace:*"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
   },
   "devDependencies": {
     "@mercury-fw/typescript-config": "*",

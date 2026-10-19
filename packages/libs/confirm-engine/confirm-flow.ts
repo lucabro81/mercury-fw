@@ -10,7 +10,7 @@
  * thunk (see `StagedAction`) and reports the outcome. A CLI delete, a future
  * memory purge — same path, because the doing was closed over at stage time.
  */
-import { RESUME_AFTER_CONFIRM, type ConfirmOutcome } from "@mercury-fw/channel-types";
+import { confirmReply, type ConfirmOutcome } from "@mercury-fw/channel-types";
 import { isTokenShaped, type ConfirmationStore } from "./confirmation-store.ts";
 
 /**
@@ -107,17 +107,5 @@ export async function tryConfirm(
   sessionKey: string,
   deps: ConfirmDeps,
 ): Promise<string | null> {
-  const outcome = await resolveConfirmation(input, sessionKey, deps);
-  switch (outcome.status) {
-    case "not-a-token":
-      return null;
-    case "not-found":
-      return "Nessuna conferma in sospeso per questo token — potrebbe essere scaduta, già usata, o mai esistita.";
-    case "failed":
-      return `Confermato, ma l'esecuzione è fallita: ${outcome.error}`;
-    case "ok":
-      return `Confermato ed eseguito: ${JSON.stringify(outcome.data)}`;
-    case "resume":
-      return RESUME_AFTER_CONFIRM;
-  }
+  return confirmReply(await resolveConfirmation(input, sessionKey, deps));
 }
