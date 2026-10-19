@@ -6,7 +6,8 @@
   "license": "MIT",
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "bun test src"
+    "test": "bun test src",
+    "test:python": "bun src/test-python.ts"
   },
   "comment:shape": "The skill trainer: runs a plugin's skill-training tasks as real Mercury turns against fixtures standing in for the plugin's CLI, to score a skill and measure whether another version does better. See README.md.",
   "dependencies": {
