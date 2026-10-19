@@ -59,7 +59,8 @@ class MercuryAdapter(EnvAdapter):
     def rollout(self, env_manager, skill_content: str, out_dir: str, **kwargs) -> list[dict]:
         """Runs the batch's tasks with `skill_content` through the harness and
         returns its results. A task that couldn't run is a failed result, not an
-        error; a harness that wrote no results at all is."""
+        error; a harness that wrote no results at all, or a batch where no task
+        could run, is."""
         ids = [str(item["id"]) for item in env_manager]
         if not ids:
             return []
@@ -75,7 +76,12 @@ class MercuryAdapter(EnvAdapter):
         if not os.path.isfile(results_path):
             raise RuntimeError(f"skill-trainer exited {proc.returncode} without results: {proc.stderr.strip()[-2000:]}")
         with open(results_path, encoding="utf-8") as f:
-            return json.load(f)
+            results = json.load(f)
+        # One task that couldn't run is a failure like any other; a batch where none could is a model
+        # that's down, and training on it would gate every edit on zeros.
+        if results and all(r.get("error") for r in results):
+            raise RuntimeError(f"no task could run in this batch: {results[0]['error']}")
+        return results
 
     def get_task_types(self) -> list[str]:
         seen: list[str] = []

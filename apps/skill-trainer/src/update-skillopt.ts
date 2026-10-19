@@ -45,7 +45,7 @@ export const realUpdateDeps = (home: string | undefined): UpdateDeps => ({
   readPin,
   writePin: (pin) => writeFile(PIN_PATH, `${JSON.stringify(pin, null, 2)}\n`),
   lsRemote: gitLsRemote,
-  run: (argv) => Bun.spawn(argv, { stdout: "inherit", stderr: "inherit", env: { ...process.env, HOME: home } }).exited,
+  run: (argv) => Bun.spawn(argv, { stdout: "inherit", stderr: "inherit", env: { ...process.env, ...(home === undefined ? {} : { HOME: home }) } }).exited,
   print: console.log,
 });
 

@@ -103,7 +103,7 @@ bun src/bin.ts train jira
 bun src/bin.ts train jira --config my-training.yaml --out results/jira-try-1
 ```
 
-`train` has SkillOpt edit the skill's body, a few bounded edits at a time, on the plugin's tasks. Each step runs a batch of train tasks with the current skill, has a model (the optimizer) read the conversations and propose edits, applies them, and keeps the result only if its score on the val split is strictly higher. At the end it runs the test split with the original, the best and the last skill. The description in the frontmatter never changes: it decides whether the model loads the skill at all, and changing it is another experiment.
+`train` has SkillOpt edit the skill's body, a few bounded edits at a time, on the plugin's tasks. Each step runs a batch of train tasks with the current skill, has a model (the optimizer) read the conversations and propose edits, applies them, and keeps the result only if its score on the val split is strictly higher. The test split stays out of training: SkillOpt's own test run at the end is off (`eval_test: false`), since judging the trained skill is `compare`'s job. The description in the frontmatter never changes: it decides whether the model loads the skill at all, and changing it is another experiment.
 
 Every rollout is a `run` of this trainer, so each task in a batch, and every val task at every step, is a real turn on the model: with Jira's 46 train and 31 val tasks, an epoch of batches of 8 is 6 steps of 8 train and 31 val tasks, about 230 turns, two and a half hours at 40 seconds a turn.
 

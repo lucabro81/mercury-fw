@@ -71,6 +71,12 @@ class AdapterTest(unittest.TestCase):
         results = self.adapter.rollout(self.adapter.build_eval_env(0, "valid_seen", 1), "plain", os.path.join(self.root, "r"))
         self.assertEqual([(r["id"], r["hard"]) for r in results], [("c", 0)])
 
+    # A model that's down made every task come back as an error, scored 0, and SkillOpt trained on that.
+    def test_a_batch_where_no_task_could_run_is_an_error(self) -> None:
+        os.environ["FAKE_HARNESS_MODE"] = "all-error"
+        with self.assertRaisesRegex(RuntimeError, r"no task could run.*model unreachable"):
+            self.adapter.rollout(self.adapter.build_eval_env(0, "train", 1), "plain", os.path.join(self.root, "r"))
+
     def test_a_harness_that_writes_no_results_is_an_error_with_its_stderr(self) -> None:
         os.environ["FAKE_HARNESS_MODE"] = "crash"
         with self.assertRaisesRegex(RuntimeError, r"exited 3.*didn't load"):

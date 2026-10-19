@@ -103,7 +103,7 @@ export const realTrainDeps = (loadTraining: TrainDeps["loadTraining"], home: str
   loadTraining,
   env: process.env,
   // The real home, not the run's throwaway one: uv keeps its cache and its Pythons there.
-  runSkillOpt: (argv, secrets) => Bun.spawn(argv, { stdout: "inherit", stderr: "inherit", env: { ...process.env, HOME: home, ...secrets } }).exited,
+  runSkillOpt: (argv, secrets) => Bun.spawn(argv, { stdout: "inherit", stderr: "inherit", env: { ...process.env, ...(home === undefined ? {} : { HOME: home }), ...secrets } }).exited,
   print: console.log,
 });
 

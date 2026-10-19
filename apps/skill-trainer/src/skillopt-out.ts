@@ -50,6 +50,8 @@ export type Rollout = {
   fail_reason: string;
   predicted_answer: string;
   n_turns: number;
+  /** Why the task couldn't run, when it couldn't: the adapter stops a training on a batch where every result has one. */
+  error?: string;
 };
 
 /** What SkillOpt reads of `result`. */
@@ -63,6 +65,7 @@ export function rolloutOf(result: TaskResult): Rollout {
     fail_reason: result.error ?? result.checks.filter((c) => !c.ok).map((c) => c.label).join("; "),
     predicted_answer: result.turns.at(-1)?.answer ?? "",
     n_turns: result.turns.length,
+    ...(result.error === undefined ? {} : { error: result.error }),
   };
 }
 
@@ -76,12 +79,12 @@ export async function writeSkillOptRollout(dir: string, results: TaskResult[]): 
   await writeFile(join(dir, "results.json"), `${JSON.stringify(results.map(rolloutOf), null, 2)}\n`);
 }
 
-/** A task as one of SkillOpt's split items: its first turn stands for the request. */
+/** A task as one of SkillOpt's split items: its first turn, always text (selectTasks refuses a function first), stands for the request. */
 export type SkillOptItem = { id: string; task_type: string; question: string };
 
 /** `tasks` as SkillOpt's split items, by split. */
 export function skillOptItems(tasks: TrainingTask[]): Record<Split, SkillOptItem[]> {
   const items: Record<Split, SkillOptItem[]> = { train: [], val: [], test: [] };
-  for (const t of tasks) items[t.split].push({ id: t.id, task_type: t.taskType, question: typeof t.turns[0] === "string" ? t.turns[0] : "" });
+  for (const t of tasks) items[t.split].push({ id: t.id, task_type: t.taskType, question: t.turns[0] as string });
   return items;
 }

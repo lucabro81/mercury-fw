@@ -41,7 +41,9 @@ evaluation:
   gate_metric: soft
   sel_env_num: 0 # 0: the whole val split
   test_env_num: 0 # 0: the whole test split
-  eval_test: true
+  # Off: SkillOpt would run the whole test split with three skills at the end,
+  # hours of real turns, and judging on the test split is compare's job.
+  eval_test: false
 
 model:
   backend: openai_compatible

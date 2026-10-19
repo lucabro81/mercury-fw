@@ -96,7 +96,9 @@ describe("rolloutOf", () => {
 
   test("a passed task has no fail reason, a task that couldn't run has its error", () => {
     expect(rolloutOf(passed).fail_reason).toBe("");
-    expect(rolloutOf({ ...failed, error: "stalled", turns: [] })).toMatchObject({ fail_reason: "stalled", task_description: "", predicted_answer: "", n_turns: 0 });
+    expect(rolloutOf(passed)).not.toHaveProperty("error");
+    // The adapter stops a training on a batch where every result has an error: it has to be there.
+    expect(rolloutOf({ ...failed, error: "stalled", turns: [] })).toMatchObject({ fail_reason: "stalled", error: "stalled", task_description: "", predicted_answer: "", n_turns: 0 });
   });
 });
 

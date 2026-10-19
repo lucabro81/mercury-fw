@@ -264,3 +264,21 @@ describe("the uv runs get the real home", () => {
   });
 });
 
+// With no HOME to restore, the spread put HOME: undefined in uv's environment.
+describe("the uv runs without a real home to give back", () => {
+  test("keep the environment's own HOME", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "skill-trainer-nohome-"));
+    try {
+      const file = join(dir, "home.txt");
+      const run = realTrainDeps(async () => ({}) as SkillTraining, undefined).runSkillOpt;
+      expect(await run(["sh", "-c", `printf %s "\${HOME-unset}" > "${file}"`], {})).toBe(0);
+      expect(readFileSync(file, "utf8")).toBe(process.env.HOME ?? "unset");
+      const update = realUpdateDeps(undefined).run;
+      expect(await update(["sh", "-c", `printf %s "\${HOME-unset}" > "${file}"`])).toBe(0);
+      expect(readFileSync(file, "utf8")).toBe(process.env.HOME ?? "unset");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
