@@ -108,7 +108,7 @@ function buildProgram(handlers: ProgramHandlers, result: { code: number }): Comm
       "Moves the SkillOpt pin (skillopt.json) to a new commit, after the adapter's smoke check and its tests pass on it; a commit that fails either leaves the pin where it was.",
     )
     .option("--ref <ref>", "a branch, a tag or a full commit of SkillOpt's repository", "main")
-    .addHelpText("after", "\nExamples:\n  skill-trainer update-skillopt\n  skill-trainer update-skillopt --ref v0.3.0")
+    .addHelpText("after", "\nExamples:\n  skill-trainer update-skillopt\n  skill-trainer update-skillopt --ref v0.2.0")
     .action(async (opts: { ref: string }) => {
       result.code = await handlers.updateSkillOpt(opts.ref === "main" ? {} : { ref: opts.ref });
     });

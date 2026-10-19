@@ -192,7 +192,7 @@ The adapter relies on parts of SkillOpt that aren't a public API (its CLIs' regi
 
 ```bash
 bun src/bin.ts update-skillopt                 # latest main
-bun src/bin.ts update-skillopt --ref v0.3.0    # a tag, a branch or a full commit
+bun src/bin.ts update-skillopt --ref v0.2.0    # a tag, a branch or a full commit
 ```
 
 It moves the pin only after the adapter's smoke check (`python -m mercury_skillopt smoke`) and the adapter's tests pass on the new commit; otherwise the pin stays where it was.
