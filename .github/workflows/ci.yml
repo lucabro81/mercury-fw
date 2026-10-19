@@ -40,7 +40,10 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: "1.x"
-      - uses: astral-sh/setup-uv@v10
+      # setup-uv publishes no major tag since v8, only exact versions; pipx
+      # (on the runner already) gets the latest uv instead of a pinned one.
+      - name: Install uv
+        run: pipx install uv
       - name: The SkillOpt adapter's tests
         working-directory: apps/skill-trainer
         run: bun run test:python
