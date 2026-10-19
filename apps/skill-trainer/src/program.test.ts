@@ -31,6 +31,19 @@ describe("skill-trainer run", () => {
     expect(received).toEqual({ plugin: "jira", skill: "best_skill.md", split: "val", ids: ["a", "b"], json: "out/results.json" });
   });
 
+  test("--repeat takes a whole number of runs", async () => {
+    const { received } = await parse(["run", "jira", "--repeat", "3"]);
+    expect(received).toEqual({ plugin: "jira", repeat: 3 });
+  });
+
+  test("a --repeat that isn't a whole number of at least 1 is refused before anything runs", async () => {
+    for (const value of ["0", "-1", "2.5", "three"]) {
+      const { received, exit, err } = await parse(["run", "jira", "--repeat", value]);
+      expect([received, exit]).toEqual([undefined, 1]);
+      expect(err).toContain("--repeat");
+    }
+  });
+
   test("a split that isn't one is refused before anything runs", async () => {
     const { received, exit, err } = await parse(["run", "jira", "--split", "dev"]);
     expect(received).toBeUndefined();

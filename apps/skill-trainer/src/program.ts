@@ -3,7 +3,7 @@
  * validation happen here, before anything runs; what a command does is the
  * handler passed in (`main.ts`).
  */
-import { Command, CommanderError, Option, type OutputConfiguration } from "commander";
+import { Command, CommanderError, InvalidArgumentError, Option, type OutputConfiguration } from "commander";
 import type { Split } from "./contract.ts";
 
 /** What `run` was asked for. */
@@ -16,7 +16,15 @@ export type RunOptions = {
   /** A file to write the results to as JSON, for comparing runs,
    * besides the report: not stdout, where the core logs too. */
   json?: string;
+  /** How many times every task runs; once when absent. */
+  repeat?: number;
 };
+
+/** A whole number of at least 1, for `--repeat`. */
+function positiveInteger(value: string): number {
+  if (!/^[1-9]\d*$/.test(value)) throw new InvalidArgumentError("a whole number of at least 1");
+  return Number(value);
+}
 
 export type ProgramHandlers = {
   /** `skill-trainer run`; returns the exit code. */
@@ -36,15 +44,17 @@ function buildProgram(handlers: ProgramHandlers, result: { code: number }): Comm
     .option("--skill <file>", "a candidate skill: its body, or a whole SKILL.md with the skill's own name and description")
     .addOption(new Option("--split <split>", "only the tasks of this split").choices(["train", "val", "test"]))
     .option("--task <ids...>", "only these tasks, in this order")
-    .option("--json <file>", "also write the results to this file as JSON")
-    .addHelpText("after", "\nExamples:\n  skill-trainer run jira\n  skill-trainer run jira --skill out/best_skill.md --split test")
-    .action(async (plugin: string, opts: { skill?: string; split?: Split; task?: string[]; json?: string }) => {
+    .option("--json <file>", "also write the results to this file as JSON, with the run's conditions (commit, model, skill and data hashes)")
+    .option("--repeat <n>", "run every task n times", positiveInteger)
+    .addHelpText("after", "\nExamples:\n  skill-trainer run jira\n  skill-trainer run jira --skill out/SKILL.md --split test --repeat 3 --json results/candidate.json")
+    .action(async (plugin: string, opts: { skill?: string; split?: Split; task?: string[]; json?: string; repeat?: number }) => {
       result.code = await handlers.run({
         plugin,
         ...(opts.skill === undefined ? {} : { skill: opts.skill }),
         ...(opts.split === undefined ? {} : { split: opts.split }),
         ...(opts.task === undefined ? {} : { ids: opts.task }),
         ...(opts.json === undefined ? {} : { json: opts.json }),
+        ...(opts.repeat === undefined ? {} : { repeat: opts.repeat }),
       });
     });
 
