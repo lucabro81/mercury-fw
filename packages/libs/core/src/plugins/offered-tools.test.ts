@@ -23,7 +23,7 @@ function plugin(name: string, actsAs: "person" | "mercury", built: SessionToolCo
   };
 }
 
-const context = { sessionKey: "s", stageConfirmation: async () => "t", stashDisplay: () => "d" };
+const context = { sessionKey: "s", t: (key: string) => key, stageConfirmation: async () => "t", stashDisplay: () => "d" };
 
 function setup(roles: string[], operator = false) {
   const built: SessionToolContext[] = [];

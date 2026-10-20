@@ -75,7 +75,7 @@ import { createHostReads } from "./identity/host-reads.ts";
 import { bindConfirm } from "./identity/confirm-binding.ts";
 import { createPersonLogins } from "./identity/person-logins.ts";
 import { createProfileStore, profilesPath } from "./identity/profiles.ts";
-import { createI18n, createTexts, type Texts } from "./i18n/i18n.ts";
+import { createI18n, createTexts, type Texts, type Translate } from "./i18n/i18n.ts";
 import { CORE_MESSAGES } from "./i18n/core-messages.ts";
 import { createProfileTools } from "./identity/profile-tools.ts";
 import { createPeople, type TurnWho } from "./identity/people.ts";
@@ -190,7 +190,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   // Status labels for the tool-start hook, keyed by tool name: each plugin's
   // describer for its own tool (jiraCommand, …), the same for its variant
   // acting as Mercury.
-  const toolStatusDescribers: Record<string, (input: unknown) => string> = { ...loadedPlugins.toolStatusDescribers };
+  const toolStatusDescribers: Record<string, (input: unknown, t: Translate) => string> = { ...loadedPlugins.toolStatusDescribers };
   for (const [name, describe] of Object.entries(loadedPlugins.toolStatusDescribers)) {
     toolStatusDescribers[`${name}${AS_SELF_SUFFIX}`] = describe;
   }
@@ -204,11 +204,11 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   const profiles = createProfileStore({ path: profilesPath(requireEnv("WIKI_VAULT_PATH")) });
 
   // The texts a person sees, in their language (see i18n/i18n.ts): the
-  // packages' English, the instance's language files over it. A default
+  // core's and the loaded plugins' English, the instance's language files over it. A default
   // language the instance doesn't ship stops the start; a file's gaps are
   // logged, and show as their keys.
   const i18n = createI18n({
-    english: CORE_MESSAGES,
+    english: { ...CORE_MESSAGES, ...loadedPlugins.messages },
     ...(config.i18n?.locales === undefined ? {} : { locales: config.i18n.locales }),
     ...(config.i18n?.defaultLocale === undefined ? {} : { defaultLocale: config.i18n.defaultLocale }),
   });
@@ -458,6 +458,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
     };
     const sessionToolContext = {
       sessionKey,
+      t: texts.forPerson(key).t,
       stageConfirmation: createStageConfirmation(stagingDeps),
       stageChoices: createStageChoices(stagingDeps),
       stashDisplay: (artifact: string, label?: string) => displayStore.stash(sessionKey, artifact, label),
@@ -544,6 +545,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
     systemPromptsFor,
     preferredName: (key) => profiles.nameOf(key),
     preferredLanguage: (key) => texts.savedLanguage(key),
+    translatorFor: (key) => texts.forPerson(key).t,
     stallTimeoutMs,
     shownLists: (sessionKey) => displayStore.shown(sessionKey),
     identify: people.identify,

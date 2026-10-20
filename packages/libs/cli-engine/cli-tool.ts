@@ -32,7 +32,7 @@ import { cliUserId } from "@mercury-fw/utils";
 // for the core callers that import it from this module. It runs after every
 // allowed command and is told which allowlist prefix matched, so the plugin
 // decides what to touch; cli-tool.ts never knows what it does.
-import type { CliPostProcessor } from "@mercury-fw/plugin-types";
+import type { CliPostProcessor, Translate } from "@mercury-fw/plugin-types";
 export type { CliPostProcessor };
 
 export type AllowedCommand = {
@@ -168,6 +168,8 @@ export function createCliTool(
      * allowed command's result with the matched prefix — `cli-tool.ts` itself
      * never knows what it does. */
     postProcess?: CliPostProcessor;
+    /** The texts of the turn's person (`SessionToolContext.t`), handed to the post-processor. */
+    t: Translate;
     /** Stashes a post-processor's rendered `display` artifact and returns a ref
      * the model can `present`. Pre-bound to this turn's session by the
      * composition root. Optional: with none wired the inline `display` is left
@@ -261,7 +263,7 @@ export function createCliTool(
         return opts.requireLogin();
       }
       const processed = opts.postProcess
-        ? opts.postProcess({ binary: parsed.binary, args: parsed.args, prefix: match.prefix }, result)
+        ? opts.postProcess({ binary: parsed.binary, args: parsed.args, prefix: match.prefix }, result, opts.t)
         : result;
 
       // A rendered display artifact is stashed, not returned to be

@@ -3,7 +3,7 @@ import { describeToolStart, describeToolDetail, classifyToolResult, withToolStar
 import { createCliStatusDescriber, type CliConfig } from "@mercury-fw/cli-engine";
 import type { StatusDescriber } from "@mercury-fw/plugin-types";
 import type { Tool } from "ai";
-import type { Translate } from "../i18n/i18n.ts";
+import { englishTexts, type Translate } from "../i18n/i18n.ts";
 
 const configs: Record<string, CliConfig> = {
   jira: {
@@ -16,32 +16,39 @@ const configs: Record<string, CliConfig> = {
 };
 
 // The real CLI describer with no plugin overrides — every command falls to the
-// contract default `esecuzione <binary> <sottocomando>`.
+// contract default `Running <binary> <subcommand>`, in the turn's language.
 const describeCli = createCliStatusDescriber(configs, {});
+const english = englishTexts().forPerson(undefined).t;
 
 // How the composition wires a CLI tool's status into the hook: a per-tool-name
 // describer that reads the command off the tool call's input. Stands in for
 // what a plugin (or the file-based residual) contributes as `runCommand` here.
-const statusMap: Record<string, (input: unknown) => string> = {
-  runCommand: (input) => {
+const statusMap: Record<string, (input: unknown, t: Translate) => string> = {
+  runCommand: (input, t) => {
     const command = (input as { command?: unknown }).command;
-    return typeof command === "string" ? describeCli(command) : "esecuzione di un comando";
+    return typeof command === "string" ? describeCli(command, t) : t("core.status.command-unknown");
   },
 };
 
 describe("createCliStatusDescriber", () => {
   it("labels any CLI command with the default, no read/write distinction", () => {
-    expect(describeCli("jira issue search --jql X")).toBe("esecuzione jira issue search");
-    expect(describeCli("jira issue create --summary X")).toBe("esecuzione jira issue create");
-    expect(describeCli("jira issue delete KAN-1")).toBe("esecuzione jira issue delete");
+    expect(describeCli("jira issue search --jql X", english)).toBe("Running jira issue search");
+    expect(describeCli("jira issue create --summary X", english)).toBe("Running jira issue create");
+    expect(describeCli("jira issue delete KAN-1", english)).toBe("Running jira issue delete");
   });
 
   it("labels a command whose binary isn't configured on this instance with the default too", () => {
-    expect(describeCli("bitbucket pr list workspace/repo")).toBe("esecuzione bitbucket pr list");
+    expect(describeCli("bitbucket pr list workspace/repo", english)).toBe("Running bitbucket pr list");
   });
 
   it("returns a generic label when the command string doesn't parse", () => {
-    expect(describeCli('jira issue search --jql "unterminated')).toBe("esecuzione di un comando");
+    expect(describeCli('jira issue search --jql "unterminated', english)).toBe("Running a command");
+  });
+
+  it("words the default and the unparseable command in the turn's language", () => {
+    const italian: Translate = (key, params) => `${key}${JSON.stringify(params ?? {})}`;
+    expect(describeCli("jira issue search", italian)).toBe('core.status.command{"binary":"jira","command":"issue search"}');
+    expect(describeCli('jira "unterminated', italian)).toBe("core.status.command-unknown{}");
   });
 
   it("delegates to a plugin's own describeStatus when it overrides the default, passing the computed mutating flag", () => {
@@ -49,23 +56,23 @@ describe("createCliStatusDescriber", () => {
       jira: (cmd) => `custom ${cmd.binary} ${cmd.args.join(" ")} mutating=${cmd.mutating}`,
     };
     const describe = createCliStatusDescriber(configs, describers);
-    expect(describe("jira issue create --summary X")).toBe("custom jira issue create --summary X mutating=true");
-    expect(describe("jira issue search --jql X")).toBe("custom jira issue search --jql X mutating=false");
+    expect(describe("jira issue create --summary X", english)).toBe("custom jira issue create --summary X mutating=true");
+    expect(describe("jira issue search --jql X", english)).toBe("custom jira issue search --jql X mutating=false");
   });
 });
 
 describe("describeToolStart", () => {
   it("delegates a runCommand invocation to the injected CLI describer", () => {
     expect(describeToolStart("runCommand", { command: "jira issue search --jql X" }, statusMap)).toBe(
-      "esecuzione jira issue search",
+      "Running jira issue search",
     );
     expect(describeToolStart("runCommand", { command: "jira issue create --summary X" }, statusMap)).toBe(
-      "esecuzione jira issue create",
+      "Running jira issue create",
     );
   });
 
   it("uses a generic label when the input has no command field at all", () => {
-    expect(describeToolStart("runCommand", {}, statusMap)).toBe("esecuzione di un comando");
+    expect(describeToolStart("runCommand", {}, statusMap)).toBe("Running a command");
   });
 
   it("labels recall_tool_calls as consulting memory", () => {
@@ -243,7 +250,7 @@ describe("withToolStartHook", () => {
     );
     await execOf(wrapped, "runCommand")({ command: "jira issue search --jql X" }, { toolCallId: "tc-1" });
 
-    expect(calls).toEqual([["esecuzione jira issue search", "jira issue search --jql X", "tc-1", "runCommand"]]);
+    expect(calls).toEqual([["Running jira issue search", "jira issue search --jql X", "tc-1", "runCommand"]]);
   });
 
   it("calls onToolFinish with the classified outcome once execute resolves, after onToolStart", async () => {
@@ -341,14 +348,14 @@ describe("withToolStartHook", () => {
     await Promise.resolve();
     await Promise.resolve();
     await Promise.resolve();
-    expect(events).toEqual(["start:esecuzione jira issue search", "execute-1"]);
+    expect(events).toEqual(["start:Running jira issue search", "execute-1"]);
 
     resolveFirst?.();
     await exec1;
     await exec2;
 
     expect(events).toEqual([
-      "start:esecuzione jira issue search",
+      "start:Running jira issue search",
       "execute-1",
       "finish:tc-1",
       "start:Checking my memory…",

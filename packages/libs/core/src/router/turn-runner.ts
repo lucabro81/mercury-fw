@@ -29,6 +29,7 @@ import type { HandleTurn, InboundTurn, TurnSink } from "./provider.ts";
 import { createPeople, type Identified, type TurnWho } from "../identity/people.ts";
 export type { TurnWho };
 import { createSessionLock, type SessionLock } from "./session-lock.ts";
+import { englishTexts, type Translate } from "../i18n/i18n.ts";
 
 /** Appended to a one-to-one turn's prompt when the person said how they want to be called. */
 export const PREFERRED_NAME_NOTE = (name: string): string =>
@@ -244,6 +245,8 @@ export type TurnRunnerDeps = {
    * core knows nothing about what any of them does.
    */
   postTurnGuards?: PostTurnGuard[];
+  /** The texts of the person with `key`, for what the guards show them; English when absent. */
+  translatorFor?: (key: string) => Translate;
   /**
    * Test seam; defaults to `console.log`. Receives a guard's own `log` line,
    * or the core's own note when a guard throws. Exists to measure real-world
@@ -521,13 +524,14 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
       // handle any (label, detail?, toolCallId?) triple generically. A guard
       // that throws is caught here and never blocks delivery.
       const guardSteps = resumed ? [resumedStep(resumed), ...steps] : steps;
+      const t = deps.translatorFor?.(key) ?? englishTexts().forPerson(undefined).t;
       for (const guard of postTurnGuards) {
         if (!guard.shouldRun(correctedText, guardSteps)) {
           continue;
         }
-        sink.onToolStart(guard.statusLabel, undefined, guard.statusId);
+        sink.onToolStart(guard.statusLabel(t), undefined, guard.statusId);
         try {
-          const guarded = await guard.run(correctedText, guardSteps);
+          const guarded = await guard.run(correctedText, guardSteps, t);
           sink.onToolFinish?.(guard.statusId, guarded.outcome);
           if (guarded.log !== undefined) {
             logPostTurnGuard(guarded.log);

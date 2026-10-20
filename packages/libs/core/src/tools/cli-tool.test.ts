@@ -10,6 +10,10 @@ import {
 import { createConfirmationStore, createStageConfirmation } from "@mercury-fw/confirm-engine";
 import { createDisplayStore } from "./display-store.ts";
 import type { CliResult } from "@mercury-fw/cli-engine";
+import { englishTexts, type Translate } from "../i18n/i18n.ts";
+
+/** The turn's texts every tool in these tests is built with. */
+const english = englishTexts().forPerson(undefined).t;
 
 describe("stripGlobalFlags", () => {
   it("removes a value-taking flag and its value from anywhere in args", () => {
@@ -213,6 +217,7 @@ describe("createCliTool", () => {
         vaultPath: "/vault",
         writeConfirmationNoteFn: async () => {},
       }),
+      t: english,
     };
   }
 
@@ -229,6 +234,7 @@ describe("createCliTool", () => {
         vaultPath: "/vault",
         writeConfirmationNoteFn: async () => {},
       }),
+      t: english,
     };
   }
 
@@ -292,6 +298,19 @@ describe("createCliTool", () => {
       const result = await runCommand.execute({ command: 'jira issue search --jql "project = KAN"' }, {} as never);
 
       expect(result).toEqual({ ok: true, data: { issues: [] }, display: { type: "issue-list", items: [] } });
+    });
+
+    it("hands the post-processor the turn's texts, for a display it renders", async () => {
+      const runCliFn = async (): Promise<CliResult> => ({ ok: true, data: {} });
+      const t: Translate = (key) => `it:${key}`;
+      let seen: string | undefined;
+      const postProcess = (_cmd: Cmd, result: CliResult, tr: Translate): CliResult => {
+        seen = tr("x.y");
+        return result;
+      };
+      const { runCommand } = createCliTool(runCliFn, { jira: jiraConfig }, { ...defaultOpts(), postProcess, t });
+      await runCommand.execute({ command: 'jira issue search --jql "project = KAN"' }, {} as never);
+      expect(seen).toBe("it:x.y");
     });
 
     it("passes the binary, the args and the matched allowlist prefix to the post-processor", async () => {
@@ -822,6 +841,7 @@ describe("createCliTool display staging", () => {
   function opts(displayStore: ReturnType<typeof createDisplayStore>) {
     return {
       stageConfirmation: noopStage(),
+      t: english,
       stashDisplay: (artifact: string, label?: string) => displayStore.stash("terminal", artifact, label),
     };
   }
@@ -839,6 +859,7 @@ describe("createCliTool display staging", () => {
     ] as const) {
       const { runCommand } = createCliTool(runCliFn, { jira: searchConfig }, {
         stageConfirmation: noopStage(),
+      t: english,
         stashDisplay: (artifact: string, label?: string) => (labels.push(label), displayStore.stash("terminal", artifact, label)),
         postProcess,
       });
@@ -912,6 +933,7 @@ describe("createCliTool display staging", () => {
     const runCliFn = async (): Promise<CliResult> => ({ ok: true, data: { issues: [] } });
     const { runCommand } = createCliTool(runCliFn, { jira: searchConfig }, {
       stageConfirmation: noopStage(),
+      t: english,
       postProcess: renderingPostProcess,
     });
 

@@ -825,7 +825,7 @@ describe("createTurnRunner", () => {
   describe("post-turn guards", () => {
     function makeGuard(overrides: Partial<PostTurnGuard> = {}): PostTurnGuard {
       return {
-        statusLabel: "Checking…",
+        statusLabel: () => "Checking…",
         statusId: "guard-1",
         shouldRun: () => true,
         run: async (text) => ({ text, outcome: "success" }),
@@ -898,7 +898,7 @@ describe("createTurnRunner", () => {
           logPostTurnGuardFn: (m) => logged.push(m),
           postTurnGuards: [
             makeGuard({
-              statusLabel: "Sto verificando…",
+              statusLabel: () => "Sto verificando…",
               statusId: "g",
               run: async () => ({ text: "rewritten", outcome: "success", log: "did a thing" }),
             }),
@@ -912,6 +912,34 @@ describe("createTurnRunner", () => {
       expect(finished).toEqual([["g", "success"]]);
       expect(logged).toEqual(["did a thing"]);
       expect(sink.finalized).toEqual(["rewritten"]);
+    });
+
+    // #280: a guard's status line and what it adds read in the language of
+    // the person the turn is for, like every other text they see.
+    test("a guard gets the texts of the turn's person, for its status line and its run", async () => {
+      const started: string[] = [];
+      const sink = { ...baseSink(), onToolStart: (label: string) => void started.push(label) };
+      const asked: string[] = [];
+      const runner = createTurnRunner(
+        baseDeps({
+          runTurnFn: async () => "answer",
+          translatorFor: (key) => {
+            asked.push(key);
+            return (k) => `${key}/${k}`;
+          },
+          postTurnGuards: [
+            makeGuard({
+              statusLabel: (t) => t("g.status"),
+              statusId: "g",
+              run: async (text, _steps, t) => ({ text: `${text} ${t("g.added")}`, outcome: "success" }),
+            }),
+          ],
+        }),
+      );
+      await runner(baseTurn({ principal: verified("u1") }), sink);
+      expect(started).toEqual(["google-chat:u1/g.status"]);
+      expect(sink.finalized).toEqual(["answer google-chat:u1/g.added"]);
+      expect(new Set(asked)).toEqual(new Set(["google-chat:u1"]));
     });
 
     test("forwards a guard's failed outcome to onToolFinish, and still delivers its text", async () => {
@@ -1122,7 +1150,7 @@ describe("createTurnRunner", () => {
         },
         postTurnGuards: [
           {
-            statusLabel: "…",
+            statusLabel: () => "…",
             statusId: "g",
             shouldRun: () => true,
             run: async () => ({ text: "rewritten", outcome: "success" }),
@@ -2114,7 +2142,7 @@ describe("createTurnRunner: a turn resumed after a confirmation", () => {
   test("a guard's shouldRun sees the turn's steps too, the confirmed action first", async () => {
     const seen: StepInfo[][] = [];
     const guard: PostTurnGuard = {
-      statusLabel: "g",
+      statusLabel: () => "g",
       statusId: "g",
       shouldRun: (_text, steps) => {
         seen.push(steps ?? []);
@@ -2132,7 +2160,7 @@ describe("createTurnRunner: a turn resumed after a confirmation", () => {
   test("the post-turn guards see the confirmed action as the turn's first step", async () => {
     const seen: StepInfo[][] = [];
     const guard: PostTurnGuard = {
-      statusLabel: "g",
+      statusLabel: () => "g",
       statusId: "g",
       shouldRun: () => true,
       run: async (text, steps) => {

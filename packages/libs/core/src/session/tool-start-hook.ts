@@ -40,11 +40,11 @@ const WIKI_TOOL_CATEGORY: Record<string, "read" | "write"> = {
 export function describeToolStart(
   toolName: string,
   input: unknown,
-  toolStatusDescribers: Record<string, (input: unknown) => string>,
+  toolStatusDescribers: Record<string, (input: unknown, t: Translate) => string>,
   t: Translate = english,
 ): string {
   const describe = toolStatusDescribers[toolName];
-  if (describe) return describe(input);
+  if (describe) return describe(input, t);
   if (toolName === "recall_tool_calls") return t("core.status.memory");
   if (toolName === "read_skill") return t("core.status.instructions");
   if (toolName === "grep") return t("core.status.searching");
@@ -135,7 +135,7 @@ export function classifyToolResult(result: unknown): ToolOutcome {
 export function withToolStartHook(
   tools: Record<string, Tool>,
   onToolStart: (label: string, detail?: string, toolCallId?: string, toolName?: string) => void,
-  toolStatusDescribers: Record<string, (input: unknown) => string>,
+  toolStatusDescribers: Record<string, (input: unknown, t: Translate) => string>,
   onToolFinish?: (toolCallId: string, outcome: ToolOutcome) => void,
   translate: Translate = english,
 ): Record<string, Tool> {

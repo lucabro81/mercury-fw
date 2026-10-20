@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { CORE_MESSAGES } from "./core-messages.ts";
-import { createI18n, createTexts, englishTexts, interpolate, negotiate } from "./i18n.ts";
+import { createI18n, createTexts, englishTexts, interpolate, namespaceErrors, negotiate } from "./i18n.ts";
 
 describe("interpolate", () => {
   test("fills every {param}, numbers included", () => {
@@ -16,6 +16,31 @@ describe("interpolate", () => {
 
   test("doesn't read params from the object's prototype", () => {
     expect(interpolate("{toString}", {})).toBe("{toString}");
+  });
+});
+
+describe("namespaceErrors", () => {
+  test("accepts keys under the package's namespace", () => {
+    expect(namespaceErrors("web-search", { "web-search.choice.once": "Only this time" })).toEqual([]);
+  });
+
+  test("names every key outside it, the bare namespace and a lookalike prefix included", () => {
+    expect(
+      namespaceErrors("web-search", {
+        "core.access.unknown": "x",
+        "web-search": "x",
+        "web-searchx.a": "x",
+        "web-search.ok": "x",
+      }),
+    ).toEqual([
+      'key "core.access.unknown" is outside the "web-search." namespace',
+      'key "web-search" is outside the "web-search." namespace',
+      'key "web-searchx.a" is outside the "web-search." namespace',
+    ]);
+  });
+
+  test("names a value that isn't text", () => {
+    expect(namespaceErrors("core", { "core.a": 1 as unknown as string })).toEqual(['key "core.a" isn\'t a string']);
   });
 });
 

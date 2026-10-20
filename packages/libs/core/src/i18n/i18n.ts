@@ -14,13 +14,9 @@
  */
 import { CORE_MESSAGES } from "./core-messages.ts";
 
-/** A catalog: key → text, `{param}` marking where a value goes. */
-export type Messages = Record<string, string>;
+import type { Messages, Params, Translate } from "@mercury-fw/plugin-types";
 
-export type Params = Record<string, string | number>;
-
-/** A text in one language, by key, with its params filled in. */
-export type Translate = (key: string, params?: Params) => string;
+export type { Messages, Params, Translate };
 
 /** `text` with every `{param}` it's given filled in; one it isn't given stays as it is, so the gap shows. */
 export function interpolate(text: string, params?: Params): string {
@@ -28,6 +24,20 @@ export function interpolate(text: string, params?: Params): string {
   return text.replace(/\{(\w+)\}/g, (whole, name: string) =>
     Object.hasOwn(params, name) ? String(params[name]) : whole,
   );
+}
+
+/** What's wrong with a package's catalog: keys outside `<namespace>.`, values that aren't text. Empty when nothing is. */
+export function namespaceErrors(namespace: string, messages: Messages): string[] {
+  const prefix = `${namespace}.`;
+  const errors: string[] = [];
+  for (const [key, text] of Object.entries(messages)) {
+    if (!key.startsWith(prefix) || key.length === prefix.length) {
+      errors.push(`key "${key}" is outside the "${prefix}" namespace`);
+    } else if (typeof text !== "string") {
+      errors.push(`key "${key}" isn't a string`);
+    }
+  }
+  return errors;
 }
 
 /**

@@ -36,6 +36,10 @@ export const CORE_MESSAGES: Messages = {
   "core.status.tool": "Using {tool}…",
   "core.status.wiki-all": "Every document in the wiki",
   "core.status.call-history": "The calls made in this conversation",
+  // A CLI command a plugin runs, unless the plugin words it itself (`defaultStatusLabel`, `@mercury-fw/cli-engine`).
+  "core.status.command": "Running {binary} {command}",
+  "core.status.command-bare": "Running {binary}",
+  "core.status.command-unknown": "Running a command",
   // Saving to memory (`session/session-capture.ts`, `compose.ts`).
   "core.status.remembering": "Noting down something important…",
   "core.status.capture-detail": 'Recent conversation ({count} messages: "{preview}"), collection "{collection}"',

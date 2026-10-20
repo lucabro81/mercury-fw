@@ -53,7 +53,7 @@ describe("loadPlugins", () => {
   it("bundles a plugin's sessionTools factory with its post-processor, and collects its guards", async () => {
     const pp = (() => {}) as never;
     const factory = () => ({ jiraCommand: {} as never });
-    const guard = { statusLabel: "l", statusId: "g", shouldRun: () => true, run: async () => ({ text: "", outcome: "success" as const }) };
+    const guard = { statusLabel: () => "l", statusId: "g", shouldRun: () => true, run: async () => ({ text: "", outcome: "success" as const }) };
     const plugin = plug({ name: "jira", build: () => ({ postProcess: pp, sessionTools: factory, postTurnGuards: [guard] }) });
     const loaded = await loadPlugins([plugin], baseCtx());
     expect(bundles(loaded)).toEqual([{ name: "jira", build: factory, postProcess: pp }]);
@@ -91,6 +91,36 @@ describe("loadPlugins", () => {
     expect(fragments(loaded)).toEqual(["FRAG"]);
   });
 
+  // #280: every text a plugin shows a person is its own, under its name, so
+  // two plugins can't take each other's keys or the core's.
+  it("collects the English texts of every plugin that activated", async () => {
+    const loaded = await loadPlugins(
+      [
+        plug({ name: "jira", messages: { "jira.status": "Reading Jira" } }),
+        plug({ name: "web-search", messages: { "web-search.choice.once": "Only this time" } }),
+        plug({ name: "broken", messages: { "broken.x": "x" }, build: () => { throw new Error("no"); } }),
+      ],
+      baseCtx(),
+    );
+    expect(loaded.messages).toEqual({ "jira.status": "Reading Jira", "web-search.choice.once": "Only this time" });
+  });
+
+  it("doesn't activate a plugin whose texts reach outside its name, and says which", async () => {
+    const logs: string[] = [];
+    let built = false;
+    const loaded = await loadPlugins(
+      [
+        plug({ name: "jira", messages: { "jira.ok": "ok", "core.access.unknown": "hijacked" }, build: () => ((built = true), {}) }),
+        plug({ name: "bitbucket", messages: { "bitbucket.ok": "ok" } }),
+      ],
+      baseCtx({ log: (m) => logs.push(m) }),
+    );
+    expect(loaded.activated).toEqual(["bitbucket"]);
+    expect(built).toBe(false);
+    expect(loaded.messages).toEqual({ "bitbucket.ok": "ok" });
+    expect(logs).toEqual(['plugin "jira" not activated: key "core.access.unknown" is outside the "jira." namespace']);
+  });
+
   it("skips a plugin whose apiVersion is incompatible with this core — logs why, does not build it", async () => {
     const logs: string[] = [];
     let built = false;
@@ -120,8 +150,8 @@ describe("loadPlugins", () => {
   it("aggregates multiple plugins in listing order — bundles per plugin, concatenates fragments and guards", async () => {
     const fA = () => ({ a: {} as never });
     const fB = () => ({ b: {} as never });
-    const gA = { statusLabel: "a", statusId: "a", shouldRun: () => true, run: async () => ({ text: "", outcome: "success" as const }) };
-    const gB = { statusLabel: "b", statusId: "b", shouldRun: () => true, run: async () => ({ text: "", outcome: "success" as const }) };
+    const gA = { statusLabel: () => "a", statusId: "a", shouldRun: () => true, run: async () => ({ text: "", outcome: "success" as const }) };
+    const gB = { statusLabel: () => "b", statusId: "b", shouldRun: () => true, run: async () => ({ text: "", outcome: "success" as const }) };
     const p1 = plug({ name: "p1", systemPromptFragment: "F1", build: () => ({ sessionTools: fA, postTurnGuards: [gA] }) });
     const p2 = plug({ name: "p2", systemPromptFragment: "F2", build: () => ({ sessionTools: fB, postTurnGuards: [gB] }) });
     const loaded = await loadPlugins([p1, p2], baseCtx());

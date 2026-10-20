@@ -23,7 +23,26 @@ import type { LanguageModel, Tool } from "ai";
  * plugin's declared `apiVersion` and refuses a mismatch (fail-soft). A single
  * integer, bumped only on a breaking change to the shapes in this file.
  */
-export const PLUGIN_API_VERSION = 4;
+export const PLUGIN_API_VERSION = 5;
+
+/**
+ * A catalog of texts a person sees: key → text, `{param}` marking where a
+ * value goes. A package declares its own in English, its keys under its
+ * namespace (`<plugin name>.`); the instance translates them in its language
+ * files, and the core picks each person's language.
+ */
+export type Messages = Record<string, string>;
+
+/** The values filled into a text's `{param}`s. */
+export type Params = Record<string, string | number>;
+
+/**
+ * A text in the language of the person a turn is for, by key, with its
+ * params filled in. A key the language's file lacks comes back as the key
+ * itself. The core hands one to whatever builds a text a person sees; the
+ * core's own keys (`core.…`) are always there.
+ */
+export type Translate = (key: string, params?: Params) => string;
 
 /** A tool built with `ai`'s `tool()` and an `execute`: what the core's and the
  * plugins' tool factories return. Spelled out so their declarations name it
@@ -61,11 +80,13 @@ export type CliResult =
  * is the allowlist entry that matched (`[]` for `--help`), so the plugin
  * decides for itself which commands it touches and passes the rest through.
  * Can augment `data`, attach a `display`, or turn a technically-ok result into
- * `{ ok: false }` when the data isn't shaped as it needs.
+ * `{ ok: false }` when the data isn't shaped as it needs. `t` gives the
+ * texts of the turn's person, for a display it renders.
  */
 export type CliPostProcessor = (
   cmd: { binary: string; args: string[]; prefix: string[] },
   result: CliResult,
+  t: Translate,
 ) => CliResult;
 
 /**
@@ -132,13 +153,18 @@ export type StepInfo = {
  * offered to both for guards that need the turn's tool trace (a turn resumed
  * after a confirmation starts with the confirmed call); a guard is free to
  * ignore it, and an older core passes none to `shouldRun`. A guard that
- * throws never blocks delivery — the core wraps each one.
+ * throws never blocks delivery — the core wraps each one. `t` gives the
+ * texts of the turn's person: the status line and anything `run` adds.
  */
 export type PostTurnGuard = {
-  statusLabel: string;
+  statusLabel: (t: Translate) => string;
   statusId: string;
   shouldRun: (text: string, steps?: StepInfo[]) => boolean;
-  run: (text: string, steps: StepInfo[]) => Promise<{ text: string; outcome: "success" | "failed"; log?: string }>;
+  run: (
+    text: string,
+    steps: StepInfo[],
+    t: Translate,
+  ) => Promise<{ text: string; outcome: "success" | "failed"; log?: string }>;
 };
 
 /**
@@ -177,6 +203,8 @@ export type PluginRuntimeContext = {
  */
 export type SessionToolContext = {
   sessionKey: string;
+  /** The texts of the person the turn is for (a choice's label, a line a tool shows them). */
+  t: Translate;
   stageConfirmation: StageConfirmation;
   /** Stages an action offered as several choices (see `StageChoices`). The
    * core always sets it; optional so a plugin also builds against an older
@@ -235,8 +263,9 @@ export type PersonLogin = {
  *   the session context and the plugin's (possibly decorated) post-processor.
  *   This is how a tool reaches the model without the core knowing what it is.
  * - `toolStatusDescribers`: one per tool name the plugin contributes, turning a
- *   tool call's input into the one-line status shown while it runs — so the core
- *   can label a plugin's tool without knowing it's a CLI.
+ *   tool call's input into the one-line status shown while it runs, in the
+ *   turn's person's language (`t`) — so the core can label a plugin's tool
+ *   without knowing it's a CLI.
  * - `postTurnGuards`: run over the model's finished text (see `PostTurnGuard`).
  * - `login`: how a plugin acting as `person` logs one in (see `PersonLogin`).
  */
@@ -244,7 +273,7 @@ export type PluginRuntimeContributions = {
   postProcess?: CliPostProcessor;
   login?: PersonLogin;
   sessionTools?: (ctx: SessionToolContext, postProcess?: CliPostProcessor) => Record<string, Tool>;
-  toolStatusDescribers?: Record<string, (input: unknown) => string>;
+  toolStatusDescribers?: Record<string, (input: unknown, t: Translate) => string>;
   postTurnGuards?: PostTurnGuard[];
 };
 
@@ -259,24 +288,27 @@ export type CliCommandInfo = { binary: string; args: string[]; mutating: boolean
 /** Turns a command about to run into the one-line status content shown while it
  * runs. A plugin may supply one to `createCliStatusDescriber` (see
  * `@mercury-fw/cli-engine`) to override the default; the core only transports the
- * result, the channel decides how to render it. */
-export type StatusDescriber = (cmd: CliCommandInfo) => string;
+ * result, the channel decides how to render it. `t` gives the turn's texts. */
+export type StatusDescriber = (cmd: CliCommandInfo, t: Translate) => string;
 
 /**
  * The default status content for a CLI command, used for every command unless a
- * plugin overrides it. A plain "esecuzione <binary> <sottocomando>", where the
- * subcommand is the leading non-flag tokens capped at two — deliberately not a
- * read/write classification. A plugin that wants finer wording supplies its own
- * `StatusDescriber`.
+ * plugin overrides it. A plain "Running <binary> <subcommand>" (the core's
+ * `core.status.command`, `core.status.command-bare` without a subcommand),
+ * where the subcommand is the leading non-flag tokens capped at two —
+ * deliberately not a read/write classification. A plugin that wants finer
+ * wording supplies its own `StatusDescriber`.
  */
-export const defaultStatusLabel: StatusDescriber = ({ binary, args }) => {
+export const defaultStatusLabel: StatusDescriber = ({ binary, args }, t) => {
   const sub: string[] = [];
   for (const a of args) {
     if (a.startsWith("-")) break;
     sub.push(a);
     if (sub.length === 2) break;
   }
-  return sub.length > 0 ? `esecuzione ${binary} ${sub.join(" ")}` : `esecuzione ${binary}`;
+  return sub.length > 0
+    ? t("core.status.command", { binary, command: sub.join(" ") })
+    : t("core.status.command-bare", { binary });
 };
 
 /**
@@ -357,6 +389,9 @@ export type PluginSurface = {
  * - `skills`: Agent-Skills the plugin contributes (see `Skill`); their
  *   descriptors go in the system prompt, their bodies load on demand.
  * - `surfaces`: reserved (see `PluginSurface`); absent for a plugin with none.
+ * - `messages`: the plugin's texts a person sees, in English (see `Messages`),
+ *   every key under `<name>.`; the loader refuses a plugin with a key outside
+ *   it. The instance's language files translate them.
  * - `actsAs`: whose identity the plugin's tools act with at the service they
  *   reach. `"person"`: the person the turn is for, who logs in to it through
  *   Mercury (the plugin contributes `login`). `"mercury"`: Mercury's own
@@ -382,4 +417,5 @@ export type Plugin = {
   skills?: Skill[];
   surfaces?: PluginSurface[];
   actsAs?: "person" | "mercury" | "anyone";
+  messages?: Messages;
 };
