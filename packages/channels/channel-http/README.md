@@ -52,6 +52,8 @@ Runs one conversational turn; the reply streams back as Server-Sent Events.
 
 **Responses**: `200 text/event-stream` (the events below); `400` if `text` is missing, an opening has no `conversationId`, the body isn't JSON, or `conversationId` has other characters than the ones above.
 
+**Languages.** Every text a person reads that isn't the model's (a refusal, a tool's status line, a choice's label, a confirmation's reply, the login page) is in their language: the one they asked the assistant for, else the one the request's `Accept-Language` header asks for (what browsers send on their own), else the app's default. The responses of `POST /turn` and `POST /confirm` say which with `Content-Language`.
+
 Reasoning and answer text arrive as **incremental deltas** — never one finished block — so a UI renders them live; treat the `final` event as the authoritative text. **To cancel** a turn (e.g. a generation that's diverging), close the connection: Mercury aborts the in-flight generation.
 
 **SSE events** — each is `event: <name>` followed by `data: <json>`:
@@ -63,9 +65,9 @@ Reasoning and answer text arrive as **incremental deltas** — never one finishe
 | `tool` | `{ label, detail, toolCallId, name }` | a tool call starts; `name` is the tool the model called, absent when Mercury is saving something to memory |
 | `tool_finish` | `{ toolCallId, outcome }` | a tool call settles (`outcome`: `success` \| `failed` \| `pending`) |
 | `text` | `{ chunk }` | an answer-text delta |
-| `pending` | `{ command, token, choices }` | a confirm-required action was staged; send a token back to confirm it — as a later `/turn` `text`, or via `POST /confirm`. `choices` is every way to answer (`{ token, label }`, in order; one, labelled `Conferma`, for a plain staging): the others die with the one sent |
+| `pending` | `{ command, token, choices }` | a confirm-required action was staged; send a token back to confirm it — as a later `/turn` `text`, or via `POST /confirm`. `choices` is every way to answer (`{ token, label }`, in order, each label in the caller's language; one with an empty `label` for a plain staging, which the UI words itself, a "Confirm" button): the others die with the one sent |
 | `login` | `{ service, url }` | the caller isn't logged in to `service` yet, which a plugin acts on as them: show them `url` to open (the model never gets it) |
-| `final` | `{ text }` | the complete answer (also emitted for a token confirmation, with no model turn) |
+| `final` | `{ text, pendingNote? }` | the complete answer (also emitted for a token confirmation, with no model turn). `pendingNote` is there when the model wrote nothing because the turn staged an action: the core's stand-in sentence `text` begins with (then any list the turn surfaced). A UI showing its own confirmation hides it; the conversation's transcript keeps it |
 | `error` | `{ message }` | the turn failed mid-stream |
 
 ```bash
@@ -77,7 +79,7 @@ curl -N -X POST http://localhost:4100/turn \
 
 ## `GET /login/callback`
 
-Where a person comes back after logging in to a service a plugin acts on as them (Jira, Bitbucket): the `login` event's `url` sends them to the service, and the service sends their browser here with `code` and `state`. Mounted only with `HTTP_SURFACE_PUBLIC_URL`, at `<HTTP_SURFACE_PUBLIC_URL>/login/callback`, which is the URL to register as a callback on the service's app (the Atlassian 3LO app, the Bitbucket consumer people log in through). No bearer token: the browser has none here, and the `state` Mercury issued for that person, single-use and valid for ten minutes, is what ties the request to their login. Answers with a plain-text page saying how it went.
+Where a person comes back after logging in to a service a plugin acts on as them (Jira, Bitbucket): the `login` event's `url` sends them to the service, and the service sends their browser here with `code` and `state`. Mounted only with `HTTP_SURFACE_PUBLIC_URL`, at `<HTTP_SURFACE_PUBLIC_URL>/login/callback`, which is the URL to register as a callback on the service's app (the Atlassian 3LO app, the Bitbucket consumer people log in through). No bearer token: the browser has none here, and the `state` Mercury issued for that person, single-use and valid for ten minutes, is what ties the request to their login. Answers with a plain-text page saying how it went, in the language the browser asks for (`Accept-Language`), else the app's default; a login that failed reads in the language of the person who started it.
 
 Whoever opens the link and accepts decides which account gets linked: a link belongs to the person it was shown to, and someone else accepting it would link their own account to that person's Mercury identity. A UI should say so next to the link. Checking the linked account against the person is [#179](https://github.com/lucabro81/mercury-fw/issues/179).
 
@@ -87,7 +89,7 @@ A code for linking another of the caller's accounts to them, for the UI to show:
 
 ## `POST /confirm`
 
-Explicit alternative to re-sending a token as `/turn` `text`. Body `{ token, conversationId }`; returns `{ ok: true, resolved: true, text }` when the token was a pending confirmation, `{ ok: true, resolved: false }` otherwise. When the confirmed action hands its result back to the model, it returns `{ ok: true, resolved: true, resume: true }` instead: open `POST /turn { resume: true, conversationId }` to hear the model's answer. `400` if `token` or `conversationId` is missing, or the id has other characters than `/turn` accepts. Never invokes the model.
+Explicit alternative to re-sending a token as `/turn` `text`. Body `{ token, conversationId }`; returns `{ ok: true, resolved: true, text }` when the token was a pending confirmation (`text`: the core's reply in the caller's language, "Confirmed and done." or the failure, never the action's raw result), `{ ok: true, resolved: false }` otherwise. When the confirmed action hands its result back to the model, it returns `{ ok: true, resolved: true, resume: true }` instead: open `POST /turn { resume: true, conversationId }` to hear the model's answer. `400` if `token` or `conversationId` is missing, or the id has other characters than `/turn` accepts. Never invokes the model.
 
 ## Read-only introspection
 

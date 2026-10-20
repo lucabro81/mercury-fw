@@ -341,7 +341,7 @@ export default e2e({
         "Delete the issue SUP-1 on Jira",
         { text: (previous) => (previous.calls.find((c) => c.pending)?.output as { token: string }).token, as: "bob" },
       ],
-      check: (run, expect) => expect.answerNot("Confermato"),
+      check: (run, expect) => expect.answerNot("Confirmed"),
     },
   ],
 });
