@@ -16,14 +16,16 @@
  */
 import type { ChannelPlugin } from "@mercury-fw/channel-types";
 import { createHttpProvider } from "./http-provider.ts";
+import { HTTP_MESSAGES } from "./messages.ts";
 
 export { createHttpProvider, type HttpProviderDeps } from "./http-provider.ts";
 
 export const httpChannel: ChannelPlugin = {
   // The contract this channel is written for, as a literal: importing
   // CHANNEL_API_VERSION would report whichever contract is installed.
-  apiVersion: 5,
+  apiVersion: 6,
   name: "http",
+  messages: HTTP_MESSAGES,
   build: (ctx) => {
     if (!ctx.resolveConfirmation || !ctx.reads) {
       throw new Error("http channel requires the resolveConfirmation and reads capabilities on the runtime context");
@@ -44,6 +46,7 @@ export const httpChannel: ChannelPlugin = {
       reads: ctx.reads,
       authenticate: ctx.authenticate,
       admit: ctx.admit,
+      i18n: ctx.i18n,
       ...(ctx.linking === undefined ? {} : { linking: ctx.linking }),
       ...(resumeMaxChars === undefined ? {} : { resumeMaxChars }),
       ...(ctx.assistantName === undefined ? {} : { assistantName: ctx.assistantName }),

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "bun:test";
 import { handleTurnRequest, handleConfirmRequest, handleLinkRequest, handleLoginCallback, openApiResponse, readRoutes, startHttpServer } from "./http-server.ts";
-import { RESUME_AFTER_CONFIRM, type Admission, type Authenticate, type HandleTurn, type InboundTurn, type TurnSink, type ChannelHostReads, type Principal } from "@mercury-fw/channel-types";
+import { type Admission, type Authenticate, type HandleTurn, type InboundTurn, type TurnSink, type ChannelHostReads, type Principal } from "@mercury-fw/channel-types";
 import type { StepInfo } from "@mercury-fw/plugin-types";
 
 /**
@@ -99,13 +99,12 @@ describe("handleTurnRequest", () => {
     };
     const res = await handleTurnRequest(turnReq({ text: "SOME-TOKEN", conversationId: "c" }), {
       handleTurn,
-      confirm: async () => "Confermato ed eseguito: {}",
+      confirm: async () => ({ text: "Confirmed and done." }),
       authenticate: asAlice,
     });
     const body = await res.text();
     expect(modelCalled).toBe(false);
-    expect(body).toContain("event: final");
-    expect(body).toContain("Confermato ed eseguito");
+    expect(body).toContain(`event: final\ndata: ${JSON.stringify({ text: "Confirmed and done." })}`);
   });
 
   it("streams a tool event with the label, detail, call id and the tool's name", async () => {
@@ -197,14 +196,14 @@ describe("handleTurnRequest", () => {
         turns.push(turn);
         await sink.finalize("The page says hello.");
       },
-      confirm: async () => RESUME_AFTER_CONFIRM,
+      confirm: async () => ({ text: "Confirmed, picking up where I left off.", resume: true }),
       authenticate: asAlice,
     });
     const body = await res.text();
     expect(turns).toHaveLength(1);
     expect(turns[0]).toMatchObject({ text: "", resumeAfterConfirm: true, sessionKey: "alice:c" });
     expect(body).toContain(`event: final\ndata: ${JSON.stringify({ text: "The page says hello." })}`);
-    expect(body).not.toContain(RESUME_AFTER_CONFIRM);
+    expect(body).not.toContain("picking up");
   });
 
   it("resume: true runs the conversation's resumed turn, without text and without resolving anything", async () => {
@@ -498,7 +497,7 @@ describe("authentication on /turn and /confirm", () => {
       handleTurn: async () => {},
       confirm: async (token, sessionKey, principal) => {
         seen = [token, sessionKey, principal];
-        return "Confermato";
+        return { text: "Confirmed and done." };
       },
       authenticate: asAlice,
     });
@@ -514,7 +513,7 @@ describe("authentication on /turn and /confirm", () => {
         authenticate: refuse,
         resolveConfirmation: async () => {
           resolved = true;
-          return { status: "ok", data: {} };
+          return { status: "ok", data: {}, text: "Confirmed and done." };
         },
       },
     );
@@ -535,10 +534,10 @@ describe("handleConfirmRequest", () => {
   it("maps an ok outcome to resolved:true with CORS", async () => {
     const res = await handleConfirmRequest(confirmReq({ token: "k9m2-x7q4", conversationId: "c" }), {
       authenticate: asAlice,
-      resolveConfirmation: async () => ({ status: "ok", data: { deleted: "KAN-1" } }),
+      resolveConfirmation: async () => ({ status: "ok", data: { deleted: "KAN-1" }, text: "Confirmed and done." }),
     });
     expect(res.headers.get("access-control-allow-origin")).toBe("*");
-    expect(await res.json()).toMatchObject({ ok: true, resolved: true, text: expect.stringContaining("Confermato ed eseguito") });
+    expect(await res.json()).toEqual({ ok: true, resolved: true, text: "Confirmed and done." });
   });
 
   // Regression for the #35 cold review: a well-shaped token that isn't pending
@@ -547,7 +546,7 @@ describe("handleConfirmRequest", () => {
   it("maps a not-found outcome to resolved:false", async () => {
     const res = await handleConfirmRequest(confirmReq({ token: "k9m2-x7q4", conversationId: "c" }), {
       authenticate: asAlice,
-      resolveConfirmation: async () => ({ status: "not-found" }),
+      resolveConfirmation: async () => ({ status: "not-found", text: "Nothing pending." }),
     });
     expect(await res.json()).toEqual({ ok: true, resolved: false });
   });
@@ -555,7 +554,7 @@ describe("handleConfirmRequest", () => {
   it("maps a resume outcome to resolved:true with resume:true, and no text", async () => {
     const res = await handleConfirmRequest(confirmReq({ token: "k9m2-x7q4", conversationId: "c" }), {
       authenticate: asAlice,
-      resolveConfirmation: async () => ({ status: "resume" }),
+      resolveConfirmation: async () => ({ status: "resume", text: "Confirmed, picking up where I left off." }),
     });
     expect(await res.json()).toEqual({ ok: true, resolved: true, resume: true });
   });
@@ -563,9 +562,9 @@ describe("handleConfirmRequest", () => {
   it("maps a failed outcome to resolved:true reporting the failure", async () => {
     const res = await handleConfirmRequest(confirmReq({ token: "k9m2-x7q4", conversationId: "c" }), {
       authenticate: asAlice,
-      resolveConfirmation: async () => ({ status: "failed", error: "boom" }),
+      resolveConfirmation: async () => ({ status: "failed", error: "boom", text: "Confirmed, but it failed: boom" }),
     });
-    expect(await res.json()).toMatchObject({ ok: true, resolved: true, text: expect.stringContaining("l'esecuzione è fallita") });
+    expect(await res.json()).toEqual({ ok: true, resolved: true, text: "Confirmed, but it failed: boom" });
   });
 
   it("passes the caller's own session key, and the caller", async () => {
@@ -574,7 +573,7 @@ describe("handleConfirmRequest", () => {
       authenticate: asAlice,
       resolveConfirmation: async (_token, sessionKey, principal) => {
         seen = [sessionKey, principal];
-        return { status: "not-found" };
+        return { status: "not-found", text: "Nothing pending." };
       },
     });
     expect(seen).toEqual(["alice:conv-9", ALICE]);
@@ -586,7 +585,7 @@ describe("handleConfirmRequest", () => {
       authenticate: asAlice,
       resolveConfirmation: async () => {
         resolved = true;
-        return { status: "not-found" as const };
+        return { status: "not-found" as const, text: "Nothing pending." };
       },
     };
     const res = await handleConfirmRequest(confirmReq({ token: "TOK", conversationId: ".." }), stub);
@@ -595,7 +594,7 @@ describe("handleConfirmRequest", () => {
   });
 
   it("returns 400 when token or conversationId is missing", async () => {
-    const stub = { authenticate: asAlice, resolveConfirmation: async () => ({ status: "not-found" as const }) };
+    const stub = { authenticate: asAlice, resolveConfirmation: async () => ({ status: "not-found" as const, text: "Nothing pending." }) };
     const noToken = await handleConfirmRequest(confirmReq({ conversationId: "c" }), stub);
     expect(noToken.status).toBe(400);
     const noConv = await handleConfirmRequest(confirmReq({ token: "TOK" }), stub);
@@ -671,7 +670,7 @@ describe("handleLoginCallback", () => {
   });
 
   it("is mounted, without authentication, only when the server can complete logins", async () => {
-    const base = { handleTurn: async () => {}, confirm: async () => null, resolveConfirmation: async () => ({ status: "not-a-token" as const }), authenticate: refuse, port: 0 };
+    const base = { handleTurn: async () => {}, confirm: async () => null, resolveConfirmation: async () => ({ status: "not-a-token" as const, text: null }), authenticate: refuse, port: 0 };
     const withLogins = startHttpServer({ ...base, completeLogin: async () => ({ ok: true, service: "jira" }) });
     const without = startHttpServer(base);
     try {
@@ -852,7 +851,7 @@ describe("admission", () => {
       {
         authenticate: asAlice,
         admit: notAdmitted("unknown"),
-        resolveConfirmation: async () => ((resolved = true), { status: "ok", data: {} }),
+        resolveConfirmation: async () => ((resolved = true), { status: "ok", data: {}, text: "Confirmed and done." }),
       },
     );
     expect(res.status).toBe(403);
@@ -962,7 +961,7 @@ describe("startHttpServer", () => {
       port: 0,
       handleTurn: async () => {},
       confirm: async () => null,
-      resolveConfirmation: async () => ({ status: "not-a-token" as const }),
+      resolveConfirmation: async () => ({ status: "not-a-token" as const, text: null }),
       authenticate: asAlice,
     };
     const without = startHttpServer(base);
@@ -983,7 +982,7 @@ describe("startHttpServer", () => {
       port: 0,
       handleTurn: async () => {},
       confirm: async () => null,
-      resolveConfirmation: async () => ({ status: "not-a-token" }),
+      resolveConfirmation: async () => ({ status: "not-a-token", text: null }),
       authenticate: refuse,
       reads: {
         manifest: async () => ({}),
@@ -1115,7 +1114,7 @@ describe("an opening turn", () => {
     };
     const res = await handleTurnRequest(turnReq({ opening: true, conversationId: "conv-1" }), {
       handleTurn,
-      confirm: async () => ((confirmed = true), "confirmed"),
+      confirm: async () => ((confirmed = true), { text: "confirmed" }),
       authenticate: asAlice,
     });
     expect(await res.text()).toContain('event: final\ndata: {"text":"Ciao! Come vuoi che ti chiami?"}');
@@ -1218,5 +1217,91 @@ describe("GET /me", () => {
 
   it("isn't there on a core that can't say", () => {
     expect(readRoutes(base, asAlice)["/me"]).toBeUndefined();
+  });
+});
+
+// #281: the client's language reaches every text a person reads: the turn's,
+// a confirmation's reply, a refusal and the login page; the response says
+// which language it answered in.
+describe("the caller's language", () => {
+  const i18n = {
+    forRequest: async (principal: Principal | null, hint?: string) => ({
+      locale: hint?.startsWith("it") ? "it" : "en",
+      t: (key: string, params?: Record<string, string | number>) => `${hint ?? "-"}|${principal?.id ?? "nobody"}|${key}${params ? JSON.stringify(params) : ""}`,
+    }),
+  };
+  const withLanguage = (req: Request, value: string) => {
+    req.headers.set("accept-language", value);
+    return req;
+  };
+
+  it("hands Accept-Language to the turn, the confirmation and the admission, and says the language back", async () => {
+    const seen: unknown[] = [];
+    const res = await handleTurnRequest(withLanguage(turnReq({ text: "ciao", conversationId: "c" }), "it-IT,it;q=0.9"), {
+      handleTurn: async (turn, sink) => {
+        seen.push(["turn", turn.languageHint]);
+        await sink.finalize("ok");
+      },
+      confirm: async (_token, _key, _principal, hint) => (seen.push(["confirm", hint]), null),
+      admit: async (_principal, hint) => (seen.push(["admit", hint]), { ok: true }),
+      authenticate: asAlice,
+      i18n,
+    });
+    await res.text();
+    expect(seen).toEqual([
+      ["admit", "it-IT,it;q=0.9"],
+      ["confirm", "it-IT,it;q=0.9"],
+      ["turn", "it-IT,it;q=0.9"],
+    ]);
+    expect(res.headers.get("content-language")).toBe("it");
+  });
+
+  it("refuses in the language asked for", async () => {
+    const res = await handleTurnRequest(withLanguage(turnReq({ text: "ciao", conversationId: "c" }), "it"), {
+      handleTurn: async () => {},
+      confirm: async () => null,
+      admit: async (_principal, hint) => ({ ok: false, reason: "unknown", message: `refused in ${hint}` }),
+      authenticate: asAlice,
+    });
+    expect(await res.json()).toEqual({ ok: false, error: "refused in it", reason: "unknown" });
+  });
+
+  it("says when the final text is the core's pending note", async () => {
+    const res = await handleTurnRequest(turnReq({ text: "delete X-1", conversationId: "c" }), {
+      handleTurn: async (_turn, sink) => sink.finalize("Action pending.", { pendingNote: "Action pending." }),
+      confirm: async () => null,
+      authenticate: asAlice,
+    });
+    expect(await res.text()).toContain(`event: final\ndata: ${JSON.stringify({ text: "Action pending.", pendingNote: "Action pending." })}`);
+  });
+
+  it("resolves /confirm in the language asked for, and says it back", async () => {
+    let hintSeen: string | undefined;
+    const res = await handleConfirmRequest(
+      withLanguage(new Request("http://x/confirm", { method: "POST", body: JSON.stringify({ token: "k9m2-x7q4", conversationId: "c" }) }), "it"),
+      {
+        authenticate: asAlice,
+        resolveConfirmation: async (_token, _key, _principal, hint) => ((hintSeen = hint), { status: "ok", data: null, text: "Fatto." }),
+        i18n,
+      },
+    );
+    expect(hintSeen).toBe("it");
+    expect(res.headers.get("content-language")).toBe("it");
+    expect(await res.json()).toEqual({ ok: true, resolved: true, text: "Fatto." });
+  });
+
+  it("writes the login page in the language the browser asks for, for nobody in particular", async () => {
+    const res = await handleLoginCallback(withLanguage(new Request("http://x/login/callback?state=st"), "it"), {
+      complete: async () => ({ ok: true, service: "jira" }),
+      assistantName: "Poc",
+      i18n,
+    });
+    expect(await res.text()).toBe('it|nobody|http.login.incomplete{"assistant":"Poc"}');
+    const done = await handleLoginCallback(withLanguage(new Request("http://x/login/callback?code=c&state=st"), "it"), {
+      complete: async () => ({ ok: true, service: "jira" }),
+      assistantName: "Poc",
+      i18n,
+    });
+    expect(await done.text()).toBe('it|nobody|http.login.done{"service":"jira"}');
   });
 });

@@ -101,7 +101,12 @@ paths:
         speaks first in the conversation named (right after someone signs
         in): it does only for someone it doesn't know the name of, asking how
         to call them, and otherwise the stream carries a single `final` with
-        an empty text.
+        an empty text. Every text the person reads that isn't the model's (a
+        refusal, a status line, a confirmation's reply) is in their language:
+        the one they saved, else the one `Accept-Language` asks for, else the
+        instance's default.
+      parameters:
+        - $ref: "#/components/parameters/AcceptLanguage"
       requestBody:
         required: true
         content:
@@ -125,6 +130,9 @@ paths:
             service the caller has to log in to first, with the link to open),
             `final` (the
             authoritative complete answer), and `error`.
+          headers:
+            Content-Language:
+              $ref: "#/components/headers/ContentLanguage"
           content:
             text/event-stream:
               schema:
@@ -141,7 +149,10 @@ paths:
       description: >
         Runs a one-time confirmation token through the same mechanism the
         bare-token-in-`text` path uses, keyed on the caller's own conversation
-        (`<caller id>:<conversationId>`). Never touches the model.
+        (`<caller id>:<conversationId>`). Never touches the model. The reply
+        is in the caller's language, as on `/turn`.
+      parameters:
+        - $ref: "#/components/parameters/AcceptLanguage"
       requestBody:
         required: true
         content:
@@ -162,6 +173,9 @@ paths:
             already used). `resolved: true` with `resume: true` and no `text`
             when the action handed its result back to the model: the answer
             comes from `POST /turn { resume: true, conversationId }`.
+          headers:
+            Content-Language:
+              $ref: "#/components/headers/ContentLanguage"
           content:
             application/json:
               schema:
@@ -498,9 +512,12 @@ paths:
         Mounted when `HTTP_SURFACE_PUBLIC_URL` is set. The service sends the
         person's browser here with `code` and `state` (or `error`); the
         single-use state is the credential, so no bearer token is needed.
-        Answers with a plain-text page.
+        Answers with a plain-text page, in the language the browser asks for
+        (`Accept-Language`), else the instance's default; a failed login reads
+        in the language of the person who started it.
       security: []
       parameters:
+        - $ref: "#/components/parameters/AcceptLanguage"
         - { name: code, in: query, schema: { type: string } }
         - { name: state, in: query, schema: { type: string } }
         - { name: error, in: query, schema: { type: string } }
@@ -527,6 +544,23 @@ paths:
               schema:
                 type: string
 components:
+  parameters:
+    AcceptLanguage:
+      name: Accept-Language
+      in: header
+      required: false
+      description: >
+        The languages the client prefers, as browsers send them
+        (`it-IT,it;q=0.9,en;q=0.8`). Used for the texts the person reads when
+        they saved no language of their own; a language the instance doesn't
+        ship is passed over.
+      schema:
+        type: string
+  headers:
+    ContentLanguage:
+      description: The language the response's texts are in, one the instance ships (`en`, `it`).
+      schema:
+        type: string
   securitySchemes:
     bearerAuth:
       type: http
@@ -621,7 +655,7 @@ components:
           description: On `pending` — the one-time confirmation token (the first choice's).
         choices:
           type: array
-          description: On `pending` — every way to answer, in order; a plain staging has one, labelled `Conferma`.
+          description: On `pending` — every way to answer, in order, each label in the caller's language; a plain staging has one with an empty label, which the UI words itself (a "Confirm" button).
           items:
             type: object
             required: [token, label]
@@ -639,6 +673,13 @@ components:
         text:
           type: string
           description: On `final` — the authoritative complete answer.
+        pendingNote:
+          type: string
+          description: >
+            On `final`, when the model wrote nothing because the turn staged an
+            action: the stand-in sentence `text` begins with (followed by any
+            list the turn surfaced). A UI showing its own confirmation hides
+            it; the conversation's transcript keeps it.
         message:
           type: string
           description: On `error` — the failure message.
