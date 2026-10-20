@@ -2,8 +2,16 @@ import { describe, expect, it } from "bun:test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { PLUGIN_API_VERSION, type PluginRuntimeContext, type SessionToolContext, type StageChoices } from "@mercury-fw/plugin-types";
+import { PLUGIN_API_VERSION, type PluginRuntimeContext, type SessionToolContext, type StageChoices, type Translate } from "@mercury-fw/plugin-types";
 import { webSearchPlugin, WEB_SEARCH_BACKEND_API_VERSION, type WebSearchBackend } from "./index.ts";
+import { WEB_SEARCH_MESSAGES } from "./messages.ts";
+
+/** The plugin's texts in English, as a turn with no other language gets them. */
+const english: Translate = (key, params) =>
+  (WEB_SEARCH_MESSAGES[key] ?? key).replace(/\{(\w+)\}/g, (whole, name: string) =>
+    params !== undefined && Object.hasOwn(params, name) ? String(params[name]) : whole,
+  );
+
 
 const backend: WebSearchBackend = {
   apiVersion: WEB_SEARCH_BACKEND_API_VERSION,
@@ -18,6 +26,7 @@ function ctx(overrides: Partial<PluginRuntimeContext> = {}, logs: string[] = [])
 function session(stageChoices?: StageChoices): SessionToolContext {
   return {
     sessionKey: "s",
+    t: english,
     stageConfirmation: async () => "t",
     ...(stageChoices ? { stageChoices } : {}),
     stashDisplay: () => "d",
@@ -50,12 +59,20 @@ describe("webSearchPlugin", () => {
     expect(plugin.systemPromptFragment).toContain("{{assistant}}");
   });
 
+  // #280: what a person reads of the plugin comes from its catalog, in
+  // English, every key under its name; the instance translates them.
+  it("declares its texts, every key under web-search.", () => {
+    const plugin = webSearchPlugin({ backend });
+    expect(plugin.messages).toBe(WEB_SEARCH_MESSAGES);
+    expect(Object.keys(WEB_SEARCH_MESSAGES).filter((key) => !key.startsWith("web-search."))).toEqual([]);
+  });
+
   it("builds both tools, their status labels and the sources guard", () => {
     const built = webSearchPlugin({ backend }).build!(ctx({ dataDir: mkdtempSync(join(tmpdir(), "ws-")) }));
     expect(Object.keys(built.sessionTools!(session()))).toEqual(["web_search", "web_fetch"]);
-    expect(built.toolStatusDescribers!.web_search!({ query: "bun 2" })).toBe('Cerco sul web: "bun 2"');
-    expect(built.toolStatusDescribers!.web_fetch!({ url: "https://docs.bun.sh/x" })).toBe("Leggo docs.bun.sh");
-    expect(built.toolStatusDescribers!.web_fetch!({ url: "nonsense" })).toBe("Leggo una pagina");
+    expect(built.toolStatusDescribers!.web_search!({ query: "bun 2" }, english)).toBe('Searching the web: "bun 2"');
+    expect(built.toolStatusDescribers!.web_fetch!({ url: "https://docs.bun.sh/x" }, english)).toBe("Reading docs.bun.sh");
+    expect(built.toolStatusDescribers!.web_fetch!({ url: "nonsense" }, english)).toBe("Reading a page");
     expect(built.postTurnGuards!.map((g) => g.statusId)).toEqual(["web-search-sources"]);
   });
 
@@ -90,7 +107,7 @@ describe("webSearchPlugin", () => {
 
     await built.sessionTools!(session(recordingStage(labels))).web_fetch!.execute!({ url: "https://example.org/" } as never, {} as never);
 
-    expect(labels).toEqual([["Solo questa volta"]]);
+    expect(labels).toEqual([["Only this time"]]);
     expect(logs).toEqual(["web-search: no data folder from the core: nobody can allow a host for good, only one page at a time"]);
   });
 
@@ -113,6 +130,6 @@ describe("webSearchPlugin", () => {
 
     await built.sessionTools!(session(recordingStage(labels))).web_fetch!.execute!({ url: "https://example.org/" } as never, {} as never);
 
-    expect(labels).toEqual([["Solo questa volta", "Sempre per example.org"]]);
+    expect(labels).toEqual([["Only this time", "Always for example.org"]]);
   });
 });
