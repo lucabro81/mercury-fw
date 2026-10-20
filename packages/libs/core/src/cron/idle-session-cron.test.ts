@@ -56,7 +56,7 @@ describe("captureSessionToMemory", () => {
       store: async () => {},
       extractFacts: async (msgs) => {
         expect(msgs).toBe(messages);
-        return [{ topic: "preferred-language", value: "italiano" }];
+        return [{ topic: "role", value: "developer" }];
       },
       storeFact: async (entry) => {
         storedFacts.push(entry);
@@ -67,9 +67,9 @@ describe("captureSessionToMemory", () => {
     });
 
     expect(storedFacts).toEqual([
-      { userId: "users/1", topic: "preferred-language", value: "italiano", timestamp: new Date(NOW).toISOString() },
+      { userId: "users/1", topic: "role", value: "developer", timestamp: new Date(NOW).toISOString() },
     ]);
-    expect(consolidatedTopics).toEqual([["users/1", "preferred-language"]]);
+    expect(consolidatedTopics).toEqual([["users/1", "role"]]);
   });
 
   it("a failure extracting semantic facts is caught and logged, doesn't throw", async () => {
@@ -244,7 +244,7 @@ describe("runIdleSessionSweep", () => {
       closeSession: () => {},
       extractFacts: async (msgs) => {
         expect(msgs).toBe(messages);
-        return [{ topic: "preferred-language", value: "italiano" }];
+        return [{ topic: "role", value: "developer" }];
       },
       storeFact: async (entry) => {
         storedFacts.push(entry);
@@ -255,9 +255,9 @@ describe("runIdleSessionSweep", () => {
     });
 
     expect(storedFacts).toEqual([
-      { userId: "users/1", topic: "preferred-language", value: "italiano", timestamp: new Date(NOW).toISOString() },
+      { userId: "users/1", topic: "role", value: "developer", timestamp: new Date(NOW).toISOString() },
     ]);
-    expect(consolidatedTopics).toEqual([["users/1", "preferred-language"]]);
+    expect(consolidatedTopics).toEqual([["users/1", "role"]]);
   });
 
   it("a failure extracting semantic facts doesn't prevent the session from closing, just logs it", async () => {
