@@ -247,6 +247,7 @@ describe("createTerminalProvider", () => {
         asked.push(key);
         return { locale: "it", t: (k, params) => interpolate(italian[k] ?? k, params) };
       },
+      savedLanguage: () => undefined,
     };
     const provider = createTerminalProvider({
       confirmDeps: fakeConfirmDeps(),

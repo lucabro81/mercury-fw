@@ -126,6 +126,7 @@ describe("createSessionCapture", () => {
         locale: "it",
         t: (k, params) => `${key}:${k}${params ? JSON.stringify(params) : ""}`,
       }),
+      savedLanguage: () => undefined,
     };
     const c = createSessionCapture({
       capture: recorder().capture,

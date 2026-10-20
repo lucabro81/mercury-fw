@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { CORE_MESSAGES } from "./core-messages.ts";
-import { createI18n, createTexts, englishTexts, interpolate, namespaceErrors, negotiate } from "./i18n.ts";
+import { createI18n, createTexts, englishTexts, interpolate, negotiate } from "./i18n.ts";
 
 describe("interpolate", () => {
   test("fills every {param}, numbers included", () => {
@@ -16,31 +16,6 @@ describe("interpolate", () => {
 
   test("doesn't read params from the object's prototype", () => {
     expect(interpolate("{toString}", {})).toBe("{toString}");
-  });
-});
-
-describe("namespaceErrors", () => {
-  test("accepts keys under the package's namespace", () => {
-    expect(namespaceErrors("web-search", { "web-search.choice.once": "Only this time" })).toEqual([]);
-  });
-
-  test("names every key outside it, the bare namespace and a lookalike prefix included", () => {
-    expect(
-      namespaceErrors("web-search", {
-        "core.access.unknown": "x",
-        "web-search": "x",
-        "web-searchx.a": "x",
-        "web-search.ok": "x",
-      }),
-    ).toEqual([
-      'key "core.access.unknown" is outside the "web-search." namespace',
-      'key "web-search" is outside the "web-search." namespace',
-      'key "web-searchx.a" is outside the "web-search." namespace',
-    ]);
-  });
-
-  test("names a value that isn't text", () => {
-    expect(namespaceErrors("core", { "core.a": 1 as unknown as string })).toEqual(['key "core.a" isn\'t a string']);
   });
 });
 
@@ -192,6 +167,16 @@ describe("createTexts", () => {
   test("the saved language beats the hint", () => {
     expect(texts.forPerson("static:alice", "en").locale).toBe("it");
   });
+
+  // Review of #279: a language a person saved and the instance no longer
+  // ships still reached the prompt, while the fixed texts fell back to the
+  // default: the answers and the texts disagreed.
+  test("savedLanguage is the person's language only while the instance ships it", () => {
+    const stale = createTexts(i18n, (key) => ({ "static:alice": "it", "static:bob": "fr" })[key]);
+    expect(stale.savedLanguage("static:alice")).toBe("it");
+    expect(stale.savedLanguage("static:bob")).toBeUndefined();
+    expect(stale.savedLanguage("static:carol")).toBeUndefined();
+  });
 });
 
 describe("englishTexts", () => {
@@ -202,6 +187,6 @@ describe("englishTexts", () => {
 
 describe("CORE_MESSAGES", () => {
   test("every key is in the core's namespace", () => {
-    expect(namespaceErrors("core", CORE_MESSAGES)).toEqual([]);
+    expect(Object.keys(CORE_MESSAGES).filter((key) => !key.startsWith("core."))).toEqual([]);
   });
 });

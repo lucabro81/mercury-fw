@@ -30,20 +30,6 @@ export function interpolate(text: string, params?: Params): string {
   );
 }
 
-/** What's wrong with a package's catalog: keys outside `<namespace>.`, values that aren't text. Empty when nothing is. */
-export function namespaceErrors(namespace: string, messages: Messages): string[] {
-  const prefix = `${namespace}.`;
-  const errors: string[] = [];
-  for (const [key, text] of Object.entries(messages)) {
-    if (!key.startsWith(prefix) || key.length === prefix.length) {
-      errors.push(`key "${key}" is outside the "${prefix}" namespace`);
-    } else if (typeof text !== "string") {
-      errors.push(`key "${key}" isn't a string`);
-    }
-  }
-  return errors;
-}
-
 /**
  * The supported language a hint asks for (`it-IT,it;q=0.9,en;q=0.8`), or
  * undefined when it asks for none of them. Ranked by quality, then order; a
@@ -157,6 +143,8 @@ function count(n: number, noun: string): string {
 export type Texts = {
   /** For the person with `key` (undefined when nobody is known yet) on a channel hinting `hint`. */
   forPerson: (key: string | undefined, hint?: string) => { locale: string; t: Translate };
+  /** The language the person with `key` saved, while the instance ships it; undefined otherwise. */
+  savedLanguage: (key: string) => string | undefined;
 };
 
 /** `i18n`'s texts, each person's language read through `languageOf` (their profile). */
@@ -165,6 +153,10 @@ export function createTexts(i18n: I18n, languageOf: (key: string) => string | un
     forPerson: (key, hint) => {
       const locale = i18n.languageFor(key === undefined ? undefined : languageOf(key), hint);
       return { locale, t: i18n.translator(locale) };
+    },
+    savedLanguage: (key) => {
+      const saved = languageOf(key)?.toLowerCase();
+      return saved !== undefined && i18n.supported.includes(saved) ? saved : undefined;
     },
   };
 }
