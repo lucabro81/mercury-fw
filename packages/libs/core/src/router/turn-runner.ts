@@ -34,6 +34,19 @@ import { createSessionLock, type SessionLock } from "./session-lock.ts";
 export const PREFERRED_NAME_NOTE = (name: string): string =>
   `You're talking with ${name}: that's how they asked to be called, so address them that way.`;
 
+/** Appended to a one-to-one turn's prompt when the person saved a language (`set_preferred_language`): the fixed texts are in it, so the answers must be too. */
+export const PREFERRED_LANGUAGE_NOTE = (language: string): string =>
+  `The person asked you to talk to them in ${languageName(language)} (${language}): always answer in it.`;
+
+/** `language`'s name in English (`it` → Italian), or the code itself when the runtime doesn't know it. */
+function languageName(language: string): string {
+  try {
+    return new Intl.DisplayNames(["en"], { type: "language" }).of(language) ?? language;
+  } catch {
+    return language;
+  }
+}
+
 /** Appended to an opening turn's prompt: the person signed in and wrote nothing, and the assistant doesn't know them. */
 export const OPENING_NOTE =
   "The person just signed in and opened this conversation: they haven't written anything yet, and you don't know their name. " +
@@ -166,6 +179,8 @@ export type TurnRunnerDeps = {
   shownLists?: (sessionKey: string) => Array<{ ref: string; label: string }>;
   /** How the person with `key` asked to be called, or undefined; nobody has a name when absent. */
   preferredName?: (key: string) => string | undefined;
+  /** The language the person with `key` saved, or undefined; nobody has one when absent. */
+  preferredLanguage?: (key: string) => string | undefined;
   /** `key` is the person's key, `who` whom the tools are offered to and act for. */
   buildTools: (
     sessionKey: string,
@@ -321,6 +336,7 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
     // A shared space names each sender in their messages; one person's name is
     // only for a one-to-one turn.
     const name = turn.multiUser ? undefined : deps.preferredName?.(key);
+    const language = turn.multiUser ? undefined : deps.preferredLanguage?.(key);
     // Speaking first is only for someone it doesn't know yet, one to one:
     // otherwise an opening says nothing and leaves nothing behind.
     if (turn.opening && (turn.multiUser || name !== undefined)) {
@@ -351,6 +367,7 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
         ...(primer?.current ? [primer.current] : []),
         ...(primer?.recap ? [RECAP_NOTE(primer.recap)] : []),
         ...(turn.opening ? [OPENING_NOTE] : name === undefined ? [] : [PREFERRED_NAME_NOTE(name)]),
+        ...(language === undefined ? [] : [PREFERRED_LANGUAGE_NOTE(language)]),
         // Last, where a small model pays the most attention.
         ...(shown.length > 0 ? [SHOWN_LISTS_NOTE(shown)] : []),
       ].join("\n\n");

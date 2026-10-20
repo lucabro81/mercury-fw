@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { createTurnRunner, parseStallTimeoutMs, DEFAULT_STALL_TIMEOUT_MS, OPENING_CUE, OPENING_NOTE, PREFERRED_NAME_NOTE, RECAP_NOTE, SHOWN_LISTS_NOTE, RESUMED_LINE, type PostTurnGuard } from "./turn-runner.ts";
+import { createTurnRunner, parseStallTimeoutMs, DEFAULT_STALL_TIMEOUT_MS, OPENING_CUE, OPENING_NOTE, PREFERRED_LANGUAGE_NOTE, PREFERRED_NAME_NOTE, RECAP_NOTE, SHOWN_LISTS_NOTE, RESUMED_LINE, type PostTurnGuard } from "./turn-runner.ts";
 import type { InboundTurn, TurnSink } from "./provider.ts";
 import type { Principal } from "@mercury-fw/channel-types";
 import { createSessionHistory, type SessionHistory } from "../session/history.ts";
@@ -1410,7 +1410,7 @@ describe("createTurnRunner", () => {
 // turn, and the first time Mercury knows nothing about them it speaks first,
 // asking. An opening for someone it already knows says nothing at all.
 describe("createTurnRunner: preferred name and opening turn", () => {
-  function setup(opts: { names?: Record<string, string> } = {}) {
+  function setup(opts: { names?: Record<string, string>; languages?: Record<string, string> } = {}) {
     const calls: Array<{ text: string; system: string }> = [];
     const histories: string[] = [];
     const captured: Array<{ role: string; content: string }> = [];
@@ -1428,6 +1428,7 @@ describe("createTurnRunner: preferred name and opening turn", () => {
         captured.push({ role: msg.role, content: msg.content });
       },
       preferredName: (key) => opts.names?.[key],
+      preferredLanguage: (key) => opts.languages?.[key],
       runTurnFn: async (_history, text, deps) => {
         calls.push({ text, system: deps.system });
         return "Ciao! Come vuoi che ti chiami?";
@@ -1440,6 +1441,33 @@ describe("createTurnRunner: preferred name and opening turn", () => {
     const { runner, calls } = setup({ names: { "google-chat:u1": "Luca" } });
     await runner(baseTurn({ principal: verified("u1") }), baseSink());
     expect(calls).toEqual([{ text: "hello", system: `single\n\n${PREFERRED_NAME_NOTE("Luca")}` }]);
+  });
+
+  // #279: the fixed texts follow the language the person saved; the model's
+  // answers must follow it too, or the two read in different languages.
+  test("a saved language is appended to the one-to-one prompt, after the name", async () => {
+    const { runner, calls } = setup({ names: { "google-chat:u1": "Luca" }, languages: { "google-chat:u1": "it" } });
+    await runner(baseTurn({ principal: verified("u1") }), baseSink());
+    expect(calls).toEqual([
+      { text: "hello", system: `single\n\n${PREFERRED_NAME_NOTE("Luca")}\n\n${PREFERRED_LANGUAGE_NOTE("it")}` },
+    ]);
+  });
+
+  test("a saved language reaches an opening too, and a shared space never gets one person's", async () => {
+    const { runner, calls } = setup({ languages: { "google-chat:u1": "it" } });
+    await runner(baseTurn({ principal: verified("u1"), opening: true, text: "" }), baseSink());
+    await runner(baseTurn({ principal: verified("u1"), multiUser: true }), baseSink());
+    expect(calls).toEqual([
+      { text: OPENING_CUE, system: `single\n\n${OPENING_NOTE}\n\n${PREFERRED_LANGUAGE_NOTE("it")}` },
+      { text: "hello", system: "multi" },
+    ]);
+  });
+
+  test("the language note names the language in English, and its code", () => {
+    expect(PREFERRED_LANGUAGE_NOTE("it")).toBe("The person asked you to talk to them in Italian (it): always answer in it.");
+    expect(PREFERRED_LANGUAGE_NOTE("pt-br")).toBe(
+      "The person asked you to talk to them in Brazilian Portuguese (pt-br): always answer in it.",
+    );
   });
 
   test("no name, a normal turn: the prompt is left as it is, nobody is asked anything", async () => {
