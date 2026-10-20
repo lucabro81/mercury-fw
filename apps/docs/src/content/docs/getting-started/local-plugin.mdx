@@ -79,7 +79,9 @@ Field by field:
 - **`sessionTools`** returns the tools by name. `description` is what the model reads to decide whether to call
   it, `inputSchema` the input it must send (none here), and `execute` what runs.
 
-What `execute` returns goes back to the model, which writes the answer from it.
+What `execute` returns goes back to the model, which writes the answer from it. A plugin that also shows the person
+words of its own, such as a status line while its tool runs, writes them in its `messages`: see
+[Texts the person reads](../../concepts/plugins/#texts-the-person-reads).
 
 ## Declare it
 

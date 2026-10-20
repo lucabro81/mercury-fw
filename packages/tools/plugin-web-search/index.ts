@@ -18,6 +18,7 @@ import { systemResolve, type Resolve } from "./ssrf.ts";
 import { readPage } from "./fetch-page.ts";
 import { createWebTools } from "./tools.ts";
 import { createSourcesGuard } from "./sources.ts";
+import { WEB_SEARCH_MESSAGES } from "./messages.ts";
 
 export { WEB_SEARCH_BACKEND_API_VERSION, type SearchResult, type WebSearchBackend } from "./backend.ts";
 
@@ -57,6 +58,7 @@ export function webSearchPlugin(options: WebSearchOptions, deps: { resolve?: Res
     name: "web-search",
     actsAs: "anyone",
     systemPromptFragment: FRAGMENT,
+    messages: WEB_SEARCH_MESSAGES,
     build: (ctx) => {
       const { backend } = options;
       if (backend.apiVersion !== WEB_SEARCH_BACKEND_API_VERSION) {
@@ -78,6 +80,7 @@ export function webSearchPlugin(options: WebSearchOptions, deps: { resolve?: Res
         sessionTools: (sctx) =>
           createWebTools({
             backend,
+            t: sctx.t,
             instanceHosts,
             ...(lists === undefined ? {} : { lists }),
             person: sctx.person,
@@ -88,12 +91,12 @@ export function webSearchPlugin(options: WebSearchOptions, deps: { resolve?: Res
             searchTimeoutMs: LIMITS.searchTimeoutMs,
           }),
         toolStatusDescribers: {
-          web_search: (input) => `Cerco sul web: "${inputField(input, "query") ?? ""}"`,
-          web_fetch: (input) => {
+          web_search: (input, t) => t("web-search.status.search", { query: inputField(input, "query") ?? "" }),
+          web_fetch: (input, t) => {
             try {
-              return `Leggo ${new URL(inputField(input, "url") ?? "").hostname}`;
+              return t("web-search.status.read", { host: new URL(inputField(input, "url") ?? "").hostname });
             } catch {
-              return "Leggo una pagina";
+              return t("web-search.status.read-page");
             }
           },
         },

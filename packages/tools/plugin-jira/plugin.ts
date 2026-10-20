@@ -97,6 +97,7 @@ export function createJiraPlugin(deps: { runCliFn?: typeof runCli } = {}): Plugi
         sessionTools: (sctx, decoratedPostProcess) => {
           const { runCommand } = createCliTool(runCliFn, configs, {
             stageConfirmation: sctx.stageConfirmation,
+            t: sctx.t,
             stashDisplay: sctx.stashDisplay,
             postProcess: decoratedPostProcess,
             person: sctx.person,
@@ -105,9 +106,9 @@ export function createJiraPlugin(deps: { runCliFn?: typeof runCli } = {}): Plugi
           return { jiraCommand: runCommand };
         },
         toolStatusDescribers: {
-          jiraCommand: (input) => {
+          jiraCommand: (input, t) => {
             const command = commandOf(input);
-            return command !== undefined ? describeCli(command) : "esecuzione di un comando";
+            return command !== undefined ? describeCli(command, t) : t("core.status.command-unknown");
           },
         },
       };

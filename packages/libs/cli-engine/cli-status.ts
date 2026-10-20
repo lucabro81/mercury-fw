@@ -7,23 +7,24 @@
  * override it (and for file-based CLIs, which aren't plugins). The core no
  * longer classifies read vs write itself; it only transports whatever the
  * describer returns. This is CLI-specific, so it lives with the CLI mechanism,
- * not in the core session layer.
+ * not in the core session layer. Every label is worded in the turn's
+ * language (`t`).
  */
-import { defaultStatusLabel, type StatusDescriber } from "@mercury-fw/plugin-types";
+import { defaultStatusLabel, type StatusDescriber, type Translate } from "@mercury-fw/plugin-types";
 import { parseCommand } from "./command-parser.ts";
 import { matchCommand, type CliConfig } from "./cli-tool.ts";
 
 export function createCliStatusDescriber(
   configs: Record<string, CliConfig>,
   describers: Record<string, StatusDescriber>,
-): (command: string) => string {
-  return (command) => {
+): (command: string, t: Translate) => string {
+  return (command, t) => {
     const parsed = parseCommand(command);
-    if (!parsed.ok) return "esecuzione di un comando";
+    if (!parsed.ok) return t("core.status.command-unknown");
     const config = configs[parsed.binary];
     const match = config ? matchCommand(parsed.args, config) : undefined;
     const mutating = match !== undefined && match.kind !== "not-allowed" ? match.mutating : false;
     const describe = describers[parsed.binary] ?? defaultStatusLabel;
-    return describe({ binary: parsed.binary, args: parsed.args, mutating });
+    return describe({ binary: parsed.binary, args: parsed.args, mutating }, t);
   };
 }

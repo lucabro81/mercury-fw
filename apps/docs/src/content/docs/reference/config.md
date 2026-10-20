@@ -63,7 +63,10 @@ plugins: [
 ```
 
 `formatter` takes one rule per kind of list the plugin declares: the text of each item, or `{ item, empty }` when an
-empty list needs its own text. A kind with no rule isn't shown.
+empty list needs its own text. A kind with no rule isn't shown. A rule gets the texts of the person the turn is for as
+a second argument, `(issue, t) => …`, and `empty` can be `(t) => t("app.jira.no-issues")` instead of a string: the
+app's own keys go under `app.`, written in English in `locales/en.json` and translated in its other language files
+(see [`i18n`](#i18n)). `mfw create` writes the Jira rule that way.
 
 ## `channels`
 
@@ -99,7 +102,7 @@ The languages the agent speaks, beyond English. See [Languages](../../concepts/l
 
 | Field | |
 |---|---|
-| `locales` | The app's language files, by language tag: `{ en, it }`, each imported from `locales/<tag>.json`. A file maps a text's key to its translation; `en` replaces the English texts it names. |
+| `locales` | The app's language files, by language tag: `{ en, it }`, each imported from `locales/<tag>.json`. A file maps a text's key to its translation; `en` replaces the English texts it names, and also declares the app's own `app.` texts. |
 | `defaultLocale` | The language of someone who hasn't picked one: `en` (the default) or a key of `locales`. Any other value stops the agent at startup. |
 
 ## `persona`

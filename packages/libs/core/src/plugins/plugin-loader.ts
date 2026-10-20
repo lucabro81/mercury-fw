@@ -24,7 +24,8 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { LanguageModel } from "ai";
 import { PLUGIN_API_VERSION } from "@mercury-fw/plugin-types";
-import type { Plugin, CliPostProcessor, PersonLogin, PostTurnGuard, Skill, SessionToolContext } from "@mercury-fw/plugin-types";
+import type { Plugin, CliPostProcessor, Messages, PersonLogin, PostTurnGuard, Skill, SessionToolContext, Translate } from "@mercury-fw/plugin-types";
+import { namespaceErrors } from "../i18n/i18n.ts";
 import type { Tool } from "ai";
 
 /** One plugin's tool contribution, kept paired so the composition root can build
@@ -54,6 +55,9 @@ export interface LoadedPlugin {
   bundle?: SessionToolBundle;
 }
 
+/** Names no plugin may take: their keys are the core's and the app's texts. */
+const RESERVED_NAMES: Record<string, string> = { core: "the core's own texts", app: "the app's own texts" };
+
 /** What the loader hands back to the composition root. The core knows nothing
  * about CLIs: a plugin's tool is an opaque `SessionToolBundle` it contributed,
  * not a config the core assembles. */
@@ -62,8 +66,10 @@ export interface LoadedPlugins {
   plugins: LoadedPlugin[];
   /** Merged across plugins, keyed by the tool name each contributes, turning a
    * tool call's input into its status label. */
-  toolStatusDescribers: Record<string, (input: unknown) => string>;
+  toolStatusDescribers: Record<string, (input: unknown, t: Translate) => string>;
   postTurnGuards: PostTurnGuard[];
+  /** The English texts of every plugin that activated, merged (see `Plugin.messages`). */
+  messages: Messages;
   /** Names of the plugins that fully activated — for read-only introspection
    * (the manifest), since a plugin's tool is opaque and there's no central
    * config map to infer activation from anymore. */
@@ -163,8 +169,9 @@ export function orderByDependencies(plugins: Plugin[]): { ordered: Plugin[]; cyc
  */
 export async function loadPlugins(plugins: Plugin[], ctx: PluginLoadContext): Promise<LoadedPlugins> {
   const loaded: LoadedPlugin[] = [];
-  const toolStatusDescribers: Record<string, (input: unknown) => string> = {};
+  const toolStatusDescribers: Record<string, (input: unknown, t: Translate) => string> = {};
   const postTurnGuards: PostTurnGuard[] = [];
+  const messages: Messages = {};
 
   const { ordered, cyclic } = orderByDependencies(plugins);
   // A plugin caught in a cycle can't be ordered, so it can't load.
@@ -199,6 +206,18 @@ export async function loadPlugins(plugins: Plugin[], ctx: PluginLoadContext): Pr
       ctx.log(
         `plugin "${plugin.name}" not activated: dependency ${missingDeps.map((d) => `"${d}"`).join(", ")} absent or failed`,
       );
+      continue;
+    }
+    // A plugin's texts are its own: a key outside its name could shadow
+    // another plugin's or the core's, and the core's and the app's names
+    // are taken.
+    if (Object.hasOwn(RESERVED_NAMES, plugin.name)) {
+      ctx.log(`plugin "${plugin.name}" not activated: "${plugin.name}" is reserved for ${RESERVED_NAMES[plugin.name]}`);
+      continue;
+    }
+    const textErrors = namespaceErrors(plugin.name, plugin.messages ?? {});
+    if (textErrors.length > 0) {
+      ctx.log(`plugin "${plugin.name}" not activated: ${textErrors.join("; ")}`);
       continue;
     }
     try {
@@ -242,6 +261,7 @@ export async function loadPlugins(plugins: Plugin[], ctx: PluginLoadContext): Pr
       if (contributions.postTurnGuards) {
         postTurnGuards.push(...contributions.postTurnGuards);
       }
+      Object.assign(messages, plugin.messages);
       // Fully wired — only now does it count as a satisfied dependency for
       // anything that declared `dependsOn` on it.
       activated.add(plugin.name);
@@ -250,5 +270,5 @@ export async function loadPlugins(plugins: Plugin[], ctx: PluginLoadContext): Pr
     }
   }
 
-  return { plugins: loaded, toolStatusDescribers, postTurnGuards, activated: [...activated] };
+  return { plugins: loaded, toolStatusDescribers, postTurnGuards, messages, activated: [...activated] };
 }

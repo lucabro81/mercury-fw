@@ -1,6 +1,14 @@
 import { describe, expect, it } from "bun:test";
-import type { ActionResult, StageChoices } from "@mercury-fw/plugin-types";
+import type { ActionResult, StageChoices, Translate } from "@mercury-fw/plugin-types";
 import { createWebTools, type WebToolsDeps } from "./tools.ts";
+import { WEB_SEARCH_MESSAGES } from "./messages.ts";
+
+/** The plugin's texts in English, as a turn with no other language gets them. */
+const english: Translate = (key, params) =>
+  (WEB_SEARCH_MESSAGES[key] ?? key).replace(/\{(\w+)\}/g, (whole, name: string) =>
+    params !== undefined && Object.hasOwn(params, name) ? String(params[name]) : whole,
+  );
+
 import type { PersonalLists } from "./personal-lists.ts";
 import type { ReadPageResult } from "./fetch-page.ts";
 
@@ -32,6 +40,7 @@ function setup(overrides: Partial<WebToolsDeps> = {}) {
       }),
     },
     instanceHosts: ["bun.sh"],
+    t: english,
     lists: memoryLists(),
     person: { key: "people:alice" },
     stageChoices: async (action) => {
@@ -140,8 +149,8 @@ describe("web_fetch", () => {
     expect(staged).toHaveLength(1);
     expect(staged[0]!.describe).toBe("web_fetch https://example.org/a");
     expect(staged[0]!.choices.map((c) => [c.label, c.resume])).toEqual([
-      ["Solo questa volta", { toolName: "web_fetch", input: { url: "https://example.org/a" } }],
-      ["Sempre per example.org", { toolName: "web_fetch", input: { url: "https://example.org/a" } }],
+      ["Only this time", { toolName: "web_fetch", input: { url: "https://example.org/a" } }],
+      ["Always for example.org", { toolName: "web_fetch", input: { url: "https://example.org/a" } }],
     ]);
     expect(result).toEqual({
       ok: false,
@@ -149,8 +158,8 @@ describe("web_fetch", () => {
       token: "T1",
       summary: "https://example.org/a",
       choices: [
-        { label: "Solo questa volta", token: "T1" },
-        { label: "Sempre per example.org", token: "T2" },
+        { label: "Only this time", token: "T1" },
+        { label: "Always for example.org", token: "T2" },
       ],
       error: expect.stringContaining("Never mention"),
     });
@@ -220,7 +229,7 @@ describe("web_fetch", () => {
     const { tools, staged, reads } = setup({ lists });
     await run(tools.web_fetch, { url: "https://Docs.Example.org./a" });
 
-    expect(staged[0]!.choices[1]!.label).toBe("Sempre per docs.example.org");
+    expect(staged[0]!.choices[1]!.label).toBe("Always for docs.example.org");
     await staged[0]!.choices[1]!.run();
     expect(lists.lists).toEqual({ "people:alice": ["docs.example.org"] });
     expect(reads[0]!.allows("docs.example.org")).toBe(true);
@@ -248,7 +257,7 @@ describe("web_fetch", () => {
     ] as const) {
       const { tools, staged } = setup(overrides);
       await run(tools.web_fetch, { url });
-      expect(staged[0]!.choices.map((c) => c.label)).toEqual(["Solo questa volta"]);
+      expect(staged[0]!.choices.map((c) => c.label)).toEqual(["Only this time"]);
     }
   });
 

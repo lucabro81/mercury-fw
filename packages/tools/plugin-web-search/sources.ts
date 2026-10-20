@@ -1,12 +1,14 @@
 /**
  * The sources of an answer built on web pages: after a turn that read pages
  * with `web_fetch` (the one read after the person allowed it included), the
- * answer ends with "Fonti:" and the title and URL of each page, in the order
+ * answer ends with the sources heading (`web-search.sources.heading`, "Sources"
+ * in English) and the title and URL of each page, in the order
  * they were read, once each. Written by the plugin from the turn's tool
  * results, never by the model, so it can't be left out or made up; a list the
  * model wrote at the end of its answer anyway is dropped.
  */
 import type { PostTurnGuard, StepInfo } from "@mercury-fw/plugin-types";
+import { WEB_SEARCH_MESSAGES } from "./messages.ts";
 
 /** A page `web_fetch` read in the turn. */
 type ReadPage = { url: string; title: string };
@@ -45,8 +47,16 @@ function pagesRead(steps: StepInfo[] = []): ReadPage[] {
   return [...pages.values()];
 }
 
-/** A heading the model gives its own list of sources: `Fonti`/`Sources`, bold or a Markdown heading, colon or not. */
-const SOURCES_HEADING = /^\s*(?:#{1,6}\s+)?[*_]*(?:fonti|sources)[*_]*\s*:?\s*[*_]*\s*$/i;
+/**
+ * A heading the model gives its own list of sources: one of `headings` (the
+ * turn's word for it and the English one), bold or a Markdown heading, colon
+ * or not, any case.
+ */
+function sourcesHeading(headings: string[]): RegExp {
+  const words = headings.map((h) => h.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
+  return new RegExp(`^\\s*(?:#{1,6}\\s+)?[*_]*(?:${words})[*_]*\\s*:?\\s*[*_]*\\s*$`, "i");
+}
+
 /** A line of such a list: a bulleted or numbered item, or a bare URL. */
 const LIST_LINE = /^\s*(?:(?:[-*•]|\d+[.)])\s+\S|<?https?:\/\/\S)/;
 
@@ -55,27 +65,28 @@ const LIST_LINE = /^\s*(?:(?:[-*•]|\d+[.)])\s+\S|<?https?:\/\/\S)/;
  * then only list lines and blank lines), so the guard's list is the only one.
  * Anything else, prose after the list included, stays as it is.
  */
-function withoutModelSources(text: string): string {
+function withoutModelSources(text: string, heading: RegExp): string {
   const lines = text.split("\n");
   let end = lines.length;
   while (end > 0 && lines[end - 1]!.trim() === "") end--;
   let start = end;
   while (start > 0 && (LIST_LINE.test(lines[start - 1]!) || lines[start - 1]!.trim() === "")) start--;
   const listed = lines.slice(start, end).some((line) => LIST_LINE.test(line));
-  if (!listed || start === 0 || !SOURCES_HEADING.test(lines[start - 1]!)) return text;
+  if (!listed || start === 0 || !heading.test(lines[start - 1]!)) return text;
   return lines.slice(0, start - 1).join("\n").trimEnd();
 }
 
 /** The guard that lists the sources (see the module comment). */
 export function createSourcesGuard(): PostTurnGuard {
   return {
-    statusLabel: "Aggiungo le fonti…",
+    statusLabel: (t) => t("web-search.sources.status"),
     statusId: "web-search-sources",
     shouldRun: (text, steps) => text.trim() !== "" && text.trim() !== "NO_REPLY" && pagesRead(steps).length > 0,
-    run: async (text, steps) => {
+    run: async (text, steps, t) => {
+      const heading = t("web-search.sources.heading");
       const lines = pagesRead(steps).map((p) => (p.title === "" || p.title === p.url ? `- ${p.url}` : `- ${p.title}: ${p.url}`));
-      const answer = withoutModelSources(text);
-      const sources = `Fonti:\n${lines.join("\n")}`;
+      const answer = withoutModelSources(text, sourcesHeading([heading, WEB_SEARCH_MESSAGES["web-search.sources.heading"]!]));
+      const sources = `${heading}:\n${lines.join("\n")}`;
       return { text: answer === "" ? sources : `${answer}\n\n${sources}`, outcome: "success" };
     },
   };

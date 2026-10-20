@@ -1,10 +1,14 @@
 import { describe, it, expect } from "bun:test";
-import { PLUGIN_API_VERSION, type SessionToolContext } from "@mercury-fw/plugin-types";
+import { PLUGIN_API_VERSION, type SessionToolContext, type Translate } from "@mercury-fw/plugin-types";
 import type { CliResult } from "@mercury-fw/cli-engine";
 import { zitadelPlugin, createZitadelPlugin } from "./index.ts";
 
+/** The turn's texts: the key and its params, so a test sees what was asked for. */
+const echo: Translate = (key, params) => (params ? `${key} ${JSON.stringify(params)}` : key);
+
 const sctx = (person: SessionToolContext["person"]): SessionToolContext => ({
   sessionKey: "s",
+  t: echo,
   stageConfirmation: async () => "tok",
   stashDisplay: () => "d1",
   person,
@@ -59,7 +63,10 @@ describe("zitadelPlugin", () => {
     expect(c.postProcess).toBeUndefined();
     expect(c.postTurnGuards ?? []).toEqual([]);
     expect(Object.keys(c.sessionTools!(sctx(null), c.postProcess))).toEqual(["zitadelCommand"]);
-    expect(c.toolStatusDescribers!.zitadelCommand!({ command: "zitadel user get 1" })).toBe("esecuzione zitadel user get");
+    expect(c.toolStatusDescribers!.zitadelCommand!({ command: "zitadel user get 1" }, echo)).toBe(
+      'core.status.command {"binary":"zitadel","command":"user get"}',
+    );
+    expect(c.toolStatusDescribers!.zitadelCommand!({}, echo)).toBe("core.status.command-unknown");
   });
 
   it("runs a command with --user for the person the turn is for", async () => {

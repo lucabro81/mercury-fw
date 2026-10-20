@@ -21,7 +21,7 @@ export default defineMercuryConfig({
 });
 ```
 
-- `formatter<D>(rules)` takes one rule per kind of list, keyed by the kinds the plugin declares (`D`, e.g. `JiraDisplays`), so a kind it doesn't emit or a rule for the wrong item shape fails the typecheck. A rule is the line for each item, or `{ item, empty }` when an empty list needs a text of its own. Items are joined with a blank line.
+- `formatter<D>(rules)` takes one rule per kind of list, keyed by the kinds the plugin declares (`D`, e.g. `JiraDisplays`), so a kind it doesn't emit or a rule for the wrong item shape fails the typecheck. A rule is the line for each item, or `{ item, empty }` when an empty list needs a text of its own. Items are joined with a blank line. A rule also gets `t`, the texts of the person the turn is for, as its second argument (`(issue, t) => …`), and `empty` can be a function of it (`(t) => t("app.jira.no-issues")`, the key in the app's `locales/en.json` and its other language files), so an app that speaks several languages writes its lists in each person's.
 - `formatterPlugin(plugin, handler)` wraps a plugin so every list it hands over goes through the rules; everything else the plugin contributes passes through untouched.
 
 MIT

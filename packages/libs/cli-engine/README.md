@@ -15,6 +15,6 @@ The allowlist is a JSON file the plugin ships and validates when it loads:
 }
 ```
 
-A command runs when its arguments start with one of the `prefix`es (`--help` always runs); `confirm: true` stages it until the user sends the token back. In `build()` the plugin validates the file with `parseCliConfig` and builds its tool with `createCliTool(runCli, configs, …)`; [`@mercury-fw/plugin-bitbucket`](https://github.com/lucabro81/mercury-fw/tree/main/packages/tools/plugin-bitbucket/index.ts) does exactly that.
+A command runs when its arguments start with one of the `prefix`es (`--help` always runs); `confirm: true` stages it until the user sends the token back. In `build()` the plugin validates the file with `parseCliConfig` and builds its tool with `createCliTool(runCli, configs, …)`, passing the turn's texts it gets in its session context as `t` (`t: sctx.t`); the status describer `createCliStatusDescriber` builds takes the command and the same `t`; [`@mercury-fw/plugin-bitbucket`](https://github.com/lucabro81/mercury-fw/tree/main/packages/tools/plugin-bitbucket/index.ts) does exactly that.
 
 MIT

@@ -23,10 +23,12 @@ const jiraIssueLine = (issue: JiraDisplays["issue-list"]) =>
 // in mercury.config.ts
 plugins: [
   formatterPlugin(jiraPlugin, formatter<JiraDisplays>({
-    "issue-list": { item: jiraIssueLine, empty: "No matching issues." },
+    "issue-list": { item: jiraIssueLine, empty: (t) => t("app.jira.no-issues") },
   })),
 ],
 ```
+
+`app.jira.no-issues` is the app's own text, in `locales/en.json` (`"No matching issues."` in a new app) and translated in its other language files; `empty` can also be a plain string.
 
 ## Credentials
 

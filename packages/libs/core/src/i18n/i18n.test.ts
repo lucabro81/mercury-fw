@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { CORE_MESSAGES } from "./core-messages.ts";
-import { createI18n, createTexts, englishTexts, interpolate, negotiate } from "./i18n.ts";
+import { createI18n, createTexts, englishTexts, instanceI18n, interpolate, namespaceErrors, negotiate } from "./i18n.ts";
 
 describe("interpolate", () => {
   test("fills every {param}, numbers included", () => {
@@ -16,6 +16,31 @@ describe("interpolate", () => {
 
   test("doesn't read params from the object's prototype", () => {
     expect(interpolate("{toString}", {})).toBe("{toString}");
+  });
+});
+
+describe("namespaceErrors", () => {
+  test("accepts keys under the package's namespace", () => {
+    expect(namespaceErrors("web-search", { "web-search.choice.once": "Only this time" })).toEqual([]);
+  });
+
+  test("names every key outside it, the bare namespace and a lookalike prefix included", () => {
+    expect(
+      namespaceErrors("web-search", {
+        "core.access.unknown": "x",
+        "web-search": "x",
+        "web-searchx.a": "x",
+        "web-search.ok": "x",
+      }),
+    ).toEqual([
+      'key "core.access.unknown" is outside the "web-search." namespace',
+      'key "web-search" is outside the "web-search." namespace',
+      'key "web-searchx.a" is outside the "web-search." namespace',
+    ]);
+  });
+
+  test("names a value that isn't text", () => {
+    expect(namespaceErrors("core", { "core.a": 1 as unknown as string })).toEqual(['key "core.a" isn\'t a string']);
   });
 });
 
@@ -143,6 +168,25 @@ describe("createI18n", () => {
         "[i18n] en: 1 key no package declares: core.old",
       ]);
     });
+
+    // Review of #280: an app's own texts (a formatter rule's) were reported
+    // at every start as keys no package declares. They live under `app.`, and
+    // the app's English file declares them.
+    test("an app's own keys, under app. in its English file, are declared, and expected in every other language", () => {
+      const i18n = createI18n({
+        english,
+        locales: {
+          en: { "app.none": "Nothing." },
+          it: { "core.hello": "Ciao", "core.bye": "Ciao", "app.other": "x" },
+        },
+      });
+      expect(i18n.report()).toEqual([
+        "[i18n] it: 1 key missing, shown as the key: app.none",
+        "[i18n] it: 1 key no package declares: app.other",
+      ]);
+      expect(i18n.translator("en")("app.none")).toBe("Nothing.");
+      expect(i18n.translator("it")("app.none")).toBe("app.none");
+    });
   });
 });
 
@@ -188,5 +232,30 @@ describe("englishTexts", () => {
 describe("CORE_MESSAGES", () => {
   test("every key is in the core's namespace", () => {
     expect(Object.keys(CORE_MESSAGES).filter((key) => !key.startsWith("core."))).toEqual([]);
+  });
+});
+
+// Review of #280: the plugins' texts reach the instance's languages only
+// through the composition; nothing checked that they do.
+describe("instanceI18n", () => {
+  test("the core's and the loaded plugins' English, the instance's files over it, the report covering both", () => {
+    const i18n = instanceI18n({ "web-search.choice.once": "Only this time" }, {
+      defaultLocale: "it",
+      locales: { it: { "web-search.choice.once": "Solo questa volta" } },
+    });
+    expect(i18n.defaultLocale).toBe("it");
+    expect(i18n.translator("it")("web-search.choice.once")).toBe("Solo questa volta");
+    expect(i18n.translator("en")("web-search.choice.once")).toBe("Only this time");
+    expect(i18n.translator("en")("core.access.unknown")).toBe(CORE_MESSAGES["core.access.unknown"]!);
+    const [missing] = i18n.report();
+    expect(missing).toStartWith("[i18n] it: ");
+    expect(missing).toContain("core.access.unknown");
+    expect(missing).not.toContain("web-search.choice.once");
+  });
+
+  test("English alone without an i18n config", () => {
+    const i18n = instanceI18n({}, undefined);
+    expect(i18n.supported).toEqual(["en"]);
+    expect(i18n.report()).toEqual([]);
   });
 });

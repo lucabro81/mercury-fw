@@ -14,7 +14,9 @@ const SITE_URL = "https://example.atlassian.net";
 const PARSED = { binary: "jira", args: ["issue", "search"], prefix: ["issue", "search"] };
 
 describe("createJiraIssueListExtractor", () => {
-  const extract = createJiraIssueListExtractor({ siteUrl: SITE_URL });
+  const extractor = createJiraIssueListExtractor({ siteUrl: SITE_URL });
+  // It writes nothing a person reads (the formatter does): any texts will do.
+  const extract = (cmd: Parameters<typeof extractor>[0], result: CliResult) => extractor(cmd, result, (key) => key);
 
   // The allowlist no longer names a post-processor per command: the plugin's
   // single post-processor runs on every allowed command and must leave
@@ -236,7 +238,7 @@ describe("createJiraIssueListExtractor", () => {
   it("strips a trailing slash on siteUrl before building the link", () => {
     const withTrailingSlash = createJiraIssueListExtractor({ siteUrl: "https://example.atlassian.net/" });
     const result: CliResult = { ok: true, data: { issues: [{ key: "MER-1", fields: { summary: "x" } }] } };
-    const extracted = withTrailingSlash(PARSED, result);
+    const extracted = withTrailingSlash(PARSED, result, (key) => key);
     expect(extracted.ok).toBe(true);
     if (extracted.ok) {
       expect(extracted.display).toEqual({

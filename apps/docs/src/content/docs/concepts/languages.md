@@ -22,11 +22,16 @@ own, one per language, in the `locales/` folder. The file maps each text's **key
 }
 ```
 
-A key starts with the package the text belongs to: `core.` is Mercury's own texts. A word in braces, like `{owner}`,
+A key starts with the package the text belongs to: `core.` is Mercury's own texts, `web-search.` the web search
+plugin's, and so on for every plugin, each under its own name. A word in braces, like `{owner}`,
 is filled in when the text is shown: keep it as it is, wherever it fits the sentence.
 
 `locales/en.json` works the same way over the English texts: a key written there replaces the package's English, and
 the rest stay as the packages wrote them.
+
+The app's own texts, such as what a [formatter rule](../../reference/config/#plugins) shows for an empty list, go
+under `app.`: written in English in `locales/en.json`, they're declared there, and every other language's file
+translates them like the packages' keys. A new app with the Jira plugin already has one, `app.jira.no-issues`.
 
 ## Which language a person gets
 
@@ -66,7 +71,8 @@ export default defineMercuryConfig({
 ```
 
 A language is named by its tag, `it` or `pt-br`. `defaultLocale` must be `en` or one of the languages listed, or the
-agent doesn't start. An app made with `mfw create` already has an empty `locales/en.json`, listed in the config.
+agent doesn't start. An app made with `mfw create` already has a `locales/en.json`, listed in the config: empty, or with the starting
+formatter rules' own texts (`app.jira.no-issues` with Jira).
 
-Not every fixed text goes through the language files yet: Mercury's own do (the `core.` keys), while the plugins' and
-the channels' texts are still written in their code.
+Not every fixed text goes through the language files yet: Mercury's own and the plugins' do, while the channels'
+texts (a Google Chat card's title, its buttons' default label) are still written in their code.

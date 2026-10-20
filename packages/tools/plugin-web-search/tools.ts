@@ -14,7 +14,7 @@
  */
 import { tool } from "ai";
 import { z } from "zod";
-import type { ActionResult, ExecutableTool, StageChoices } from "@mercury-fw/plugin-types";
+import type { ActionResult, ExecutableTool, StageChoices, Translate } from "@mercury-fw/plugin-types";
 import type { WebSearchBackend } from "./backend.ts";
 import { hostAllowed, parseHostEntry } from "./hosts.ts";
 import type { PersonalLists } from "./personal-lists.ts";
@@ -27,6 +27,8 @@ export type WebToolsDeps = {
   instanceHosts: string[];
   /** The people's own lists; absent without a data folder (no "always" then). */
   lists?: PersonalLists;
+  /** The texts of the turn's person: the choices' labels. */
+  t: Translate;
   /** Whom the turn is for; no "always" without one. */
   person: { key: string } | null;
   /** Absent with a core that can't offer choices: an unknown host is then refused. */
@@ -54,10 +56,6 @@ const MAX_SNIPPET = 500;
 
 /** A host as compared and saved: lowercase, without the trailing dot. */
 const plainHost = (host: string) => host.toLowerCase().replace(/\.$/, "");
-
-/** The labels of the two choices; the person reads them. */
-const ONCE = "Solo questa volta";
-const ALWAYS = (host: string) => `Sempre per ${host}`;
 
 /** Builds `web_search` and `web_fetch` for one turn. */
 export function createWebTools(deps: WebToolsDeps): { web_search: ExecutableTool; web_fetch: ExecutableTool } {
@@ -117,10 +115,10 @@ export function createWebTools(deps: WebToolsDeps): { web_search: ExecutableTool
       };
       const person = deps.person;
       const lists = deps.lists;
-      const choices = [{ label: ONCE, run: readAsResult, resume }];
+      const choices = [{ label: deps.t("web-search.choice.once"), run: readAsResult, resume }];
       if (person && lists && parseHostEntry(host).ok) {
         choices.push({
-          label: ALWAYS(host),
+          label: deps.t("web-search.choice.always", { host }),
           run: async () => {
             // The person asked for the page too: a host that can't be saved is asked about again next time.
             await lists.add(person.key, host).catch((err) => {

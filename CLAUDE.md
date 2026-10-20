@@ -110,7 +110,7 @@ mercury/                       # repo root
 ├── scripts/                   # release tooling: release.ts (versions + tags), publish.ts (types + pack check + bun pm pack + npm publish), build-types.ts, check-pack.ts, workspaces.ts
 ├── packages/                  # grouped into per-role buckets; every workspace is @mercury-fw/*
 │   ├── types/
-│   │   ├── plugin-types/          # the shared Plugin contract (tools) — types + apiVersion + skill/status helpers, imported by core and plugins
+│   │   ├── plugin-types/          # the shared Plugin contract (tools, version 5) — types + apiVersion + skill/status helpers + the texts a person sees (`Messages`, `Params`, `Translate`), imported by core and plugins
 │   │   └── channel-types/         # the shared ChannelPlugin contract (channels) — Provider/TurnSink + confirm helpers, imported by core and channels
 │   ├── channels/
 │   │   ├── channel-google-chat/   # Google Chat channel plugin: the registered-app transport (Pub/Sub + REST), loaded by the channel loader
@@ -163,7 +163,7 @@ packages/libs/core/
     ├── session/               # Layer 1 history + summarizer + agent-turn loop
     ├── config/               # defineMercuryConfig + the MercuryConfig contract (plugins, channels, persona)
     ├── tools/                 # CLI executor + command parser/allowlist (cli-tool.ts) + config schema/loader/version-check
-    ├── plugins/               # generic fail-soft tool-plugin loader (plugin-loader.ts), what each person is offered (offering.ts: act-as-self, access.plugins) and the tools acting as Mercury for them (act-as-self.ts), the manifest
+    ├── plugins/               # generic fail-soft tool-plugin loader (plugin-loader.ts; refuses a plugin whose `messages` reach outside its name, or named `core`/`app`), what each person is offered (offering.ts: act-as-self, access.plugins) and the tools acting as Mercury for them (act-as-self.ts), the manifest
     ├── router/
     │   ├── turn-runner.ts      # shared per-turn driver every provider funnels through, one turn at a time per session
     │   ├── session-lock.ts     # the per-session queue the turn runner and the idle sweep share
@@ -173,7 +173,7 @@ packages/libs/core/
     │   ├── terminal.ts         # the REPL loop (stdin/stdout), driven by the app's repl.ts — a dev console, not a channel
     │   └── tool-log.ts         # terminal-only debug visibility helpers
     ├── identity/              # who sees what, decided in one place: who a principal is (people.ts: account links first, then the directory, cached, closed for unknown people by default, failing closed), the account links Mercury owns (links.ts, a file on the vault's volume out of its git; linking.ts, the one-time code; links-cli.ts, behind `mfw identity`), the user key (`<provider>:<id>`), a person's vault area (`users/<key>/`, `personal/` to the model) and its access checks, the per-person channel reads, people's pending logins to the services plugins act on as them, the startup migration of pre-key data
-    ├── i18n/                  # the texts a person sees, in their language: the core's English catalog (core-messages.ts), the instance's language files over it, each person's language (their profile, then the default), the startup report of missing keys
+    ├── i18n/                  # the texts a person sees, in their language: the core's English catalog (core-messages.ts) and the loaded plugins' (`instanceI18n`), the instance's language files over them (its own `app.` keys declared by its `locales/en.json`), each person's language (their profile, then the default), the startup report of missing keys
     ├── credentials/           # at startup, links each plugin-declared CLI login kept outside ~/.config to the credentials volume, and reports one not set up yet
     ├── memory/                # Layer 3 — episodic store (Qdrant)
     ├── wiki/                  # Layer 2 — vault init/read/write (common `curated/` + per-person `users/<key>/`) + vault-cli.ts (maintenance CLI, see Operational notes)

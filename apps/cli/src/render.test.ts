@@ -124,6 +124,14 @@ describe("renderApp: languages", () => {
     expect(app.get("README.md")).toContain("`locales/`");
   });
 
+  // Review of #280: the scaffolded Jira rule's empty text was a fixed English
+  // string; it's the app's own text, translatable like every other.
+  test("a starting formatter rule's texts are the app's, in its English file", () => {
+    const app = renderApp(HTTP_JIRA);
+    expect(JSON.parse(app.get("locales/en.json")!)).toEqual({ "app.jira.no-issues": "No matching issues." });
+    expect(app.get("mercury.config.ts")).toContain('"issue-list": { item: jiraIssueLine, empty: (t) => t("app.jira.no-issues") },');
+  });
+
   test("the terminal gets the app's texts", () => {
     expect(renderApp(EMPTY).get("src/repl.ts")).toContain("  texts: app.texts,\n");
   });
