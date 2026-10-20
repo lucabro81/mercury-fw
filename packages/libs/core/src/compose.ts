@@ -75,7 +75,8 @@ import { createHostReads } from "./identity/host-reads.ts";
 import { bindConfirm } from "./identity/confirm-binding.ts";
 import { createPersonLogins } from "./identity/person-logins.ts";
 import { createProfileStore, profilesPath } from "./identity/profiles.ts";
-import { catalogErrors, createTexts, instanceI18n, type Messages, type Texts, type Translate } from "./i18n/i18n.ts";
+import { createTexts, instanceI18n, type Texts, type Translate } from "./i18n/i18n.ts";
+import { channelMessages } from "./router/channel-loader.ts";
 import { createProfileTools } from "./identity/profile-tools.ts";
 import { createPeople, type TurnWho } from "./identity/people.ts";
 import { createLinkStore, linksPath } from "./identity/links.ts";
@@ -206,12 +207,8 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   // core's and the loaded plugins' English, the instance's language files over it. A default
   // language the instance doesn't ship stops the start; a file's gaps are
   // logged, and show as their keys.
-  // The declared channels' texts too, those the channel loader will accept.
-  const channelMessages = Object.assign(
-    {},
-    ...(config.channels ?? []).filter((c) => catalogErrors(c.name, c.messages ?? {}).length === 0).map((c) => c.messages ?? {}),
-  ) as Messages;
-  const i18n = instanceI18n({ ...loadedPlugins.messages, ...channelMessages }, config.i18n);
+  // The declared channels' texts too, those of the channels the loader will load.
+  const i18n = instanceI18n({ ...loadedPlugins.messages, ...channelMessages(config.channels ?? []) }, config.i18n);
   for (const line of i18n.report()) console.error(line);
   const texts = createTexts(i18n, (key) => profiles.languageOf(key));
 

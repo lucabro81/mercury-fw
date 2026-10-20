@@ -139,15 +139,15 @@ describe("a confirmation's note, staged in a turn then confirmed from the channe
   it("hands a link code to linking, with who sent it, whoever they are", async () => {
     const store = createConfirmationStore();
     const confirmDeps = { store, vaultPath: "/nowhere", writeConfirmationNoteFn: writeConfirmationNote };
-    const redeemed: Array<[string, string]> = [];
+    const redeemed: Array<[string, string, string | undefined]> = [];
     const bound = bindConfirm(
       confirmDeps,
       async () => ({ ok: false, reason: "unknown", message: "Ask for access." }),
-      async (principal, text) => (redeemed.push([`${principal.provider}:${principal.id}`, text]), "Linked."),
+      async (principal, text, hint) => (redeemed.push([`${principal.provider}:${principal.id}`, text, hint]), "Linked."),
     );
     const chat = { id: "users/1", provider: "google-chat" as const };
-    expect(await bound.confirm("a1b2-c3d4-e5f6", "s", chat)).toEqual({ text: "Linked." });
-    expect(redeemed).toEqual([["google-chat:users/1", "a1b2-c3d4-e5f6"]]);
+    expect(await bound.confirm("a1b2-c3d4-e5f6", "s", chat, "it")).toEqual({ text: "Linked." });
+    expect(redeemed).toEqual([["google-chat:users/1", "a1b2-c3d4-e5f6", "it"]]);
     expect(await bound.confirm("hello", "s", chat)).toBeNull();
   });
 

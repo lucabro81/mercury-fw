@@ -18,7 +18,17 @@
  *    instance isn't configured for it) — not started, not an error.
  */
 import { CHANNEL_API_VERSION, type ChannelPlugin, type ChannelRuntimeContext, type Provider } from "@mercury-fw/channel-types";
-import { catalogErrors } from "../i18n/i18n.ts";
+import { catalogErrors, type Messages } from "../i18n/i18n.ts";
+
+/** Whether the loader would build `channel`: its contract is this core's and its texts are its own. */
+function loadable(channel: ChannelPlugin): boolean {
+  return channel.apiVersion === CHANNEL_API_VERSION && catalogErrors(channel.name, channel.messages ?? {}).length === 0;
+}
+
+/** The English texts of the channels in `channels` the loader would load, merged: the instance's languages translate those. */
+export function channelMessages(channels: ChannelPlugin[]): Messages {
+  return Object.assign({}, ...channels.filter(loadable).map((c) => c.messages ?? {})) as Messages;
+}
 
 /** Everything the loader needs from the composition root: the runtime context every `build()` gets. */
 export type LoadChannelsContext = {

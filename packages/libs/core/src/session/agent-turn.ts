@@ -346,6 +346,8 @@ export async function runTurn(
      * an action, in the person's language; English when absent. Never
      * streamed: it isn't the model's. */
     pendingNote?: string;
+    /** Called when the turn's text is that stand-in, so the caller knows without comparing text. */
+    onPendingNote?: () => void;
   },
 ): Promise<string> {
   await history.addUserMessage(userInput);
@@ -417,7 +419,10 @@ export async function runTurn(
     if (finishReason !== undefined) deps.onFinish?.(finishReason, streamError);
     deps.onUsage?.((await result.usage)?.inputTokens);
 
-    if (fullText.trim().length === 0) fullText = resolveEmptyText(lastStep, deps.pendingNote ?? DEFAULT_PENDING_NOTE);
+    if (fullText.trim().length === 0) {
+      fullText = resolveEmptyText(lastStep, deps.pendingNote ?? DEFAULT_PENDING_NOTE);
+      if (fullText.length > 0) deps.onPendingNote?.();
+    }
 
     await history.addAssistantMessage(resolveHistoryText(lastStep, fullText));
     return fullText;
@@ -440,6 +445,7 @@ export async function runTurn(
   if (result.finishReason !== undefined) deps.onFinish?.(result.finishReason);
 
   const text = result.text.trim().length === 0 ? resolveEmptyText(lastStep, deps.pendingNote ?? DEFAULT_PENDING_NOTE) : result.text;
+  if (result.text.trim().length === 0 && text.length > 0) deps.onPendingNote?.();
   await history.addAssistantMessage(resolveHistoryText(lastStep, text));
   return text;
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it, mock } from "bun:test";
 import { CHANNEL_API_VERSION, type ChannelPlugin, type ChannelRuntimeContext, type Provider } from "@mercury-fw/channel-types";
-import { loadChannels } from "./channel-loader.ts";
+import { channelMessages, loadChannels } from "./channel-loader.ts";
 
 /** A throwaway provider — the loader never calls its methods, only carries it. */
 function fakeProvider(): Provider {
@@ -132,5 +132,22 @@ describe("loadChannels", () => {
     );
     expect(loaded).toEqual([{ name: "google-chat", provider: good }]);
     expect(logs.some((l) => l.includes("boom") && l.includes("kaboom"))).toBe(true);
+  });
+});
+
+// Review of #281: a channel the loader refuses (another contract, texts
+// outside its name) fed its keys to the instance's languages anyway, so the
+// startup report asked for translations of a channel that never ran.
+describe("channelMessages", () => {
+  it("merges the texts of the channels the loader would load, and only theirs", () => {
+    const build = () => fakeProvider();
+    expect(
+      channelMessages([
+        { ...channel("http", build), messages: { "http.a": "A" } },
+        { ...channel("google-chat", build, CHANNEL_API_VERSION - 1), messages: { "google-chat.a": "B" } },
+        { ...channel("slack", build), messages: { "core.x": "C" } },
+        channel("terminal", build),
+      ]),
+    ).toEqual({ "http.a": "A" });
   });
 });

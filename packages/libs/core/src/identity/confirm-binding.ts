@@ -46,7 +46,7 @@ export function bindConfirm(
   return {
     confirm: async (token, sessionKey, principal, hint) => {
       if (redeemLink && isLinkCode(token)) {
-        const reply = await redeemLink(principal, token);
+        const reply = await redeemLink(principal, token, hint);
         return reply === null ? null : { text: reply };
       }
       if (!isTokenShaped(token.trim())) return null;

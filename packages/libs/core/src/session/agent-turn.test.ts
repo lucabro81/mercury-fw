@@ -688,6 +688,24 @@ describe("runTurn", () => {
     expect(result).toBe("Azione in attesa di conferma.");
   });
 
+  it("says when it stood in with the note, and only then", async () => {
+    const generateTextFn = (text: string) => async (params: { onStepEnd?: (step: StepInfo) => void }) => {
+      params.onStepEnd?.(PENDING_CONFIRMATION_STEP);
+      return { text };
+    };
+    const told: string[] = [];
+    for (const text of ["", "I staged it."]) {
+      await runTurn(createSessionHistory(neverSummarize), "hi", {
+        model: "fake-model" as never,
+        tools: {},
+        system: SYSTEM,
+        generateTextFn: generateTextFn(text),
+        onPendingNote: () => told.push(text),
+      });
+    }
+    expect(told).toEqual([""]);
+  });
+
   // Regression guard for the stale-primer bug: the opaque marker recorded
   // into history must be the token, not the generic sentence — it's the
   // thing that gets fed into episodic summarization later, and a fixed

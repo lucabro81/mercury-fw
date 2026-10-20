@@ -2262,7 +2262,7 @@ describe("createTurnRunner: a turn resumed after a confirmation", () => {
 describe("createTurnRunner: the turn's language and the pending note", () => {
   const NOTE_KEY = "core.pending.note";
 
-  function setup(opts: { text?: string; displays?: string[] } = {}) {
+  function setup(opts: { text?: string; displays?: string[]; guard?: PostTurnGuard } = {}) {
     const calls = {
       identify: [] as unknown[][],
       buildTools: [] as unknown[],
@@ -2294,8 +2294,11 @@ describe("createTurnRunner: the turn's language and the pending note", () => {
       takeSurfacedDisplays: () => opts.displays ?? [],
       runTurnFn: async (_history, _input, deps) => {
         calls.pendingNote.push(deps.pendingNote);
-        return opts.text ?? deps.pendingNote!;
+        if (opts.text !== undefined) return opts.text;
+        deps.onPendingNote?.();
+        return deps.pendingNote!;
       },
+      ...(opts.guard ? { postTurnGuards: [opts.guard] } : {}),
     });
     const sink = baseSink({
       finalize: async (text, info) => {
@@ -2324,6 +2327,25 @@ describe("createTurnRunner: the turn's language and the pending note", () => {
     const { runner, sink, calls } = setup({ displays: ["MER-1 Title"] });
     await runner(baseTurn({ principal: verified("u1") }), sink);
     expect(calls.finalize).toEqual([[`-:${NOTE_KEY}\n\nMER-1 Title`, { pendingNote: `-:${NOTE_KEY}` }]]);
+  });
+
+  // Review of #281: the runner recognized the note by comparing the turn's
+  // text with it, so a guard that added to it lost the signal and the
+  // channels showed the note next to their own confirmation.
+  test("the note is said even after a guard added to it, and a model's text equal to it isn't one", async () => {
+    const appending: PostTurnGuard = {
+      statusLabel: () => "g",
+      statusId: "g",
+      shouldRun: () => true,
+      run: async (text) => ({ text: `${text}\n\nSources: x`, outcome: "success" }),
+    };
+    const guarded = setup({ guard: appending });
+    await guarded.runner(baseTurn({ principal: verified("u1") }), guarded.sink);
+    expect(guarded.calls.finalize).toEqual([[`-:${NOTE_KEY}\n\nSources: x`, { pendingNote: `-:${NOTE_KEY}` }]]);
+
+    const mimic = setup({ text: `-:${NOTE_KEY}` });
+    await mimic.runner(baseTurn({ principal: verified("u1") }), mimic.sink);
+    expect(mimic.calls.finalize).toEqual([[`-:${NOTE_KEY}`]]);
   });
 
   test("an answer the model wrote says nothing more", async () => {

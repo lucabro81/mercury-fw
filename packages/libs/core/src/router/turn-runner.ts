@@ -346,6 +346,7 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
     // The turn's texts that aren't the model's: the pending note, the guards'.
     const t = deps.translatorFor?.(key, turn.languageHint) ?? englishTexts().forPerson(undefined).t;
     const pendingNote = t("core.pending.note");
+    let noteUsed = false;
     const prompts = deps.systemPromptsFor?.(who) ?? deps.systemPrompts;
     // A shared space names each sender in their messages; one person's name is
     // only for a one-to-one turn.
@@ -473,6 +474,9 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
             )
           : deps.buildTools(turn.sessionKey, key, who, sink.onToolStart, sink.onToolFinish, turn.languageHint),
         pendingNote,
+        onPendingNote: () => {
+          noteUsed = true;
+        },
         system: systemFor(history.primer()),
         // Counted on the way through, and only where the channel streams: an
         // absent callback keeps the turn on the non-streaming path.
@@ -564,9 +568,10 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
       // the already-streamed prefix intact, so terminal.ts's safe-slice holds.
       surfacedDisplays = deps.takeSurfacedDisplays?.(turn.sessionKey) ?? [];
       const finalText = shownText(correctedText, surfacedDisplays);
-      // The core wrote the note itself, so it knows it by its own words; the
-      // channel is told, never left to recognize the text.
-      if (correctedText === pendingNote) await sink.finalize(finalText, { pendingNote });
+      // The model said nothing and the turn stood in with the note: the
+      // channel is told, never left to recognize the text, also when a
+      // guard added to it.
+      if (noteUsed && correctedText.startsWith(pendingNote)) await sink.finalize(finalText, { pendingNote });
       else await sink.finalize(finalText);
       logTurn(
         `${turn.logPrefix}[turn] done in ${seconds()}s: ${count(steps.length, "step")}, ${count(toolCalls, "tool call")}, reasoning ${reasoningChars} chars, answer ${answerLength(assistantText, answerChars)} chars${finish ? `, finish ${finish.reason}` : ""}`,
