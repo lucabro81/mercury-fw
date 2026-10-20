@@ -19,6 +19,7 @@
  * streams in rather than going silent for the whole answer.
  */
 import * as readline from "node:readline";
+import { CORE_MESSAGES } from "../i18n/core-messages.ts";
 
 /**
  * Writes to the real process stdout. Appends a newline by default — the
@@ -63,6 +64,9 @@ export const PROMPT = "> ";
  *   a live context-usage indicator (see `src/router/tool-log.ts`'s
  *   `formatContextUsage`), recomputed each time since the value changes
  *   turn to turn.
+ * @param opts.correctedNote - Optional, the marker written before an answer
+ *   that no longer extends what was streamed, in the person's language;
+ *   English when absent.
  */
 export async function startTerminalRepl(
   handleInput: (input: string, onChunk: (chunk: string, opts?: { aside?: boolean }) => void) => Promise<string>,
@@ -70,7 +74,7 @@ export async function startTerminalRepl(
     input?: AsyncIterable<string>;
     output?: { write(s: string, opts?: { newline?: boolean }): void };
   },
-  opts?: { promptSuffix?: () => string },
+  opts?: { promptSuffix?: () => string; correctedNote?: () => string },
 ): Promise<void> {
   // Real stdin. Passing `output` (needed for readline to own prompt
   // rendering — see below) only when stdin is an actual TTY: passing it
@@ -141,7 +145,8 @@ export async function startTerminalRepl(
         // can't be un-printed, so show the real final answer in full
         // instead of a slice computed against text that isn't there
         // anymore.
-        output.write(`\n\n[risposta corretta rispetto a quanto già mostrato sopra]\n\n${result}`);
+        const note = opts?.correctedNote?.() ?? CORE_MESSAGES["core.terminal.corrected"];
+        output.write(`\n\n${note}\n\n${result}`);
       }
     } catch (err) {
       if (streamed) {

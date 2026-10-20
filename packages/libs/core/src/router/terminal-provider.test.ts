@@ -4,6 +4,7 @@ import { startTerminalRepl } from "./terminal.ts";
 import type { HandleTurn, InboundTurn } from "./provider.ts";
 import { PENDING_CONFIRMATION_NOTE } from "../session/agent-turn.ts";
 import { RESUME_AFTER_CONFIRM } from "@mercury-fw/channel-types";
+import { interpolate, type Texts } from "../i18n/i18n.ts";
 
 type CapturedHandleInput = (
   input: string,
@@ -187,7 +188,7 @@ describe("createTerminalProvider", () => {
     const chunks: string[] = [];
     await capturedHandleInput("elimina KAN-1", (chunk) => chunks.push(chunk));
     expect(chunks.join("")).toContain("jira issue delete KAN-1 --confirm");
-    expect(chunks.join("")).toContain("scrivi: TOK1");
+    expect(chunks.join("")).toContain("type: TOK1");
   });
 
   test("a staging with several choices prints one line per choice, with its label and token", async () => {
@@ -229,8 +230,62 @@ describe("createTerminalProvider", () => {
     const chunks: string[] = [];
     await capturedHandleInput("leggi la pagina", (chunk) => chunks.push(chunk));
     expect(chunks.join("")).toBe(
-      "Azione in sospeso: `https://example.org/a`\n  Solo questa volta — scrivi: T1\n  Sempre per example.org — scrivi: T2\n",
+      "Action pending: `https://example.org/a`\n  Solo questa volta — type: T1\n  Sempre per example.org — type: T2\n",
     );
+  });
+
+  test("its own lines read in the terminal person's language", async () => {
+    let capturedHandleInput!: CapturedHandleInput;
+    const italian: Record<string, string> = {
+      "core.terminal.thinking": "Sto pensando…",
+      "core.terminal.pending-choices": "Azione in sospeso: `{summary}`",
+      "core.terminal.choice": "{label} — scrivi: {token}",
+    };
+    const asked: (string | undefined)[] = [];
+    const texts: Texts = {
+      forPerson: (key) => {
+        asked.push(key);
+        return { locale: "it", t: (k, params) => interpolate(italian[k] ?? k, params) };
+      },
+    };
+    const provider = createTerminalProvider({
+      confirmDeps: fakeConfirmDeps(),
+      ollamaHost: "http://host",
+      ollamaModel: "model",
+      getLoadedContextLengthFn: async () => 4096,
+      startTerminalReplFn: async (handleInput) => {
+        capturedHandleInput = handleInput;
+      },
+      tryConfirmFn: async () => null,
+      texts,
+    });
+    await provider.start(async (_turn, sink) => {
+      sink.onReasoningChunk?.("hm", "r1");
+      sink.onStep?.({
+        toolCalls: [{ toolCallId: "1", toolName: "web_fetch", input: { url: "https://example.org/a" } }],
+        toolResults: [
+          {
+            toolCallId: "1",
+            toolName: "web_fetch",
+            output: {
+              ok: false,
+              pendingConfirmation: true,
+              token: "T1",
+              summary: "https://example.org/a",
+              choices: [{ token: "T1", label: "Una volta" }, { token: "T2", label: "Sempre" }],
+            },
+          },
+        ],
+        content: [],
+      });
+      await sink.finalize("");
+    });
+    const chunks: string[] = [];
+    await capturedHandleInput("leggi", (chunk) => chunks.push(chunk));
+    expect(chunks.join("")).toBe(
+      "\x1b[2m\x1b[3mSto pensando…\x1b[0m\n\x1b[2m\x1b[3mhm\x1b[0mAzione in sospeso: `https://example.org/a`\n  Una volta — scrivi: T1\n  Sempre — scrivi: T2\n",
+    );
+    expect(new Set(asked)).toEqual(new Set(["none:terminal"]));
   });
 
   test("a confirmation that resumes runs the session's turn again, and answers with what it says", async () => {
@@ -352,11 +407,11 @@ describe("createTerminalProvider", () => {
     const chunks: Array<{ chunk: string; aside: boolean }> = [];
     const result = await capturedHandleInput("hi", (chunk, opts) => chunks.push({ chunk, aside: opts?.aside === true }));
     expect(chunks).toEqual([
-      { chunk: "\x1b[2m\x1b[3mSto pensando…\x1b[0m\n", aside: true },
+      { chunk: "\x1b[2m\x1b[3mThinking…\x1b[0m\n", aside: true },
       { chunk: "\x1b[2m\x1b[3mpenso\x1b[0m", aside: true },
       { chunk: "\n", aside: true },
       { chunk: "\x1b[2m\x1b[3mSto leggendo dati con jira…\x1b[0m\n", aside: true },
-      { chunk: "Azione in sospeso: `jira issue delete KAN-1 --confirm` — scrivi: TOK1\n", aside: true },
+      { chunk: "Action pending: `jira issue delete KAN-1 --confirm` — type: TOK1\n", aside: true },
       { chunk: "Ecco ", aside: false },
       { chunk: "fatto.", aside: false },
     ]);
@@ -446,11 +501,11 @@ describe("createTerminalProvider", () => {
     await provider.start(handleTurn);
 
     const out = written.join("");
-    expect(out).not.toContain("risposta corretta");
+    expect(out).not.toContain("answer corrected");
     expect(out.split("Template DVD non si apre").length - 1).toBe(1);
   });
 
-  test("the first onReasoningChunk prints a dim 'Sto pensando…' header before the chunk itself", async () => {
+  test("the first onReasoningChunk prints a dim 'Thinking…' header before the chunk itself", async () => {
     let capturedHandleInput!: CapturedHandleInput;
 
     const provider = createTerminalProvider({
@@ -472,7 +527,7 @@ describe("createTerminalProvider", () => {
 
     const chunks: string[] = [];
     await capturedHandleInput("hi", (chunk) => chunks.push(chunk));
-    expect(chunks).toEqual(["\x1b[2m\x1b[3mSto pensando…\x1b[0m\n", "\x1b[2m\x1b[3mprimo pezzo\x1b[0m"]);
+    expect(chunks).toEqual(["\x1b[2m\x1b[3mThinking…\x1b[0m\n", "\x1b[2m\x1b[3mprimo pezzo\x1b[0m"]);
   });
 
   test("subsequent onReasoningChunk calls in the same turn don't reprint the header", async () => {
@@ -499,7 +554,7 @@ describe("createTerminalProvider", () => {
     const chunks: string[] = [];
     await capturedHandleInput("hi", (chunk) => chunks.push(chunk));
     expect(chunks).toEqual([
-      "\x1b[2m\x1b[3mSto pensando…\x1b[0m\n",
+      "\x1b[2m\x1b[3mThinking…\x1b[0m\n",
       "\x1b[2m\x1b[3muno\x1b[0m",
       "\x1b[2m\x1b[3mdue\x1b[0m",
     ]);
@@ -534,11 +589,11 @@ describe("createTerminalProvider", () => {
     const chunks: string[] = [];
     await capturedHandleInput("hi", (chunk) => chunks.push(chunk));
     expect(chunks).toEqual([
-      "\x1b[2m\x1b[3mSto pensando…\x1b[0m\n",
+      "\x1b[2m\x1b[3mThinking…\x1b[0m\n",
       "\x1b[2m\x1b[3mprimo\x1b[0m",
       "\n",
       "\x1b[2m\x1b[3mSto leggendo dati con jira…\x1b[0m\n",
-      "\x1b[2m\x1b[3mSto pensando…\x1b[0m\n",
+      "\x1b[2m\x1b[3mThinking…\x1b[0m\n",
       "\x1b[2m\x1b[3msecondo\x1b[0m",
       "\n",
     ]);
@@ -625,8 +680,8 @@ describe("createTerminalProvider", () => {
     const secondTurnChunks: string[] = [];
     await capturedHandleInput("hi again", (chunk) => secondTurnChunks.push(chunk));
 
-    expect(firstTurnChunks[0]).toBe("\x1b[2m\x1b[3mSto pensando…\x1b[0m\n");
-    expect(secondTurnChunks[0]).toBe("\x1b[2m\x1b[3mSto pensando…\x1b[0m\n");
+    expect(firstTurnChunks[0]).toBe("\x1b[2m\x1b[3mThinking…\x1b[0m\n");
+    expect(secondTurnChunks[0]).toBe("\x1b[2m\x1b[3mThinking…\x1b[0m\n");
   });
 
   test("usage reported via the sink feeds the prompt suffix", async () => {
