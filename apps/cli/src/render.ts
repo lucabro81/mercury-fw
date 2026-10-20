@@ -416,7 +416,7 @@ ${directory ? `- Directory: ${directory.id}\n` : ""}
 ## Layout
 
 - \`mercury.config.ts\`: what the app is made of (tool plugins, channels, how their lists read) and the assistant's persona: its name, who it is and how it answers. Edit them freely.
-- \`locales/\`: the texts people see, one file per language the assistant speaks. \`en.json\` overrides the English ones; add \`it.json\` (and \`it\` to \`i18n.locales\` in the config) for Italian, \`i18n.defaultLocale\` for the language people get when they haven't picked one. Mercury logs at startup the keys a file is missing.
+- \`locales/\`: the texts people see, one file per language the assistant speaks. \`en.json\` overrides the English ones; add \`it.json\` (and \`it\` to \`i18n.locales\` in the config) for Italian, \`i18n.defaultLocale\` for the language people get when they haven't picked one. The app's own texts (a formatter rule's) are \`app.\` keys, written in English in \`en.json\` and translated in every other file. Mercury logs at startup the keys a file is missing.
 - \`src/index.ts\`: the service (channels, crons). \`src/repl.ts\`: an interactive terminal for trying things out.
 - \`.env.example\`: every variable the app reads. Copy it to \`.env\` and fill it in.
 

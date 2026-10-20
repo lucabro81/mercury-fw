@@ -55,6 +55,9 @@ export interface LoadedPlugin {
   bundle?: SessionToolBundle;
 }
 
+/** Names no plugin may take: their keys are the core's and the app's texts. */
+const RESERVED_NAMES: Record<string, string> = { core: "the core's own texts", app: "the app's own texts" };
+
 /** What the loader hands back to the composition root. The core knows nothing
  * about CLIs: a plugin's tool is an opaque `SessionToolBundle` it contributed,
  * not a config the core assembles. */
@@ -206,7 +209,12 @@ export async function loadPlugins(plugins: Plugin[], ctx: PluginLoadContext): Pr
       continue;
     }
     // A plugin's texts are its own: a key outside its name could shadow
-    // another plugin's or the core's.
+    // another plugin's or the core's, and the core's and the app's names
+    // are taken.
+    if (Object.hasOwn(RESERVED_NAMES, plugin.name)) {
+      ctx.log(`plugin "${plugin.name}" not activated: "${plugin.name}" is reserved for ${RESERVED_NAMES[plugin.name]}`);
+      continue;
+    }
     const textErrors = namespaceErrors(plugin.name, plugin.messages ?? {});
     if (textErrors.length > 0) {
       ctx.log(`plugin "${plugin.name}" not activated: ${textErrors.join("; ")}`);

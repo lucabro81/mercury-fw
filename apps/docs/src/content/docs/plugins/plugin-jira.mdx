@@ -30,17 +30,21 @@ An app created with `mfw create --plugins jira` has everything below already. By
        formatter<JiraDisplays>({
          "issue-list": {
            item: (issue) => `${issue.key} ${issue.status ? `[${issue.status}] ` : ""}${issue.summary}\n${issue.url}`,
-           empty: "No matching issues.",
+           empty: (t) => t("app.jira.no-issues"),
          },
        }),
      ),
    ],
    ```
 
+   `app.jira.no-issues` is the app's own text: `{ "app.jira.no-issues": "No matching issues." }` in
+   `locales/en.json`, translated in its other [language files](../../concepts/languages/). A plain string,
+   `empty: "No matching issues."`, works too.
+
 3. Set `JIRA_SITE_URL` in `.env`. Without it the plugin doesn't load, and the log says so.
 
 ```text title="Prompt for your coding agent"
-In my Mercury app, add @mercury-fw/plugin-jira: install it, list it in trustedDependencies in package.json, declare it in mercury.config.ts wrapped in formatterPlugin with an issue-list rule showing key, status, summary and url, add JIRA_SITE_URL to .env.example, and run `bun run typecheck`. Then list the `mfw credentials` commands I have to run myself, since they ask for secrets. Don't print the contents of .env.
+In my Mercury app, add @mercury-fw/plugin-jira: install it, list it in trustedDependencies in package.json, declare it in mercury.config.ts wrapped in formatterPlugin with an issue-list rule showing key, status, summary and url and an empty text from the app.jira.no-issues key, which goes in locales/en.json, add JIRA_SITE_URL to .env.example, and run `bun run typecheck`. Then list the `mfw credentials` commands I have to run myself, since they ask for secrets. Don't print the contents of .env.
 ```
 
 ## Logins

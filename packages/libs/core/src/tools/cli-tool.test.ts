@@ -859,7 +859,7 @@ describe("createCliTool display staging", () => {
     ] as const) {
       const { runCommand } = createCliTool(runCliFn, { jira: searchConfig }, {
         stageConfirmation: noopStage(),
-      t: english,
+        t: english,
         stashDisplay: (artifact: string, label?: string) => (labels.push(label), displayStore.stash("terminal", artifact, label)),
         postProcess,
       });

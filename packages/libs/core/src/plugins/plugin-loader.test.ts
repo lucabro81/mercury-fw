@@ -121,6 +121,25 @@ describe("loadPlugins", () => {
     expect(logs).toEqual(['plugin "jira" not activated: key "core.access.unknown" is outside the "jira." namespace']);
   });
 
+  // Review of #280: a plugin named after the core's or the app's namespace
+  // passed the check and could overwrite their texts.
+  it("doesn't activate a plugin named core or app, whose keys would be the core's or the app's", async () => {
+    const logs: string[] = [];
+    const loaded = await loadPlugins(
+      [
+        plug({ name: "core", messages: { "core.access.unknown": "x" } }),
+        plug({ name: "app", messages: {} }),
+        plug({ name: "constructor" }),
+      ],
+      baseCtx({ log: (m) => logs.push(m) }),
+    );
+    expect(loaded.activated).toEqual(["constructor"]);
+    expect(logs).toEqual([
+      'plugin "core" not activated: "core" is reserved for the core\'s own texts',
+      'plugin "app" not activated: "app" is reserved for the app\'s own texts',
+    ]);
+  });
+
   it("doesn't activate a plugin with a key that is its bare name, or a text that isn't one", async () => {
     const logs: string[] = [];
     const loaded = await loadPlugins(
