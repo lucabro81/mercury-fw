@@ -21,7 +21,7 @@ describe("atlassianAdminPlugin's texts for the model", () => {
     const texts = [
       atlassianAdminPlugin.systemPromptFragment ?? "",
       ...(atlassianAdminPlugin.skills ?? []).flatMap((s) => [s.description, s.body]),
-      ...Object.values(c.sessionTools!({ sessionKey: "s", stageConfirmation: async () => "tok", stashDisplay: () => "d1", person: null, requireLogin: async () => ({ ok: false as const, error: "x" }) }, c.postProcess)).map((t) => (typeof t.description === "string" ? t.description : "")),
+      ...Object.values(c.sessionTools!({ sessionKey: "s", t: (key) => key, stageConfirmation: async () => "tok", stashDisplay: () => "d1", person: null, requireLogin: async () => ({ ok: false as const, error: "x" }) }, c.postProcess)).map((t) => (typeof t.description === "string" ? t.description : "")),
     ];
     for (const text of texts) expect(text).not.toContain("Mercury");
   });

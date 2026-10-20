@@ -63,6 +63,7 @@ export function createZitadelPlugin(deps: { runCliFn?: typeof runCli } = {}): Pl
         sessionTools: (sctx) => {
           const { runCommand } = createCliTool(runCliFn, configs, {
             stageConfirmation: sctx.stageConfirmation,
+            t: sctx.t,
             stashDisplay: sctx.stashDisplay,
             person: sctx.person,
             requireLogin: sctx.requireLogin,
@@ -70,9 +71,9 @@ export function createZitadelPlugin(deps: { runCliFn?: typeof runCli } = {}): Pl
           return { zitadelCommand: runCommand };
         },
         toolStatusDescribers: {
-          zitadelCommand: (input) => {
+          zitadelCommand: (input, t) => {
             const command = commandOf(input);
-            return command !== undefined ? describeCli(command) : "esecuzione di un comando";
+            return command !== undefined ? describeCli(command, t) : t("core.status.command-unknown");
           },
         },
       };

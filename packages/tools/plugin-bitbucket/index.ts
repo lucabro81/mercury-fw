@@ -57,6 +57,7 @@ export function createBitbucketPlugin(deps: { runCliFn?: typeof runCli } = {}): 
         sessionTools: (sctx) => {
           const { runCommand } = createCliTool(runCliFn, configs, {
             stageConfirmation: sctx.stageConfirmation,
+            t: sctx.t,
             stashDisplay: sctx.stashDisplay,
             person: sctx.person,
             requireLogin: sctx.requireLogin,
@@ -64,9 +65,9 @@ export function createBitbucketPlugin(deps: { runCliFn?: typeof runCli } = {}): 
           return { bitbucketCommand: runCommand };
         },
         toolStatusDescribers: {
-          bitbucketCommand: (input) => {
+          bitbucketCommand: (input, t) => {
             const command = commandOf(input);
-            return command !== undefined ? describeCli(command) : "esecuzione di un comando";
+            return command !== undefined ? describeCli(command, t) : t("core.status.command-unknown");
           },
         },
       };

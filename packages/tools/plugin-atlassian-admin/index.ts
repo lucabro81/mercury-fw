@@ -45,14 +45,15 @@ export const atlassianAdminPlugin: Plugin = {
       sessionTools: (sctx) => {
         const { runCommand } = createCliTool(runCli, configs, {
           stageConfirmation: sctx.stageConfirmation,
+          t: sctx.t,
           stashDisplay: sctx.stashDisplay,
         });
         return { atlassianAdminCommand: runCommand };
       },
       toolStatusDescribers: {
-        atlassianAdminCommand: (input) => {
+        atlassianAdminCommand: (input, t) => {
           const command = commandOf(input);
-          return command !== undefined ? describeCli(command) : "esecuzione di un comando";
+          return command !== undefined ? describeCli(command, t) : t("core.status.command-unknown");
         },
       },
     };

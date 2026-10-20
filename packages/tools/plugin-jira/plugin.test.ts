@@ -1,5 +1,5 @@
 import { describe, it, expect } from "bun:test";
-import { PLUGIN_API_VERSION, type SessionToolContext } from "@mercury-fw/plugin-types";
+import { PLUGIN_API_VERSION, type SessionToolContext, type Translate } from "@mercury-fw/plugin-types";
 import { createJiraPlugin, jiraPlugin, JIRA_ISSUE_LIST_SELECT } from "./index.ts";
 
 /**
@@ -14,8 +14,12 @@ import { createJiraPlugin, jiraPlugin, JIRA_ISSUE_LIST_SELECT } from "./index.ts
 const MODEL = {} as never; // build() only closes over the model; it never calls it
 const noLog = () => {};
 const ENV = { JIRA_SITE_URL: "https://example.atlassian.net" };
+/** The turn's texts: the key and its params, so a test sees what was asked for. */
+const echo: Translate = (key, params) => (params ? `${key} ${JSON.stringify(params)}` : key);
+
 const sctx: SessionToolContext = {
   sessionKey: "s",
+  t: echo,
   stageConfirmation: async () => "tok",
   stashDisplay: () => "d1",
   person: null,
@@ -112,7 +116,10 @@ describe("jiraPlugin", () => {
     const c = jiraPlugin.build!({ model: MODEL, env: ENV, log: noLog });
     const tools = c.sessionTools!(sctx, c.postProcess);
     expect(Object.keys(tools)).toEqual(["jiraCommand"]);
-    expect(c.toolStatusDescribers!.jiraCommand!({ command: "jira issue search --jql X" })).toBe("esecuzione jira issue search");
+    expect(c.toolStatusDescribers!.jiraCommand!({ command: "jira issue search --jql X" }, echo)).toBe(
+      'core.status.command {"binary":"jira","command":"issue search"}',
+    );
+    expect(c.toolStatusDescribers!.jiraCommand!({}, echo)).toBe("core.status.command-unknown");
   });
 
   // #176: Jira acts as the person the turn is for, logged in through Mercury.
@@ -145,6 +152,7 @@ describe("jiraPlugin", () => {
     const searched = c.postProcess!(
       { binary: "jira", args: ["issue", "search"], prefix: ["issue", "search"] },
       { ok: true, data: { issues: [] } },
+      echo,
     );
     expect(searched).toEqual({ ok: true, data: { issues: [], issueCount: 0 }, display: { type: "issue-list", items: [] } });
   });
