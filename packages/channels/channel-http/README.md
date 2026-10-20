@@ -99,7 +99,7 @@ All `GET`, all JSON, all reporting state already held in-process. They need an a
 | `GET /conversations?limit=<n>` | `{ conversations: [{ conversationId, lastTimestamp, preview }] }` — your conversations, most-recently-active first |
 | `GET /manifest` | `{ manifest: { coreApiVersion, plugins: [{ name, apiVersion, active, skills, hasBuild, customStatus }], activeClis, skills } }` |
 | `GET /confirmations` | `{ pending: [{ sessionKey, summary, expiresAt }] }` — your pending confirmations; tokens are deliberately never included |
-| `GET /me` | `{ name }` — how you asked the assistant to call you, `null` when you never said; not there on a core older than this channel |
+| `GET /me` | `{ name, language }` — how you asked the assistant to call you and the language you asked it to use, `null` when you never said; `language` is missing on a core that doesn't know languages, and the route isn't there on a core older than this channel |
 | `GET /tool-log` | `{ entries: [...] }` — the tool calls of your recent turns |
 | `GET /health` | `{ uptimeSeconds, memory, qdrantReachable, ollamaReachable }` |
 | `GET /wiki/list` | `{ files: [...] }` — `curated/...` and `personal/...` paths |
