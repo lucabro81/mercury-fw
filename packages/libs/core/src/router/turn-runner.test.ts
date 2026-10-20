@@ -942,6 +942,19 @@ describe("createTurnRunner", () => {
       expect(new Set(asked)).toEqual(new Set(["google-chat:u1"]));
     });
 
+    test("a guard gets the core's English texts when the composition gives no translator", async () => {
+      const started: string[] = [];
+      const sink = { ...baseSink(), onToolStart: (label: string) => void started.push(label) };
+      const runner = createTurnRunner(
+        baseDeps({
+          runTurnFn: async () => "answer",
+          postTurnGuards: [makeGuard({ statusLabel: (t) => t("core.status.searching"), statusId: "g" })],
+        }),
+      );
+      await runner(baseTurn(), sink);
+      expect(started).toEqual(["Searching…"]);
+    });
+
     test("forwards a guard's failed outcome to onToolFinish, and still delivers its text", async () => {
       const finished: unknown[] = [];
       const sink = baseSink({ onToolFinish: (...a) => finished.push(a) });

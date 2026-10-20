@@ -7,6 +7,9 @@
  * `Accept-Language`-style list) when the caller passes one, then the
  * instance's default, then English. No channel passes a hint yet.
  *
+ * An app's own texts (a formatter rule's) go under `app.`: its English file
+ * declares them, and every other language's file translates them.
+ *
  * A key a supported language's file lacks comes out as the key itself, never
  * as English: a missing translation is a gap to fix, and English in its place
  * would read as intended. At startup `report` names, per language, the keys
@@ -127,14 +130,17 @@ export function createI18n(opts: {
     },
     report: () => {
       const lines: string[] = [];
+      // An app's own texts (`app.…`) are declared by its English file.
+      const appKeys = Object.keys(files.get("en") ?? {}).filter((key) => key.startsWith(APP_PREFIX));
+      const declared = new Set([...Object.keys(english), ...appKeys]);
       for (const [tag, messages] of files) {
         if (tag !== "en") {
-          const missing = Object.keys(english).filter((key) => !Object.hasOwn(messages, key));
+          const missing = [...declared].filter((key) => !Object.hasOwn(messages, key));
           if (missing.length > 0) {
             lines.push(`[i18n] ${tag}: ${count(missing.length, "key")} missing, shown as the key: ${missing.join(", ")}`);
           }
         }
-        const unknown = Object.keys(messages).filter((key) => !Object.hasOwn(english, key));
+        const unknown = Object.keys(messages).filter((key) => !declared.has(key));
         if (unknown.length > 0) {
           lines.push(`[i18n] ${tag}: ${count(unknown.length, "key")} no package declares: ${unknown.join(", ")}`);
         }
@@ -143,6 +149,25 @@ export function createI18n(opts: {
     },
   };
 }
+
+/**
+ * The instance's languages: the core's English and the loaded plugins'
+ * (`pluginMessages`, already checked against their namespaces), with the
+ * instance's language files (`i18n`, the config's) over them.
+ */
+export function instanceI18n(
+  pluginMessages: Messages,
+  i18n: { defaultLocale?: string; locales?: Record<string, Messages> } | undefined,
+): I18n {
+  return createI18n({
+    english: { ...CORE_MESSAGES, ...pluginMessages },
+    ...(i18n?.locales === undefined ? {} : { locales: i18n.locales }),
+    ...(i18n?.defaultLocale === undefined ? {} : { defaultLocale: i18n.defaultLocale }),
+  });
+}
+
+/** The namespace of an app's own texts (a formatter rule's), declared in its `locales/en.json`. */
+const APP_PREFIX = "app.";
 
 /** `1 key`, `3 keys`. */
 function count(n: number, noun: string): string {

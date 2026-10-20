@@ -75,8 +75,7 @@ import { createHostReads } from "./identity/host-reads.ts";
 import { bindConfirm } from "./identity/confirm-binding.ts";
 import { createPersonLogins } from "./identity/person-logins.ts";
 import { createProfileStore, profilesPath } from "./identity/profiles.ts";
-import { createI18n, createTexts, type Texts, type Translate } from "./i18n/i18n.ts";
-import { CORE_MESSAGES } from "./i18n/core-messages.ts";
+import { createTexts, instanceI18n, type Texts, type Translate } from "./i18n/i18n.ts";
 import { createProfileTools } from "./identity/profile-tools.ts";
 import { createPeople, type TurnWho } from "./identity/people.ts";
 import { createLinkStore, linksPath } from "./identity/links.ts";
@@ -207,11 +206,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   // core's and the loaded plugins' English, the instance's language files over it. A default
   // language the instance doesn't ship stops the start; a file's gaps are
   // logged, and show as their keys.
-  const i18n = createI18n({
-    english: { ...CORE_MESSAGES, ...loadedPlugins.messages },
-    ...(config.i18n?.locales === undefined ? {} : { locales: config.i18n.locales }),
-    ...(config.i18n?.defaultLocale === undefined ? {} : { defaultLocale: config.i18n.defaultLocale }),
-  });
+  const i18n = instanceI18n(loadedPlugins.messages, config.i18n);
   for (const line of i18n.report()) console.error(line);
   const texts = createTexts(i18n, (key) => profiles.languageOf(key));
 
