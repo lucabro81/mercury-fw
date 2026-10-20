@@ -86,6 +86,14 @@ A tool that reaches a service does it as someone: as the person asking (they log
 Mercury), as the agent's own service account, or as no one, for a public service with no login. A plugin says which
 with `actsAs`, and [People and roles](../people/) explains what each means for who may use it.
 
+## Texts the person reads
+
+What a plugin shows the person in its own words (the line saying a tool is running, the label of a choice) is
+written once, in English, in the plugin's `messages`, every key under the plugin's name (`web-search.choice.once`).
+The plugin asks for a text by its key, through the `t` it's handed while a turn runs, and gets it in the language of
+the person the turn is for: the app translates the keys in its [language files](../languages/). A plugin whose keys
+aren't all under its own name isn't loaded, so it can't take over another plugin's texts or Mercury's.
+
 ## Compatibility
 
 Every plugin declares the version of the plugin contract it was written for (`apiVersion`). When the core loads a

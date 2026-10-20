@@ -63,7 +63,9 @@ plugins: [
 ```
 
 `formatter` takes one rule per kind of list the plugin declares: the text of each item, or `{ item, empty }` when an
-empty list needs its own text. A kind with no rule isn't shown.
+empty list needs its own text. A kind with no rule isn't shown. A rule gets the texts of the person the turn is for as
+a second argument, `(issue, t) => …`, and `empty` can be `(t) => t("app.no-issues")` instead of a string: an app
+that speaks several languages declares its own keys in its language files (see [`i18n`](#i18n)).
 
 ## `channels`
 
