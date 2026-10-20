@@ -736,8 +736,8 @@ describe("createTurnRunner", () => {
     expect(registered).toEqual([["sk", onToolStart, onToolFinish]]);
   });
 
-  test("processToolCorrections receives both the sink's onToolStart and onToolFinish", async () => {
-    const received: Array<[unknown, unknown]> = [];
+  test("processToolCorrections receives both the sink's onToolStart and onToolFinish, and whose turn it is", async () => {
+    const received: Array<[unknown, unknown, unknown]> = [];
     const onToolStart = () => {};
     const onToolFinish = () => {};
 
@@ -749,16 +749,16 @@ describe("createTurnRunner", () => {
       trackSession: () => {},
       registerCaptureCallback: () => {},
       maybeCapture: async () => {},
-      processToolCorrections: async (_steps, cb, finishCb) => {
-        received.push([cb, finishCb]);
+      processToolCorrections: async (_steps, cb, finishCb, key) => {
+        received.push([cb, finishCb, key]);
       },
       logStep: () => {},
       runTurnFn: async () => "reply",
     });
 
-    await runner(baseTurn(), baseSink({ onToolStart, onToolFinish }));
+    await runner(baseTurn({ principal: verified("u1") }), baseSink({ onToolStart, onToolFinish }));
 
-    expect(received).toEqual([[onToolStart, onToolFinish]]);
+    expect(received).toEqual([[onToolStart, onToolFinish, "google-chat:u1"]]);
   });
 
   test("getOrCreateHistory receives the verified principal's user key as its third argument (undefined when nobody vouched for it), so a provider can decide whether to seed a context primer", async () => {

@@ -225,7 +225,13 @@ export type TurnRunnerDeps = {
     content: string;
     displays?: string[];
   }) => Promise<void>;
-  processToolCorrections: (steps: StepInfo[], onToolStart: TurnSink["onToolStart"], onToolFinish: TurnSink["onToolFinish"]) => Promise<void>;
+  /** `key` is the turn's person: the corrections' status reads in their language. */
+  processToolCorrections: (
+    steps: StepInfo[],
+    onToolStart: TurnSink["onToolStart"],
+    onToolFinish: TurnSink["onToolFinish"],
+    key: string,
+  ) => Promise<void>;
   logStep: (prefix: string, step: StepInfo) => void;
   /** Test seam; defaults to the real `recordStep`. */
   recordStepFn?: typeof recordStep;
@@ -599,6 +605,6 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
         }
       }
     }
-    await deps.processToolCorrections(steps, sink.onToolStart, sink.onToolFinish);
+    await deps.processToolCorrections(steps, sink.onToolStart, sink.onToolFinish, key);
   }
 }
