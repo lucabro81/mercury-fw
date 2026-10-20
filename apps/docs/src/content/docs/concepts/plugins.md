@@ -92,7 +92,8 @@ What a plugin shows the person in its own words (the line saying a tool is runni
 written once, in English, in the plugin's `messages`, every key under the plugin's name (`web-search.choice.once`).
 The plugin asks for a text by its key, through the `t` it's handed while a turn runs, and gets it in the language of
 the person the turn is for: the app translates the keys in its [language files](../languages/). A plugin whose keys
-aren't all under its own name isn't loaded, so it can't take over another plugin's texts or Mercury's.
+aren't all under its own name isn't loaded, so it can't take over another plugin's texts or Mercury's, and `core`
+and `app` can't be plugin names: their keys are Mercury's and the app's.
 
 ## Compatibility
 
