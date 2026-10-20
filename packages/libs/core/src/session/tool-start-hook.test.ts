@@ -3,6 +3,7 @@ import { describeToolStart, describeToolDetail, classifyToolResult, withToolStar
 import { createCliStatusDescriber, type CliConfig } from "@mercury-fw/cli-engine";
 import type { StatusDescriber } from "@mercury-fw/plugin-types";
 import type { Tool } from "ai";
+import type { Translate } from "../i18n/i18n.ts";
 
 const configs: Record<string, CliConfig> = {
   jira: {
@@ -68,26 +69,26 @@ describe("describeToolStart", () => {
   });
 
   it("labels recall_tool_calls as consulting memory", () => {
-    expect(describeToolStart("recall_tool_calls", {}, statusMap)).toBe("Sto consultando la memoria…");
+    expect(describeToolStart("recall_tool_calls", {}, statusMap)).toBe("Checking my memory…");
   });
 
   it("labels the wiki read tools as reading the wiki", () => {
-    expect(describeToolStart("read_file", { path: "x" }, statusMap)).toBe("Sto leggendo il wiki…");
-    expect(describeToolStart("list_files", {}, statusMap)).toBe("Sto leggendo il wiki…");
+    expect(describeToolStart("read_file", { path: "x" }, statusMap)).toBe("Reading the wiki…");
+    expect(describeToolStart("list_files", {}, statusMap)).toBe("Reading the wiki…");
   });
 
   it("labels grep as searching, not generically reading", () => {
-    expect(describeToolStart("grep", { pattern: "x" }, statusMap)).toBe("Sto cercando…");
+    expect(describeToolStart("grep", { pattern: "x" }, statusMap)).toBe("Searching…");
   });
 
   it("labels write_file as writing to the wiki", () => {
     expect(describeToolStart("write_file", { path: "x", content: "y" }, statusMap)).toBe(
-      "Sto scrivendo sul wiki…",
+      "Writing to the wiki…",
     );
   });
 
   it("falls back to the raw tool name for an unmapped/future tool", () => {
-    expect(describeToolStart("some_future_tool", {}, statusMap)).toBe("Sto usando some_future_tool…");
+    expect(describeToolStart("some_future_tool", {}, statusMap)).toBe("Using some_future_tool…");
   });
 });
 
@@ -144,8 +145,8 @@ describe("describeToolDetail", () => {
   });
 
   it("returns a static description for list_files and recall_tool_calls (no path/pattern to show)", () => {
-    expect(describeToolDetail("list_files", {})).toBe("Tutti i documenti del wiki");
-    expect(describeToolDetail("recall_tool_calls", { limit: 5 })).toBe("Cronologia delle chiamate in questa conversazione");
+    expect(describeToolDetail("list_files", {})).toBe("Every document in the wiki");
+    expect(describeToolDetail("recall_tool_calls", { limit: 5 })).toBe("The calls made in this conversation");
   });
 
   it("falls back to a bounded JSON dump of the input for an unmapped/future tool", () => {
@@ -167,6 +168,24 @@ describe("withToolStartHook", () => {
     return (tools[name] as unknown as { execute: WrappedExecute }).execute;
   }
 
+  it("labels and details come out in the turn's language; a plugin's own label is left as it says", async () => {
+    const italian: Translate = (key, params) =>
+      ({ "core.status.wiki-read": "Leggo il wiki…", "core.status.wiki-all": "Tutto il wiki" })[key] ?? `${key}${JSON.stringify(params ?? {})}`;
+    const calls: [string, string | undefined][] = [];
+    const tools: Record<string, Tool> = {
+      list_files: fakeTool(async () => []),
+      jiraCommand: fakeTool(async () => ({ ok: true })),
+    };
+    const wrapped = withToolStartHook(tools, (label, detail) => calls.push([label, detail]), { jiraCommand: () => "Jira" }, undefined, italian);
+    await execOf(wrapped, "list_files")({}, { toolCallId: "tc-1" });
+    await execOf(wrapped, "jiraCommand")({ command: "jira x" }, { toolCallId: "tc-2" });
+    expect(calls).toEqual([
+      ["Leggo il wiki…", "Tutto il wiki"],
+      ["Jira", "jira x"],
+    ]);
+    expect(describeToolStart("mystery", {}, {}, italian)).toBe('core.status.tool{"tool":"mystery"}');
+  });
+
   it("calls onToolStart exactly once with the right label before execute runs", async () => {
     const calls: string[] = [];
     const tools: Record<string, Tool> = {
@@ -176,7 +195,7 @@ describe("withToolStartHook", () => {
     const wrapped = withToolStartHook(tools, (label) => calls.push(label), statusMap);
     const result = await execOf(wrapped, "read_file")({}, { toolCallId: "tc-1" });
 
-    expect(calls).toEqual(["Sto leggendo il wiki…"]);
+    expect(calls).toEqual(["Reading the wiki…"]);
     expect(result).toBe("file contents");
   });
 
@@ -192,7 +211,7 @@ describe("withToolStartHook", () => {
     const execute = execOf(wrapped, "write_file");
 
     await expect(execute({}, { toolCallId: "tc-1" })).rejects.toThrow("disk full");
-    expect(calls).toEqual(["Sto scrivendo sul wiki…"]);
+    expect(calls).toEqual(["Writing to the wiki…"]);
   });
 
   it("reports each tool's own label when several tools are wrapped together", async () => {
@@ -208,7 +227,7 @@ describe("withToolStartHook", () => {
       await execOf(wrapped, name)({}, { toolCallId: `tc-${name}` });
     }
 
-    expect(calls).toEqual(["Sto leggendo il wiki…", "Sto scrivendo sul wiki…", "Sto consultando la memoria…"]);
+    expect(calls).toEqual(["Reading the wiki…", "Writing to the wiki…", "Checking my memory…"]);
   });
 
   it("calls onToolStart with the label, detail, toolCallId and tool name for a real tool call", async () => {
@@ -332,7 +351,7 @@ describe("withToolStartHook", () => {
       "start:esecuzione jira issue search",
       "execute-1",
       "finish:tc-1",
-      "start:Sto consultando la memoria…",
+      "start:Checking my memory…",
       "execute-2",
       "finish:tc-2",
     ]);

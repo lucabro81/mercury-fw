@@ -15,11 +15,14 @@
  * having to handle an overlapping in-flight card.
  */
 import type { Tool } from "ai";
+import { englishTexts, type Translate } from "../i18n/i18n.ts";
 
-// Elenco piccolo e stabile (6 tool totali oggi) — va aggiornato a mano se
-// si aggiunge un nuovo tool nominato; qualunque nome non elencato qui
-// ricade nel fallback generico, non è un errore. `grep` non è qui: ha una
-// propria etichetta ("Sto cercando…"), non ricade nel bucket "read".
+/** The core's texts in English, for a caller that passes no turn's `t`. */
+const english: Translate = englishTexts().forPerson(undefined).t;
+
+// A short, stable list, updated by hand when a named wiki tool is added; a
+// name not here falls to the generic label, which isn't an error. `grep`
+// isn't here: it has its own label (`core.status.searching`).
 const WIKI_TOOL_CATEGORY: Record<string, "read" | "write"> = {
   list_files: "read",
   read_file: "read",
@@ -31,23 +34,24 @@ const WIKI_TOOL_CATEGORY: Record<string, "read" | "write"> = {
  * — no arguments/queries shown. A tool a plugin contributed carries its own
  * label via `toolStatusDescribers` (keyed by tool name), so the core never
  * decides how a plugin's tool reads — it just looks the describer up. The other
- * tools are core functionality (wiki, grep, memory) and keep their core-coined
- * labels until they too become internal plugins.
+ * tools are core functionality (wiki, grep, memory): their labels are the
+ * core's texts, in the turn's language (`t`).
  */
 export function describeToolStart(
   toolName: string,
   input: unknown,
   toolStatusDescribers: Record<string, (input: unknown) => string>,
+  t: Translate = english,
 ): string {
   const describe = toolStatusDescribers[toolName];
   if (describe) return describe(input);
-  if (toolName === "recall_tool_calls") return "Sto consultando la memoria…";
-  if (toolName === "read_skill") return "Sto consultando le istruzioni…";
-  if (toolName === "grep") return "Sto cercando…";
+  if (toolName === "recall_tool_calls") return t("core.status.memory");
+  if (toolName === "read_skill") return t("core.status.instructions");
+  if (toolName === "grep") return t("core.status.searching");
   const wikiCategory = WIKI_TOOL_CATEGORY[toolName];
-  if (wikiCategory === "read") return "Sto leggendo il wiki…";
-  if (wikiCategory === "write") return "Sto scrivendo sul wiki…";
-  return `Sto usando ${toolName}…`;
+  if (wikiCategory === "read") return t("core.status.wiki-read");
+  if (wikiCategory === "write") return t("core.status.wiki-write");
+  return t("core.status.tool", { tool: toolName });
 }
 
 const MAX_DETAIL_CHARS = 300;
@@ -73,7 +77,7 @@ function stringField(input: unknown, key: string): string | undefined {
  * input, since that's what a human actually wants to see; only a genuinely
  * unmapped/future tool falls back to a bounded JSON dump.
  */
-export function describeToolDetail(toolName: string, input: unknown): string {
+export function describeToolDetail(toolName: string, input: unknown, t: Translate = english): string {
   // Any CLI tool carries a `command` string, whatever its name (jiraCommand,
   // bitbucketCommand, the residual runCommand) — show that bare command.
   const command = stringField(input, "command");
@@ -87,9 +91,9 @@ export function describeToolDetail(toolName: string, input: unknown): string {
     case "resolve_reference":
       return truncate(stringField(input, "token") ?? JSON.stringify(input) ?? "");
     case "list_files":
-      return "Tutti i documenti del wiki";
+      return t("core.status.wiki-all");
     case "recall_tool_calls":
-      return "Cronologia delle chiamate in questa conversazione";
+      return t("core.status.call-history");
     default:
       return truncate(JSON.stringify(input) ?? "");
   }
@@ -125,13 +129,15 @@ export function classifyToolResult(result: unknown): ToolOutcome {
  * original, then `onToolFinish` once it settles. `chain` serializes every
  * wrapped tool sharing this one `withToolStartHook` call (i.e. one turn's
  * worth of tools, since `buildTools` builds fresh tools per turn) — see
- * this file's header comment for why.
+ * this file's header comment for why. The core's labels come out through
+ * `translate`, the turn's texts.
  */
 export function withToolStartHook(
   tools: Record<string, Tool>,
   onToolStart: (label: string, detail?: string, toolCallId?: string, toolName?: string) => void,
   toolStatusDescribers: Record<string, (input: unknown) => string>,
   onToolFinish?: (toolCallId: string, outcome: ToolOutcome) => void,
+  translate: Translate = english,
 ): Record<string, Tool> {
   let chain: Promise<void> = Promise.resolve();
   const wrapped: Record<string, Tool> = {};
@@ -139,8 +145,8 @@ export function withToolStartHook(
     wrapped[name] = {
       ...t,
       execute: (input: unknown, options: { toolCallId: string }) => {
-        const label = describeToolStart(name, input, toolStatusDescribers);
-        const detail = describeToolDetail(name, input);
+        const label = describeToolStart(name, input, toolStatusDescribers, translate);
+        const detail = describeToolDetail(name, input, translate);
         const run = chain.then(async () => {
           onToolStart(label, detail, options.toolCallId, name);
           try {

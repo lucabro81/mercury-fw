@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { Message } from "./history.ts";
 import { createSessionCapture } from "./session-capture.ts";
+import type { Texts } from "../i18n/i18n.ts";
 
 const msg = (n: number): Message => ({ role: n % 2 === 0 ? "user" : "assistant", content: `m${n}` });
 const msgs = (from: number, to: number) => Array.from({ length: to - from }, (_, i) => msg(from + i));
@@ -116,6 +117,26 @@ describe("createSessionCapture", () => {
 
     await c.maybeCapture("s", msgs(0, 2));
     expect(events).toEqual(["start:2 messages", "finish:success"]);
+  });
+
+  test("the status reads in the language of the person the session is", async () => {
+    const events: string[] = [];
+    const texts: Texts = {
+      forPerson: (key) => ({
+        locale: "it",
+        t: (k, params) => `${key}:${k}${params ? JSON.stringify(params) : ""}`,
+      }),
+    };
+    const c = createSessionCapture({
+      capture: recorder().capture,
+      threshold: 1,
+      texts,
+      describe: (pending, t) => t("core.status.capture-detail", { count: pending.length }),
+    });
+    c.track("s", "u1");
+    c.registerCallbacks("s", { onToolStart: (label, detail) => events.push(`${label} | ${detail}`), onToolFinish: () => {} });
+    await c.maybeCapture("s", msgs(0, 2));
+    expect(events).toEqual(['u1:core.status.remembering | u1:core.status.capture-detail{"count":2}']);
   });
 
   test("close forgets the session", async () => {
