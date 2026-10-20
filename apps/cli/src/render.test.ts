@@ -53,6 +53,7 @@ const ALWAYS = [
   "Dockerfile",
   "README.md",
   "docker-compose.yml",
+  "locales/en.json",
   "mercury.config.ts",
   "package.json",
   "src/index.ts",
@@ -95,7 +96,9 @@ describe("renderApp: Dockerfile", () => {
   // #271: the persona is in the config, there are no persona files to copy.
   test("copies the config and the sources, nothing for a persona", () => {
     const dockerfile = renderApp(HTTP).get("Dockerfile") ?? "";
-    expect(dockerfile).toContain("COPY --chown=mercury:mercury mercury.config.ts ./\nCOPY --chown=mercury:mercury src ./src\n");
+    expect(dockerfile).toContain(
+      "COPY --chown=mercury:mercury mercury.config.ts ./\nCOPY --chown=mercury:mercury locales ./locales\nCOPY --chown=mercury:mercury src ./src\n",
+    );
     expect(dockerfile).not.toContain("persona");
     expect(dockerfile).not.toContain("markdown.d.ts");
   });
@@ -105,6 +108,24 @@ describe("renderApp: Dockerfile", () => {
     expect(dockerfile.endsWith('CMD ["bun", "src/index.ts"]\n')).toBe(true);
     expect(renderApp(FULL).get("Dockerfile")).toBe(dockerfile);
     expect(renderApp(EMPTY).get("Dockerfile")).toBe(dockerfile);
+  });
+});
+
+// #279: a new app has the place for its languages from the start: an English
+// file it can override texts in, in the config and in the image.
+describe("renderApp: languages", () => {
+  test("an empty English file, the config's i18n reading it, the image copying the folder", () => {
+    const app = renderApp(EMPTY);
+    expect(app.get("locales/en.json")).toBe("{}\n");
+    const config = app.get("mercury.config.ts")!;
+    expect(config).toContain('import en from "./locales/en.json";');
+    expect(config).toContain("  i18n: { locales: { en } },");
+    expect(app.get("Dockerfile")).toContain("COPY --chown=mercury:mercury locales ./locales\n");
+    expect(app.get("README.md")).toContain("`locales/`");
+  });
+
+  test("the terminal gets the app's texts", () => {
+    expect(renderApp(EMPTY).get("src/repl.ts")).toContain("  texts: app.texts,\n");
   });
 });
 
@@ -236,7 +257,8 @@ describe("renderApp: docker-compose.yml", () => {
  * checked as the core gets it, not as text.
  */
 function evaluatedConfig(config: string): { persona: { name: string; identity: string; tone: string } } {
-  const body = config.replace(/^import .*$/gm, "").replace("export default defineMercuryConfig(", "return (");
+  // The imports are dropped: the language file's stands in as the empty file it is.
+  const body = `const en = {};\n${config.replace(/^import .*$/gm, "").replace("export default defineMercuryConfig(", "return (")}`;
   return new Function(body)();
 }
 

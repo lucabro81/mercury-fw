@@ -1,12 +1,14 @@
 /**
  * This app's composition: the tool plugins and channels it runs, the auth
  * provider when a channel needs one, how the lists its plugins hand over read,
- * and the assistant's persona. The entrypoints
+ * the assistant's persona and the languages it speaks (`i18n`: a file per
+ * language in `locales/`, `en.json` overriding the English texts). The entrypoints
  * (`src/index.ts`, `src/repl.ts`) hand this config to `composeMercury`.
  *
  * Every tool plugin and channel declared here is active.
  */
 import { defineMercuryConfig } from "@mercury-fw/core";
+import en from "./locales/en.json";
 
 /** The assistant's name: what the persona calls it, and every text the model reads. */
 const name = "Mercury";
@@ -30,4 +32,5 @@ export default defineMercuryConfig({
   },
   plugins: [],
   channels: [],
+  i18n: { locales: { en } },
 });

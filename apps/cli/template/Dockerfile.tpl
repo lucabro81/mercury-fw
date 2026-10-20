@@ -21,6 +21,7 @@ RUN bun install --production && chown -R mercury:mercury node_modules
 RUN find /app/node_modules -path '*/@mercury-fw/*/bin/*' -type f -exec ln -sf {} /usr/local/bin/ \;
 
 COPY --chown=mercury:mercury mercury.config.ts ./
+COPY --chown=mercury:mercury locales ./locales
 COPY --chown=mercury:mercury src ./src
 
 # Mount points of the named volumes, owned by the runtime user before a fresh

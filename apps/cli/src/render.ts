@@ -58,7 +58,8 @@ const CORE_ENV: EnvVar[] = [
 const CONFIG_HEADER = `/**
  * This app's composition: the tool plugins and channels it runs, the auth
  * provider when a channel needs one, how the lists its plugins hand over read,
- * and the assistant's persona. The entrypoints
+ * the assistant's persona and the languages it speaks (\`i18n\`: a file per
+ * language in \`locales/\`, \`en.json\` overriding the English texts). The entrypoints
  * (\`src/index.ts\`, \`src/repl.ts\`) hand this config to \`composeMercury\`.
  *
  * Every tool plugin and channel declared here is active.
@@ -85,6 +86,7 @@ export function renderApp(input: RenderInput): Map<string, string> {
     ["Dockerfile", dockerfile],
     ["README.md", renderReadme(input.name, channels, auth, tools, directory)],
     ["docker-compose.yml", renderCompose(input.name, channels.some((c) => c.id === "http"), services)],
+    ["locales/en.json", "{}\n"],
     ["mercury.config.ts", renderConfig(assistantName, input.role, channels, auth, tools, directory)],
     ["package.json", renderPackageJson(input.name, channels, auth, tools, input.versions, directory)],
     ["src/index.ts", indexTs],
@@ -205,7 +207,7 @@ function renderConfig(
   directory: CatalogEntry | undefined,
 ): string {
   const withRules = tools.filter((t) => t.formatter);
-  const imports = ['import { defineMercuryConfig } from "@mercury-fw/core";'];
+  const imports = ['import { defineMercuryConfig } from "@mercury-fw/core";', 'import en from "./locales/en.json";'];
   if (withRules.length > 0) {
     imports.push('import { formatterPlugin, formatter } from "@mercury-fw/formatter";');
   }
@@ -239,6 +241,7 @@ function renderConfig(
     channelList,
     ...(auth ? [`  auth: ${auth.exportName},`] : []),
     ...(directory ? [`  directory: ${directory.exportName},`] : []),
+    "  i18n: { locales: { en } },",
     "});",
     "",
   ].join("\n");
@@ -406,6 +409,7 @@ ${directory ? `- Directory: ${directory.id}\n` : ""}
 ## Layout
 
 - \`mercury.config.ts\`: what the app is made of (tool plugins, channels, how their lists read) and the assistant's persona: its name, who it is and how it answers. Edit them freely.
+- \`locales/\`: the texts people see, one file per language the assistant speaks. \`en.json\` overrides the English ones; add \`it.json\` (and \`it\` to \`i18n.locales\` in the config) for Italian, \`i18n.defaultLocale\` for the language people get when they haven't picked one. Mercury logs at startup the keys a file is missing.
 - \`src/index.ts\`: the service (channels, crons). \`src/repl.ts\`: an interactive terminal for trying things out.
 - \`.env.example\`: every variable the app reads. Copy it to \`.env\` and fill it in.
 
