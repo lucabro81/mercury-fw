@@ -29,6 +29,10 @@ is filled in when the text is shown: keep it as it is, wherever it fits the sent
 `locales/en.json` works the same way over the English texts: a key written there replaces the package's English, and
 the rest stay as the packages wrote them.
 
+The app's own texts, such as what a [formatter rule](../../reference/config/#plugins) shows for an empty list, go
+under `app.`: written in English in `locales/en.json`, they're declared there, and every other language's file
+translates them like the packages' keys. A new app with the Jira plugin already has one, `app.jira.no-issues`.
+
 ## Which language a person gets
 
 1. **The language they asked for.** Someone who tells the agent "talk to me in Italian" gets Italian from then on, in
