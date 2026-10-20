@@ -1,5 +1,53 @@
 # @mercury-fw/core
 
+## 0.54.0
+
+### Minor Changes
+
+- e00ff73: The channels' texts come out in the person's language too, and the language their client asks for counts. Channel contract version 6:
+
+  - The person's language is the one they saved, else the one their client asks for, else the app's default. The HTTP channel passes on the request's `Accept-Language` header (what browsers send), Google Chat the language of the person's Chat client when its event carries one (`InboundTurn.languageHint`). Someone the agent refuses gets it too.
+  - A channel declares its own texts in English in `messages`, under its name (`google-chat.`, `http.`), checked like a plugin's; it gets them through `ctx.i18n.forRequest(principal, hint)`.
+  - The replies to a confirmation are the core's, in the person's language: `ctx.confirm` returns `{ text, resume? }` and `ctx.resolveConfirmation` the outcome with its `text`. A confirmed action reads "Confirmed and done." instead of its raw result as JSON. `confirmReply`, `RESUME_AFTER_CONFIRM` and `PENDING_CONFIRMATION_NOTE` are gone from the contract, and `tryConfirm` from `@mercury-fw/confirm-engine` (`resolveConfirmation` reports the outcome; the core words it).
+  - The stand-in for an answer the model didn't write because the turn staged an action (`core.pending.note`, "Action pending, waiting for confirmation.") is no longer streamed as text: `finalize(text, { pendingNote })` says the text begins with it, and channels drop it through that, never by comparing text.
+  - A plain staging's single choice has an empty label: each channel words its own button ("Confirm" on Google Chat, in the person's language). `loginLinkText(login, t)` takes the person's texts.
+  - HTTP: `Accept-Language` on `/turn`, `/confirm` and `/login/callback`; `Content-Language` on the responses of `/turn` and `/confirm`; the `final` event carries `pendingNote`; the login page reads in the browser's language.
+  - Google Chat: the cards' titles, status lines and confirm button are `google-chat.*` texts; the client's `common.userLocale` is the hint when the event carries it.
+  - The terminal's replies to a confirmation read in the terminal person's language, like its other lines.
+
+  The texts that were in Italian (the cards, the replies to a confirmation, the pending note) are now English by default. An app that wants them in Italian adds their keys to `locales/it.json` (`core.pending.note`, `core.confirm.*`, `core.login.link*`, `google-chat.*`, `http.*`; the log lists the missing ones at startup). A UI on the HTTP channel can hide the pending note through `final`'s `pendingNote`, and words the button of a choice with an empty label itself. A channel written for contract 5 isn't loaded by this core, and the log says why: rebuild it against `CHANNEL_API_VERSION` 6.
+
+- ebde9e2: The texts a person sees can be in their language. The core's own fixed texts (the refusal of someone the agent doesn't know, the account-linking replies, the login errors, the tool status lines, the terminal's own lines) are English, each under a key (`core.access.unknown`, …), and an app adds a language with a file of its own: `i18n: { defaultLocale, locales: { it } }` in `mercury.config.ts`, each file mapping keys to texts. A person picks their language by asking the agent, which saves it with `set_preferred_language` (only the languages the app ships; not offered when it ships English alone) and answers in it from then on. Whoever hasn't picked one gets `defaultLocale`, then English. A key a language's file lacks shows as the key itself, and the log names the missing keys at startup. `GET /me` on the HTTP channel also says the caller's language.
+
+  The texts that were in Italian (tool status lines, the terminal's lines) are now English by default, and the language is no longer one of the facts inferred from conversations.
+
+  An existing app keeps working, with these changes:
+
+  1. `access.unknownMessage` is gone. To keep a custom refusal, put it in `locales/en.json` as `{ "core.access.unknown": "…" }`, and in `mercury.config.ts` import it (`import en from "./locales/en.json";`) and set `i18n: { locales: { en } }`.
+  2. To keep the status and terminal lines in Italian, add `locales/it.json` with the `core.` keys translated (start it as `{}`: the log lists the missing keys at startup), and in `mercury.config.ts` import it (`import it from "./locales/it.json";`) and set `i18n: { defaultLocale: "it", locales: { it } }` (`locales: { en, it }` when you did step 1 too).
+  3. Whenever the config imports a file from `locales/` (steps 1 and 2), the image needs the folder: add `COPY --chown=mercury:mercury locales ./locales` after the `mercury.config.ts` line of the `Dockerfile`, or the app fails at startup.
+  4. For the terminal (`mfw repl`) to follow the language too, add `texts: app.texts,` to `createTerminalProvider({ … })` in `src/repl.ts`; without it the terminal's own lines stay English.
+
+- 5015642: The plugins' texts a person sees come out in their language, like the core's. Plugin contract version 5:
+
+  - A plugin declares its texts in English in `messages`, every key under its own name (`web-search.choice.once`); the core refuses a plugin with a key outside it (and a plugin named `core` or `app`, whose keys are the core's and the app's), and the app's language files translate them. The startup log names the missing keys of the plugins too.
+  - While a turn runs, a plugin gets the texts of its person as `t`: in `SessionToolContext.t`, as the second argument of a status describer (`toolStatusDescribers`, `StatusDescriber`), the third of a post-processor (`CliPostProcessor`), and in a post-turn guard, whose `statusLabel` is now `(t) => string` and whose `run` gets `t` as its third argument. `Messages`, `Params` and `Translate` are part of the contract.
+  - The default status line of a CLI command is the core's `core.status.command` ("Running jira issue search"), `core.status.command-bare` without a subcommand ("Running jira"), and an unreadable command's is `core.status.command-unknown`. `createCliTool` (`@mercury-fw/cli-engine`) takes the turn's `t` among its options, handed to the post-processor: a CLI plugin passes `sctx.t`; `createCliStatusDescriber`'s describer takes it as its second argument.
+  - The formatter hands a rule `t` as its second argument, and an `empty` text can be `(t) => string`; existing rules keep working as they are. An app's own texts go under `app.`, in its `locales/en.json`, which declares them (the startup log no longer lists them as unknown); `mfw create` writes the Jira rule's empty text as `app.jira.no-issues`.
+  - Web search: the two choices ("Only this time", "Always for \<host\>"), the status lines and the sources heading ("Sources") are `web-search.*` texts, English by default; a list of sources the model writes under the heading in the person's language, or the English one, is still replaced by the plugin's.
+
+  The first-party plugins released with this change are written for contract 5 and need the core released with it: an older core skips them and says why in the log. A plugin written for contract 4 isn't loaded by this core either, and the log says why: rebuild it against `PLUGIN_API_VERSION` 5 (a status describer, a guard's `statusLabel` and `run`, a post-processor take the new `t`). An app that wants the web search and status lines back in Italian adds their keys to `locales/it.json` (the log lists the missing ones at startup).
+
+### Patch Changes
+
+- Updated dependencies [e00ff73]
+- Updated dependencies [5015642]
+  - @mercury-fw/channel-types@0.54.0
+  - @mercury-fw/confirm-engine@0.54.0
+  - @mercury-fw/plugin-types@0.54.0
+  - @mercury-fw/cli-engine@0.54.0
+  - @mercury-fw/utils@0.54.0
+
 ## 0.53.2
 
 ### Patch Changes

@@ -1,5 +1,38 @@
 # @mercury-fw/cli
 
+## 0.54.0
+
+### Minor Changes
+
+- ebde9e2: The texts a person sees can be in their language. The core's own fixed texts (the refusal of someone the agent doesn't know, the account-linking replies, the login errors, the tool status lines, the terminal's own lines) are English, each under a key (`core.access.unknown`, …), and an app adds a language with a file of its own: `i18n: { defaultLocale, locales: { it } }` in `mercury.config.ts`, each file mapping keys to texts. A person picks their language by asking the agent, which saves it with `set_preferred_language` (only the languages the app ships; not offered when it ships English alone) and answers in it from then on. Whoever hasn't picked one gets `defaultLocale`, then English. A key a language's file lacks shows as the key itself, and the log names the missing keys at startup. `GET /me` on the HTTP channel also says the caller's language.
+
+  The texts that were in Italian (tool status lines, the terminal's lines) are now English by default, and the language is no longer one of the facts inferred from conversations.
+
+  An existing app keeps working, with these changes:
+
+  1. `access.unknownMessage` is gone. To keep a custom refusal, put it in `locales/en.json` as `{ "core.access.unknown": "…" }`, and in `mercury.config.ts` import it (`import en from "./locales/en.json";`) and set `i18n: { locales: { en } }`.
+  2. To keep the status and terminal lines in Italian, add `locales/it.json` with the `core.` keys translated (start it as `{}`: the log lists the missing keys at startup), and in `mercury.config.ts` import it (`import it from "./locales/it.json";`) and set `i18n: { defaultLocale: "it", locales: { it } }` (`locales: { en, it }` when you did step 1 too).
+  3. Whenever the config imports a file from `locales/` (steps 1 and 2), the image needs the folder: add `COPY --chown=mercury:mercury locales ./locales` after the `mercury.config.ts` line of the `Dockerfile`, or the app fails at startup.
+  4. For the terminal (`mfw repl`) to follow the language too, add `texts: app.texts,` to `createTerminalProvider({ … })` in `src/repl.ts`; without it the terminal's own lines stay English.
+
+- 5015642: The plugins' texts a person sees come out in their language, like the core's. Plugin contract version 5:
+
+  - A plugin declares its texts in English in `messages`, every key under its own name (`web-search.choice.once`); the core refuses a plugin with a key outside it (and a plugin named `core` or `app`, whose keys are the core's and the app's), and the app's language files translate them. The startup log names the missing keys of the plugins too.
+  - While a turn runs, a plugin gets the texts of its person as `t`: in `SessionToolContext.t`, as the second argument of a status describer (`toolStatusDescribers`, `StatusDescriber`), the third of a post-processor (`CliPostProcessor`), and in a post-turn guard, whose `statusLabel` is now `(t) => string` and whose `run` gets `t` as its third argument. `Messages`, `Params` and `Translate` are part of the contract.
+  - The default status line of a CLI command is the core's `core.status.command` ("Running jira issue search"), `core.status.command-bare` without a subcommand ("Running jira"), and an unreadable command's is `core.status.command-unknown`. `createCliTool` (`@mercury-fw/cli-engine`) takes the turn's `t` among its options, handed to the post-processor: a CLI plugin passes `sctx.t`; `createCliStatusDescriber`'s describer takes it as its second argument.
+  - The formatter hands a rule `t` as its second argument, and an `empty` text can be `(t) => string`; existing rules keep working as they are. An app's own texts go under `app.`, in its `locales/en.json`, which declares them (the startup log no longer lists them as unknown); `mfw create` writes the Jira rule's empty text as `app.jira.no-issues`.
+  - Web search: the two choices ("Only this time", "Always for \<host\>"), the status lines and the sources heading ("Sources") are `web-search.*` texts, English by default; a list of sources the model writes under the heading in the person's language, or the English one, is still replaced by the plugin's.
+
+  The first-party plugins released with this change are written for contract 5 and need the core released with it: an older core skips them and says why in the log. A plugin written for contract 4 isn't loaded by this core either, and the log says why: rebuild it against `PLUGIN_API_VERSION` 5 (a status describer, a guard's `statusLabel` and `run`, a post-processor take the new `t`). An app that wants the web search and status lines back in Italian adds their keys to `locales/it.json` (the log lists the missing ones at startup).
+
+### Patch Changes
+
+- Updated dependencies [e00ff73]
+- Updated dependencies [ebde9e2]
+- Updated dependencies [5015642]
+  - @mercury-fw/core@0.54.0
+  - @mercury-fw/utils@0.54.0
+
 ## 0.53.2
 
 ### Patch Changes
