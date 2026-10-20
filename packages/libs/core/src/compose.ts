@@ -75,7 +75,7 @@ import { createHostReads } from "./identity/host-reads.ts";
 import { bindConfirm } from "./identity/confirm-binding.ts";
 import { createPersonLogins } from "./identity/person-logins.ts";
 import { createProfileStore, profilesPath } from "./identity/profiles.ts";
-import { createTexts, instanceI18n, type Texts, type Translate } from "./i18n/i18n.ts";
+import { createTexts, instanceI18n, requestTexts, type Texts, type Translate } from "./i18n/i18n.ts";
 import { channelMessages } from "./router/channel-loader.ts";
 import { createProfileTools } from "./identity/profile-tools.ts";
 import { createPeople, type TurnWho } from "./identity/people.ts";
@@ -612,13 +612,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
     admit: people.admit,
     // The channel's own texts: the person's language when the core knows who
     // it is, else the hint's, else the default.
-    i18n: {
-      forRequest: async (principal, hint) => {
-        if (principal === null) return texts.forPerson(undefined, hint);
-        const identified = await people.identify(principal, hint);
-        return texts.forPerson(identified.ok ? identified.person.key : undefined, hint);
-      },
-    },
+    i18n: requestTexts(texts, people.identify),
     authenticate: loadAuth(config.auth, { env: process.env, log: (msg) => console.error(msg) }),
     // Every read but health is scoped to the caller (see identity/host-reads.ts).
     reads: createHostReads({

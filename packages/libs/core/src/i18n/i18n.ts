@@ -18,6 +18,7 @@
 import { CORE_MESSAGES } from "./core-messages.ts";
 
 import type { Messages, Params, Translate } from "@mercury-fw/plugin-types";
+import type { ChannelI18n, Principal } from "@mercury-fw/channel-types";
 
 export type { Messages, Params, Translate };
 
@@ -212,4 +213,23 @@ export function createTexts(i18n: I18n, languageOf: (key: string) => string | un
 /** The core's texts in English and nothing else: what a part of the core uses when it isn't handed the instance's. */
 export function englishTexts(): Texts {
   return createTexts(createI18n({ english: CORE_MESSAGES }), () => undefined);
+}
+
+/**
+ * The texts a channel shows a request itself (`ChannelRuntimeContext.i18n`):
+ * the language of the person `principal` is, when the core knows them and
+ * they saved one, else the channel's `hint`, else the default. A request
+ * with nobody behind it (`null`, a login page) goes by the hint alone.
+ */
+export function requestTexts(
+  texts: Texts,
+  identify: (principal: Principal, hint?: string) => Promise<{ ok: true; person: { key: string } } | { ok: false }>,
+): ChannelI18n {
+  return {
+    forRequest: async (principal, hint) => {
+      if (principal === null) return texts.forPerson(undefined, hint);
+      const identified = await identify(principal, hint);
+      return texts.forPerson(identified.ok ? identified.person.key : undefined, hint);
+    },
+  };
 }

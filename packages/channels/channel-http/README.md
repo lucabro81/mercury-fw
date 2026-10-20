@@ -54,7 +54,7 @@ Runs one conversational turn; the reply streams back as Server-Sent Events.
 
 **Responses**: `200 text/event-stream` (the events below); `400` if `text` is missing, an opening has no `conversationId`, the body isn't JSON, or `conversationId` has other characters than the ones above.
 
-**Languages.** Every text a person reads that isn't the model's (a refusal, a tool's status line, a choice's label, a confirmation's reply, the login page) is in their language: the one they asked the assistant for, else the one the request's `Accept-Language` header asks for (what browsers send on their own), else the app's default. The responses of `POST /turn` and `POST /confirm` say which with `Content-Language`.
+**Languages.** Every text a person reads that isn't the model's (a refusal, a tool's status line, a choice's label, a confirmation's reply, the login page) is in their language: the one they asked the assistant for, else the one the request's `Accept-Language` header asks for (what browsers send on their own), else the app's default. The responses of `POST /turn` and `POST /confirm`, a refusal and the login page say which with `Content-Language` (as it stood when the response started: a language picked during a turn counts from the next one).
 
 Reasoning and answer text arrive as **incremental deltas** — never one finished block — so a UI renders them live; treat the `final` event as the authoritative text. **To cancel** a turn (e.g. a generation that's diverging), close the connection: Mercury aborts the in-flight generation.
 

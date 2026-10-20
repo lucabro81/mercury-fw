@@ -118,19 +118,25 @@ function unauthorized(origin: string): Response {
 }
 
 /** The core's refusal of an authenticated caller: 403 for someone it doesn't know, 503 when it couldn't tell, with what to tell them, in the language they asked for. */
-function notAdmitted(admission: Exclude<Admission, { ok: true }>, origin: string): Response {
+function notAdmitted(admission: Exclude<Admission, { ok: true }>, origin: string, language: Record<string, string>): Response {
   return Response.json(
     { ok: false, error: admission.message, reason: admission.reason },
-    { status: admission.reason === "unknown" ? 403 : 503, headers: corsHeaders(origin) },
+    { status: admission.reason === "unknown" ? 403 : 503, headers: { ...corsHeaders(origin), ...language } },
   );
 }
 
 /** The caller of `req`, authenticated and admitted, or the response refusing them. */
-async function caller(req: Request, deps: { authenticate: Authenticate; admit?: AdmitFn }, origin: string): Promise<Principal | Response> {
+async function caller(
+  req: Request,
+  deps: { authenticate: Authenticate; admit?: AdmitFn; i18n?: ChannelI18n },
+  origin: string,
+): Promise<Principal | Response> {
   const principal = await deps.authenticate(req);
   if (principal === null) return unauthorized(origin);
-  const admission = deps.admit ? await deps.admit(principal, languageHint(req)) : { ok: true as const };
-  return admission.ok ? principal : notAdmitted(admission, origin);
+  const hint = languageHint(req);
+  const admission = deps.admit ? await deps.admit(principal, hint) : { ok: true as const };
+  // A refused caller is nobody the core knows: their client's language, else the default.
+  return admission.ok ? principal : notAdmitted(admission, origin, await contentLanguage(deps.i18n, null, hint));
 }
 
 /** 204 preflight response for an `OPTIONS` request, carrying only CORS headers. */
@@ -386,11 +392,11 @@ function linkRoutes(deps: LinkRequestDeps): Record<string, { POST: (req: Request
 export type CompleteLoginFn = (state: string, code: string) => Promise<LoginOutcome>;
 
 /** A plain-text page for the person's browser, at the end of their login. */
-function loginPage(text: string, status: number): Response {
+function loginPage(text: string, status: number, language: Record<string, string> = {}): Response {
   // The URL carried the code and the state: neither kept nor passed on.
   return new Response(text, {
     status,
-    headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store", "referrer-policy": "no-referrer" },
+    headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store", "referrer-policy": "no-referrer", ...language },
   });
 }
 
@@ -408,18 +414,21 @@ export async function handleLoginCallback(
 ): Promise<Response> {
   const assistant = deps.assistantName ?? "Mercury";
   // Nobody is known on this page: the browser's language, then the default.
-  const t = deps.i18n ? (await deps.i18n.forRequest(null, languageHint(req))).t : englishHttp;
+  const texts = deps.i18n ? await deps.i18n.forRequest(null, languageHint(req)) : undefined;
+  const t = texts?.t ?? englishHttp;
+  const language: Record<string, string> = texts ? { "content-language": texts.locale } : {};
   const params = new URL(req.url).searchParams;
   const error = params.get("error");
   if (error !== null) {
     const reason = error.replace(/[^A-Za-z0-9_.-]/g, "").slice(0, 64);
-    return loginPage(t("http.login.denied", { reason, assistant }), 400);
+    return loginPage(t("http.login.denied", { reason, assistant }), 400, language);
   }
   const code = params.get("code");
   const state = params.get("state");
-  if (!code || !state) return loginPage(t("http.login.incomplete", { assistant }), 400);
+  if (!code || !state) return loginPage(t("http.login.incomplete", { assistant }), 400, language);
   const outcome = await deps.complete(state, code);
-  return outcome.ok ? loginPage(t("http.login.done", { service: outcome.service }), 200) : loginPage(outcome.error, 400);
+  // A failed login's text is the core's, in the language of whoever started it: no header claims otherwise.
+  return outcome.ok ? loginPage(t("http.login.done", { service: outcome.service }), 200, language) : loginPage(outcome.error, 400);
 }
 
 /** The login callback route, mounted when the server can complete logins. */

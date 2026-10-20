@@ -524,6 +524,9 @@ paths:
       responses:
         "200":
           description: Logged in.
+          headers:
+            Content-Language:
+              $ref: "#/components/headers/ContentLanguage"
           content:
             text/plain:
               schema: { type: string }
@@ -558,7 +561,10 @@ components:
         type: string
   headers:
     ContentLanguage:
-      description: The language the response's texts are in, one the instance ships (`en`, `it`).
+      description: >
+        The language of the caller's texts as it stood when the response
+        started, one the instance ships (`en`, `it`); a person who picks
+        another language during a turn gets it from the next one.
       schema:
         type: string
   securitySchemes:
@@ -584,7 +590,8 @@ components:
       description: >
         An authenticated caller the core won't talk to: `403` when the app's
         directory doesn't know them, `503` when it can't be reached. Nothing
-        behind the route runs.
+        behind the route runs. `error` is in the language `Accept-Language`
+        asks for, which `Content-Language` names.
       content:
         application/json:
           schema:

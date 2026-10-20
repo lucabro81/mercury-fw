@@ -1256,13 +1256,15 @@ describe("the caller's language", () => {
     expect(res.headers.get("content-language")).toBe("it");
   });
 
-  it("refuses in the language asked for", async () => {
+  it("refuses in the language asked for, and says it", async () => {
     const res = await handleTurnRequest(withLanguage(turnReq({ text: "ciao", conversationId: "c" }), "it"), {
       handleTurn: async () => {},
       confirm: async () => null,
       admit: async (_principal, hint) => ({ ok: false, reason: "unknown", message: `refused in ${hint}` }),
       authenticate: asAlice,
+      i18n,
     });
+    expect(res.headers.get("content-language")).toBe("it");
     expect(await res.json()).toEqual({ ok: false, error: "refused in it", reason: "unknown" });
   });
 
@@ -1303,5 +1305,6 @@ describe("the caller's language", () => {
       i18n,
     });
     expect(await done.text()).toBe('it|nobody|http.login.done{"service":"jira"}');
+    expect(done.headers.get("content-language")).toBe("it");
   });
 });
