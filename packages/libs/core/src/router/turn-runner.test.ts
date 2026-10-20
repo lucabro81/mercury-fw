@@ -942,6 +942,34 @@ describe("createTurnRunner", () => {
       expect(new Set(asked)).toEqual(new Set(["google-chat:u1"]));
     });
 
+    // Review of #280: a guard's status line became a function call made
+    // outside the guard's try; one that threw took the whole turn down
+    // instead of leaving the text as it was.
+    test("a guard whose status line throws is skipped like one whose run throws: the text is delivered", async () => {
+      const logged: string[] = [];
+      const finished: Array<[string, string]> = [];
+      const sink = { ...baseSink(), onToolFinish: (id: string, outcome: string) => void finished.push([id, outcome]) };
+      const runner = createTurnRunner(
+        baseDeps({
+          runTurnFn: async () => "answer",
+          logPostTurnGuardFn: (m) => logged.push(m),
+          postTurnGuards: [
+            makeGuard({
+              statusLabel: () => {
+                throw new Error("no label");
+              },
+              statusId: "g",
+            }),
+          ],
+        }),
+      );
+      await runner(baseTurn(), sink);
+      expect(sink.finalized).toEqual(["answer"]);
+      // Its status never started, so nothing finishes either.
+      expect(finished).toEqual([]);
+      expect(logged).toEqual(['[post-turn-guard] guard "g" threw, kept text unchanged: no label']);
+    });
+
     test("a guard gets the core's English texts when the composition gives no translator", async () => {
       const started: string[] = [];
       const sink = { ...baseSink(), onToolStart: (label: string) => void started.push(label) };

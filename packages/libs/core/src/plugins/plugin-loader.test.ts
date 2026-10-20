@@ -121,6 +121,22 @@ describe("loadPlugins", () => {
     expect(logs).toEqual(['plugin "jira" not activated: key "core.access.unknown" is outside the "jira." namespace']);
   });
 
+  it("doesn't activate a plugin with a key that is its bare name, or a text that isn't one", async () => {
+    const logs: string[] = [];
+    const loaded = await loadPlugins(
+      [
+        plug({ name: "jira", messages: { jira: "x" } }),
+        plug({ name: "bitbucket", messages: { "bitbucket.n": 3 as unknown as string } }),
+      ],
+      baseCtx({ log: (m) => logs.push(m) }),
+    );
+    expect(loaded.activated).toEqual([]);
+    expect(logs).toEqual([
+      'plugin "jira" not activated: key "jira" is outside the "jira." namespace',
+      'plugin "bitbucket" not activated: key "bitbucket.n" isn\'t a string',
+    ]);
+  });
+
   it("skips a plugin whose apiVersion is incompatible with this core — logs why, does not build it", async () => {
     const logs: string[] = [];
     let built = false;

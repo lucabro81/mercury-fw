@@ -529,8 +529,11 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
         if (!guard.shouldRun(correctedText, guardSteps)) {
           continue;
         }
-        sink.onToolStart(guard.statusLabel(t), undefined, guard.statusId);
+        // The status line is the guard's code too: it fails like its run.
+        let started = false;
         try {
+          sink.onToolStart(guard.statusLabel(t), undefined, guard.statusId);
+          started = true;
           const guarded = await guard.run(correctedText, guardSteps, t);
           sink.onToolFinish?.(guard.statusId, guarded.outcome);
           if (guarded.log !== undefined) {
@@ -538,7 +541,7 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
           }
           correctedText = guarded.text;
         } catch (err) {
-          sink.onToolFinish?.(guard.statusId, "failed");
+          if (started) sink.onToolFinish?.(guard.statusId, "failed");
           logPostTurnGuard(
             `[post-turn-guard] guard "${guard.statusId}" threw, kept text unchanged: ${String(err instanceof Error ? err.message : err)}`,
           );
