@@ -8,7 +8,8 @@
  * `CHANNEL_API_VERSION`), and the providers a config declares beside the
  * channels: who is calling (`AuthPlugin`) and who that is to Mercury
  * (`DirectoryPlugin`). The stateful half of confirmation (`ConfirmationStore`,
- * `tryConfirm`) stays in the core and reaches a channel via `ctx.confirm`.
+ * `resolveConfirmation`) stays in the core and reaches a channel via
+ * `ctx.confirm`.
  */
 import type { Messages, StepInfo, Translate } from "@mercury-fw/plugin-types";
 

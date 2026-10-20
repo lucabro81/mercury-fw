@@ -6,7 +6,7 @@ sidebar:
 ---
 
 Two kinds of text reach a person. One is what the model writes: it answers in the language it's spoken to, or in
-the one the person asked for. The other is the **fixed texts** that Mercury and its plugins write themselves, the
+the one the person asked for. The other is the **fixed texts** that Mercury, its plugins and its channels write themselves, the
 same every time: the refusal someone the agent doesn't know gets, the reply to an account-linking code, the line
 saying a tool is running. Those come from **language files**.
 
@@ -23,7 +23,7 @@ own, one per language, in the `locales/` folder. The file maps each text's **key
 ```
 
 A key starts with the package the text belongs to: `core.` is Mercury's own texts, `web-search.` the web search
-plugin's, and so on for every plugin, each under its own name. A word in braces, like `{owner}`,
+plugin's, `google-chat.` and `http.` the channels', and so on, each under its own name. A word in braces, like `{owner}`,
 is filled in when the text is shown: keep it as it is, wherever it fits the sentence.
 
 `locales/en.json` works the same way over the English texts: a key written there replaces the package's English, and
