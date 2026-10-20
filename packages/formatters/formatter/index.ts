@@ -11,16 +11,19 @@
  *   its post-processor emits goes through the handler; everything else the
  *   plugin contributes passes through untouched.
  */
-import type { Plugin, CliPostProcessor, CliResult, ToolDisplay } from "@mercury-fw/plugin-types";
+import type { Plugin, CliPostProcessor, CliResult, ToolDisplay, Translate } from "@mercury-fw/plugin-types";
 
-/** Renders one display into the single text block shown to the user, or
- * returns `undefined` when there is nothing to show (no rule for its kind, or
- * an empty list with no empty text). */
-export type DisplayHandler = (display: ToolDisplay) => string | undefined;
+/** Renders one display into the single text block shown to the user, in the
+ * turn's language (`t`), or returns `undefined` when there is nothing to show
+ * (no rule for its kind, or an empty list with no empty text). */
+export type DisplayHandler = (display: ToolDisplay, t: Translate) => string | undefined;
 
 /** How one kind of list is rendered: the line for each item, or that plus the
- * text to show when the list is empty. */
-export type FormatterRule<T> = ((item: T) => string) | { item: (item: T) => string; empty?: string };
+ * text to show when the list is empty. Both may use `t`, the texts of the
+ * person the turn is for (an app's own keys in its language files). */
+export type FormatterRule<T> =
+  | ((item: T, t: Translate) => string)
+  | { item: (item: T, t: Translate) => string; empty?: string | ((t: Translate) => string) };
 
 /** Items are rendered one per block, separated by a blank line. */
 const ITEM_SEPARATOR = "\n\n";
@@ -33,16 +36,16 @@ const ITEM_SEPARATOR = "\n\n";
  */
 export function formatter<D>(rules: { [K in keyof D]?: FormatterRule<D[K]> }): DisplayHandler {
   const byKind = rules as Record<string, FormatterRule<unknown> | undefined>;
-  return (display) => {
+  return (display, t) => {
     const rule = byKind[display.type];
     if (rule === undefined) {
       return undefined;
     }
     const { item, empty } = typeof rule === "function" ? { item: rule, empty: undefined } : rule;
     if (display.items.length === 0) {
-      return empty;
+      return typeof empty === "function" ? empty(t) : empty;
     }
-    return display.items.map((i) => item(i)).join(ITEM_SEPARATOR);
+    return display.items.map((i) => item(i, t)).join(ITEM_SEPARATOR);
   };
 }
 
@@ -51,11 +54,17 @@ export function formatter<D>(rules: { [K in keyof D]?: FormatterRule<D[K]> }): D
  * non-empty list with no rule stays structured (so it isn't shown) and is
  * reported through `log`. Non-ok results and results with no display are
  * returned as they are, without calling the handler. */
-function renderDisplay(result: CliResult, handler: DisplayHandler, log: (m: string) => void, pluginName: string): CliResult {
+function renderDisplay(
+  result: CliResult,
+  handler: DisplayHandler,
+  t: Translate,
+  log: (m: string) => void,
+  pluginName: string,
+): CliResult {
   if (!result.ok || !result.display) {
     return result;
   }
-  const text = handler(result.display);
+  const text = handler(result.display, t);
   if (text !== undefined) {
     return { ...result, display: { ...result.display, items: [text] } };
   }
@@ -81,7 +90,7 @@ export function formatterPlugin(plugin: Plugin, handler: DisplayHandler): Plugin
       const inner = plugin.build ? plugin.build(ctx) : {};
       const proc = inner.postProcess;
       const wrapped: CliPostProcessor | undefined = proc
-        ? (cmd, result) => renderDisplay(proc(cmd, result), handler, ctx.log, plugin.name)
+        ? (cmd, result, t) => renderDisplay(proc(cmd, result, t), handler, t, ctx.log, plugin.name)
         : undefined;
       return { ...inner, postProcess: wrapped };
     },
