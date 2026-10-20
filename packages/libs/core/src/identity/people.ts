@@ -26,6 +26,7 @@
 import type { Admission, Directory, Principal } from "@mercury-fw/channel-types";
 import { userKey } from "./user-key.ts";
 import type { LinkStore } from "./links.ts";
+import { englishTexts, type Texts } from "../i18n/i18n.ts";
 
 /** The terminal's principal, the only one the core takes as the operator. */
 export const OPERATOR_PRINCIPAL: Principal = Object.freeze({ id: "terminal", provider: "none" as const });
@@ -41,9 +42,6 @@ export type Identified =
   | { ok: true; person: Person; operator: boolean }
   | { ok: false; reason: "unknown" | "unavailable"; message: string };
 
-export const UNKNOWN_MESSAGE = "This assistant only talks to the people it knows. Ask an administrator for access.";
-export const UNAVAILABLE_MESSAGE = "I can't check who you are right now. Try again in a few minutes.";
-
 /** The ttl of a directory answer: a revoked role stops counting within it. */
 export const DEFAULT_IDENTITY_TTL_MS = 5 * 60_000;
 
@@ -55,7 +53,8 @@ export type PeopleOptions = {
   directory: { name: string; directory: Directory } | "none" | "failed";
   /** What to do with someone the directory doesn't know (default `refuse`). */
   unknown?: "refuse" | "allow";
-  unknownMessage?: string;
+  /** The refusals' texts (`core.access.*`), in the instance's default language: whoever is refused isn't known, so has no language of their own. English when absent. */
+  texts?: Texts;
   /** The account links Mercury owns; none when absent. */
   links?: LinkStore;
   ttlMs?: number;
@@ -68,7 +67,8 @@ export function createPeople(opts: PeopleOptions) {
   const ttlMs = opts.ttlMs ?? DEFAULT_IDENTITY_TTL_MS;
   const now = opts.now ?? Date.now;
   const log = opts.log ?? ((msg: string) => console.error(msg));
-  const unknownMessage = opts.unknownMessage ?? UNKNOWN_MESSAGE;
+  const { t } = (opts.texts ?? englishTexts()).forPerson(undefined);
+  const unknownMessage = t("core.access.unknown");
   const cache = new Map<string, { value: Identified; expiresAt: number }>();
   const inFlight = new Map<string, Promise<Identified>>();
   /** Bumped by `forget`: a lookup started before keeps its answer to itself. */
@@ -81,7 +81,7 @@ export function createPeople(opts: PeopleOptions) {
     person: { key: userKey(principal), ...(principal.displayName === undefined ? {} : { displayName: principal.displayName }), roles: [] },
   });
 
-  const unavailable: Identified = { ok: false, reason: "unavailable", message: UNAVAILABLE_MESSAGE };
+  const unavailable: Identified = { ok: false, reason: "unavailable", message: t("core.access.unavailable") };
 
   /** Asks the directory, mapping its answer; throws only when it does. */
   async function lookUp(principal: Principal, name: string, directory: Directory): Promise<Identified> {

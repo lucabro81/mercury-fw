@@ -1,6 +1,8 @@
 import { describe, it, expect } from "bun:test";
 import type { PersonLogin } from "@mercury-fw/plugin-types";
 import { createPersonLogins } from "./person-logins.ts";
+import { CORE_MESSAGES } from "../i18n/core-messages.ts";
+import { createI18n, createTexts } from "../i18n/i18n.ts";
 
 /**
  * People's logins to the plugins' services: started by a tool for the turn's
@@ -67,6 +69,26 @@ describe("createPersonLogins", () => {
     expect(await logins.complete("st-1", "c")).toEqual({
       ok: false,
       error: "The jira login didn't go through. Ask Poc again for a new link.",
+    });
+  });
+
+  // The page the provider sends the person back to has no conversation
+  // around it: a failed login reads in the language of whoever started it.
+  it("a failed login reads in the person's language, an unknown link in the default", async () => {
+    const texts = createTexts(
+      createI18n({
+        english: CORE_MESSAGES,
+        locales: { it: { "core.login.failed": "L'accesso a {service} non è riuscito: chiedi a {assistant}." } },
+      }),
+      (key) => (key === "static:alice" ? "it" : undefined),
+    );
+    const logins = createPersonLogins({ assistantName: "Poc", log: () => {}, texts });
+    logins.accept("https://cb");
+    await logins.require("jira", fakeLogin({ completeError: "boom" }).login, "static:alice");
+    expect(await logins.complete("st-1", "c")).toEqual({ ok: false, error: "L'accesso a jira non è riuscito: chiedi a Poc." });
+    expect(await logins.complete("forged", "c")).toEqual({
+      ok: false,
+      error: "This login link has expired or was already used: ask Poc again for a new one.",
     });
   });
 

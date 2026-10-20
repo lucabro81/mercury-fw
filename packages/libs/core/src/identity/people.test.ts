@@ -1,7 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import type { Directory, DirectoryPerson, Principal } from "@mercury-fw/channel-types";
-import { createPeople, OPERATOR_PRINCIPAL, UNAVAILABLE_MESSAGE, UNKNOWN_MESSAGE } from "./people.ts";
+import { createPeople, OPERATOR_PRINCIPAL } from "./people.ts";
+import { CORE_MESSAGES } from "../i18n/core-messages.ts";
+import { createI18n, createTexts } from "../i18n/i18n.ts";
 import type { LinkStore } from "./links.ts";
+
+const UNKNOWN_MESSAGE = CORE_MESSAGES["core.access.unknown"];
+const UNAVAILABLE_MESSAGE = CORE_MESSAGES["core.access.unavailable"];
 
 const alice: Principal = { id: "alice", provider: "static", displayName: "Alice" };
 const terminal = OPERATOR_PRINCIPAL;
@@ -68,10 +73,24 @@ describe("identify with a directory", () => {
     expect(await people.identify(alice)).toEqual({ ok: false, reason: "unknown", message: UNKNOWN_MESSAGE });
   });
 
-  test("an instance can say its own refusal", async () => {
+  test("the refusals are the instance's texts, in its default language", async () => {
     const { directory } = directoryOf({});
-    const people = createPeople({ directory: { name: "people", directory }, unknownMessage: "Ask Mario." });
-    expect(await people.identify(alice)).toMatchObject({ ok: false, message: "Ask Mario." });
+    const texts = createTexts(
+      createI18n({
+        english: CORE_MESSAGES,
+        locales: { it: { "core.access.unknown": "Chiedi a Mario.", "core.access.unavailable": "Riprova più tardi." } },
+        defaultLocale: "it",
+      }),
+      () => undefined,
+    );
+    expect(await createPeople({ directory: { name: "people", directory }, texts }).identify(alice)).toMatchObject({
+      ok: false,
+      message: "Chiedi a Mario.",
+    });
+    expect(await createPeople({ directory: "failed", texts }).identify(alice)).toMatchObject({
+      ok: false,
+      message: "Riprova più tardi.",
+    });
   });
 
   test("an open instance talks to someone it doesn't know, as the channel says, with no roles", async () => {
