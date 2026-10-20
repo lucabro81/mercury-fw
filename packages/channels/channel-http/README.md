@@ -2,6 +2,8 @@
 
 Gives a [Mercury](https://github.com/lucabro81/mercury-fw) agent an HTTP surface to build a custom UI on: one conversational turn per request, streamed back as Server-Sent Events, plus confirmation and read-only routes over what the agent holds (conversations, the wiki, memory, its plugins).
 
+This version is written for version 6 of the channel contract, the one that brings the channels' texts in the person's language: a core with an older contract skips it, and the log says why.
+
 ```bash
 bun add @mercury-fw/channel-http
 ```

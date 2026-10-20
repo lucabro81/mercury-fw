@@ -167,13 +167,13 @@ packages/libs/core/
     ├── router/
     │   ├── turn-runner.ts      # shared per-turn driver every provider funnels through, one turn at a time per session
     │   ├── session-lock.ts     # the per-session queue the turn runner and the idle sweep share
-    │   ├── channel-loader.ts   # generic fail-soft channel-plugin loader — turns the hand-listed channel set into started providers
+    │   ├── channel-loader.ts   # generic fail-soft channel-plugin loader — turns the hand-listed channel set into started providers; refuses a channel whose `messages` reach outside its name (or named `core`/`app`), and gives the loadable channels' texts to the instance's languages (`channelMessages`)
     │   ├── auth-loader.ts      # builds the declared auth provider into the `authenticate` channels get; fail-soft and closed (no provider ⇒ HTTP doesn't start)
     │   ├── directory-loader.ts # builds the declared user directory; closed when it fails (nobody but the terminal is let in)
     │   ├── terminal.ts         # the REPL loop (stdin/stdout), driven by the app's repl.ts — a dev console, not a channel
     │   └── tool-log.ts         # terminal-only debug visibility helpers
     ├── identity/              # who sees what, decided in one place: who a principal is (people.ts: account links first, then the directory, cached, closed for unknown people by default, failing closed), the account links Mercury owns (links.ts, a file on the vault's volume out of its git; linking.ts, the one-time code; links-cli.ts, behind `mfw identity`), the user key (`<provider>:<id>`), a person's vault area (`users/<key>/`, `personal/` to the model) and its access checks, the per-person channel reads, people's pending logins to the services plugins act on as them, the startup migration of pre-key data
-    ├── i18n/                  # the texts a person sees, in their language: the core's English catalog (core-messages.ts) and the loaded plugins' (`instanceI18n`), the instance's language files over them (its own `app.` keys declared by its `locales/en.json`), each person's language (their profile, then the default), the startup report of missing keys
+    ├── i18n/                  # the texts a person sees, in their language: the core's English catalog (core-messages.ts) and the loaded plugins' and channels' (`instanceI18n`), the instance's language files over them (its own `app.` keys declared by its `locales/en.json`), each person's language (their profile, the channel's language hint, then the default), the startup report of missing keys
     ├── credentials/           # at startup, links each plugin-declared CLI login kept outside ~/.config to the credentials volume, and reports one not set up yet
     ├── memory/                # Layer 3 — episodic store (Qdrant)
     ├── wiki/                  # Layer 2 — vault init/read/write (common `curated/` + per-person `users/<key>/`) + vault-cli.ts (maintenance CLI, see Operational notes)
