@@ -48,7 +48,7 @@ export default defineMercuryConfig({
     formatterPlugin(
       jiraPlugin,
       formatter<JiraDisplays>({
-        "issue-list": { item: jiraIssueLine, empty: "No matching issues." },
+        "issue-list": { item: jiraIssueLine, empty: (t) => t("app.jira.no-issues") },
       }),
     ),
     bitbucketPlugin,

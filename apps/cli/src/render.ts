@@ -86,7 +86,7 @@ export function renderApp(input: RenderInput): Map<string, string> {
     ["Dockerfile", dockerfile],
     ["README.md", renderReadme(input.name, channels, auth, tools, directory)],
     ["docker-compose.yml", renderCompose(input.name, channels.some((c) => c.id === "http"), services)],
-    ["locales/en.json", "{}\n"],
+    ["locales/en.json", renderEnglish(tools)],
     ["mercury.config.ts", renderConfig(assistantName, input.role, channels, auth, tools, directory)],
     ["package.json", renderPackageJson(input.name, channels, auth, tools, input.versions, directory)],
     ["src/index.ts", indexTs],
@@ -193,6 +193,13 @@ function renderPersona(role: string): string[] {
     '    ].join("\\n"),',
     "  },",
   ];
+}
+
+/** `locales/en.json`: the English texts of the chosen plugins' starting
+ * formatter rules (the app's own `app.` keys), `{}` when there are none. */
+function renderEnglish(tools: CatalogEntry[]): string {
+  const messages = Object.assign({}, ...tools.map((t) => t.formatter?.messages ?? {})) as Record<string, string>;
+  return Object.keys(messages).length === 0 ? "{}\n" : `${JSON.stringify(messages, null, 2)}\n`;
 }
 
 /** `mercury.config.ts`: imports, the assistant's name, the formatter helpers of

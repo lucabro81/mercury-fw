@@ -55,8 +55,10 @@ search:
  * rule a kind of list isn't shown, so the scaffolded config wraps the plugin
  * with these. `displaysType` is the type the plugin exports for its kinds,
  * `helpers` the code the rules use (written above the config), `rules` the
- * `kind: rule` lines. Once written, they're the app's to change. */
-export type FormatterExample = { displaysType: string; helpers: string; rules: string[] };
+ * `kind: rule` lines, `messages` the English texts they show the person
+ * (`app.` keys, written into the app's `locales/en.json`). Once written,
+ * they're the app's to change. */
+export type FormatterExample = { displaysType: string; helpers: string; rules: string[]; messages?: Record<string, string> };
 
 export const CATALOG: CatalogEntry[] = [
   {
@@ -125,7 +127,8 @@ export const CATALOG: CatalogEntry[] = [
         'const jiraIssueLine = (issue: JiraDisplays["issue-list"]) =>',
         '  `${issue.key} ${issue.status ? `[${issue.status}] ` : ""}${issue.summary}\\n${issue.url}`;',
       ].join("\n"),
-      rules: ['"issue-list": { item: jiraIssueLine, empty: "No matching issues." },'],
+      rules: ['"issue-list": { item: jiraIssueLine, empty: (t) => t("app.jira.no-issues") },'],
+      messages: { "app.jira.no-issues": "No matching issues." },
     },
   },
   {
