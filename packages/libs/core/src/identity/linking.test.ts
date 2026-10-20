@@ -3,6 +3,8 @@ import type { Directory, DirectoryPerson, Principal } from "@mercury-fw/channel-
 import { createPeople, OPERATOR_PRINCIPAL } from "./people.ts";
 import type { LinkStore } from "./links.ts";
 import { createLinking, isLinkCode } from "./linking.ts";
+import { CORE_MESSAGES } from "../i18n/core-messages.ts";
+import { createI18n, createTexts, type Texts } from "../i18n/i18n.ts";
 
 const alice: Principal = { id: "alice", provider: "static", displayName: "Alice" };
 const chat: Principal = { id: "users/1", provider: "google-chat" };
@@ -20,7 +22,7 @@ function memoryLinks(): LinkStore & { map: Map<string, { id: string; provider: P
   };
 }
 
-function setup(opts: { people?: Record<string, DirectoryPerson>; directory?: boolean; failing?: boolean; assistantName?: string } = {}) {
+function setup(opts: { people?: Record<string, DirectoryPerson>; directory?: boolean; failing?: boolean; assistantName?: string; texts?: Texts } = {}) {
   let now = 0;
   const links = memoryLinks();
   const directory: Directory = {
@@ -35,7 +37,14 @@ function setup(opts: { people?: Record<string, DirectoryPerson>; directory?: boo
     log: () => {},
   });
   const logs: string[] = [];
-  const linking = createLinking({ people, links, now: () => now, log: (m) => logs.push(m), ...(opts.assistantName === undefined ? {} : { assistantName: opts.assistantName }) });
+  const linking = createLinking({
+    people,
+    links,
+    now: () => now,
+    log: (m) => logs.push(m),
+    ...(opts.assistantName === undefined ? {} : { assistantName: opts.assistantName }),
+    ...(opts.texts === undefined ? {} : { texts: opts.texts }),
+  });
   return { linking, links, people, logs, tick: (ms: number) => (now += ms) };
 }
 
@@ -208,5 +217,31 @@ describe("redeeming a code", () => {
     await linking.redeem(chat, code);
     expect(await linking.redeem(chat, code)).toBe("Linked: this account is now Alice.");
     expect(await people.identify(chat)).toMatchObject({ ok: true, person: { key: "people:alice", roles: ["r"] } });
+  });
+});
+
+describe("the replies' language", () => {
+  const italian = {
+    "core.link.confirm": "Collego questo account a {owner}. Rimanda il codice per confermare.",
+    "core.link.done": "Fatto: questo account ora è {owner}.",
+    "core.link.invalid": "Codice non valido.",
+  };
+  const texts = createTexts(
+    createI18n({ english: CORE_MESSAGES, locales: { it: italian }, defaultLocale: "en" }),
+    (key) => (key === "static:alice" ? "it" : undefined),
+  );
+
+  // The account sending the code isn't known yet: the person who asked for
+  // the code is, and it's the same human.
+  test("is the language of whoever asked for the code", async () => {
+    const { linking } = setup({ texts });
+    const code = await codeFor(linking, alice);
+    expect(await linking.redeem(chat, code)).toBe("Collego questo account a Alice. Rimanda il codice per confermare.");
+    expect(await linking.redeem(chat, code)).toBe("Fatto: questo account ora è Alice.");
+  });
+
+  test("is the instance's default for a code nobody asked for", async () => {
+    const { linking } = setup({ texts });
+    expect(await linking.redeem(chat, "zzzz-zzzz-zzzz")).toBe(CORE_MESSAGES["core.link.invalid"]!);
   });
 });

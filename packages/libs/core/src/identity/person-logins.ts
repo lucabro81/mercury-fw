@@ -14,6 +14,7 @@
 import type { LoginRequired, PersonLogin } from "@mercury-fw/plugin-types";
 import type { LoginOutcome } from "@mercury-fw/channel-types";
 import { DEFAULT_ASSISTANT_NAME } from "../session/assistant-name.ts";
+import { englishTexts, type Texts } from "../i18n/i18n.ts";
 
 type Pending = { service: string; login: PersonLogin; personKey: string; expiresAt: number; result: LoginRequired };
 
@@ -32,7 +33,15 @@ export function createPersonLogins({
   ttlMs = 10 * 60_000,
   log = (message: string) => console.error(message),
   assistantName = DEFAULT_ASSISTANT_NAME,
-}: { now?: () => number; ttlMs?: number; log?: (message: string) => void; assistantName?: string } = {}): PersonLogins {
+  texts = englishTexts(),
+}: {
+  now?: () => number;
+  ttlMs?: number;
+  log?: (message: string) => void;
+  assistantName?: string;
+  /** The texts of the page the person lands on (`core.login.*`): in their language, or the default for a link nobody's. English when absent. */
+  texts?: Texts;
+} = {}): PersonLogins {
   let callbackUrl: string | undefined;
   const pending = new Map<string, Pending>();
   // Starts in flight, by person and service, so tool calls asking at once share one.
@@ -87,12 +96,12 @@ export function createPersonLogins({
       const p = pending.get(state);
       pending.delete(state);
       if (p === undefined || p.expiresAt <= now()) {
-        return { ok: false, error: `This login link has expired or was already used: ask ${assistantName} again for a new one.` };
+        return { ok: false, error: texts.forPerson(undefined).t("core.login.expired", { assistant: assistantName }) };
       }
       const done = await p.login.complete(p.personKey, code, state);
       if (done.ok) return { ok: true, service: p.service };
       log(`[login] ${p.service} login of ${p.personKey} failed: ${done.error}`);
-      return { ok: false, error: `The ${p.service} login didn't go through. Ask ${assistantName} again for a new link.` };
+      return { ok: false, error: texts.forPerson(p.personKey).t("core.login.failed", { service: p.service, assistant: assistantName }) };
     },
   };
 }

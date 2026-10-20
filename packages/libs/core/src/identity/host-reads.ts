@@ -33,6 +33,8 @@ export type HostReadsDeps = {
   identify?: People["identify"];
   /** How the person with `key` asked to be called (`profiles.ts`); nobody has a name when absent. */
   preferredName?: (key: string) => string | undefined;
+  /** The language the person with `key` saved (`profiles.ts`); nobody has one when absent. */
+  preferredLanguage?: (key: string) => string | undefined;
 };
 
 /** Builds the per-person `ChannelHostReads` over this instance's vault, Qdrant and stores. */
@@ -66,6 +68,9 @@ export function createHostReads(deps: HostReadsDeps): ChannelHostReads {
       perPerson.has(collection) ? scrollCollection(qdrant, collection, { limit, offset, userId: who.person.key }) : null,
     ),
     toolLog: forPerson((who) => getToolLog({ owner: who.person.key })),
-    me: forPerson((who) => ({ name: deps.preferredName?.(who.person.key) ?? null })),
+    me: forPerson((who) => ({
+      name: deps.preferredName?.(who.person.key) ?? null,
+      language: deps.preferredLanguage?.(who.person.key) ?? null,
+    })),
   };
 }

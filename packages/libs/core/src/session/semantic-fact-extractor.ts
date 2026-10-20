@@ -19,9 +19,11 @@ import type { Message } from "./history.ts";
  * already carries the sender's `displayName` directly, so a semantic
  * fact about "who the user is" would only duplicate or contradict that
  * more authoritative source, never add anything — observed live as the
- * `name`/`user-name` duplicate before this fix.
+ * `name`/`user-name` duplicate before this fix. The person's language is
+ * left out for the same reason: it's a profile setting they choose
+ * (`set_preferred_language`).
  */
-export const SEMANTIC_FACT_TOPICS = ["team", "role", "preferred-language", "tools-used"] as const;
+export const SEMANTIC_FACT_TOPICS = ["team", "role", "tools-used"] as const;
 export const SemanticFactSchema = z.object({ topic: z.enum(SEMANTIC_FACT_TOPICS), value: z.string() });
 export type SemanticFact = z.infer<typeof SemanticFactSchema>;
 
@@ -35,9 +37,9 @@ type GenerateObjectFn = (params: {
 
 const SYSTEM_PROMPT =
   "Extract stable, recurring facts about the user from this conversation, choosing the topic only " +
-  'among these four: "team", "role", "preferred-language", "tools-used". Each fact is a {topic, value} ' +
+  'among these three: "team", "role", "tools-used". Each fact is a {topic, value} ' +
   'pair: "value" is what was stated or clearly implied for that topic. Don\'t extract the user\'s ' +
-  "identity or name: it is already kept separately. Don't extract details of a single task that " +
+  "identity, name or language: they are already kept separately. Don't extract details of a single task that " +
   "only hold for this session, only things plausibly still true later. Return an empty array if nothing " +
   "qualifies under the allowed topics.";
 

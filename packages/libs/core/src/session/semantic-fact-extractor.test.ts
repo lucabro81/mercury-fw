@@ -12,7 +12,7 @@ const MESSAGES: Message[] = [
 
 describe("createSemanticFactExtractor", () => {
   it("returns the facts produced by generateObjectFn", async () => {
-    const facts: SemanticFact[] = [{ topic: "preferred-language", value: "italiano" }];
+    const facts: SemanticFact[] = [{ topic: "role", value: "developer" }];
     const generateObjectFn = async () => ({ object: facts });
 
     const extract = createSemanticFactExtractor(MODEL, generateObjectFn);
@@ -110,9 +110,16 @@ describe("SemanticFactSchema", () => {
   // the model can no longer invent a new key ("name" vs "user-name") for
   // the same concept, since only these exact values are valid output.
   it("accepts only the closed set of known topics", () => {
-    for (const topic of ["team", "role", "preferred-language", "tools-used"]) {
+    for (const topic of ["team", "role", "tools-used"]) {
       expect(SemanticFactSchema.safeParse({ topic, value: "x" }).success).toBe(true);
     }
+  });
+
+  // #279: the person's language is a profile setting they choose
+  // (`set_preferred_language`); a language inferred from conversations would
+  // only compete with it.
+  it("has no topic for the person's language", () => {
+    expect(SemanticFactSchema.safeParse({ topic: "preferred-language", value: "italiano" }).success).toBe(false);
   });
 
   // Point 5: identity/name is deliberately not part of the enum — see the

@@ -24,6 +24,7 @@ import type { LinkOwner, LinkStore } from "./links.ts";
 import { OPERATOR_PRINCIPAL, type People } from "./people.ts";
 import { userKey } from "./user-key.ts";
 import { DEFAULT_ASSISTANT_NAME } from "../session/assistant-name.ts";
+import { englishTexts, type Texts } from "../i18n/i18n.ts";
 
 const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
 const CODE = /^[A-Za-z0-9]{4}-[A-Za-z0-9]{4}-[A-Za-z0-9]{4}$/;
@@ -41,10 +42,8 @@ function newCode(): string {
   return [chars.slice(0, 4), chars.slice(4, 8), chars.slice(8, 12)].map((g) => g.join("")).join("-");
 }
 
-const INVALID = "That code isn't valid: it may have expired or been used already. Ask for a new one on the account you want to link to.";
-const TERMINAL = "The terminal can't link accounts.";
-
-type Pending = { owner: LinkOwner; ownerName: string; expiresAt: number; redeemedBy?: string };
+/** `ownerKey` is the person who asked for the code: the replies are in their language. */
+type Pending = { owner: LinkOwner; ownerName: string; ownerKey: string; expiresAt: number; redeemedBy?: string };
 
 export function createLinking(deps: {
   people: People;
@@ -53,7 +52,12 @@ export function createLinking(deps: {
   log?: (msg: string) => void;
   /** What the replies call the assistant. */
   assistantName?: string;
+  /** The replies' texts (`core.link.*`); English when absent. */
+  texts?: Texts;
 }) {
+  const texts = deps.texts ?? englishTexts();
+  /** The instance's default language: for whoever isn't known, with no code to go by. */
+  const fallback = () => texts.forPerson(undefined).t;
   const assistantName = deps.assistantName ?? DEFAULT_ASSISTANT_NAME;
   const now = deps.now ?? Date.now;
   const log = deps.log ?? ((msg: string) => console.error(msg));
@@ -67,66 +71,71 @@ export function createLinking(deps: {
   return {
     /** A code for linking another account to the person `principal` is. */
     start: async (principal: Principal): Promise<{ ok: true; code: string; expiresAt: string } | { ok: false; error: string }> => {
-      if (principal === OPERATOR_PRINCIPAL) return { ok: false, error: TERMINAL };
+      if (principal === OPERATOR_PRINCIPAL) return { ok: false, error: fallback()("core.link.terminal") };
       const identified = await deps.people.identify(principal);
       if (!identified.ok) return { ok: false, error: identified.message };
-      if (identified.operator) return { ok: false, error: TERMINAL };
+      if (identified.operator) return { ok: false, error: fallback()("core.link.terminal") };
       const owner: LinkOwner = deps.links.ownerOf(userKey(principal)) ?? { id: principal.id, provider: principal.provider };
       prune();
       for (const [code, pending] of codes) if (userKey(pending.owner) === userKey(owner)) codes.delete(code);
       const code = newCode();
       const expiresAt = now() + LINK_CODE_TTL_MS;
-      codes.set(code, { owner, ownerName: identified.person.displayName ?? identified.person.key, expiresAt });
+      codes.set(code, {
+        owner,
+        ownerName: identified.person.displayName ?? identified.person.key,
+        ownerKey: identified.person.key,
+        expiresAt,
+      });
       return { ok: true, code, expiresAt: new Date(expiresAt).toISOString() };
     },
 
     /** The reply to `text` from `principal` when it's a link code, or null when it isn't one. */
     redeem: async (principal: Principal, text: string): Promise<string | null> => {
       if (!isLinkCode(text)) return null;
-      if (principal === OPERATOR_PRINCIPAL || principal.provider === "none") return TERMINAL;
+      if (principal === OPERATOR_PRINCIPAL || principal.provider === "none") return fallback()("core.link.terminal");
       prune();
       const code = text.trim();
       const pending = codes.get(code);
-      if (pending === undefined) return INVALID;
+      if (pending === undefined) return fallback()("core.link.invalid");
+      const { t } = texts.forPerson(pending.ownerKey);
+      const owner = { owner: pending.ownerName };
       const identity = userKey(principal);
-      if (identity === userKey(pending.owner)) return "That code is for linking another account to this one.";
+      if (identity === userKey(pending.owner)) return t("core.link.same-account");
       // The owner was linked to someone else after the code was made: linking to it now would chain.
-      if (deps.links.ownerOf(userKey(pending.owner)) !== undefined) return INVALID;
+      if (deps.links.ownerOf(userKey(pending.owner)) !== undefined) return t("core.link.invalid");
       // A code belongs to the first account that sends it: someone else who
       // read it (a shared space) can't take the link over.
-      if (pending.redeemedBy !== undefined && pending.redeemedBy !== identity) return INVALID;
+      if (pending.redeemedBy !== undefined && pending.redeemedBy !== identity) return t("core.link.invalid");
       if (deps.links.owns(identity)) {
         codes.delete(code);
-        return `Other accounts are linked to this one: unlink them first, or link them to ${pending.ownerName} directly.`;
+        return t("core.link.has-linked", owner);
       }
       if (pending.redeemedBy !== identity) {
         pending.redeemedBy = identity;
-        return `This will link this account to ${pending.ownerName}: from then on ${assistantName} treats them as one person, with ${pending.ownerName}'s private area and roles. Send the same code again to confirm.`;
+        return t("core.link.confirm", { ...owner, assistant: assistantName });
       }
       codes.delete(code);
 
-      const [alone, owner] = await Promise.all([
+      const [alone, ownerAlone] = await Promise.all([
         deps.people.identifyUnlinked(principal),
         deps.people.identifyUnlinked({ id: pending.owner.id, provider: pending.owner.provider }),
       ]);
-      if (!alone.ok && alone.reason === "unavailable") return "I can't check this account right now. Ask for a new code and try again in a few minutes.";
-      if (alone.ok && alone.person.key !== identity && (!owner.ok || alone.person.key !== owner.person.key)) {
-        return `This account belongs to someone else in the directory: it can't be linked to ${pending.ownerName}.`;
+      if (!alone.ok && alone.reason === "unavailable") return t("core.link.cant-check");
+      if (alone.ok && alone.person.key !== identity && (!ownerAlone.ok || alone.person.key !== ownerAlone.person.key)) {
+        return t("core.link.someone-else", owner);
       }
 
       // Others may have been linked to this account since its first send.
-      if (deps.links.owns(identity)) {
-        return `Other accounts are linked to this one: unlink them first, or link them to ${pending.ownerName} directly.`;
-      }
+      if (deps.links.owns(identity)) return t("core.link.has-linked", owner);
       try {
         deps.links.link(identity, pending.owner);
       } catch (err) {
         log(`[identity] couldn't link ${identity}: ${err instanceof Error ? err.message : String(err)}`);
-        return "I can't link accounts right now. Ask whoever runs this assistant to check its logs.";
+        return t("core.link.failed");
       }
       deps.people.forget(principal);
       log(`[identity] linked ${identity} to ${userKey(pending.owner)}`);
-      return `Linked: this account is now ${pending.ownerName}.`;
+      return t("core.link.done", owner);
     },
   };
 }

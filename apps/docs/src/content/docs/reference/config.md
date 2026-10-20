@@ -13,6 +13,8 @@ import { defineMercuryConfig } from "@mercury-fw/core";
 import { httpChannel } from "@mercury-fw/channel-http";
 import { oidcAuth } from "@mercury-fw/auth-oidc";
 import { staticDirectory } from "@mercury-fw/directory-static";
+import en from "./locales/en.json";
+import it from "./locales/it.json";
 
 const name = "Hermes";
 
@@ -31,6 +33,7 @@ export default defineMercuryConfig({
   auth: oidcAuth,
   directory: staticDirectory,
   access: { unknown: "refuse" },
+  i18n: { defaultLocale: "it", locales: { en, it } },
 });
 ```
 
@@ -85,8 +88,19 @@ Who may talk to the agent and use what, on top of the directory.
 | Field | |
 |---|---|
 | `unknown` | What to do with someone the directory doesn't know: `"refuse"` (the default) or `"allow"`, taking them as the channel says, with no roles. |
-| `unknownMessage` | What a refused person is told. |
 | `plugins` | Restricts a plugin, by name, to people holding one of the roles: `{ jira: { roles: ["support"] } }`. The terminal is exempt. |
+
+What a refused person is told is the text `core.access.unknown`, which a language file changes like any other
+(see [`i18n`](#i18n)).
+
+## `i18n`
+
+The languages the agent speaks, beyond English. See [Languages](../../concepts/languages/).
+
+| Field | |
+|---|---|
+| `locales` | The app's language files, by language tag: `{ en, it }`, each imported from `locales/<tag>.json`. A file maps a text's key to its translation; `en` replaces the English texts it names. |
+| `defaultLocale` | The language of someone who hasn't picked one: `en` (the default) or a key of `locales`. Any other value stops the agent at startup. |
 
 ## `persona`
 

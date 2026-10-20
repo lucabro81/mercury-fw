@@ -22,6 +22,7 @@ import { userKey } from "../identity/user-key.ts";
 import { OPERATOR_PRINCIPAL } from "../identity/people.ts";
 import type { StepInfo } from "../session/step-info.ts";
 import type { writeConfirmationNote } from "../wiki/wiki-note.ts";
+import { englishTexts, type Texts } from "../i18n/i18n.ts";
 
 const TERMINAL_SESSION_KEY = "terminal";
 /** The terminal is a single-user debug console: one fixed principal nobody vouched for, so its sessions stay out of episodic memory. */
@@ -44,6 +45,8 @@ export type TerminalProviderDeps = {
   tryConfirmFn?: typeof tryConfirm;
   /** Test seam; defaults to `console.error`. */
   stderrWrite?: (s: string) => void;
+  /** The texts of its own lines, in the terminal person's language (the app's `texts`); English when absent. */
+  texts?: Texts;
 };
 
 /** Builds the terminal's `Provider`. */
@@ -52,6 +55,9 @@ export function createTerminalProvider(deps: TerminalProviderDeps): Provider {
   const getLoadedContextLengthFn = deps.getLoadedContextLengthFn ?? getLoadedContextLength;
   const tryConfirmFn = deps.tryConfirmFn ?? tryConfirm;
   const startTerminalReplFn = deps.startTerminalReplFn ?? startTerminalRepl;
+  const texts = deps.texts ?? englishTexts();
+  /** The terminal person's texts, read again each time: they can change their language mid-session. */
+  const terminalT = () => texts.forPerson(userKey(TERMINAL_PRINCIPAL)).t;
 
   let lastSteps: StepInfo[] = [];
   let lastInputTokens: number | undefined;
@@ -83,6 +89,7 @@ export function createTerminalProvider(deps: TerminalProviderDeps): Provider {
           const resuming = confirmReply === RESUME_AFTER_CONFIRM;
 
           lastSteps = [];
+          const t = terminalT();
           let finalText = "";
           // Keyed by the SDK's own reasoning-block id: a tool-calling turn
           // can reason more than once (before a tool call, again after
@@ -109,7 +116,7 @@ export function createTerminalProvider(deps: TerminalProviderDeps): Provider {
             onReasoningChunk: (chunk, id) => {
               if (!reasoningIdsStarted.has(id)) {
                 reasoningIdsStarted.add(id);
-                dim("Sto pensando…");
+                dim(t("core.terminal.thinking"));
               }
               aside(`\x1b[2m\x1b[3m${chunk}\x1b[0m`);
             },
@@ -123,10 +130,12 @@ export function createTerminalProvider(deps: TerminalProviderDeps): Provider {
               // say it itself, from the structured step data.
               const pending = detectPendingConfirmation(step);
               if (pending && pending.choices.length > 1) {
-                const lines = pending.choices.map((c) => `  ${c.label} — scrivi: ${c.token}\n`).join("");
-                aside(`Azione in sospeso: \`${pending.summary}\`\n${lines}`);
+                const lines = pending.choices
+                  .map((c) => `  ${t("core.terminal.choice", { label: c.label, token: c.token })}\n`)
+                  .join("");
+                aside(`${t("core.terminal.pending-choices", { summary: pending.summary })}\n${lines}`);
               } else if (pending) {
-                aside(`Azione in sospeso: \`${pending.summary}\` — scrivi: ${pending.token}\n`);
+                aside(`${t("core.terminal.pending", { summary: pending.summary, token: pending.token })}\n`);
               }
             },
             onUsage: (tokens) => {
@@ -163,7 +172,10 @@ export function createTerminalProvider(deps: TerminalProviderDeps): Provider {
             : finalText;
         },
         undefined,
-        { promptSuffix: () => formatContextUsage(lastInputTokens, contextLength) },
+        {
+          promptSuffix: () => formatContextUsage(lastInputTokens, contextLength),
+          correctedNote: () => terminalT()("core.terminal.corrected"),
+        },
       );
     },
 

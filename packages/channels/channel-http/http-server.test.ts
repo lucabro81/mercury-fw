@@ -1200,6 +1200,15 @@ describe("GET /me", () => {
     expect(res.status).toBe(401);
   });
 
+  it("passes on the language the caller saved, null when they never said; an older core's answer has none", async () => {
+    for (const language of ["it", null]) {
+      const route = readRoutes({ ...base, me: async () => ({ name: "Luca", language }) }, asAlice)["/me"]!;
+      expect(await (await route.GET(new Request("http://x/me"))).json()).toEqual({ ok: true, name: "Luca", language });
+    }
+    const older = readRoutes({ ...base, me: async () => ({ name: "Luca" }) }, asAlice)["/me"]!;
+    expect(await (await older.GET(new Request("http://x/me"))).json()).toEqual({ ok: true, name: "Luca" });
+  });
+
   // Review of #216: the core answers null for someone it no longer admits, and
   // the reply lost its `name` key; a UI checking `name === null` skipped the opening.
   it("always carries name, null when the core answers nothing for the caller", async () => {

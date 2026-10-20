@@ -12,6 +12,7 @@
  */
 import type { TurnSink } from "../router/provider.ts";
 import type { Message } from "./history.ts";
+import { englishTexts, type Texts, type Translate } from "../i18n/i18n.ts";
 
 type CaptureCallbacks = { onToolStart: TurnSink["onToolStart"]; onToolFinish: TurnSink["onToolFinish"] };
 
@@ -20,8 +21,10 @@ export type SessionCaptureDeps = {
   capture: (userId: string, sessionKey: string, messages: Message[]) => Promise<void>;
   /** How many new messages a session needs before `maybeCapture` mirrors them. */
   threshold: number;
-  /** The detail line a capture's status shows, from the messages it captures. */
-  describe?: (pending: Message[]) => string;
+  /** The detail line a capture's status shows, from the messages it captures, in the session's person's language (`t`). */
+  describe?: (pending: Message[], t: Translate) => string;
+  /** The status's texts, in the language of the person the session is; English when absent. */
+  texts?: Texts;
   log?: (message: string) => void;
 };
 
@@ -45,6 +48,7 @@ export type SessionCapture = {
 /** Builds the capture state for one instance. */
 export function createSessionCapture(deps: SessionCaptureDeps): SessionCapture {
   const log = deps.log ?? ((message: string) => console.error(message));
+  const texts = deps.texts ?? englishTexts();
   const users = new Map<string, string>();
   // How many of a session's current view are already mirrored to memory.
   const markers = new Map<string, number>();
@@ -55,7 +59,8 @@ export function createSessionCapture(deps: SessionCaptureDeps): SessionCapture {
   async function capturePending(sessionKey: string, userId: string, pending: Message[]): Promise<boolean> {
     const status = callbacks.get(sessionKey);
     const captureId = crypto.randomUUID();
-    status?.onToolStart("Mi sto segnando un'informazione importante…", deps.describe?.(pending), captureId);
+    const { t } = texts.forPerson(userId);
+    status?.onToolStart(t("core.status.remembering"), deps.describe?.(pending, t), captureId);
     try {
       await deps.capture(userId, sessionKey, pending);
       status?.onToolFinish?.(captureId, "success");

@@ -161,6 +161,18 @@ describe("startTerminalRepl", () => {
   // extends what was already streamed, so slicing off streamedText.length
   // would be meaningless. The already-streamed text can't be un-printed, so
   // the real final answer is shown in full instead, clearly marked.
+  it("the correction marker is the one it's given, in the person's language", async () => {
+    const output = fakeOutput();
+    const handleInput = async (_input: string, onChunk: (chunk: string) => void) => {
+      onChunk("Ciao");
+      return "Salve";
+    };
+
+    await startTerminalRepl(handleInput, { input: oneLine("hi"), output }, { correctedNote: () => "[risposta corretta]" });
+
+    expect(output.calls).toContainEqual({ text: "\n\n[risposta corretta]\n\nSalve", newline: true });
+  });
+
   it("writes the full result with a correction marker, when it no longer extends what was streamed", async () => {
     const output = fakeOutput();
     const handleInput = async (_input: string, onChunk: (chunk: string) => void) => {
@@ -176,7 +188,7 @@ describe("startTerminalRepl", () => {
       { text: "Hel", newline: false },
       { text: "lo, here are the tickets: MER-1, MER-2", newline: false },
       {
-        text: "\n\n[risposta corretta rispetto a quanto già mostrato sopra]\n\nEcco i risultati.\n\nMER-1\nhttps://x",
+        text: "\n\n[answer corrected from what was shown above]\n\nEcco i risultati.\n\nMER-1\nhttps://x",
         newline: true,
       },
       { text: PROMPT, newline: false },

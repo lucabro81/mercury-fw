@@ -13,6 +13,7 @@ await createTerminalProvider({
   confirmDeps: app.confirmDeps,
   ollamaHost: app.ollamaHost,
   ollamaModel: app.ollamaModel,
+  texts: app.texts,
 }).start(app.handleTurn);
 
 // The REPL ended (Ctrl+D); the model and Qdrant clients keep pooled sockets
