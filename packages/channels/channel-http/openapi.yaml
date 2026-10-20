@@ -532,6 +532,11 @@ paths:
               schema: { type: string }
         "400":
           description: Refused, expired, already used, or missing code/state.
+          headers:
+            Content-Language:
+              description: Set on a denied or incomplete login (the browser's language); not on a failed one, which reads in the language of whoever started it.
+              schema:
+                type: string
           content:
             text/plain:
               schema: { type: string }
@@ -592,6 +597,9 @@ components:
         directory doesn't know them, `503` when it can't be reached. Nothing
         behind the route runs. `error` is in the language `Accept-Language`
         asks for, which `Content-Language` names.
+      headers:
+        Content-Language:
+          $ref: "#/components/headers/ContentLanguage"
       content:
         application/json:
           schema:

@@ -71,7 +71,7 @@ export function negotiate(hint: string | undefined, supported: readonly string[]
       const [tag = "", ...attrs] = part.trim().split(";");
       const q = attrs.map((a) => a.trim()).find((a) => a.startsWith("q="));
       const quality = q === undefined ? 1 : Number(q.slice(2));
-      return { tag: tag.trim().toLowerCase(), quality, index };
+      return { tag: tag.trim().toLowerCase().replaceAll("_", "-"), quality, index };
     })
     .filter((r) => r.tag !== "" && r.tag !== "*" && Number.isFinite(r.quality) && r.quality > 0)
     .sort((a, b) => b.quality - a.quality || a.index - b.index);

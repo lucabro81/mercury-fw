@@ -63,6 +63,10 @@ describe("negotiate", () => {
     expect(negotiate("EN-gb", supported)).toBe("en");
   });
 
+  test("takes an underscore between language and region too, as some clients send it", () => {
+    expect(negotiate("it_IT", supported)).toBe("it");
+  });
+
   test("an exact regional match wins over its language", () => {
     expect(negotiate("pt-BR", ["pt", "pt-br"])).toBe("pt-br");
   });

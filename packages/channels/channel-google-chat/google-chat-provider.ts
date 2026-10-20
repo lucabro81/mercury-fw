@@ -266,8 +266,8 @@ export type ParsedCardClickEvent = {
 };
 
 /** The language the event says the person's client is in, when it says. */
-function localeOf(event: RawChatEvent): string | undefined {
-  const locale = event.common?.userLocale;
+function localeOf(event: RawChatEvent | null | undefined): string | undefined {
+  const locale = event?.common?.userLocale;
   return typeof locale === "string" && locale.trim() !== "" ? locale.trim() : undefined;
 }
 
@@ -279,6 +279,7 @@ function emailOf(sender: RawChatSender | undefined): string | undefined {
 /** Parses one decoded Pub/Sub event, or `null` if it isn't a kind this provider acts on. */
 export function parseChatEvent(raw: unknown): ParsedMessageEvent | ParsedCardClickEvent | null {
   const event = raw as RawChatEvent;
+  const locale = localeOf(event);
   if (event?.type === "MESSAGE") {
     const m = event.message;
     if (!m || typeof m.name !== "string" || typeof m.text !== "string") return null;
@@ -293,7 +294,7 @@ export function parseChatEvent(raw: unknown): ParsedMessageEvent | ParsedCardCli
       senderDisplayName: m.sender.displayName,
       senderEmail: emailOf(m.sender),
       isDirectMessage: m.space.type === "DM",
-      ...(localeOf(event) === undefined ? {} : { locale: localeOf(event)! }),
+      ...(locale === undefined ? {} : { locale }),
     };
   }
   if (event?.type === "CARD_CLICKED") {
@@ -313,7 +314,7 @@ export function parseChatEvent(raw: unknown): ParsedMessageEvent | ParsedCardCli
       senderEmail: emailOf(event.user),
       parameters,
       isDirectMessage: event.space.type === "DM",
-      ...(localeOf(event) === undefined ? {} : { locale: localeOf(event)! }),
+      ...(locale === undefined ? {} : { locale }),
     };
   }
   return null;

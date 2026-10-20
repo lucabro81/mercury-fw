@@ -282,7 +282,7 @@ describe("runE2e over HTTP", () => {
           ],
           check: (run, expect) => {
             statuses.push(...run.turns.map((t) => t.status));
-            expect.answerNot("Confermato");
+            expect.answerNot("Confirmed");
           },
         },
       ],
