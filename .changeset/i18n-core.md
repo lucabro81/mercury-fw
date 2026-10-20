@@ -11,6 +11,6 @@ The texts that were in Italian (tool status lines, the terminal's lines) are now
 An existing app keeps working, with these changes:
 
 1. `access.unknownMessage` is gone. To keep a custom refusal, put it in `locales/en.json` as `{ "core.access.unknown": "…" }`, and in `mercury.config.ts` import it (`import en from "./locales/en.json";`) and set `i18n: { locales: { en } }`.
-2. To keep the status and terminal lines in Italian, add `locales/it.json` with the `core.` keys translated (start it as `{}`: the log lists the missing keys at startup), and in `mercury.config.ts` import it (`import it from "./locales/it.json";`) and set `i18n: { defaultLocale: "it", locales: { it } }`.
+2. To keep the status and terminal lines in Italian, add `locales/it.json` with the `core.` keys translated (start it as `{}`: the log lists the missing keys at startup), and in `mercury.config.ts` import it (`import it from "./locales/it.json";`) and set `i18n: { defaultLocale: "it", locales: { it } }` (`locales: { en, it }` when you did step 1 too).
 3. Whenever the config imports a file from `locales/` (steps 1 and 2), the image needs the folder: add `COPY --chown=mercury:mercury locales ./locales` after the `mercury.config.ts` line of the `Dockerfile`, or the app fails at startup.
 4. For the terminal (`mfw repl`) to follow the language too, add `texts: app.texts,` to `createTerminalProvider({ … })` in `src/repl.ts`; without it the terminal's own lines stay English.
