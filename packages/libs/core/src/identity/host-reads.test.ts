@@ -173,11 +173,15 @@ describe("createHostReads", () => {
 // #216: a UI asks who the caller is to Mercury, to know whether to let the
 // assistant speak first.
 describe("createHostReads: me", () => {
-  it("answers how the caller asked to be called, or null when they never said", async () => {
+  it("answers how the caller asked to be called and the language they saved, null for what they never said", async () => {
     const names: Record<string, string> = { "static:alice": "Luca" };
-    const { reads: r } = reads(await vault(), { preferredName: (key) => names[key] });
-    expect(await r.me!(alice)).toEqual({ name: "Luca" });
-    expect(await r.me!(bob)).toEqual({ name: null });
+    const languages: Record<string, string> = { "static:alice": "it" };
+    const { reads: r } = reads(await vault(), {
+      preferredName: (key) => names[key],
+      preferredLanguage: (key) => languages[key],
+    });
+    expect(await r.me!(alice)).toEqual({ name: "Luca", language: "it" });
+    expect(await r.me!(bob)).toEqual({ name: null, language: null });
   });
 
   it("answers for the person the core identifies, not the raw principal", async () => {
@@ -185,7 +189,7 @@ describe("createHostReads: me", () => {
       preferredName: (key) => (key === "static:bob" ? "Bob" : undefined),
       identify: async () => ({ ok: true, operator: false, person: { key: "static:bob", roles: [] } }),
     });
-    expect(await r.me!(alice)).toEqual({ name: "Bob" });
+    expect(await r.me!(alice)).toEqual({ name: "Bob", language: null });
   });
 
   it("answers null for someone the core doesn't admit", async () => {

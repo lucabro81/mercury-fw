@@ -329,8 +329,10 @@ paths:
       summary: Who the caller is to the assistant
       description: >
         How the caller asked to be called, `null` when they never said: a UI
-        asks for an opening turn after a sign-in only then. Not there on an
-        older core, which can't say.
+        asks for an opening turn after a sign-in only then. Also the language
+        they asked the assistant to use, `null` when they never said (missing
+        when the core doesn't know languages). Not there on an older core,
+        which can't say.
       responses:
         "401":
           $ref: "#/components/responses/Unauthorized"
@@ -339,7 +341,7 @@ paths:
         "503":
           $ref: "#/components/responses/NotAdmitted"
         "200":
-          description: The caller's name, or null.
+          description: The caller's name and language, or null.
           content:
             application/json:
               schema:
@@ -350,6 +352,9 @@ paths:
                     type: boolean
                   name:
                     type: [string, "null"]
+                  language:
+                    type: [string, "null"]
+                    description: A language tag such as `it` or `pt-br`, one the instance ships.
   /tool-log:
     get:
       summary: The tool calls made in the caller's recent turns

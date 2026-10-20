@@ -481,8 +481,9 @@ export function readRoutes(
       : {
           "/me": route(async (_req, principal) => {
             // Null when the core no longer admits the caller: still a name, null.
-            const me = (await reads.me!(principal)) as { name: string | null } | null;
-            return json({ ok: true, name: me?.name ?? null });
+            const me = (await reads.me!(principal)) as { name: string | null; language?: string | null } | null;
+            // An older core says no language: the reply then has none either.
+            return json({ ok: true, name: me?.name ?? null, ...(me?.language === undefined ? {} : { language: me.language }) });
           }),
         }),
     "/health": route(async () => json({ ok: true, ...(await reads.health() as object) })),
