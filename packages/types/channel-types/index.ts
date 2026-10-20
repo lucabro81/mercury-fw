@@ -2,26 +2,29 @@
  * Shared contract between the core and every channel plugin: the turn shape
  * (`Provider`/`InboundTurn`/`TurnSink`/`HandleTurn`/`Notifier`), the pure
  * confirmation pieces a channel uses to build its own UI
- * (`detectPendingConfirmation`, `PENDING_CONFIRMATION_NOTE`, `NO_REPLY`), the
- * login a tool asks a person for (`detectLoginRequired`, `loginLinkText`), and
+ * (`detectPendingConfirmation`, `NO_REPLY`), the login a tool asks a person
+ * for (`detectLoginRequired`, `loginLinkText`), and
  * the channel-plugin system (`ChannelPlugin`/`ChannelRuntimeContext`/
  * `CHANNEL_API_VERSION`), and the providers a config declares beside the
  * channels: who is calling (`AuthPlugin`) and who that is to Mercury
  * (`DirectoryPlugin`). The stateful half of confirmation (`ConfirmationStore`,
  * `tryConfirm`) stays in the core and reaches a channel via `ctx.confirm`.
  */
-import type { StepInfo } from "@mercury-fw/plugin-types";
+import type { Messages, StepInfo, Translate } from "@mercury-fw/plugin-types";
+
+export type { Messages, Translate };
 
 /** Settled outcome of a tool call (or guard/capture-ping) reported via `onToolFinish`. `pending` = action deferred behind a token, not run. */
 export type ToolOutcome = "success" | "failed" | "pending";
 
-/** One way the person can answer a staging: the token to send back and the words on its button. */
+/** One way the person can answer a staging: the token to send back and the words on its button (empty when the tool gave none: the channel words it). */
 export type ConfirmChoice = { token: string; label: string };
 
 /**
  * A confirm-required staging found in a step: the token to send back, a
  * summary of what will run, and the choices offered. A staging with a single
- * token is one choice labelled `Conferma`; `token` is always the first
+ * token is one choice with an empty label, which the channel words itself (a
+ * "Confirm" button, in the person's language); `token` is always the first
  * choice's, so a channel that knows nothing of choices still shows that one.
  */
 export type PendingConfirmation = { token: string; summary: string; choices: ConfirmChoice[] };
@@ -51,7 +54,7 @@ export function detectPendingConfirmation(step: StepInfo): PendingConfirmation |
     return {
       token: output.token,
       summary: typeof output.summary === "string" ? output.summary : "",
-      choices: choices.length > 0 ? choices : [{ token: output.token, label: "Conferma" }],
+      choices: choices.length > 0 ? choices : [{ token: output.token, label: "" }],
     };
   }
   return null;
@@ -77,22 +80,10 @@ export function detectLoginRequired(step: StepInfo): LoginRequest | null {
   return null;
 }
 
-/** The words a channel puts on a login link (a button, a link text), so every channel says it the same way. */
-export function loginLinkText(login: LoginRequest): string {
-  return login.service === "" ? "Accedi al servizio" : `Accedi a ${login.service}`;
+/** The words a channel puts on a login link (a button, a link text), in the person's language (`t`, the core's `core.login.link*`), so every channel says it the same way. */
+export function loginLinkText(login: LoginRequest, t: Translate): string {
+  return login.service === "" ? t("core.login.link-any") : t("core.login.link", { service: login.service });
 }
-
-/** Text shown when a turn ends with no text because it staged an action: stands in for the answer, not model-generated (no token to leak). Every channel suppresses it and shows its own confirm UI. */
-export const PENDING_CONFIRMATION_NOTE = "Azione in sospeso, in attesa di conferma.";
-
-/**
- * What `confirm` returns when the confirmed action's result goes back to the
- * model (`ConfirmOutcome`'s `resume`): the core keeps the result for the
- * session, and the channel resumes the turn (`InboundTurn.resumeAfterConfirm`)
- * instead of showing a reply. A channel that doesn't know it shows this
- * sentence, and the result waits for the next resumed turn of that session.
- */
-export const RESUME_AFTER_CONFIRM = "Confermato, riprendo da dove ero rimasto.";
 
 /** Sentinel the model returns for "not addressed to me" in a multi-person space (see `buildSystemPrompt`'s multiUser block). A multi-user channel suppresses it in `finalize`. */
 export const NO_REPLY = "NO_REPLY";
@@ -131,7 +122,7 @@ export type InboundTurn = {
   /** stderr log prefix, e.g. `[chat:spaces/x:users/y] ` — empty for the terminal. */
   logPrefix: string;
   /** Set when the turn resumes after a confirmation whose result goes back to
-   * the model (`RESUME_AFTER_CONFIRM`): the core runs the model on what it kept
+   * the model (`ConfirmReply.resume`): the core runs the model on what it kept
    * for the session, and `text` is ignored. With nothing kept, the turn ends
    * with no answer. */
   resumeAfterConfirm?: true;
@@ -154,6 +145,25 @@ export type InboundTurn = {
    * turn finalizes with an empty text and nothing is kept.
    */
   opening?: true;
+  /**
+   * The language the caller's client asks for, as an `Accept-Language` value
+   * (`it-IT,it;q=0.9,en;q=0.8`), when the channel has one. The core uses it for
+   * the turn's texts when the person saved no language of their own; it never
+   * overrides the one they saved.
+   */
+  languageHint?: string;
+};
+
+/** What the core says about a turn's final text, beside it. */
+export type FinalizeInfo = {
+  /**
+   * Set when the text begins with the core's stand-in for an answer the model
+   * didn't write, because the turn staged an action (in the person's
+   * language): the exact sentence, followed by anything the turn appended
+   * (`\n\n` and a list it surfaced). A channel that shows its own
+   * confirmation UI drops it from what it shows; the archive keeps it.
+   */
+  pendingNote?: string;
 };
 
 /**
@@ -177,8 +187,8 @@ export type TurnSink = {
   onStep?: (step: StepInfo) => void;
   /** Provider-local usage handling (the terminal's prompt indicator, Chat's stderr line). */
   onUsage?: (inputTokens: number | undefined) => void;
-  /** Deliver the model's complete final text. */
-  finalize: (finalText: string) => Promise<void>;
+  /** Deliver the model's complete final text, with what the core says about it (see `FinalizeInfo`). */
+  finalize: (finalText: string, info?: FinalizeInfo) => Promise<void>;
   /** Release per-turn resources. Idempotent. */
   dispose: () => void;
 };
@@ -257,7 +267,7 @@ export type DirectoryPlugin = {
 export type Admission = { ok: true } | { ok: false; reason: "unknown" | "unavailable"; message: string };
 
 /** Channel-plugin contract version: the loader refuses a channel with a different `apiVersion` fail-soft, like the tool-plugin loader with `PLUGIN_API_VERSION`. Bumped only on a breaking change to this file's shapes. */
-export const CHANNEL_API_VERSION = 5;
+export const CHANNEL_API_VERSION = 6;
 
 /**
  * Structured outcome of resolving a confirmation token, distinguishing cases the
@@ -276,25 +286,27 @@ export type ConfirmOutcome =
   | { status: "resume" };
 
 /**
- * The reply to a resolved confirmation, the one `confirm` gives: `null` when
- * the input wasn't a token, `RESUME_AFTER_CONFIRM` when the turn resumes. For a
- * channel that resolves through `resolveConfirmation` and still tells the
- * person what `confirm` would.
+ * What the person is told about a confirmation they sent, in their language:
+ * `text`, and `resume` when the confirmed action's result goes back to the
+ * model, so the channel resumes the session's turn
+ * (`InboundTurn.resumeAfterConfirm`) instead of showing `text`.
  */
-export function confirmReply(outcome: ConfirmOutcome): string | null {
-  switch (outcome.status) {
-    case "not-a-token":
-      return null;
-    case "not-found":
-      return "Nessuna conferma in sospeso per questo token — potrebbe essere scaduta, già usata, o mai esistita.";
-    case "failed":
-      return `Confermato, ma l'esecuzione è fallita: ${outcome.error}`;
-    case "ok":
-      return `Confermato ed eseguito: ${JSON.stringify(outcome.data)}`;
-    case "resume":
-      return RESUME_AFTER_CONFIRM;
-  }
-}
+export type ConfirmReply = { text: string; resume?: true };
+
+/** A resolved confirmation (see `ConfirmOutcome`) with what to tell the person, `null` only for input that wasn't a token. */
+export type ResolvedConfirmation = ConfirmOutcome & { text: string | null };
+
+/** A channel's texts for a request: the language they're in and the texts by key (see `ChannelI18n`). */
+export type RequestTexts = { locale: string; t: Translate };
+
+/**
+ * The texts a channel shows a person itself (a card's title, a button, a
+ * login page), in their language: the person's own when `principal` is
+ * someone the core knows and they saved one, else the channel's `hint` (an
+ * `Accept-Language` value), else the instance's default. `null` for a request
+ * with no principal (a login page): the hint, then the default.
+ */
+export type ChannelI18n = { forRequest: (principal: Principal | null, hint?: string) => Promise<RequestTexts> };
 
 /**
  * Read-only introspection getters the core injects for a channel that exposes an
@@ -323,7 +335,7 @@ export type ChannelHostReads = {
   memoryScroll: (principal: Principal, collection: string, limit: number, offset?: string) => Promise<unknown>;
   toolLog: (principal: Principal) => Promise<unknown>;
   health: () => Promise<unknown>;
-  /** Who the caller is to the core: `{ name }`, how they asked to be called, `null` when they never said. Absent on an older core. */
+  /** Who the caller is to the core: `{ name, language }`, how they asked to be called and the language they saved, `null` for what they never said. Absent on an older core. */
   me?: (principal: Principal) => Promise<unknown>;
 };
 
@@ -377,21 +389,24 @@ export type ChannelRuntimeContext = {
    * already bound to this instance's store/vault/writer. The channel calls it
    * and holds no state: staging and the store stay the core's. The token
    * resolves only for the `principal` who staged it, in the same session.
-   * Returns the reply text to send back, or `null` when the input wasn't
-   * token-shaped (see `resolveConfirmation`). A link code (`xxxx-xxxx-xxxx`,
-   * see `ChannelLinking`) is taken here too, from whoever sends it.
+   * Returns what to tell the person, in their language (`hint` as in
+   * `ChannelI18n`), or `null` when the input wasn't token-shaped (see
+   * `resolveConfirmation`). A link code (`xxxx-xxxx-xxxx`, see
+   * `ChannelLinking`) is taken here too, from whoever sends it.
    */
-  confirm: (token: string, sessionKey: string, principal: Principal) => Promise<string | null>;
+  confirm: (token: string, sessionKey: string, principal: Principal, hint?: string) => Promise<ConfirmReply | null>;
   /**
    * Whether the core talks to `principal` at all (see `Admission`). A channel
    * that authenticates its own callers checks it before anything else and
    * answers with `message` when it's refused; the core checks again on every
    * turn, confirmation and read, so a channel that doesn't still can't let
-   * anyone in.
+   * anyone in. `message` is in the language `hint` asks for (see `ChannelI18n`).
    */
-  admit: (principal: Principal) => Promise<Admission>;
-  /** The structured sibling of `confirm` (see `ConfirmOutcome`), for a channel that branches on whether the token was accepted. */
-  resolveConfirmation?: (token: string, sessionKey: string, principal: Principal) => Promise<ConfirmOutcome>;
+  admit: (principal: Principal, hint?: string) => Promise<Admission>;
+  /** The structured sibling of `confirm` (see `ResolvedConfirmation`), for a channel that branches on whether the token was accepted. */
+  resolveConfirmation?: (token: string, sessionKey: string, principal: Principal, hint?: string) => Promise<ResolvedConfirmation>;
+  /** The texts the channel shows a person itself, in their language (see `ChannelI18n`). */
+  i18n: ChannelI18n;
   /** In-process introspection getters for a channel that exposes an API/UI. */
   reads?: ChannelHostReads;
   /** The configured auth provider, built; absent when the app declares none or it failed to build. */
@@ -412,9 +427,11 @@ export type ChannelRuntimeContext = {
  * - `apiVersion`: contract version (see `CHANNEL_API_VERSION`); the loader refuses a mismatch.
  * - `name`: the channel's id, and the key the loader registers the provider under (the cron layer looks up `"google-chat"` for its `Notifier`).
  * - `build`: builds the `Provider` from the context, or `undefined` when the instance isn't configured for this channel (e.g. no `GOOGLE_CHAT_PUBSUB_SUBSCRIPTION`) → the loader treats it as "present but inert" and never starts it.
+ * - `messages`: the channel's texts a person sees, in English, every key under `<name>.`; the loader refuses a channel with a key outside it (and one named `core` or `app`). The instance's language files translate them, and the channel gets them through `ctx.i18n`.
  */
 export type ChannelPlugin = {
   apiVersion: number;
   name: string;
   build: (ctx: ChannelRuntimeContext) => Provider | undefined;
+  messages?: Messages;
 };

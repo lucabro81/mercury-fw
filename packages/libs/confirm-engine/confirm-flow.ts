@@ -1,7 +1,7 @@
 /**
  * Deterministic text interception for the "confirm" half of the
  * confirm-required flow (something stages an action and hands back a token —
- * see `confirmation-staging.ts` for the "propose" half). `tryConfirm` is called
+ * see `confirmation-staging.ts` for the "propose" half). `resolveConfirmation` is called
  * from each channel BEFORE the model ever sees the message, same pattern as
  * `/dump` (`tool-log.ts`) and `NO_REPLY` — running a previously-approved
  * mutation must never depend on the model's own tool-calling judgment.
@@ -10,7 +10,7 @@
  * thunk (see `StagedAction`) and reports the outcome. A CLI delete, a future
  * memory purge — same path, because the doing was closed over at stage time.
  */
-import { confirmReply, type ConfirmOutcome } from "@mercury-fw/channel-types";
+import type { ConfirmOutcome } from "@mercury-fw/channel-types";
 import { isTokenShaped, type ConfirmationStore } from "./confirmation-store.ts";
 
 /**
@@ -25,18 +25,6 @@ export type WriteConfirmationNote = (
   fields: { status: "pending" | "confirmed" | "failed"; requestedAt: string; resolvedAt: string | null; command: string },
 ) => Promise<void>;
 
-/**
- * Returns `null` if `input` doesn't look like a bare confirmation token —
- * the caller should proceed with its normal flow (`runTurn`, etc.).
- * Otherwise always returns a user-facing string, resolved without ever
- * invoking the model: an unknown/expired/wrong-session token gets a
- * canned message, a valid one actually runs the staged action and
- * reports the outcome. No `conferma ` keyword to type or match — the
- * real gate was always `store.take()`'s existence/session/owner/expiry check,
- * not that prefix (see `isTokenShaped`'s own doc comment). A card button
- * click on Google Chat and a bare token typed on the terminal both resolve
- * through this exact same path.
- */
 /** A confirmed action whose result goes back to the model: the tool call it
  * resumes the turn as (`toolName`, `input`), what it returned (`output`), and
  * what it was (`describe`, `label` of the choice taken) for the history. */
@@ -54,7 +42,17 @@ export type ConfirmDeps = {
   now?: () => Date;
 };
 
-/** Resolves a token to a structured {@link ConfirmOutcome} (from `@mercury-fw/channel-types`), running the staged action for a match. See `tryConfirm` for the string-returning wrapper. */
+/**
+ * Resolves `input` to a structured {@link ConfirmOutcome} (from
+ * `@mercury-fw/channel-types`) without ever invoking the model: `not-a-token`
+ * when it doesn't look like a bare confirmation token (the caller goes on with
+ * its normal flow), `not-found` for an unknown, expired or someone else's
+ * token, and for a match the staged action's outcome, once it ran. No keyword
+ * to type or match: the gate is `store.take()`'s existence/session/owner/expiry
+ * check. A card button click on Google Chat and a bare token typed on the
+ * terminal both resolve through this same path; what the person is told is the
+ * core's, in their language.
+ */
 export async function resolveConfirmation(
   input: string,
   sessionKey: string,
@@ -102,10 +100,3 @@ export async function resolveConfirmation(
   return { status: "ok", data: result.data };
 }
 
-export async function tryConfirm(
-  input: string,
-  sessionKey: string,
-  deps: ConfirmDeps,
-): Promise<string | null> {
-  return confirmReply(await resolveConfirmation(input, sessionKey, deps));
-}

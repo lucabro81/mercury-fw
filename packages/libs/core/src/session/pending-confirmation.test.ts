@@ -53,7 +53,7 @@ describe("detectPendingConfirmation", () => {
     );
 
     expect(detectPendingConfirmation(withBad)?.choices).toEqual([{ token: "TOK1", label: "A" }]);
-    expect(detectPendingConfirmation(allBad)?.choices).toEqual([{ token: "TOK1", label: "Conferma" }]);
+    expect(detectPendingConfirmation(allBad)?.choices).toEqual([{ token: "TOK1", label: "" }]);
   });
 
   it("extracts token and summary from any tool result flagged pendingConfirmation, regardless of tool name", () => {
@@ -62,7 +62,7 @@ describe("detectPendingConfirmation", () => {
       [result("1", "runCommand", { ok: false, pendingConfirmation: true, token: "TOK1", summary: "jira issue delete KAN-1 --confirm", error: "..." })],
     );
 
-    expect(detectPendingConfirmation(s)).toEqual({ token: "TOK1", summary: "jira issue delete KAN-1 --confirm", choices: [{ token: "TOK1", label: "Conferma" }] });
+    expect(detectPendingConfirmation(s)).toEqual({ token: "TOK1", summary: "jira issue delete KAN-1 --confirm", choices: [{ token: "TOK1", label: "" }] });
   });
 
   it("detects a confirm-required staging from a tool that isn't runCommand (the protocol is generic)", () => {
@@ -71,7 +71,7 @@ describe("detectPendingConfirmation", () => {
       [result("1", "delete_memory", { ok: false, pendingConfirmation: true, token: "TOK9", summary: "delete memory m-9" })],
     );
 
-    expect(detectPendingConfirmation(s)).toEqual({ token: "TOK9", summary: "delete memory m-9", choices: [{ token: "TOK9", label: "Conferma" }] });
+    expect(detectPendingConfirmation(s)).toEqual({ token: "TOK9", summary: "delete memory m-9", choices: [{ token: "TOK9", label: "" }] });
   });
 
   it("returns an empty summary when the pending result carries no summary field", () => {
@@ -80,7 +80,7 @@ describe("detectPendingConfirmation", () => {
       [result("1", "runCommand", { ok: false, pendingConfirmation: true, token: "TOK1" })],
     );
 
-    expect(detectPendingConfirmation(s)).toEqual({ token: "TOK1", summary: "", choices: [{ token: "TOK1", label: "Conferma" }] });
+    expect(detectPendingConfirmation(s)).toEqual({ token: "TOK1", summary: "", choices: [{ token: "TOK1", label: "" }] });
   });
 
   it("returns null when there's no tool call at all", () => {
@@ -121,6 +121,6 @@ describe("detectPendingConfirmation", () => {
       ],
     );
 
-    expect(detectPendingConfirmation(s)).toEqual({ token: "TOK2", summary: "jira issue delete KAN-1 --confirm", choices: [{ token: "TOK2", label: "Conferma" }] });
+    expect(detectPendingConfirmation(s)).toEqual({ token: "TOK2", summary: "jira issue delete KAN-1 --confirm", choices: [{ token: "TOK2", label: "" }] });
   });
 });

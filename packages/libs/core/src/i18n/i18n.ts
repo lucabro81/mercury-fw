@@ -43,6 +43,19 @@ export function namespaceErrors(namespace: string, messages: Messages): string[]
   return errors;
 }
 
+/** Names no package may take: their keys are the core's and the app's texts. */
+const RESERVED_NAMES: Record<string, string> = { core: "the core's own texts", app: "the app's own texts" };
+
+/**
+ * What's wrong with the texts a plugin or a channel named `name` declares: a
+ * reserved name (`core`, `app`), keys outside `<name>.`, values that aren't
+ * text. Empty when nothing is.
+ */
+export function catalogErrors(name: string, messages: Messages): string[] {
+  if (Object.hasOwn(RESERVED_NAMES, name)) return [`"${name}" is reserved for ${RESERVED_NAMES[name]}`];
+  return namespaceErrors(name, messages);
+}
+
 /**
  * The supported language a hint asks for (`it-IT,it;q=0.9,en;q=0.8`), or
  * undefined when it asks for none of them. Ranked by quality, then order; a

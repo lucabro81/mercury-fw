@@ -1,5 +1,9 @@
 import { describe, it, expect } from "bun:test";
-import { runTurn, buildGenerateTextParams, buildStreamTextParams, PENDING_CONFIRMATION_NOTE } from "./agent-turn.ts";
+import { runTurn, buildGenerateTextParams, buildStreamTextParams } from "./agent-turn.ts";
+import { CORE_MESSAGES } from "../i18n/core-messages.ts";
+
+/** The stand-in for an answer the model didn't write, in English. */
+const PENDING_CONFIRMATION_NOTE = CORE_MESSAGES["core.pending.note"]!;
 import { createSessionHistory } from "./history.ts";
 import type { ModelMessage, Tool } from "ai";
 import type { StepInfo } from "./step-info.ts";
@@ -533,7 +537,7 @@ describe("runTurn", () => {
   // fullStream that yields nothing at all: no error, no chunk. Left
   // empty on purpose (no fallback message) — silence in this genuinely-
   // stuck case is an accepted tradeoff, not solved here (see
-  // PENDING_CONFIRMATION_NOTE's doc comment in agent-turn.ts).
+  // resolveHistoryText's doc comment in agent-turn.ts).
   it("leaves the streamed answer empty, and sends nothing via onTextChunk, when it's genuinely empty", async () => {
     const history = createSessionHistory(neverSummarize);
     const received: string[] = [];
@@ -658,12 +662,30 @@ describe("runTurn", () => {
       onTextChunk: (chunk) => received.push(chunk),
     });
 
-    expect(received).toEqual([PENDING_CONFIRMATION_NOTE]);
+    // #281: the note isn't streamed: it would read as the model's words; the
+    // channel learns about it from the turn's end.
+    expect(received).toEqual([]);
     expect(result).toBe(PENDING_CONFIRMATION_NOTE);
     expect(history.getMessages()).toEqual([
       { role: "user", content: "hi" },
       { role: "assistant", content: "[REQ:TOK1]" },
     ]);
+  });
+
+  it("stands in with the note the turn hands it, in the person's language", async () => {
+    const history = createSessionHistory(neverSummarize);
+    const generateTextFn = async (params: { onStepEnd?: (step: StepInfo) => void }) => {
+      params.onStepEnd?.(PENDING_CONFIRMATION_STEP);
+      return { text: "" };
+    };
+    const result = await runTurn(history, "ciao", {
+      model: "fake-model" as never,
+      tools: {},
+      system: SYSTEM,
+      generateTextFn,
+      pendingNote: "Azione in attesa di conferma.",
+    });
+    expect(result).toBe("Azione in attesa di conferma.");
   });
 
   // Regression guard for the stale-primer bug: the opaque marker recorded
@@ -734,7 +756,7 @@ describe("buildGenerateTextParams", () => {
   // The actual reason a second stop condition exists alongside the step
   // cap: a confirm-required command must stop the loop immediately,
   // regardless of how many steps are left in the budget — see
-  // PENDING_CONFIRMATION_NOTE's doc comment for why.
+  // resolveHistoryText's doc comment for why.
   it("stops immediately when the last step staged a confirm-required command, regardless of step count", async () => {
     const params = buildGenerateTextParams({
       model: "fake-model" as never,

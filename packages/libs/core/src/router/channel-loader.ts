@@ -10,13 +10,15 @@
  * subscription; HTTP always builds).
  *
  * Fail-soft, same guarantees as the tool-plugin loader:
- *  - an `apiVersion` mismatch is refused before `build()` runs;
+ *  - an `apiVersion` mismatch, or texts outside the channel's name (see
+ *    `catalogErrors`), are refused before `build()` runs;
  *  - a `build()` that throws degrades as a single unit (logged, skipped) while
  *    every other channel and the process carry on;
  *  - a `build()` that returns `undefined` means "present but inert" (the
  *    instance isn't configured for it) — not started, not an error.
  */
 import { CHANNEL_API_VERSION, type ChannelPlugin, type ChannelRuntimeContext, type Provider } from "@mercury-fw/channel-types";
+import { catalogErrors } from "../i18n/i18n.ts";
 
 /** Everything the loader needs from the composition root: the runtime context every `build()` gets. */
 export type LoadChannelsContext = {
@@ -36,6 +38,12 @@ export function loadChannels(channels: ChannelPlugin[], ctx: LoadChannelsContext
         `channel "${channel.name}" not activated: apiVersion ${channel.apiVersion} ` +
           `incompatible with this core (supports ${CHANNEL_API_VERSION})`,
       );
+      continue;
+    }
+    // A channel's texts are its own, as a plugin's are (see `catalogErrors`).
+    const textErrors = catalogErrors(channel.name, channel.messages ?? {});
+    if (textErrors.length > 0) {
+      ctx.runtime.log(`channel "${channel.name}" not activated: ${textErrors.join("; ")}`);
       continue;
     }
     try {

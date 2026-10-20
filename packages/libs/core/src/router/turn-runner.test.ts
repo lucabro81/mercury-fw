@@ -2255,3 +2255,80 @@ describe("createTurnRunner: a turn resumed after a confirmation", () => {
     expect(systems[0]?.startsWith("single")).toBe(true);
   });
 });
+
+// #281: the turn's texts follow the language the channel hints at (when the
+// person saved none), and the stand-in for an answer the model didn't write
+// reaches the channel as such, not as text it has to recognize.
+describe("createTurnRunner: the turn's language and the pending note", () => {
+  const NOTE_KEY = "core.pending.note";
+
+  function setup(opts: { text?: string; displays?: string[] } = {}) {
+    const calls = {
+      identify: [] as unknown[][],
+      buildTools: [] as unknown[],
+      translatorFor: [] as unknown[][],
+      pendingNote: [] as unknown[],
+      finalize: [] as unknown[][],
+    };
+    const runner = createTurnRunner({
+      model: {} as any,
+      systemPrompts: { singleUser: "s", multiUser: "m" },
+      identify: async (principal, hint) => {
+        calls.identify.push([principal.id, hint]);
+        return { ok: true, operator: false, person: { key: `k:${principal.id}`, roles: [] } };
+      },
+      buildTools: (_sessionKey, _key, _who, _start, _finish, hint) => {
+        calls.buildTools.push(hint);
+        return {};
+      },
+      translatorFor: (key, hint) => {
+        calls.translatorFor.push([key, hint]);
+        return (k) => `${hint ?? "-"}:${k}`;
+      },
+      getOrCreateHistory: () => fakeHistory(),
+      trackSession: () => {},
+      registerCaptureCallback: () => {},
+      maybeCapture: async () => {},
+      processToolCorrections: async () => {},
+      logStep: () => {},
+      takeSurfacedDisplays: () => opts.displays ?? [],
+      runTurnFn: async (_history, _input, deps) => {
+        calls.pendingNote.push(deps.pendingNote);
+        return opts.text ?? deps.pendingNote!;
+      },
+    });
+    const sink = baseSink({
+      finalize: async (text, info) => {
+        calls.finalize.push(info === undefined ? [text] : [text, info]);
+      },
+    });
+    return { runner, sink, calls };
+  }
+
+  test("the channel's hint reaches whom the turn is for, the tools and the turn's texts", async () => {
+    const { runner, sink, calls } = setup({ text: "answer" });
+    await runner(baseTurn({ principal: verified("u1"), languageHint: "it-IT" }), sink);
+    expect(calls.identify).toEqual([["u1", "it-IT"]]);
+    expect(calls.buildTools).toEqual(["it-IT"]);
+    expect(calls.translatorFor).toEqual([["k:u1", "it-IT"]]);
+  });
+
+  test("the model gets the note in the turn's language, and the channel is told the text is it", async () => {
+    const { runner, sink, calls } = setup();
+    await runner(baseTurn({ principal: verified("u1"), languageHint: "it" }), sink);
+    expect(calls.pendingNote).toEqual([`it:${NOTE_KEY}`]);
+    expect(calls.finalize).toEqual([[`it:${NOTE_KEY}`, { pendingNote: `it:${NOTE_KEY}` }]]);
+  });
+
+  test("a list surfaced after the note still says where the text begins", async () => {
+    const { runner, sink, calls } = setup({ displays: ["MER-1 Title"] });
+    await runner(baseTurn({ principal: verified("u1") }), sink);
+    expect(calls.finalize).toEqual([[`-:${NOTE_KEY}\n\nMER-1 Title`, { pendingNote: `-:${NOTE_KEY}` }]]);
+  });
+
+  test("an answer the model wrote says nothing more", async () => {
+    const { runner, sink, calls } = setup({ text: "answer" });
+    await runner(baseTurn({ principal: verified("u1") }), sink);
+    expect(calls.finalize).toEqual([["answer"]]);
+  });
+});

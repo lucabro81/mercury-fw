@@ -199,7 +199,7 @@ describe("stageGroup", () => {
 // expired) — the "conferma " prefix added no security, just ceremony left
 // over from the pre-card text-only confirmation flow. isTokenShaped only
 // needs to tell apart "this looks like a token attempt" from "this is an
-// ordinary message", so tryConfirm (confirm-flow.ts) knows whether to
+// ordinary message", so resolveConfirmation (confirm-flow.ts) knows whether to
 // intercept at all — not a security boundary itself.
 //
 // The token's shape (two 4-char alphanumeric groups joined by a fixed

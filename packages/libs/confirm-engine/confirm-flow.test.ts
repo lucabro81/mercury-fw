@@ -1,6 +1,5 @@
 import { describe, it, expect } from "bun:test";
-import { RESUME_AFTER_CONFIRM } from "@mercury-fw/channel-types";
-import { resolveConfirmation, tryConfirm } from "./confirm-flow.ts";
+import { resolveConfirmation } from "./confirm-flow.ts";
 import { createConfirmationStore, type StagedAction } from "./confirmation-store.ts";
 import type { WriteConfirmationNote } from "./confirm-flow.ts";
 
@@ -8,7 +7,7 @@ const OWNER = "google-chat:users/42";
 
 const noopWriteConfirmationNoteFn: WriteConfirmationNote = async () => {};
 
-function baseDeps(overrides: Partial<Parameters<typeof tryConfirm>[2]> = {}): Parameters<typeof tryConfirm>[2] {
+function baseDeps(overrides: Partial<Parameters<typeof resolveConfirmation>[2]> = {}): Parameters<typeof resolveConfirmation>[2] {
   return {
     store: createConfirmationStore(),
     owner: OWNER,
@@ -24,8 +23,8 @@ function staged(describe: string, run: StagedAction["run"], requestedAt?: string
   return { run, describe, requestedAt };
 }
 
-describe("tryConfirm", () => {
-  it("returns null for input that isn't a confirm command, never touching the store or running the action", async () => {
+describe("resolveConfirmation", () => {
+  it("says not-a-token for input that isn't a confirm command, never touching the store or running the action", async () => {
     let called = false;
     const store = createConfirmationStore({ tokenFn: () => "k9m2-x7q4" });
     store.stage("terminal", OWNER,
@@ -35,9 +34,9 @@ describe("tryConfirm", () => {
       }),
     );
 
-    const result = await tryConfirm("crea un bug su KAN", "terminal", baseDeps({ store }));
+    const result = await resolveConfirmation("crea un bug su KAN", "terminal", baseDeps({ store }));
 
-    expect(result).toBeNull();
+    expect(result).toEqual({ status: "not-a-token" });
     expect(called).toBe(false);
   });
 
@@ -51,18 +50,16 @@ describe("tryConfirm", () => {
       }),
     );
 
-    const result = await tryConfirm(token, "terminal", baseDeps({ store }));
+    const result = await resolveConfirmation(token, "terminal", baseDeps({ store }));
 
     expect(ran).toBe(true);
-    expect(result).not.toBeNull();
-    expect(result).toContain("KAN-1");
+    expect(result).toEqual({ status: "ok", data: { key: "KAN-1", deleted: true } });
   });
 
-  it("returns a canned message for an unknown/expired/wrong-session token, never running any action", async () => {
-    const result = await tryConfirm("ABCD-EFGH", "terminal", baseDeps());
+  it("says not-found for an unknown/expired/wrong-session token, never running any action", async () => {
+    const result = await resolveConfirmation("ABCD-EFGH", "terminal", baseDeps());
 
-    expect(result).not.toBeNull();
-    expect(result?.toLowerCase()).toContain("nessuna conferma");
+    expect(result).toEqual({ status: "not-found" });
   });
 
   it("reports failure when the staged action's run fails, still consuming the token", async () => {
@@ -71,12 +68,12 @@ describe("tryConfirm", () => {
       staged("jira issue delete KAN-1 --confirm", async () => ({ ok: false, error: "jira exited with code 1: boom" })),
     );
 
-    const result = await tryConfirm(token, "terminal", baseDeps({ store }));
+    const result = await resolveConfirmation(token, "terminal", baseDeps({ store }));
 
-    expect(result).toContain("boom");
+    expect(result).toEqual({ status: "failed", error: "jira exited with code 1: boom" });
     // one-shot regardless of outcome: a retry with the same token now finds nothing staged
-    const retry = await tryConfirm(token, "terminal", baseDeps({ store }));
-    expect(retry?.toLowerCase()).toContain("nessuna conferma");
+    const retry = await resolveConfirmation(token, "terminal", baseDeps({ store }));
+    expect(retry).toEqual({ status: "not-found" });
   });
 
   // Regression guard for the stale-primer bug: the resolve half of a
@@ -98,7 +95,7 @@ describe("tryConfirm", () => {
         writes.push({ vaultPath, owner, tok, fields });
       };
 
-      await tryConfirm(
+      await resolveConfirmation(
         token,
         "terminal",
         baseDeps({ store, writeConfirmationNoteFn, now: () => new Date("2026-07-27T12:25:00Z") }),
@@ -129,7 +126,7 @@ describe("tryConfirm", () => {
         writes.push({ vaultPath, owner, tok, fields });
       };
 
-      await tryConfirm(token, "terminal", baseDeps({ store, writeConfirmationNoteFn }));
+      await resolveConfirmation(token, "terminal", baseDeps({ store, writeConfirmationNoteFn }));
 
       expect(writes).toEqual([
         { vaultPath: "/vault", owner: OWNER, tok: "k9m2-x7q4", fields: expect.objectContaining({ status: "failed" }) },
@@ -144,7 +141,7 @@ describe("tryConfirm", () => {
         writes.push(fields);
       };
 
-      await tryConfirm(token, "terminal", baseDeps({ store, writeConfirmationNoteFn }));
+      await resolveConfirmation(token, "terminal", baseDeps({ store, writeConfirmationNoteFn }));
 
       expect(writes).toEqual([expect.objectContaining({ requestedAt: expect.any(String) })]);
     });
@@ -158,9 +155,9 @@ describe("tryConfirm", () => {
         throw new Error("disk full");
       };
 
-      const result = await tryConfirm(token, "terminal", baseDeps({ store, writeConfirmationNoteFn }));
+      const result = await resolveConfirmation(token, "terminal", baseDeps({ store, writeConfirmationNoteFn }));
 
-      expect(result).toContain("KAN-1");
+      expect(result).toEqual({ status: "ok", data: { key: "KAN-1", deleted: true } });
     });
   });
 });
@@ -175,7 +172,7 @@ describe("a choice of a group", () => {
     ]);
     const writes: Array<{ token: string; command: string; status: string }> = [];
 
-    await tryConfirm("abc2-wxyz", "s1", baseDeps({
+    await resolveConfirmation("abc2-wxyz", "s1", baseDeps({
       store,
       writeConfirmationNoteFn: async (_v, _o, token, fields) => {
         writes.push({ token, command: fields.command, status: fields.status });
@@ -217,14 +214,6 @@ describe("resume", () => {
         },
       },
     ]);
-  });
-
-  it("tryConfirm answers a resume with the fixed RESUME_AFTER_CONFIRM sentence", async () => {
-    const store = stageResumable(async () => ({ ok: true, data: { text: "page" } }));
-
-    const reply = await tryConfirm("k9m2-x7q4", "s1", baseDeps({ store, onResume: () => {} }));
-
-    expect(reply).toBe(RESUME_AFTER_CONFIRM);
   });
 
   it("a failed resumable action is reported to the person, never resumed", async () => {

@@ -17,6 +17,7 @@ function runtimeWith(logs: string[]): ChannelRuntimeContext {
     log: (msg) => logs.push(msg),
     confirm: async () => null,
     admit: async () => ({ ok: true }),
+    i18n: { forRequest: async () => ({ locale: "en", t: (key) => key }) },
   };
 }
 
@@ -94,6 +95,27 @@ describe("loadChannels", () => {
     expect(loaded).toEqual([]);
     expect(build).not.toHaveBeenCalled();
     expect(logs.some((l) => l.includes("google-chat") && l.includes(`apiVersion ${CHANNEL_API_VERSION + 1}`))).toBe(true);
+  });
+
+  // #281: a channel's texts are its own, like a plugin's: a key outside its
+  // name, or the core's or the app's name, would shadow someone else's.
+  it("refuses a channel whose texts reach outside its name, or named core or app, without building it", () => {
+    const logs: string[] = [];
+    const build = mock(() => fakeProvider());
+    const loaded = loadChannels(
+      [
+        { ...channel("http", build), messages: { "http.ok": "ok", "core.confirm.done": "x" } },
+        { ...channel("app", build), messages: {} },
+        { ...channel("google-chat", () => fakeProvider()), messages: { "google-chat.ok": "ok" } },
+      ],
+      { runtime: runtimeWith(logs) },
+    );
+    expect(loaded.map((l) => l.name)).toEqual(["google-chat"]);
+    expect(build).not.toHaveBeenCalled();
+    expect(logs).toEqual([
+      'channel "http" not activated: key "core.confirm.done" is outside the "http." namespace',
+      'channel "app" not activated: "app" is reserved for the app\'s own texts',
+    ]);
   });
 
   it("isolates a build that throws and keeps the other channels", () => {

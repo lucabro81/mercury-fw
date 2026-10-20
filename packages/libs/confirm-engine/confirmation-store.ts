@@ -143,7 +143,7 @@ const TOKEN_SHAPE_RE = new RegExp(`^[${TOKEN_ALPHABET}]{${TOKEN_GROUP_LENGTH}}-[
  * mints — same alphabet, same length. Not a security boundary itself
  * (that's `take()`'s existence/session/expiry check) — just enough to
  * tell apart "this looks like a confirmation attempt" from "this is an
- * ordinary message", so a caller (`tryConfirm` in `confirm-flow.ts`) knows
+ * ordinary message", so a caller (`resolveConfirmation` in `confirm-flow.ts`) knows
  * whether to intercept at all before ever touching the store.
  */
 export function isTokenShaped(input: string): boolean {

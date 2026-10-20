@@ -67,8 +67,15 @@ export function createPeople(opts: PeopleOptions) {
   const ttlMs = opts.ttlMs ?? DEFAULT_IDENTITY_TTL_MS;
   const now = opts.now ?? Date.now;
   const log = opts.log ?? ((msg: string) => console.error(msg));
-  const { t } = (opts.texts ?? englishTexts()).forPerson(undefined);
+  const texts = opts.texts ?? englishTexts();
+  const { t } = texts.forPerson(undefined);
   const unknownMessage = t("core.access.unknown");
+  /** A refusal's text in the language `hint` asks for: whoever is refused has no language of their own. */
+  const refusalIn = (reason: "unknown" | "unavailable", hint: string): string =>
+    texts.forPerson(undefined, hint).t(reason === "unknown" ? "core.access.unknown" : "core.access.unavailable");
+  /** `identified`, its refusal worded for `hint` when there's one. */
+  const worded = (identified: Identified, hint: string | undefined): Identified =>
+    identified.ok || hint === undefined ? identified : { ...identified, message: refusalIn(identified.reason, hint) };
   const cache = new Map<string, { value: Identified; expiresAt: number }>();
   const inFlight = new Map<string, Promise<Identified>>();
   /** Bumped by `forget`: a lookup started before keeps its answer to itself. */
@@ -117,7 +124,8 @@ export function createPeople(opts: PeopleOptions) {
     return unavailable;
   };
 
-  async function identify(principal: Principal): Promise<Identified> {
+  /** Who `principal` is, cached per principal; a refusal in the instance's default language. */
+  async function identifyAs(principal: Principal): Promise<Identified> {
     const settled = settledByProvider(principal);
     if (settled) return settled;
     const owner = opts.links?.ownerOf(userKey(principal));
@@ -150,6 +158,9 @@ export function createPeople(opts: PeopleOptions) {
     return lookup;
   }
 
+  /** Who `principal` is; a refusal in the language `hint` asks for (an `Accept-Language` value), else the default. */
+  const identify = async (principal: Principal, hint?: string): Promise<Identified> => worded(await identifyAs(principal), hint);
+
   return {
     identify,
     /** Who `principal` is on its own, ignoring account links and the cache: what linking checks against. */
@@ -169,8 +180,8 @@ export function createPeople(opts: PeopleOptions) {
       generation.set(key, (generation.get(key) ?? 0) + 1);
     },
     /** Whether the core talks to `principal` at all: `identify` without the person. */
-    admit: async (principal: Principal): Promise<Admission> => {
-      const identified = await identify(principal);
+    admit: async (principal: Principal, hint?: string): Promise<Admission> => {
+      const identified = await identify(principal, hint);
       return identified.ok ? { ok: true } : identified;
     },
   };
