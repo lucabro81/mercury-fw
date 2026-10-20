@@ -90,4 +90,55 @@ describe("createProfileStore", () => {
     store.setName("static:carol", "Carol");
     expect(JSON.parse(await readFile(path, "utf8")).people["static:alice"]).toEqual({ name: 42 });
   });
+
+  describe("language", () => {
+    test("none before anything is written", async () => {
+      expect(createProfileStore({ path: await tempPath() }).languageOf("static:alice")).toBeUndefined();
+    });
+
+    test("is the person's, lowercase, survives a new store, and leaves their name alone", async () => {
+      const path = await tempPath();
+      const store = createProfileStore({ path, now: () => new Date("2026-10-20T10:00:00Z") });
+      store.setName("static:alice", "Luca");
+      expect(store.setLanguage("static:alice", " pt-BR ")).toBe("pt-br");
+      expect(store.languageOf("static:alice")).toBe("pt-br");
+      expect(store.nameOf("static:alice")).toBe("Luca");
+      expect(store.languageOf("static:bob")).toBeUndefined();
+      expect(createProfileStore({ path }).languageOf("static:alice")).toBe("pt-br");
+      expect(JSON.parse(await readFile(path, "utf8")).people["static:alice"]).toEqual({
+        name: "Luca",
+        language: "pt-br",
+        updatedAt: "2026-10-20T10:00:00.000Z",
+      });
+    });
+
+    test("a person can have a language and no name, and a name saved later keeps it", async () => {
+      const path = await tempPath();
+      const store = createProfileStore({ path });
+      store.setLanguage("static:alice", "it");
+      expect(store.nameOf("static:alice")).toBeUndefined();
+      expect(createProfileStore({ path }).languageOf("static:alice")).toBe("it");
+      store.setName("static:alice", "Luca");
+      expect(store.languageOf("static:alice")).toBe("it");
+    });
+
+    test("refuses what isn't a language tag, and keeps the old one", async () => {
+      const store = createProfileStore({ path: await tempPath() });
+      store.setLanguage("static:alice", "it");
+      for (const bad of ["", "italiano", "it_IT", "i", "it-", "it\nen", "../en"]) {
+        expect(() => store.setLanguage("static:alice", bad)).toThrow();
+      }
+      expect(store.languageOf("static:alice")).toBe("it");
+    });
+
+    test("an entry whose language isn't a tag is malformed: skipped, kept on disk", async () => {
+      const path = await tempPath();
+      await mkdir(dirname(path), { recursive: true });
+      await writeFile(path, JSON.stringify({ version: 1, people: { "static:alice": { name: "Luca", language: "klingon!" } } }));
+      const store = createProfileStore({ path, log: () => {} });
+      expect(store.nameOf("static:alice")).toBeUndefined();
+      store.setLanguage("static:bob", "en");
+      expect(JSON.parse(await readFile(path, "utf8")).people["static:alice"]).toEqual({ name: "Luca", language: "klingon!" });
+    });
+  });
 });
