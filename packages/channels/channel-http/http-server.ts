@@ -25,18 +25,18 @@
 import {
   detectLoginRequired,
   detectPendingConfirmation,
-  PENDING_CONFIRMATION_NOTE,
-  RESUME_AFTER_CONFIRM,
   type HandleTurn,
   type TurnSink,
   type Authenticate,
   type ChannelHostReads,
-  type ConfirmOutcome,
+  type ChannelI18n,
+  type ChannelRuntimeContext,
   type LoginOutcome,
   type Principal,
   type Admission,
   type ChannelLinking,
 } from "@mercury-fw/channel-types";
+import { englishHttp } from "./messages.ts";
 
 /**
  * A client's conversation id becomes part of the session key and the log
@@ -51,13 +51,24 @@ function forLog(text: string): string {
   return text.replace(/[\u0000-\u001f\u007f]/g, "?");
 }
 
-/** Resolves a bare confirmation token to a reply string, or `null` if the input isn't a token. Injected by the core (`ctx.confirm`). */
-export type ConfirmFn = (token: string, sessionKey: string, principal: Principal) => Promise<string | null>;
+/** Resolves a bare confirmation token to what to tell the person, or `null` if the input isn't a token. Injected by the core (`ctx.confirm`). */
+export type ConfirmFn = ChannelRuntimeContext["confirm"];
 /** The structured sibling of {@link ConfirmFn}, for the `/confirm` `resolved` flag. Injected by the core (`ctx.resolveConfirmation`). */
-export type ResolveConfirmationFn = (token: string, sessionKey: string, principal: Principal) => Promise<ConfirmOutcome>;
+export type ResolveConfirmationFn = NonNullable<ChannelRuntimeContext["resolveConfirmation"]>;
 
 /** Whether the core talks to an authenticated caller at all, injected by the core (`ctx.admit`); everyone when absent. */
-export type AdmitFn = (principal: Principal) => Promise<Admission>;
+export type AdmitFn = (principal: Principal, hint?: string) => Promise<Admission>;
+
+/** The language the caller's client asks for (`Accept-Language`), when it says. */
+function languageHint(req: Request): string | undefined {
+  const value = req.headers.get("accept-language")?.trim();
+  return value ? value : undefined;
+}
+
+/** `Content-Language` for a response to `principal` asking for `hint`, when the core says which language its texts are in. */
+async function contentLanguage(i18n: ChannelI18n | undefined, principal: Principal | null, hint: string | undefined): Promise<Record<string, string>> {
+  return i18n ? { "content-language": (await i18n.forRequest(principal, hint)).locale } : {};
+}
 
 export type TurnRequestDeps = {
   handleTurn: HandleTurn;
@@ -66,6 +77,8 @@ export type TurnRequestDeps = {
   admit?: AdmitFn;
   /** Bare-token interception before the model, injected by the core. */
   confirm: ConfirmFn;
+  /** The texts in the caller's language, injected by the core (`ctx.i18n`): what `Content-Language` says. */
+  i18n?: ChannelI18n;
   /** Allowed CORS origin echoed back to a browser UI; defaults to `*`. */
   corsOrigin?: string;
   /** Test seam for the ephemeral session key when the client sends no conversationId. */
@@ -92,7 +105,7 @@ function corsHeaders(origin: string): Record<string, string> {
   return {
     "access-control-allow-origin": origin,
     "access-control-allow-methods": "GET, POST, OPTIONS",
-    "access-control-allow-headers": "content-type, authorization",
+    "access-control-allow-headers": "content-type, authorization, accept-language",
   };
 }
 
@@ -104,20 +117,26 @@ function unauthorized(origin: string): Response {
   );
 }
 
-/** The core's refusal of an authenticated caller: 403 for someone it doesn't know, 503 when it couldn't tell, with what to tell them. */
-function notAdmitted(admission: Exclude<Admission, { ok: true }>, origin: string): Response {
+/** The core's refusal of an authenticated caller: 403 for someone it doesn't know, 503 when it couldn't tell, with what to tell them, in the language they asked for. */
+function notAdmitted(admission: Exclude<Admission, { ok: true }>, origin: string, language: Record<string, string>): Response {
   return Response.json(
     { ok: false, error: admission.message, reason: admission.reason },
-    { status: admission.reason === "unknown" ? 403 : 503, headers: corsHeaders(origin) },
+    { status: admission.reason === "unknown" ? 403 : 503, headers: { ...corsHeaders(origin), ...language } },
   );
 }
 
 /** The caller of `req`, authenticated and admitted, or the response refusing them. */
-async function caller(req: Request, deps: { authenticate: Authenticate; admit?: AdmitFn }, origin: string): Promise<Principal | Response> {
+async function caller(
+  req: Request,
+  deps: { authenticate: Authenticate; admit?: AdmitFn; i18n?: ChannelI18n },
+  origin: string,
+): Promise<Principal | Response> {
   const principal = await deps.authenticate(req);
   if (principal === null) return unauthorized(origin);
-  const admission = deps.admit ? await deps.admit(principal) : { ok: true as const };
-  return admission.ok ? principal : notAdmitted(admission, origin);
+  const hint = languageHint(req);
+  const admission = deps.admit ? await deps.admit(principal, hint) : { ok: true as const };
+  // A refused caller is nobody the core knows: their client's language, else the default.
+  return admission.ok ? principal : notAdmitted(admission, origin, await contentLanguage(deps.i18n, null, hint));
 }
 
 /** 204 preflight response for an `OPTIONS` request, carrying only CORS headers. */
@@ -187,6 +206,8 @@ export async function handleTurnRequest(req: Request, deps: TurnRequestDeps): Pr
     return Response.json({ ok: false, error: "invalid conversationId" }, { status: 400, headers: cors });
   }
   const sessionKey = `${principal.id}:${conversationId}`;
+  const hint = languageHint(req);
+  const language = await contentLanguage(deps.i18n, principal, hint);
 
   // Aborted when the client disconnects (see the stream's `cancel` below) so
   // the in-flight turn stops instead of running to completion — the "stop"
@@ -215,21 +236,19 @@ export async function handleTurnRequest(req: Request, deps: TurnRequestDeps): Pr
 
       // Same deterministic interception as every other channel — a
       // previously-approved mutation must never depend on the model.
-      const confirmReply = opening || resume ? null : await deps.confirm(text, sessionKey, principal);
-      if (confirmReply !== null && confirmReply !== RESUME_AFTER_CONFIRM) {
-        send("final", { text: confirmReply });
+      const reply = opening || resume ? null : await deps.confirm(text, sessionKey, principal, hint);
+      if (reply !== null && !reply.resume) {
+        send("final", { text: reply.text });
         close();
         return;
       }
       // The confirmed action's result goes back to the model: the turn runs again, on this stream.
-      const resuming = resume || confirmReply === RESUME_AFTER_CONFIRM;
+      const resuming = resume || reply?.resume === true;
 
       const sink: TurnSink = {
         onToolStart: (label, detail, toolCallId, toolName) => send("tool", { label, detail, toolCallId, name: toolName }),
         onToolFinish: (toolCallId, outcome) => send("tool_finish", { toolCallId, outcome }),
-        onTextChunk: (chunk) => {
-          if (chunk !== PENDING_CONFIRMATION_NOTE) send("text", { chunk });
-        },
+        onTextChunk: (chunk) => send("text", { chunk }),
         onReasoningChunk: (chunk, id) => send("reasoning", { chunk, id }),
         onReasoningEnd: (id, failed) => send("reasoning_end", { id, failed }),
         onStep: (step) => {
@@ -239,7 +258,10 @@ export async function handleTurnRequest(req: Request, deps: TurnRequestDeps): Pr
           if (login) send("login", { service: login.service, url: login.url });
         },
         onUsage: () => {},
-        finalize: async (finalText) => send("final", { text: finalText }),
+        // The core says when the text is its stand-in for an answer the
+        // model didn't write: a UI showing its own confirmation hides it.
+        finalize: async (finalText, info) =>
+          send("final", info?.pendingNote === undefined ? { text: finalText } : { text: finalText, pendingNote: info.pendingNote }),
         dispose: () => {},
       };
 
@@ -257,6 +279,7 @@ export async function handleTurnRequest(req: Request, deps: TurnRequestDeps): Pr
             ...(named ? { resume: deps.resumeMaxChars === undefined ? {} : { maxChars: deps.resumeMaxChars } } : {}),
             ...(opening ? { opening: true as const } : {}),
             ...(resuming ? { resumeAfterConfirm: true as const } : {}),
+            ...(hint === undefined ? {} : { languageHint: hint }),
           },
           sink,
         );
@@ -276,7 +299,7 @@ export async function handleTurnRequest(req: Request, deps: TurnRequestDeps): Pr
     },
   });
 
-  return new Response(stream, { headers: { ...SSE_HEADERS, ...cors } });
+  return new Response(stream, { headers: { ...SSE_HEADERS, ...cors, ...language } });
 }
 
 export type ConfirmRequestDeps = {
@@ -284,6 +307,8 @@ export type ConfirmRequestDeps = {
   admit?: AdmitFn;
   resolveConfirmation: ResolveConfirmationFn;
   corsOrigin?: string;
+  /** The texts in the caller's language, injected by the core: what `Content-Language` says. */
+  i18n?: ChannelI18n;
 };
 
 /**
@@ -294,7 +319,8 @@ export type ConfirmRequestDeps = {
  * keyed on the caller's own session (`<principal.id>:<conversationId>`), so a
  * token staged in someone else's conversation is never found. `resolved: true` means the token matched a
  * pending confirmation and its staged action was consumed and run; the `text`
- * then reports whether that execution succeeded. `resolved: false` means the
+ * (the core's, in the caller's language) then reports whether that execution
+ * succeeded. `resolved: false` means the
  * token was not a pending confirmation (unknown, expired, already used, or not
  * even token-shaped). `resume: true` (with no `text`) means the action handed
  * its result back to the model: the client hears its answer by opening
@@ -319,18 +345,19 @@ export async function handleConfirmRequest(req: Request, deps: ConfirmRequestDep
   if (!CONVERSATION_ID.test(conversationId)) {
     return Response.json({ ok: false, error: "invalid conversationId" }, { status: 400, headers: cors });
   }
-  const outcome = await deps.resolveConfirmation(token, `${principal.id}:${conversationId}`, principal);
+  const hint = languageHint(req);
+  const headers = { ...cors, ...(await contentLanguage(deps.i18n, principal, hint)) };
+  const outcome = await deps.resolveConfirmation(token, `${principal.id}:${conversationId}`, principal, hint);
   switch (outcome.status) {
     case "not-a-token":
     case "not-found":
-      return Response.json({ ok: true, resolved: false }, { headers: cors });
+      return Response.json({ ok: true, resolved: false }, { headers });
     case "ok":
-      return Response.json({ ok: true, resolved: true, text: `Confermato ed eseguito: ${JSON.stringify(outcome.data)}` }, { headers: cors });
     case "failed":
-      return Response.json({ ok: true, resolved: true, text: `Confermato, ma l'esecuzione è fallita: ${outcome.error}` }, { headers: cors });
+      return Response.json({ ok: true, resolved: true, text: outcome.text }, { headers });
     case "resume":
       // The result went back to the model: the client opens `/turn { resume: true }` to hear its answer.
-      return Response.json({ ok: true, resolved: true, resume: true }, { headers: cors });
+      return Response.json({ ok: true, resolved: true, resume: true }, { headers });
   }
 }
 
@@ -365,11 +392,11 @@ function linkRoutes(deps: LinkRequestDeps): Record<string, { POST: (req: Request
 export type CompleteLoginFn = (state: string, code: string) => Promise<LoginOutcome>;
 
 /** A plain-text page for the person's browser, at the end of their login. */
-function loginPage(text: string, status: number): Response {
+function loginPage(text: string, status: number, language: Record<string, string> = {}): Response {
   // The URL carried the code and the state: neither kept nor passed on.
   return new Response(text, {
     status,
-    headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store", "referrer-policy": "no-referrer" },
+    headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store", "referrer-policy": "no-referrer", ...language },
   });
 }
 
@@ -383,32 +410,41 @@ function loginPage(text: string, status: number): Response {
  */
 export async function handleLoginCallback(
   req: Request,
-  deps: { complete: CompleteLoginFn; assistantName?: string },
+  deps: { complete: CompleteLoginFn; assistantName?: string; i18n?: ChannelI18n },
 ): Promise<Response> {
   const assistant = deps.assistantName ?? "Mercury";
+  // Nobody is known on this page: the browser's language, then the default.
+  const texts = deps.i18n ? await deps.i18n.forRequest(null, languageHint(req)) : undefined;
+  const t = texts?.t ?? englishHttp;
+  const language: Record<string, string> = texts ? { "content-language": texts.locale } : {};
   const params = new URL(req.url).searchParams;
   const error = params.get("error");
   if (error !== null) {
     const reason = error.replace(/[^A-Za-z0-9_.-]/g, "").slice(0, 64);
-    return loginPage(`The login didn't happen (${reason}). Ask ${assistant} again for a new link.`, 400);
+    return loginPage(t("http.login.denied", { reason, assistant }), 400, language);
   }
   const code = params.get("code");
   const state = params.get("state");
-  if (!code || !state) return loginPage(`The login link came back without a code or a state. Ask ${assistant} again for a new link.`, 400);
+  if (!code || !state) return loginPage(t("http.login.incomplete", { assistant }), 400, language);
   const outcome = await deps.complete(state, code);
-  return outcome.ok
-    ? loginPage(`You're logged in to ${outcome.service}. Go back to the conversation and ask again.`, 200)
-    : loginPage(outcome.error, 400);
+  // A failed login's text is the core's, in the language of whoever started it: no header claims otherwise.
+  return outcome.ok ? loginPage(t("http.login.done", { service: outcome.service }), 200, language) : loginPage(outcome.error, 400);
 }
 
 /** The login callback route, mounted when the server can complete logins. */
 function loginRoutes(
   complete: CompleteLoginFn,
   assistantName: string | undefined,
+  i18n: ChannelI18n | undefined,
 ): Record<string, { GET: (req: Request) => Promise<Response> }> {
   return {
     "/login/callback": {
-      GET: (req) => handleLoginCallback(req, { complete, ...(assistantName === undefined ? {} : { assistantName }) }),
+      GET: (req) =>
+        handleLoginCallback(req, {
+          complete,
+          ...(assistantName === undefined ? {} : { assistantName }),
+          ...(i18n === undefined ? {} : { i18n }),
+        }),
     },
   };
 }
@@ -548,12 +584,13 @@ export function startHttpServer(deps: HttpServerDeps): ReturnType<typeof Bun.ser
             ...(deps.admit === undefined ? {} : { admit: deps.admit }),
             resolveConfirmation: deps.resolveConfirmation,
             corsOrigin: origin,
+            ...(deps.i18n === undefined ? {} : { i18n: deps.i18n }),
           }),
         OPTIONS: () => preflight(origin),
       },
       "/openapi.yaml": { GET: () => openApiResponse(origin), OPTIONS: () => preflight(origin) },
       ...(deps.reads ? readRoutes(deps.reads, deps.authenticate, origin, deps.admit) : {}),
-      ...(deps.completeLogin ? loginRoutes(deps.completeLogin, deps.assistantName) : {}),
+      ...(deps.completeLogin ? loginRoutes(deps.completeLogin, deps.assistantName, deps.i18n) : {}),
       ...(deps.linking ? linkRoutes({ ...deps, start: deps.linking.start, corsOrigin: origin }) : {}),
     },
     error: (err) =>

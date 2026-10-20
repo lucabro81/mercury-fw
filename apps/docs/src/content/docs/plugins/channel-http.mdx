@@ -83,5 +83,11 @@ one message to POST localhost:4100/turn with curl, showing me the final event.
   `HTTP_SURFACE_PUBLIC_URL`, the address people's browsers reach the channel at, because the service sends them
   back to `<HTTP_SURFACE_PUBLIC_URL>/login/callback`.
 - **Browsers on another origin** can call it: set `HTTP_SURFACE_CORS_ORIGIN` to your interface's origin.
+- **Languages.** The texts the person reads that aren't the model's (a status line, a choice's label, a
+  confirmation's reply) come in their language: the one they asked the agent for, else the one the request's
+  `Accept-Language` header asks for, which browsers send on their own. A plain confirmation has one choice with an
+  empty label, which your interface words itself (a "Confirm" button), and when the model wrote nothing because the
+  turn is waiting for a confirmation, the `final` event says so with `pendingNote`, so your interface can hide that
+  sentence next to its own confirmation. See [Languages](../../concepts/languages/).
 
 The [HTTP API reference](../../reference/http-api/) describes every route and event.

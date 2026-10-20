@@ -11,7 +11,7 @@
  * injected (`confirm`/`resolveConfirmation`), so this package never imports the app.
  */
 import { startHttpServer, type AdmitFn, type CompleteLoginFn, type ConfirmFn, type ResolveConfirmationFn } from "./http-server.ts";
-import type { Authenticate, Provider, HandleTurn, ChannelHostReads, ChannelLinking } from "@mercury-fw/channel-types";
+import type { Authenticate, Provider, HandleTurn, ChannelHostReads, ChannelI18n, ChannelLinking } from "@mercury-fw/channel-types";
 
 export type HttpProviderDeps = {
   port: number;
@@ -35,6 +35,8 @@ export type HttpProviderDeps = {
   resumeMaxChars?: number;
   /** What the pages people read call the assistant. */
   assistantName?: string;
+  /** The texts in each caller's language (`ctx.i18n`). */
+  i18n?: ChannelI18n;
 };
 
 export function createHttpProvider(deps: HttpProviderDeps): Provider & { stop(): Promise<void> } {
@@ -54,6 +56,7 @@ export function createHttpProvider(deps: HttpProviderDeps): Provider & { stop():
         ...(deps.linking === undefined ? {} : { linking: deps.linking }),
         ...(deps.resumeMaxChars === undefined ? {} : { resumeMaxChars: deps.resumeMaxChars }),
         ...(deps.assistantName === undefined ? {} : { assistantName: deps.assistantName }),
+        ...(deps.i18n === undefined ? {} : { i18n: deps.i18n }),
       });
       deps.logins?.accept(deps.logins.callbackUrl);
     },

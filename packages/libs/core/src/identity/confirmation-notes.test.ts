@@ -4,7 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createConfirmationStore, createStageConfirmation } from "@mercury-fw/confirm-engine";
 import { createTurnRunner } from "../router/turn-runner.ts";
-import { bindConfirm } from "./confirm-binding.ts";
+import { bindConfirm, confirmReply } from "./confirm-binding.ts";
+import { CORE_MESSAGES } from "../i18n/core-messages.ts";
+import { createI18n, createTexts, englishTexts } from "../i18n/i18n.ts";
 import { initVault } from "../wiki/vault-init.ts";
 import { writeConfirmationNote } from "../wiki/wiki-note.ts";
 import { userKey } from "./user-key.ts";
@@ -74,7 +76,7 @@ describe("a confirmation's note, staged in a turn then confirmed from the channe
       } as never;
 
       await handleTurn({ channel: "test", multiUser: false, text: "delete X-1", sessionKey: "s", principal, logPrefix: "" }, sink);
-      expect(await bindConfirm(confirmDeps).confirm(token, "s", principal)).toBe('Confermato ed eseguito: "done"');
+      expect(await bindConfirm(confirmDeps).confirm(token, "s", principal)).toEqual({ text: "Confirmed and done." });
 
       const notes = await confirmationNotes(vaultPath);
       expect(Object.keys(notes)).toEqual([`users/${encodeURIComponent(userKey(principal))}/confirmations/${token}.md`]);
@@ -109,7 +111,7 @@ describe("a confirmation's note, staged in a turn then confirmed from the channe
     const chat = { id: "users/1", provider: "google-chat" as const };
 
     const refused = bindConfirm(confirmDeps, async () => ({ ok: false, reason: "unknown", message: "Ask for access." }));
-    expect(await refused.confirm(token, "s", chat)).toBe("Ask for access.");
+    expect(await refused.confirm(token, "s", chat)).toEqual({ text: "Ask for access." });
     expect((await refused.resolveConfirmation(token, "s", chat)).status).toBe("not-found");
 
     const asAlice = bindConfirm(confirmDeps, async () => ({ ok: true, operator: false, person: { key: "people:alice", roles: [] } }));
@@ -137,15 +139,45 @@ describe("a confirmation's note, staged in a turn then confirmed from the channe
   it("hands a link code to linking, with who sent it, whoever they are", async () => {
     const store = createConfirmationStore();
     const confirmDeps = { store, vaultPath: "/nowhere", writeConfirmationNoteFn: writeConfirmationNote };
-    const redeemed: Array<[string, string]> = [];
+    const redeemed: Array<[string, string, string | undefined]> = [];
     const bound = bindConfirm(
       confirmDeps,
       async () => ({ ok: false, reason: "unknown", message: "Ask for access." }),
-      async (principal, text) => (redeemed.push([`${principal.provider}:${principal.id}`, text]), "Linked."),
+      async (principal, text, hint) => (redeemed.push([`${principal.provider}:${principal.id}`, text, hint]), "Linked."),
     );
     const chat = { id: "users/1", provider: "google-chat" as const };
-    expect(await bound.confirm("a1b2-c3d4-e5f6", "s", chat)).toBe("Linked.");
-    expect(redeemed).toEqual([["google-chat:users/1", "a1b2-c3d4-e5f6"]]);
+    expect(await bound.confirm("a1b2-c3d4-e5f6", "s", chat, "it")).toEqual({ text: "Linked." });
+    expect(redeemed).toEqual([["google-chat:users/1", "a1b2-c3d4-e5f6", "it"]]);
     expect(await bound.confirm("hello", "s", chat)).toBeNull();
+  });
+
+  // #281: what the person is told about a confirmation is the core's, in
+  // their language; the result of an action is never shown as raw data.
+  describe("the replies", () => {
+    const english = englishTexts().forPerson(undefined).t;
+
+    it("say what happened, without the action's raw result", () => {
+      expect(confirmReply({ status: "not-a-token" }, english)).toBeNull();
+      expect(confirmReply({ status: "not-found" }, english)).toEqual({ text: CORE_MESSAGES["core.confirm.not-found"]! });
+      expect(confirmReply({ status: "ok", data: { key: "KAN-1" } }, english)).toEqual({ text: "Confirmed and done." });
+      expect(confirmReply({ status: "failed", error: "boom" }, english)).toEqual({ text: "Confirmed, but it failed: boom" });
+      expect(confirmReply({ status: "resume" }, english)).toEqual({ text: CORE_MESSAGES["core.confirm.resume"]!, resume: true });
+    });
+
+    it("come out in the person's language, else the channel's hint's", async () => {
+      const store = createConfirmationStore();
+      const confirmDeps = { store, vaultPath: "/nowhere", writeConfirmationNoteFn: async () => {} };
+      const texts = createTexts(
+        createI18n({ english: CORE_MESSAGES, locales: { it: { "core.confirm.not-found": "Nessuna conferma." } } }),
+        (key) => (key === "people:alice" ? "it" : undefined),
+      );
+      const asAlice = bindConfirm(confirmDeps, async () => ({ ok: true, operator: false, person: { key: "people:alice", roles: [] } }), undefined, texts);
+      const asBob = bindConfirm(confirmDeps, async () => ({ ok: true, operator: false, person: { key: "people:bob", roles: [] } }), undefined, texts);
+      const chat = { id: "users/1", provider: "google-chat" as const };
+      expect(await asAlice.confirm("k9m2-x7q4", "s", chat)).toEqual({ text: "Nessuna conferma." });
+      expect(await asBob.confirm("k9m2-x7q4", "s", chat)).toEqual({ text: CORE_MESSAGES["core.confirm.not-found"]! });
+      expect(await asBob.confirm("k9m2-x7q4", "s", chat, "it-IT")).toEqual({ text: "Nessuna conferma." });
+      expect(await asBob.resolveConfirmation("k9m2-x7q4", "s", chat, "it")).toEqual({ status: "not-found", text: "Nessuna conferma." });
+    });
   });
 });

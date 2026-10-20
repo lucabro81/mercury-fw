@@ -6,7 +6,7 @@
  * paper-trail note — so the caller never touches the store internals or the
  * wiki, and the confirmation subsystem stays the one place that knows an action
  * is confirmable. The "resolve" side (running the staged thunk once the token
- * comes back) is `tryConfirm` in `confirm-flow.ts`.
+ * comes back) is `resolveConfirmation` in `confirm-flow.ts`.
  *
  * Bound per session (sessionKey/owner/vaultPath) at the composition root, so
  * the returned function takes only the action itself. `owner` is the person

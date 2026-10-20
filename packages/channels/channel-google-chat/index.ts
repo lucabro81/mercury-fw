@@ -9,6 +9,7 @@
  */
 import type { ChannelPlugin, ChannelRuntimeContext } from "@mercury-fw/channel-types";
 import { createGoogleChatProvider } from "./google-chat-provider.ts";
+import { GOOGLE_CHAT_MESSAGES } from "./messages.ts";
 
 /** Reads a required env var, failing loudly (caught by the channel loader) instead of silently degrading. */
 function require(env: ChannelRuntimeContext["env"], name: string): string {
@@ -22,8 +23,9 @@ function require(env: ChannelRuntimeContext["env"], name: string): string {
 export const googleChatChannel: ChannelPlugin = {
   // The contract this channel is written for, as a literal: importing
   // CHANNEL_API_VERSION would report whichever contract is installed.
-  apiVersion: 5,
+  apiVersion: 6,
   name: "google-chat",
+  messages: GOOGLE_CHAT_MESSAGES,
   build: (ctx) => {
     // No subscription configured ⇒ this instance simply doesn't run Google Chat.
     const subscription = ctx.env.GOOGLE_CHAT_PUBSUB_SUBSCRIPTION;
@@ -40,6 +42,7 @@ export const googleChatChannel: ChannelPlugin = {
       subscription,
       confirm: ctx.confirm,
       ...(ctx.resolveConfirmation === undefined ? {} : { resolveConfirmation: ctx.resolveConfirmation }),
+      i18n: ctx.i18n,
       log: ctx.log,
     });
   },

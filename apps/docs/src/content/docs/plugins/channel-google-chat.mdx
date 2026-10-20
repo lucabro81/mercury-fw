@@ -9,7 +9,9 @@ import PluginFacts from "../../../components/PluginFacts.astro";
 
 With this channel the agent is a **Chat app** in your Google Workspace: people find it in Google Chat, message it
 directly or add it to a space, and it answers there. While it works it shows a card with what it's doing, and an
-action that needs [confirmation](../../concepts/confirmations/) comes with a button.
+action that needs [confirmation](../../concepts/confirmations/) comes with a button. What it shows people itself
+(the cards, the buttons, the replies to a confirmation) is in their [language](../../concepts/languages/): the one
+they asked the agent for, else their Chat client's when the message says.
 
 Each message reaches the agent as `google-chat:users/<id>`, the sender's Chat account, with their email when Google
 vouches for it, which a [directory](../../concepts/people/) can use to recognize them.

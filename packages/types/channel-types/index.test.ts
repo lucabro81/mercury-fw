@@ -1,32 +1,42 @@
-import { describe, expect, it } from "bun:test";
-import { confirmReply, RESUME_AFTER_CONFIRM } from "./index.ts";
+import { describe, expect, test } from "bun:test";
+import { detectPendingConfirmation, loginLinkText, type Translate } from "./index.ts";
 
-// #269: the reply to each outcome lives here, so a channel that resolves a token
-// through `resolveConfirmation` says the same as one using `confirm`.
-describe("confirmReply", () => {
-  it("has no reply for input that isn't a token", () => {
-    expect(confirmReply({ status: "not-a-token" })).toBeNull();
+/** The texts by key and params, so a test sees what a channel asked for. */
+const echo: Translate = (key, params) => (params ? `${key} ${JSON.stringify(params)}` : key);
+
+describe("detectPendingConfirmation", () => {
+  const step = (output: unknown) => ({
+    toolCalls: [{ toolCallId: "1", toolName: "jiraCommand", input: {} }],
+    toolResults: [{ toolCallId: "1", toolName: "jiraCommand", output }],
+    content: [],
   });
 
-  it("says there's nothing pending for a token that matches nothing", () => {
-    expect(confirmReply({ status: "not-found" })).toBe(
-      "Nessuna conferma in sospeso per questo token — potrebbe essere scaduta, già usata, o mai esistita.",
-    );
+  // #281: the single choice's label was a fixed Italian "Conferma"; it's the
+  // channel's own word now, in the person's language.
+  test("a staging with one token is one choice with an empty label, for the channel to word", () => {
+    expect(detectPendingConfirmation(step({ ok: false, pendingConfirmation: true, token: "T1", summary: "jira issue delete KAN-1" }))).toEqual({
+      token: "T1",
+      summary: "jira issue delete KAN-1",
+      choices: [{ token: "T1", label: "" }],
+    });
   });
 
-  it("reports a staged action that failed, with its error", () => {
-    expect(confirmReply({ status: "failed", error: "jira exited with code 1: boom" })).toBe(
-      "Confermato, ma l'esecuzione è fallita: jira exited with code 1: boom",
-    );
+  test("a staging with choices keeps them as the tool labelled them", () => {
+    const choices = [
+      { token: "T1", label: "Only this time" },
+      { token: "T2", label: "Always for example.org" },
+    ];
+    expect(detectPendingConfirmation(step({ ok: false, pendingConfirmation: true, token: "T1", summary: "s", choices }))?.choices).toEqual(choices);
   });
 
-  it("reports a staged action that ran, with its data", () => {
-    expect(confirmReply({ status: "ok", data: { key: "KAN-1", deleted: true } })).toBe(
-      'Confermato ed eseguito: {"key":"KAN-1","deleted":true}',
-    );
+  test("nothing staged, nothing found", () => {
+    expect(detectPendingConfirmation(step({ ok: true }))).toBeNull();
   });
+});
 
-  it("answers a resumed turn with the sentence a channel recognizes", () => {
-    expect(confirmReply({ status: "resume" })).toBe(RESUME_AFTER_CONFIRM);
+describe("loginLinkText", () => {
+  test("names the service through the core's key, or says the service when there's no name", () => {
+    expect(loginLinkText({ service: "jira", url: "https://x" }, echo)).toBe('core.login.link {"service":"jira"}');
+    expect(loginLinkText({ service: "", url: "https://x" }, echo)).toBe("core.login.link-any");
   });
 });

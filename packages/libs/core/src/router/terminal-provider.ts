@@ -11,18 +11,17 @@
  * that expects a `Notifier` never silently loses a message.
  */
 import { startTerminalRepl } from "./terminal.ts";
-import { tryConfirm, type ConfirmationStore } from "@mercury-fw/confirm-engine";
+import { resolveConfirmation, type ConfirmationStore } from "@mercury-fw/confirm-engine";
 import { parseDumpCommand, defaultDumpPath, writeDump, formatContextUsage } from "./tool-log.ts";
 import { getLoadedContextLength } from "../model/context-size.ts";
 import { detectPendingConfirmation } from "../session/pending-confirmation.ts";
-import { RESUME_AFTER_CONFIRM } from "@mercury-fw/channel-types";
-import { PENDING_CONFIRMATION_NOTE } from "../session/agent-turn.ts";
 import type { Provider, HandleTurn, TurnSink } from "./provider.ts";
 import { userKey } from "../identity/user-key.ts";
 import { OPERATOR_PRINCIPAL } from "../identity/people.ts";
 import type { StepInfo } from "../session/step-info.ts";
 import type { writeConfirmationNote } from "../wiki/wiki-note.ts";
 import { englishTexts, type Texts } from "../i18n/i18n.ts";
+import { confirmReply } from "../identity/confirm-binding.ts";
 
 const TERMINAL_SESSION_KEY = "terminal";
 /** The terminal is a single-user debug console: one fixed principal nobody vouched for, so its sessions stay out of episodic memory. */
@@ -41,8 +40,8 @@ export type TerminalProviderDeps = {
   getLoadedContextLengthFn?: typeof getLoadedContextLength;
   /** Test seam; defaults to the real `startTerminalRepl`. */
   startTerminalReplFn?: typeof startTerminalRepl;
-  /** Test seam; defaults to the real `tryConfirm`. */
-  tryConfirmFn?: typeof tryConfirm;
+  /** Test seam; defaults to the real `resolveConfirmation`. */
+  resolveConfirmationFn?: typeof resolveConfirmation;
   /** Test seam; defaults to `console.error`. */
   stderrWrite?: (s: string) => void;
   /** The texts of its own lines, in the terminal person's language (the app's `texts`); English when absent. */
@@ -53,7 +52,7 @@ export type TerminalProviderDeps = {
 export function createTerminalProvider(deps: TerminalProviderDeps): Provider {
   const stderrWrite = deps.stderrWrite ?? ((s: string) => console.error(s));
   const getLoadedContextLengthFn = deps.getLoadedContextLengthFn ?? getLoadedContextLength;
-  const tryConfirmFn = deps.tryConfirmFn ?? tryConfirm;
+  const resolveConfirmationFn = deps.resolveConfirmationFn ?? resolveConfirmation;
   const startTerminalReplFn = deps.startTerminalReplFn ?? startTerminalRepl;
   const texts = deps.texts ?? englishTexts();
   /** The terminal person's texts, read again each time: they can change their language mid-session. */
@@ -76,21 +75,24 @@ export function createTerminalProvider(deps: TerminalProviderDeps): Provider {
 
           // Same deterministic interception as every other channel — never
           // let running a previously-approved mutation depend on the model.
-          const confirmReply = await tryConfirmFn(input, TERMINAL_SESSION_KEY, {
+          const outcome = await resolveConfirmationFn(input, TERMINAL_SESSION_KEY, {
             ...deps.confirmDeps,
             owner: userKey(TERMINAL_PRINCIPAL),
           });
-          if (confirmReply !== null && confirmReply !== RESUME_AFTER_CONFIRM) {
+          const reply = confirmReply(outcome, terminalT());
+          if (reply !== null && !reply.resume) {
             // A turn of its own, with no model steps: /dump mustn't show the one before.
             lastSteps = [];
-            return confirmReply;
+            return reply.text;
           }
           // The confirmed action's result goes back to the model: the session's turn runs again.
-          const resuming = confirmReply === RESUME_AFTER_CONFIRM;
+          const resuming = reply?.resume === true;
 
           lastSteps = [];
           const t = terminalT();
           let finalText = "";
+          // The core's stand-in for an answer the model didn't write, when the turn ended on one.
+          let pendingNote: string | undefined;
           // Keyed by the SDK's own reasoning-block id: a tool-calling turn
           // can reason more than once (before a tool call, again after
           // seeing its result), each burst getting its own header/close
@@ -102,13 +104,7 @@ export function createTerminalProvider(deps: TerminalProviderDeps): Provider {
           const dim = (label: string) => aside(`\x1b[2m\x1b[3m${label}\x1b[0m\n`);
           const sink: TurnSink = {
             onToolStart: dim,
-            // PENDING_CONFIRMATION_NOTE is dropped here: onStep (below)
-            // already printed the specific instruction (command + token)
-            // for the same step — the generic note would be a second,
-            // redundant line saying nothing new.
-            onTextChunk: (chunk) => {
-              if (chunk !== PENDING_CONFIRMATION_NOTE) onChunk(chunk);
-            },
+            onTextChunk: (chunk) => onChunk(chunk),
             // Only ever fires for a model that actually supports Ollama's
             // extended thinking (see src/index.ts's OLLAMA_THINK) — a
             // non-reasoning model means this is simply never called, so
@@ -141,8 +137,9 @@ export function createTerminalProvider(deps: TerminalProviderDeps): Provider {
             onUsage: (tokens) => {
               lastInputTokens = tokens;
             },
-            finalize: async (text) => {
+            finalize: async (text, info) => {
               finalText = text;
+              pendingNote = info?.pendingNote;
             },
             dispose: () => {},
           };
@@ -165,10 +162,12 @@ export function createTerminalProvider(deps: TerminalProviderDeps): Provider {
           if (contextLength === null) {
             contextLength = await getLoadedContextLengthFn(deps.ollamaHost, deps.ollamaModel);
           }
-          // The note's chunk was dropped above, so it isn't returned either,
-          // also when a surfaced display follows it.
-          return finalText.startsWith(PENDING_CONFIRMATION_NOTE)
-            ? finalText.slice(PENDING_CONFIRMATION_NOTE.length).replace(/^\n\n/, "")
+          // The core's pending note isn't printed: onStep already printed
+          // the specific instruction (command + token) for the same step, so
+          // the generic note would be a second line saying nothing new. Only
+          // a list surfaced after it stays.
+          return pendingNote !== undefined && finalText.startsWith(pendingNote)
+            ? finalText.slice(pendingNote.length).replace(/^\n\n/, "")
             : finalText;
         },
         undefined,

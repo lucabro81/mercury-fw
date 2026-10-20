@@ -56,8 +56,8 @@ export function createLinking(deps: {
   texts?: Texts;
 }) {
   const texts = deps.texts ?? englishTexts();
-  /** The instance's default language: for whoever isn't known, with no code to go by. */
-  const fallback = () => texts.forPerson(undefined).t;
+  /** The language of whoever isn't known, with no code to go by: the channel's hint, else the default. */
+  const fallback = (hint?: string) => texts.forPerson(undefined, hint).t;
   const assistantName = deps.assistantName ?? DEFAULT_ASSISTANT_NAME;
   const now = deps.now ?? Date.now;
   const log = deps.log ?? ((msg: string) => console.error(msg));
@@ -89,15 +89,15 @@ export function createLinking(deps: {
       return { ok: true, code, expiresAt: new Date(expiresAt).toISOString() };
     },
 
-    /** The reply to `text` from `principal` when it's a link code, or null when it isn't one. */
-    redeem: async (principal: Principal, text: string): Promise<string | null> => {
+    /** The reply to `text` from `principal` when it's a link code, or null when it isn't one; in the language of whoever asked for the code, else the channel's `hint`'s. */
+    redeem: async (principal: Principal, text: string, hint?: string): Promise<string | null> => {
       if (!isLinkCode(text)) return null;
-      if (principal === OPERATOR_PRINCIPAL || principal.provider === "none") return fallback()("core.link.terminal");
+      if (principal === OPERATOR_PRINCIPAL || principal.provider === "none") return fallback(hint)("core.link.terminal");
       prune();
       const code = text.trim();
       const pending = codes.get(code);
-      if (pending === undefined) return fallback()("core.link.invalid");
-      const { t } = texts.forPerson(pending.ownerKey);
+      if (pending === undefined) return fallback(hint)("core.link.invalid");
+      const { t } = texts.forPerson(pending.ownerKey, hint);
       const owner = { owner: pending.ownerName };
       const identity = userKey(principal);
       if (identity === userKey(pending.owner)) return t("core.link.same-account");

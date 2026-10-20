@@ -240,6 +240,19 @@ describe("the replies' language", () => {
     expect(await linking.redeem(chat, code)).toBe("Fatto: questo account ora è Alice.");
   });
 
+  // Review of #281: a link code reached the core with the channel's hint, but
+  // the replies ignored it.
+  test("follows the channel's hint when the person saved no language", async () => {
+    const hinted = createTexts(
+      createI18n({ english: CORE_MESSAGES, locales: { it: italian } }),
+      () => undefined,
+    );
+    const { linking } = setup({ texts: hinted });
+    expect(await linking.redeem(chat, "zzzz-zzzz-zzzz", "it-IT")).toBe("Codice non valido.");
+    const code = await codeFor(linking, alice);
+    expect(await linking.redeem(chat, code, "it")).toBe("Collego questo account a Alice. Rimanda il codice per confermare.");
+  });
+
   test("is the instance's default for a code nobody asked for", async () => {
     const { linking } = setup({ texts });
     expect(await linking.redeem(chat, "zzzz-zzzz-zzzz")).toBe(CORE_MESSAGES["core.link.invalid"]!);

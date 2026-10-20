@@ -20,7 +20,8 @@ const fullCtx = (over: Partial<ChannelRuntimeContext> = {}): ChannelRuntimeConte
   log: () => {},
   confirm: async () => null,
   admit: async () => ({ ok: true }),
-  resolveConfirmation: async () => ({ status: "not-a-token" }),
+  resolveConfirmation: async () => ({ status: "not-a-token", text: null }),
+  i18n: { forRequest: async () => ({ locale: "en", t: (key) => key }) },
   reads,
   authenticate: async () => null,
   ...over,
@@ -30,9 +31,14 @@ describe("httpChannel", () => {
   // A literal, not CHANNEL_API_VERSION: the import reports whatever contract
   // is installed, so an old channel next to a newer core would claim the new
   // version and be loaded. The literal is the contract this code was written for.
-  it("declares the http name at channel api version 5", () => {
+  it("declares the http name at channel api version 6", () => {
     expect(httpChannel.name).toBe("http");
-    expect(httpChannel.apiVersion).toBe(5);
+    expect(httpChannel.apiVersion).toBe(6);
+  });
+
+  it("declares its texts in English, every key under http.", () => {
+    expect(Object.keys(httpChannel.messages ?? {}).length).toBeGreaterThan(0);
+    expect(Object.keys(httpChannel.messages ?? {}).filter((key) => !key.startsWith("http."))).toEqual([]);
   });
 
   it("builds a provider when confirm, resolveConfirmation, reads and authenticate are all present", () => {

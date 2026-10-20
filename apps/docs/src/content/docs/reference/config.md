@@ -103,7 +103,7 @@ The languages the agent speaks, beyond English. See [Languages](../../concepts/l
 | Field | |
 |---|---|
 | `locales` | The app's language files, by language tag: `{ en, it }`, each imported from `locales/<tag>.json`. A file maps a text's key to its translation; `en` replaces the English texts it names, and also declares the app's own `app.` texts. |
-| `defaultLocale` | The language of someone who hasn't picked one: `en` (the default) or a key of `locales`. Any other value stops the agent at startup. |
+| `defaultLocale` | The language of someone who hasn't picked one and whose app asks for none the agent has: `en` (the default) or a key of `locales`. Any other value stops the agent at startup. |
 
 ## `persona`
 

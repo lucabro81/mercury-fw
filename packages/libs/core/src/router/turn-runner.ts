@@ -172,7 +172,7 @@ export type TurnRunnerDeps = {
    * answers the refusal and runs nothing. Defaults to no directory: the person
    * is whoever the channel says.
    */
-  identify?: (principal: InboundTurn["principal"]) => Promise<Identified>;
+  identify?: (principal: InboundTurn["principal"], hint?: string) => Promise<Identified>;
   /** Takes what a confirmation kept for the session's resumed turn (see
    * `InboundTurn.resumeAfterConfirm`); nothing is ever kept when absent. */
   takeResumed?: (sessionKey: string) => ResumedAction | undefined;
@@ -189,6 +189,8 @@ export type TurnRunnerDeps = {
     who: TurnWho,
     onToolStart?: TurnSink["onToolStart"],
     onToolFinish?: TurnSink["onToolFinish"],
+    /** The channel's language hint (`InboundTurn.languageHint`), for the tools' texts. */
+    languageHint?: string,
   ) => Record<string, Tool>;
   /**
    * `key` is the user key, forwarded (not interpreted here) so a provider's
@@ -245,8 +247,8 @@ export type TurnRunnerDeps = {
    * core knows nothing about what any of them does.
    */
   postTurnGuards?: PostTurnGuard[];
-  /** The texts of the person with `key`, for what the guards show them; English when absent. */
-  translatorFor?: (key: string) => Translate;
+  /** The texts of the person with `key` on a channel hinting `hint`, for what the turn shows them that isn't the model's; English when absent. */
+  translatorFor?: (key: string, hint?: string) => Translate;
   /**
    * Test seam; defaults to `console.log`. Receives a guard's own `log` line,
    * or the core's own note when a guard throws. Exists to measure real-world
@@ -326,7 +328,7 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
   async function runTurnLocked(turn: InboundTurn, sink: TurnSink): Promise<void> {
     // Someone the core won't talk to gets the refusal, and nothing of theirs
     // is created: no history, no capture.
-    const identified = await identify(turn.principal);
+    const identified = await identify(turn.principal, turn.languageHint);
     if (!identified.ok) {
       try {
         await sink.finalize(identified.message);
@@ -341,6 +343,10 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
     // for Layer-3 capture.
     const key = who.person.key;
     const tracked = !who.operator;
+    // The turn's texts that aren't the model's: the pending note, the guards'.
+    const t = deps.translatorFor?.(key, turn.languageHint) ?? englishTexts().forPerson(undefined).t;
+    const pendingNote = t("core.pending.note");
+    let noteUsed = false;
     const prompts = deps.systemPromptsFor?.(who) ?? deps.systemPrompts;
     // A shared space names each sender in their messages; one person's name is
     // only for a one-to-one turn.
@@ -464,8 +470,13 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
                 watchdog.resume();
                 sink.onToolFinish?.(toolCallId, outcome);
               },
+              turn.languageHint,
             )
-          : deps.buildTools(turn.sessionKey, key, who, sink.onToolStart, sink.onToolFinish),
+          : deps.buildTools(turn.sessionKey, key, who, sink.onToolStart, sink.onToolFinish, turn.languageHint),
+        pendingNote,
+        onPendingNote: () => {
+          noteUsed = true;
+        },
         system: systemFor(history.primer()),
         // Counted on the way through, and only where the channel streams: an
         // absent callback keeps the turn on the non-streaming path.
@@ -524,7 +535,6 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
       // handle any (label, detail?, toolCallId?) triple generically. A guard
       // that throws is caught here and never blocks delivery.
       const guardSteps = resumed ? [resumedStep(resumed), ...steps] : steps;
-      const t = deps.translatorFor?.(key) ?? englishTexts().forPerson(undefined).t;
       for (const guard of postTurnGuards) {
         if (!guard.shouldRun(correctedText, guardSteps)) {
           continue;
@@ -558,7 +568,11 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
       // the already-streamed prefix intact, so terminal.ts's safe-slice holds.
       surfacedDisplays = deps.takeSurfacedDisplays?.(turn.sessionKey) ?? [];
       const finalText = shownText(correctedText, surfacedDisplays);
-      await sink.finalize(finalText);
+      // The model said nothing and the turn stood in with the note: the
+      // channel is told, never left to recognize the text, also when a
+      // guard added to it.
+      if (noteUsed && correctedText.startsWith(pendingNote)) await sink.finalize(finalText, { pendingNote });
+      else await sink.finalize(finalText);
       logTurn(
         `${turn.logPrefix}[turn] done in ${seconds()}s: ${count(steps.length, "step")}, ${count(toolCalls, "tool call")}, reasoning ${reasoningChars} chars, answer ${answerLength(assistantText, answerChars)} chars${finish ? `, finish ${finish.reason}` : ""}`,
       );

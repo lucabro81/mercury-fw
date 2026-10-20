@@ -18,6 +18,7 @@
 import { CORE_MESSAGES } from "./core-messages.ts";
 
 import type { Messages, Params, Translate } from "@mercury-fw/plugin-types";
+import type { ChannelI18n, Principal } from "@mercury-fw/channel-types";
 
 export type { Messages, Params, Translate };
 
@@ -43,6 +44,19 @@ export function namespaceErrors(namespace: string, messages: Messages): string[]
   return errors;
 }
 
+/** Names no package may take: their keys are the core's and the app's texts. */
+const RESERVED_NAMES: Record<string, string> = { core: "the core's own texts", app: "the app's own texts" };
+
+/**
+ * What's wrong with the texts a plugin or a channel named `name` declares: a
+ * reserved name (`core`, `app`), keys outside `<name>.`, values that aren't
+ * text. Empty when nothing is.
+ */
+export function catalogErrors(name: string, messages: Messages): string[] {
+  if (Object.hasOwn(RESERVED_NAMES, name)) return [`"${name}" is reserved for ${RESERVED_NAMES[name]}`];
+  return namespaceErrors(name, messages);
+}
+
 /**
  * The supported language a hint asks for (`it-IT,it;q=0.9,en;q=0.8`), or
  * undefined when it asks for none of them. Ranked by quality, then order; a
@@ -57,7 +71,7 @@ export function negotiate(hint: string | undefined, supported: readonly string[]
       const [tag = "", ...attrs] = part.trim().split(";");
       const q = attrs.map((a) => a.trim()).find((a) => a.startsWith("q="));
       const quality = q === undefined ? 1 : Number(q.slice(2));
-      return { tag: tag.trim().toLowerCase(), quality, index };
+      return { tag: tag.trim().toLowerCase().replaceAll("_", "-"), quality, index };
     })
     .filter((r) => r.tag !== "" && r.tag !== "*" && Number.isFinite(r.quality) && r.quality > 0)
     .sort((a, b) => b.quality - a.quality || a.index - b.index);
@@ -199,4 +213,23 @@ export function createTexts(i18n: I18n, languageOf: (key: string) => string | un
 /** The core's texts in English and nothing else: what a part of the core uses when it isn't handed the instance's. */
 export function englishTexts(): Texts {
   return createTexts(createI18n({ english: CORE_MESSAGES }), () => undefined);
+}
+
+/**
+ * The texts a channel shows a request itself (`ChannelRuntimeContext.i18n`):
+ * the language of the person `principal` is, when the core knows them and
+ * they saved one, else the channel's `hint`, else the default. A request
+ * with nobody behind it (`null`, a login page) goes by the hint alone.
+ */
+export function requestTexts(
+  texts: Texts,
+  identify: (principal: Principal, hint?: string) => Promise<{ ok: true; person: { key: string } } | { ok: false }>,
+): ChannelI18n {
+  return {
+    forRequest: async (principal, hint) => {
+      if (principal === null) return texts.forPerson(undefined, hint);
+      const identified = await identify(principal, hint);
+      return texts.forPerson(identified.ok ? identified.person.key : undefined, hint);
+    },
+  };
 }

@@ -6,7 +6,7 @@ sidebar:
 ---
 
 Two kinds of text reach a person. One is what the model writes: it answers in the language it's spoken to, or in
-the one the person asked for. The other is the **fixed texts** that Mercury and its plugins write themselves, the
+the one the person asked for. The other is the **fixed texts** that Mercury, its plugins and its channels write themselves, the
 same every time: the refusal someone the agent doesn't know gets, the reply to an account-linking code, the line
 saying a tool is running. Those come from **language files**.
 
@@ -23,7 +23,7 @@ own, one per language, in the `locales/` folder. The file maps each text's **key
 ```
 
 A key starts with the package the text belongs to: `core.` is Mercury's own texts, `web-search.` the web search
-plugin's, and so on for every plugin, each under its own name. A word in braces, like `{owner}`,
+plugin's, `google-chat.` and `http.` the channels', and so on, each under its own name. A word in braces, like `{owner}`,
 is filled in when the text is shown: keep it as it is, wherever it fits the sentence.
 
 `locales/en.json` works the same way over the English texts: a key written there replaces the package's English, and
@@ -38,10 +38,14 @@ translates them like the packages' keys. A new app with the Jira plugin already 
 1. **The language they asked for.** Someone who tells the agent "talk to me in Italian" gets Italian from then on, in
    every conversation: the agent saves it as one of their settings, like the name they want to be called by, and its
    own answers follow it too. Only the languages the app has can be picked; an app with English alone offers no choice.
-2. **Otherwise, the app's default language** (`defaultLocale`).
-3. **Otherwise, English.**
+2. **Otherwise, the one their app asks for**, when the channel says: a web UI sends its browser's languages over the
+   HTTP channel (the `Accept-Language` header browsers send), Google Chat the language of the person's Chat
+   client. A language the app doesn't have is passed over.
+3. **Otherwise, the app's default language** (`defaultLocale`).
+4. **Otherwise, English.**
 
-Someone the agent doesn't know yet, such as a person it refuses, gets the default language.
+Someone the agent doesn't know yet, such as a person it refuses, gets the language their app asks for, else the
+default.
 
 ## A missing translation
 
@@ -74,5 +78,6 @@ A language is named by its tag, `it` or `pt-br`. `defaultLocale` must be `en` or
 agent doesn't start. An app made with `mfw create` already has a `locales/en.json`, listed in the config: empty, or with the starting
 formatter rules' own texts (`app.jira.no-issues` with Jira).
 
-Not every fixed text goes through the language files yet: Mercury's own and the plugins' do, while the channels'
-texts (a Google Chat card's title, its buttons' default label) are still written in their code.
+Every fixed text goes through the language files: Mercury's own, the plugins' and the channels' (a Google Chat card's
+title, the HTTP channel's login page, `google-chat.` and `http.` keys). What the model writes isn't one of them: it
+answers in the person's language on its own.

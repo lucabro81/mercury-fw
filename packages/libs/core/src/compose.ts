@@ -75,7 +75,8 @@ import { createHostReads } from "./identity/host-reads.ts";
 import { bindConfirm } from "./identity/confirm-binding.ts";
 import { createPersonLogins } from "./identity/person-logins.ts";
 import { createProfileStore, profilesPath } from "./identity/profiles.ts";
-import { createTexts, instanceI18n, type Texts, type Translate } from "./i18n/i18n.ts";
+import { createTexts, instanceI18n, requestTexts, type Texts, type Translate } from "./i18n/i18n.ts";
+import { channelMessages } from "./router/channel-loader.ts";
 import { createProfileTools } from "./identity/profile-tools.ts";
 import { createPeople, type TurnWho } from "./identity/people.ts";
 import { createLinkStore, linksPath } from "./identity/links.ts";
@@ -206,7 +207,8 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   // core's and the loaded plugins' English, the instance's language files over it. A default
   // language the instance doesn't ship stops the start; a file's gaps are
   // logged, and show as their keys.
-  const i18n = instanceI18n(loadedPlugins.messages, config.i18n);
+  // The declared channels' texts too, those of the channels the loader will load.
+  const i18n = instanceI18n({ ...loadedPlugins.messages, ...channelMessages(config.channels ?? []) }, config.i18n);
   for (const line of i18n.report()) console.error(line);
   const texts = createTexts(i18n, (key) => profiles.languageOf(key));
 
@@ -437,8 +439,11 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
     who: TurnWho,
     onToolStart?: TurnSink["onToolStart"],
     onToolFinish?: TurnSink["onToolFinish"],
+    languageHint?: string,
   ): Record<string, Tool> {
     const offering = offeringOf(who);
+    // The texts of the person the turn is for, on the channel's hint.
+    const { t } = texts.forPerson(key, languageHint);
     const sessionTools: Record<string, Tool> = {};
 
     // The session-scoped capabilities every CLI tool needs, bound to this turn:
@@ -453,7 +458,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
     };
     const sessionToolContext = {
       sessionKey,
-      t: texts.forPerson(key).t,
+      t,
       stageConfirmation: createStageConfirmation(stagingDeps),
       stageChoices: createStageChoices(stagingDeps),
       stashDisplay: (artifact: string, label?: string) => displayStore.stash(sessionKey, artifact, label),
@@ -491,7 +496,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
     // Every description, the plugins' included, names the assistant as the app does.
     const named = toolsWithAssistantName(sessionTools, assistantName);
     return onToolStart
-      ? withToolStartHook(named, onToolStart, toolStatusDescribers, onToolFinish, texts.forPerson(key).t)
+      ? withToolStartHook(named, onToolStart, toolStatusDescribers, onToolFinish, t)
       : named;
   }
 
@@ -540,7 +545,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
     systemPromptsFor,
     preferredName: (key) => profiles.nameOf(key),
     preferredLanguage: (key) => texts.savedLanguage(key),
-    translatorFor: (key) => texts.forPerson(key).t,
+    translatorFor: (key, hint) => texts.forPerson(key, hint).t,
     stallTimeoutMs,
     shownLists: (sessionKey) => displayStore.shown(sessionKey),
     identify: people.identify,
@@ -603,8 +608,11 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   const channelRuntime: ChannelRuntimeContext = {
     env: process.env,
     log: (msg) => console.error(msg),
-    ...bindConfirm(confirmDeps, people.identify, linking.redeem),
+    ...bindConfirm(confirmDeps, people.identify, linking.redeem, texts),
     admit: people.admit,
+    // The channel's own texts: the person's language when the core knows who
+    // it is, else the hint's, else the default.
+    i18n: requestTexts(texts, people.identify),
     authenticate: loadAuth(config.auth, { env: process.env, log: (msg) => console.error(msg) }),
     // Every read but health is scoped to the caller (see identity/host-reads.ts).
     reads: createHostReads({

@@ -72,7 +72,7 @@ describe("turnFromSse", () => {
   });
 
   test("a confirmation reply, with no model turn, is its final text", () => {
-    expect(turnFromSse(event("final", { text: "Confermato ed eseguito: {}" }))).toEqual({ calls: [], answer: "Confermato ed eseguito: {}" });
+    expect(turnFromSse(event("final", { text: "Confirmed and done." }))).toEqual({ calls: [], answer: "Confirmed and done." });
   });
 
   test("an error event fails the turn with its message", () => {

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { CORE_MESSAGES } from "./core-messages.ts";
-import { createI18n, createTexts, englishTexts, instanceI18n, interpolate, namespaceErrors, negotiate } from "./i18n.ts";
+import { createI18n, createTexts, englishTexts, instanceI18n, interpolate, namespaceErrors, negotiate, requestTexts } from "./i18n.ts";
 
 describe("interpolate", () => {
   test("fills every {param}, numbers included", () => {
@@ -61,6 +61,10 @@ describe("negotiate", () => {
   test("matches a regional tag by its language, and case doesn't matter", () => {
     expect(negotiate("it-IT,it;q=0.9,en-US;q=0.8", supported)).toBe("it");
     expect(negotiate("EN-gb", supported)).toBe("en");
+  });
+
+  test("takes an underscore between language and region too, as some clients send it", () => {
+    expect(negotiate("it_IT", supported)).toBe("it");
   });
 
   test("an exact regional match wins over its language", () => {
@@ -257,5 +261,35 @@ describe("instanceI18n", () => {
     const i18n = instanceI18n({}, undefined);
     expect(i18n.supported).toEqual(["en"]);
     expect(i18n.report()).toEqual([]);
+  });
+});
+
+// Review of #281: the texts a channel shows a request were wired inline in
+// the composition, with nothing checking whose language they follow.
+describe("requestTexts", () => {
+  const i18n = createI18n({ english: { "core.bye": "Bye." }, locales: { it: { "core.bye": "Ciao." }, de: { "core.bye": "Tschüss." } }, defaultLocale: "de" });
+  const texts = createTexts(i18n, (key) => (key === "people:alice" ? "it" : undefined));
+  const known = { id: "alice", provider: "static" as const };
+  const stranger = { id: "bob", provider: "static" as const };
+  const channelI18n = requestTexts(texts, async (principal) =>
+    principal.id === "alice"
+      ? { ok: true, operator: false, person: { key: "people:alice", roles: [] } }
+      : { ok: false, reason: "unknown", message: "no" },
+  );
+
+  test("the person's saved language first, whatever the hint", async () => {
+    expect(await channelI18n.forRequest(known, "en")).toMatchObject({ locale: "it" });
+  });
+
+  test("someone the core refuses gets the hint's, then the default", async () => {
+    expect((await channelI18n.forRequest(stranger, "en-US")).locale).toBe("en");
+    expect((await channelI18n.forRequest(stranger)).locale).toBe("de");
+  });
+
+  test("a request with nobody behind it gets the hint's, then the default", async () => {
+    const { locale, t } = await channelI18n.forRequest(null, "it");
+    expect(locale).toBe("it");
+    expect(t("core.bye")).toBe("Ciao.");
+    expect((await channelI18n.forRequest(null)).locale).toBe("de");
   });
 });

@@ -23,7 +23,16 @@ export const CORE_MESSAGES: Messages = {
   "core.link.failed": "I can't link accounts right now. Ask whoever runs this assistant to check its logs.",
   "core.link.done": "Linked: this account is now {owner}.",
 
-  // A person's login to a service (`identity/person-logins.ts`).
+  // A staged action, and the person's confirmation of it (`session/agent-turn.ts`, `identity/confirm-binding.ts`).
+  "core.pending.note": "Action pending, waiting for confirmation.",
+  "core.confirm.not-found": "There's no pending confirmation for this token: it may have expired, been used already, or never existed.",
+  "core.confirm.failed": "Confirmed, but it failed: {error}",
+  "core.confirm.done": "Confirmed and done.",
+  "core.confirm.resume": "Confirmed, picking up where I left off.",
+
+  // A person's login to a service (`identity/person-logins.ts`), and the words on its link (`loginLinkText`).
+  "core.login.link": "Log in to {service}",
+  "core.login.link-any": "Log in to the service",
   "core.login.expired": "This login link has expired or was already used: ask {assistant} again for a new one.",
   "core.login.failed": "The {service} login didn't go through. Ask {assistant} again for a new link.",
 

@@ -2,8 +2,9 @@ import { describe, expect, test } from "bun:test";
 import { createTerminalProvider } from "./terminal-provider.ts";
 import { startTerminalRepl } from "./terminal.ts";
 import type { HandleTurn, InboundTurn } from "./provider.ts";
-import { PENDING_CONFIRMATION_NOTE } from "../session/agent-turn.ts";
-import { RESUME_AFTER_CONFIRM } from "@mercury-fw/channel-types";
+
+/** A stand-in note the core would hand over, in some language: the terminal never reads its words. */
+const NOTE = "Azione in sospeso.";
 import { interpolate, type Texts } from "../i18n/i18n.ts";
 
 type CapturedHandleInput = (
@@ -47,7 +48,7 @@ describe("createTerminalProvider", () => {
   test("a bare confirmation token short-circuits without calling handleTurn", async () => {
     let capturedHandleInput!: CapturedHandleInput;
     let handleTurnCalled = false;
-    let tryConfirmArgs: unknown[] = [];
+    let resolveArgs: unknown[] = [];
 
     const provider = createTerminalProvider({
       confirmDeps: fakeConfirmDeps(),
@@ -57,9 +58,9 @@ describe("createTerminalProvider", () => {
       startTerminalReplFn: async (handleInput) => {
         capturedHandleInput = handleInput;
       },
-      tryConfirmFn: async (input, sessionKey, deps) => {
-        tryConfirmArgs = [input, sessionKey, deps.owner];
-        return "Confermato ed eseguito.";
+      resolveConfirmationFn: async (input, sessionKey, deps) => {
+        resolveArgs = [input, sessionKey, deps.owner];
+        return { status: "ok", data: { deleted: true } };
       },
     });
 
@@ -70,8 +71,10 @@ describe("createTerminalProvider", () => {
 
     const result = await capturedHandleInput("ABC123", () => {});
     expect(handleTurnCalled).toBe(false);
-    expect(result).toBe("Confermato ed eseguito.");
-    expect(tryConfirmArgs).toEqual(["ABC123", "terminal", "none:terminal"]);
+    // #281: the reply is the core's, in the terminal person's language, and
+    // never the action's raw result.
+    expect(result).toBe("Confirmed and done.");
+    expect(resolveArgs).toEqual(["ABC123", "terminal", "none:terminal"]);
   });
 
   // #131: /dump after a confirmation still wrote the turn before it, so an
@@ -86,7 +89,7 @@ describe("createTerminalProvider", () => {
       startTerminalReplFn: async (handleInput) => {
         capturedHandleInput = handleInput;
       },
-      tryConfirmFn: async (input) => (input === "ABC123" ? "Confermato ed eseguito." : null),
+      resolveConfirmationFn: async (input) => (input === "ABC123" ? { status: "ok", data: null } : { status: "not-a-token" }),
     });
     await provider.start(async (_turn, sink) => {
       sink.onStep?.({ toolCalls: [], toolResults: [], content: [] });
@@ -111,7 +114,7 @@ describe("createTerminalProvider", () => {
       startTerminalReplFn: async (handleInput) => {
         capturedHandleInput = handleInput;
       },
-      tryConfirmFn: async () => null,
+      resolveConfirmationFn: async () => ({ status: "not-a-token" }),
     });
 
     const handleTurn: HandleTurn = async (turn, sink) => {
@@ -143,7 +146,7 @@ describe("createTerminalProvider", () => {
       startTerminalReplFn: async (handleInput) => {
         capturedHandleInput = handleInput;
       },
-      tryConfirmFn: async () => null,
+      resolveConfirmationFn: async () => ({ status: "not-a-token" }),
     });
 
     const handleTurn: HandleTurn = async (_turn, sink) => {
@@ -172,7 +175,7 @@ describe("createTerminalProvider", () => {
       startTerminalReplFn: async (handleInput) => {
         capturedHandleInput = handleInput;
       },
-      tryConfirmFn: async () => null,
+      resolveConfirmationFn: async () => ({ status: "not-a-token" }),
     });
 
     const handleTurn: HandleTurn = async (_turn, sink) => {
@@ -201,7 +204,7 @@ describe("createTerminalProvider", () => {
       startTerminalReplFn: async (handleInput) => {
         capturedHandleInput = handleInput;
       },
-      tryConfirmFn: async () => null,
+      resolveConfirmationFn: async () => ({ status: "not-a-token" }),
     });
     await provider.start(async (_turn, sink) => {
       sink.onStep?.({
@@ -257,7 +260,7 @@ describe("createTerminalProvider", () => {
       startTerminalReplFn: async (handleInput) => {
         capturedHandleInput = handleInput;
       },
-      tryConfirmFn: async () => null,
+      resolveConfirmationFn: async () => ({ status: "not-a-token" }),
       texts,
     });
     await provider.start(async (_turn, sink) => {
@@ -300,7 +303,7 @@ describe("createTerminalProvider", () => {
       startTerminalReplFn: async (handleInput) => {
         capturedHandleInput = handleInput;
       },
-      tryConfirmFn: async () => RESUME_AFTER_CONFIRM,
+      resolveConfirmationFn: async () => ({ status: "resume" }),
     });
     await provider.start(async (turn, sink) => {
       turns.push(turn);
@@ -327,7 +330,7 @@ describe("createTerminalProvider", () => {
       startTerminalReplFn: async (handleInput) => {
         capturedHandleInput = handleInput;
       },
-      tryConfirmFn: async () => null,
+      resolveConfirmationFn: async () => ({ status: "not-a-token" }),
     });
 
     const handleTurn: HandleTurn = async (_turn, sink) => {
@@ -342,12 +345,10 @@ describe("createTerminalProvider", () => {
     expect(chunks).toEqual(["partial ", "answer"]);
   });
 
-  // agent-turn.ts streams PENDING_CONFIRMATION_NOTE via onTextChunk when a
-  // turn stopped for a pending confirmation (see pendingConfirmationStop)
-  // — but the sink's own onStep already printed the specific instruction
-  // (command + token) for that same step. Printing the generic note too
-  // would be a redundant second line saying nothing new.
-  test("does not forward PENDING_CONFIRMATION_NOTE via onTextChunk — the onStep instruction already covers it", async () => {
+  // The sink's own onStep already printed the specific instruction (command
+  // + token) for a staged step. Printing the core's generic note too would be
+  // a redundant second line saying nothing new; the core says which it is.
+  test("prints nothing for a turn whose text is only the core's pending note", async () => {
     let capturedHandleInput!: CapturedHandleInput;
 
     const provider = createTerminalProvider({
@@ -358,12 +359,11 @@ describe("createTerminalProvider", () => {
       startTerminalReplFn: async (handleInput) => {
         capturedHandleInput = handleInput;
       },
-      tryConfirmFn: async () => null,
+      resolveConfirmationFn: async () => ({ status: "not-a-token" }),
     });
 
     const handleTurn: HandleTurn = async (_turn, sink) => {
-      sink.onTextChunk?.(PENDING_CONFIRMATION_NOTE);
-      await sink.finalize(PENDING_CONFIRMATION_NOTE);
+      await sink.finalize(NOTE, { pendingNote: NOTE });
     };
     await provider.start(handleTurn);
 
@@ -387,7 +387,7 @@ describe("createTerminalProvider", () => {
       startTerminalReplFn: async (handleInput) => {
         capturedHandleInput = handleInput;
       },
-      tryConfirmFn: async () => null,
+      resolveConfirmationFn: async () => ({ status: "not-a-token" }),
     });
 
     const handleTurn: HandleTurn = async (_turn, sink) => {
@@ -420,10 +420,10 @@ describe("createTerminalProvider", () => {
   });
 
   // Same bug (#61), the empty-text case: a turn that stops on a staged
-  // command with no text of its own finalizes PENDING_CONFIRMATION_NOTE,
-  // whose chunk is dropped above. Returning it would now print it as the
-  // unstreamed suffix, right after the specific instruction it repeats.
-  test("returns an empty answer when the turn's text is only PENDING_CONFIRMATION_NOTE", async () => {
+  // command with no text of its own finalizes the core's pending note.
+  // Returning it would print it as the unstreamed suffix, right after the
+  // specific instruction it repeats.
+  test("returns an empty answer when the turn's text is only the pending note", async () => {
     let capturedHandleInput!: CapturedHandleInput;
 
     const provider = createTerminalProvider({
@@ -434,12 +434,11 @@ describe("createTerminalProvider", () => {
       startTerminalReplFn: async (handleInput) => {
         capturedHandleInput = handleInput;
       },
-      tryConfirmFn: async () => null,
+      resolveConfirmationFn: async () => ({ status: "not-a-token" }),
     });
 
     const handleTurn: HandleTurn = async (_turn, sink) => {
-      sink.onTextChunk?.(PENDING_CONFIRMATION_NOTE);
-      await sink.finalize(PENDING_CONFIRMATION_NOTE);
+      await sink.finalize(NOTE, { pendingNote: NOTE });
     };
     await provider.start(handleTurn);
 
@@ -449,7 +448,7 @@ describe("createTerminalProvider", () => {
   // Same bug (#61), with a display the model surfaced via `present`: the
   // turn-runner appends it after the note (`note\n\ndisplay`), so the note
   // must go from the front of the answer, not only when it's all of it.
-  test("drops PENDING_CONFIRMATION_NOTE from the front of the answer when a surfaced display follows it", async () => {
+  test("drops the pending note from the front of the answer when a surfaced display follows it", async () => {
     let capturedHandleInput!: CapturedHandleInput;
 
     const provider = createTerminalProvider({
@@ -460,12 +459,11 @@ describe("createTerminalProvider", () => {
       startTerminalReplFn: async (handleInput) => {
         capturedHandleInput = handleInput;
       },
-      tryConfirmFn: async () => null,
+      resolveConfirmationFn: async () => ({ status: "not-a-token" }),
     });
 
     const handleTurn: HandleTurn = async (_turn, sink) => {
-      sink.onTextChunk?.(PENDING_CONFIRMATION_NOTE);
-      await sink.finalize(`${PENDING_CONFIRMATION_NOTE}\n\nMER-1 · In corso · Titolo`);
+      await sink.finalize(`${NOTE}\n\nMER-1 · In corso · Titolo`, { pendingNote: NOTE });
     };
     await provider.start(handleTurn);
 
@@ -488,7 +486,7 @@ describe("createTerminalProvider", () => {
       getLoadedContextLengthFn: async () => 4096,
       startTerminalReplFn: (handleInput, _io, opts) =>
         startTerminalRepl(handleInput, { input: oneLine(), output: { write: (s) => written.push(s) } }, opts),
-      tryConfirmFn: async () => null,
+      resolveConfirmationFn: async () => ({ status: "not-a-token" }),
     });
 
     const handleTurn: HandleTurn = async (_turn, sink) => {
@@ -517,7 +515,7 @@ describe("createTerminalProvider", () => {
       startTerminalReplFn: async (handleInput) => {
         capturedHandleInput = handleInput;
       },
-      tryConfirmFn: async () => null,
+      resolveConfirmationFn: async () => ({ status: "not-a-token" }),
     });
 
     const handleTurn: HandleTurn = async (_turn, sink) => {
@@ -542,7 +540,7 @@ describe("createTerminalProvider", () => {
       startTerminalReplFn: async (handleInput) => {
         capturedHandleInput = handleInput;
       },
-      tryConfirmFn: async () => null,
+      resolveConfirmationFn: async () => ({ status: "not-a-token" }),
     });
 
     const handleTurn: HandleTurn = async (_turn, sink) => {
@@ -574,7 +572,7 @@ describe("createTerminalProvider", () => {
       startTerminalReplFn: async (handleInput) => {
         capturedHandleInput = handleInput;
       },
-      tryConfirmFn: async () => null,
+      resolveConfirmationFn: async () => ({ status: "not-a-token" }),
     });
 
     const handleTurn: HandleTurn = async (_turn, sink) => {
@@ -611,7 +609,7 @@ describe("createTerminalProvider", () => {
       startTerminalReplFn: async (handleInput) => {
         capturedHandleInput = handleInput;
       },
-      tryConfirmFn: async () => null,
+      resolveConfirmationFn: async () => ({ status: "not-a-token" }),
     });
 
     const handleTurn: HandleTurn = async (_turn, sink) => {
@@ -642,7 +640,7 @@ describe("createTerminalProvider", () => {
       startTerminalReplFn: async (handleInput) => {
         capturedHandleInput = handleInput;
       },
-      tryConfirmFn: async () => null,
+      resolveConfirmationFn: async () => ({ status: "not-a-token" }),
     });
 
     const handleTurn: HandleTurn = async (_turn, sink) => {
@@ -667,7 +665,7 @@ describe("createTerminalProvider", () => {
       startTerminalReplFn: async (handleInput) => {
         capturedHandleInput = handleInput;
       },
-      tryConfirmFn: async () => null,
+      resolveConfirmationFn: async () => ({ status: "not-a-token" }),
     });
 
     const handleTurn: HandleTurn = async (_turn, sink) => {
@@ -698,7 +696,7 @@ describe("createTerminalProvider", () => {
         capturedHandleInput = handleInput;
         capturedPromptSuffix = opts!.promptSuffix!;
       },
-      tryConfirmFn: async () => null,
+      resolveConfirmationFn: async () => ({ status: "not-a-token" }),
     });
 
     const handleTurn: HandleTurn = async (_turn, sink) => {

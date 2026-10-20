@@ -35,11 +35,11 @@ import {
   detectLoginRequired,
   detectPendingConfirmation,
   loginLinkText,
-  PENDING_CONFIRMATION_NOTE,
-  RESUME_AFTER_CONFIRM,
-  confirmReply,
-  type ConfirmOutcome,
   NO_REPLY,
+  type ChannelI18n,
+  type ChannelRuntimeContext,
+  type ConfirmReply,
+  type Translate,
   type LoginRequest,
   type PendingConfirmation,
   type ToolOutcome,
@@ -48,20 +48,22 @@ import {
   type TurnSink,
   type Principal,
 } from "@mercury-fw/channel-types";
+import { englishChat } from "./messages.ts";
 
 /**
  * Builds the confirmation card sent when a step stages an irreversible
  * command (see `pending-confirmation.ts`), one button per choice it offers
- * (a single `Conferma` for a plain staging). Each button's parameters carry
- * the token, so a click routes straight into the same `tryConfirm` path
+ * (a single "Confirm" for a plain staging, in the person's language: `t`).
+ * Each button's parameters carry the token, so a click routes straight into
+ * the same confirmation path
  * a bare token typed on the terminal uses (see `onCardClick`'s `confirm`
  * case, below) — the user never has to see or type the token themselves —
  * plus its label and the summary, so the click can turn the card into
  * `buildChosenCard` without the channel keeping any state.
  */
-function buildConfirmCard(pending: PendingConfirmation): ChatCard {
+function buildConfirmCard(pending: PendingConfirmation, t: Translate): ChatCard {
   return {
-    header: { title: "Conferma richiesta" },
+    header: { title: t("google-chat.confirm.title") },
     sections: [
       {
         widgets: [
@@ -69,13 +71,13 @@ function buildConfirmCard(pending: PendingConfirmation): ChatCard {
           {
             buttonList: {
               buttons: pending.choices.map((choice) => ({
-                text: choice.label,
+                text: choice.label || t("google-chat.confirm.button"),
                 onClick: {
                   action: {
                     function: "confirm",
                     parameters: [
                       { key: "token", value: choice.token },
-                      { key: "label", value: choice.label },
+                      { key: "label", value: choice.label || t("google-chat.confirm.button") },
                       { key: "summary", value: pending.summary },
                     ],
                   },
@@ -90,14 +92,14 @@ function buildConfirmCard(pending: PendingConfirmation): ChatCard {
 }
 
 /** The confirmation card once a choice is taken: the same request, the choice instead of the buttons. */
-function buildChosenCard(summary: string, label: string | undefined): ChatCard {
+function buildChosenCard(summary: string, label: string | undefined, t: Translate): ChatCard {
   return {
-    header: { title: "Conferma richiesta" },
+    header: { title: t("google-chat.confirm.title") },
     sections: [
       {
         widgets: [
           { textParagraph: { text: `\`${summary}\`` } },
-          { textParagraph: { text: label === undefined ? "Scelta registrata." : `Scelto: ${label}` } },
+          { textParagraph: { text: label === undefined ? t("google-chat.confirm.taken") : t("google-chat.confirm.chosen", { label }) } },
         ],
       },
     ],
@@ -105,18 +107,16 @@ function buildChosenCard(summary: string, label: string | undefined): ChatCard {
 }
 
 /** The card that shows a person the link to log in to a service a plugin acts on as them: one button that opens it. */
-function buildLoginCard(login: LoginRequest): ChatCard {
+function buildLoginCard(login: LoginRequest, t: Translate): ChatCard {
   return {
-    sections: [{ widgets: [{ buttonList: { buttons: [{ text: loginLinkText(login), onClick: { openLink: { url: login.url } } }] } }] }],
+    sections: [{ widgets: [{ buttonList: { buttons: [{ text: loginLinkText(login, t), onClick: { openLink: { url: login.url } } }] } }] }],
   };
 }
 
-const TOOL_STATUS_LINES: Record<"loading" | ToolOutcome, string> = {
-  loading: "In corso…",
-  success: "Fatto.",
-  failed: "Non riuscito.",
-  pending: "In attesa di conferma.",
-};
+/** A card's status line, in the person's language. */
+function statusLine(status: "loading" | ToolOutcome, t: Translate): string {
+  return t(`google-chat.status.${status}`);
+}
 
 /**
  * A tool-call/reasoning status card: `label` is a section `header`
@@ -129,10 +129,10 @@ const TOOL_STATUS_LINES: Record<"loading" | ToolOutcome, string> = {
  * message.
  *
  * The status is appended to the title too, not just left inside the
- * collapsed body: a title stuck reading "Sto leggendo dati con jira…"
- * (present progressive) forever, even once the card's own body says
- * "Fatto.", looked like the card never updated at all — confirmed live
- * (the body did patch, only the title didn't change).
+ * collapsed body: a title stuck reading "Reading Jira…" (present
+ * progressive) forever, even once the card's own body says "Done.", looked
+ * like the card never updated at all — confirmed live (the body did patch,
+ * only the title didn't change).
  *
  * Native `collapsible` state is client-side only and resets to collapsed
  * on every PATCH — confirmed live. Harmless for a card patched exactly
@@ -146,14 +146,14 @@ const TOOL_STATUS_LINES: Record<"loading" | ToolOutcome, string> = {
  * nothing patches the message again, so the native toggle can never be
  * reset out from under the user again either.
  */
-function buildToolCallCard(label: string, detail: string, status: "loading" | ToolOutcome): ChatCard {
+function buildToolCallCard(label: string, detail: string, status: "loading" | ToolOutcome, t: Translate): ChatCard {
   return {
     sections: [
       {
-        header: status === "loading" ? label : `${label} ${TOOL_STATUS_LINES[status]}`,
+        header: status === "loading" ? label : `${label} ${statusLine(status, t)}`,
         collapsible: true,
         uncollapsibleWidgetsCount: 0,
-        widgets: [{ textParagraph: { text: detail } }, { textParagraph: { text: TOOL_STATUS_LINES[status] } }],
+        widgets: [{ textParagraph: { text: detail } }, { textParagraph: { text: statusLine(status, t) } }],
       },
     ],
   };
@@ -171,7 +171,7 @@ const REASONING_TAIL_CHARS = 4000;
  * any intermediate loading/prefill event to distinguish finer-grained
  * states here (checked against the API docs) — `load_duration`/
  * `prompt_eval_duration` only appear in the final, non-streamed response.
- * Header is the generic "Stato" (not a restatement of the body) so this
+ * Header is the generic "Status" (not a restatement of the body) so this
  * has somewhere to grow if a genuinely different state ever becomes
  * observable, rather than needing a redesign.
  *
@@ -180,12 +180,12 @@ const REASONING_TAIL_CHARS = 4000;
  * (confirmed live — a thin grey line, no visible text at all), so this
  * always carries at least one `textParagraph`, same as every other card
  * in this file. If the turn's first reasoning burst arrives,
- * `onReasoningChunk` patches this exact card into the "Sto pensando…"
+ * `onReasoningChunk` patches this exact card into the "Thinking…"
  * card in place, rather than sending a second message; otherwise it's
  * simply left as the last status before the turn's real answer.
  */
-function buildReceivingCard(): ChatCard {
-  return { sections: [{ header: "Stato", widgets: [{ textParagraph: { text: "Messaggio in ricezione…" } }] }] };
+function buildReceivingCard(t: Translate): ChatCard {
+  return { sections: [{ header: t("google-chat.receiving.title"), widgets: [{ textParagraph: { text: t("google-chat.receiving.text") } }] }] };
 }
 
 /**
@@ -226,6 +226,8 @@ type RawChatEvent = {
   action?: { actionMethodName?: string; parameters?: Array<{ key?: string; value?: string }> };
   space?: { name?: string; type?: string };
   user?: RawChatSender;
+  /** What the person's Chat client says about them; `userLocale` is their language (`en-US`), when the event carries it. */
+  common?: { userLocale?: string };
 };
 
 export type ParsedMessageEvent = {
@@ -245,6 +247,8 @@ export type ParsedMessageEvent = {
    * live against a real DM event this session.
    */
   isDirectMessage: boolean;
+  /** The language of the sender's Chat client (`common.userLocale`), when the event carries it: the turn's language hint. */
+  locale?: string;
 };
 
 export type ParsedCardClickEvent = {
@@ -257,7 +261,15 @@ export type ParsedCardClickEvent = {
   parameters: Record<string, string>;
   /** As on a message (see `ParsedMessageEvent.isDirectMessage`): for the turn a click resumes. */
   isDirectMessage: boolean;
+  /** As on a message (see `ParsedMessageEvent.locale`). */
+  locale?: string;
 };
+
+/** The language the event says the person's client is in, when it says. */
+function localeOf(event: RawChatEvent | null | undefined): string | undefined {
+  const locale = event?.common?.userLocale;
+  return typeof locale === "string" && locale.trim() !== "" ? locale.trim() : undefined;
+}
 
 /** The email Google vouches for on `sender`: a person's only (`HUMAN`), never a bot's or an unknown kind's. */
 function emailOf(sender: RawChatSender | undefined): string | undefined {
@@ -267,6 +279,7 @@ function emailOf(sender: RawChatSender | undefined): string | undefined {
 /** Parses one decoded Pub/Sub event, or `null` if it isn't a kind this provider acts on. */
 export function parseChatEvent(raw: unknown): ParsedMessageEvent | ParsedCardClickEvent | null {
   const event = raw as RawChatEvent;
+  const locale = localeOf(event);
   if (event?.type === "MESSAGE") {
     const m = event.message;
     if (!m || typeof m.name !== "string" || typeof m.text !== "string") return null;
@@ -281,6 +294,7 @@ export function parseChatEvent(raw: unknown): ParsedMessageEvent | ParsedCardCli
       senderDisplayName: m.sender.displayName,
       senderEmail: emailOf(m.sender),
       isDirectMessage: m.space.type === "DM",
+      ...(locale === undefined ? {} : { locale }),
     };
   }
   if (event?.type === "CARD_CLICKED") {
@@ -300,6 +314,7 @@ export function parseChatEvent(raw: unknown): ParsedMessageEvent | ParsedCardCli
       senderEmail: emailOf(event.user),
       parameters,
       isDirectMessage: event.space.type === "DM",
+      ...(locale === undefined ? {} : { locale }),
     };
   }
   return null;
@@ -312,6 +327,8 @@ export type CardClickHandler = (
   senderEmail?: string,
   isDirectMessage?: boolean,
   messageName?: string,
+  /** The clicking person's client language (`ParsedCardClickEvent.locale`). */
+  locale?: string,
 ) => Promise<void>;
 
 export type GoogleChatProviderDeps = {
@@ -319,19 +336,22 @@ export type GoogleChatProviderDeps = {
   subscription: string;
   /**
    * Resolves a confirmation token against the core's shared store, injected by
-   * the channel loader (`ChannelRuntimeContext.confirm`). Returns the reply to
-   * send, or `null` when the input wasn't token-shaped. With
+   * the channel loader (`ChannelRuntimeContext.confirm`). Returns what to tell
+   * the person, in their language, or `null` when the input wasn't
+   * token-shaped. With
    * `resolveConfirmation` below, the channel's whole contact with confirmation:
    * the store, vault and note-writer stay in the core.
    */
-  confirm: (token: string, sessionKey: string, principal: Principal) => Promise<string | null>;
+  confirm: ChannelRuntimeContext["confirm"];
   /**
    * The structured sibling of `confirm` (`ChannelRuntimeContext.resolveConfirmation`).
    * When it's there, a click resolves through it, and an accepted choice
    * turns its card into the choice taken; without it, a click goes through
    * `confirm` and the card stays as it was.
    */
-  resolveConfirmation?: (token: string, sessionKey: string, principal: Principal) => Promise<ConfirmOutcome>;
+  resolveConfirmation?: ChannelRuntimeContext["resolveConfirmation"];
+  /** The texts the cards show, in each person's language (`ChannelRuntimeContext.i18n`); English when absent. */
+  i18n?: ChannelI18n;
   /**
    * Handles a `CARD_CLICKED` event's action parameters. Defaults to resolving
    * the confirm button's token through `deps.confirm` (the same path a bare
@@ -366,6 +386,9 @@ export function createGoogleChatProvider(deps: GoogleChatProviderDeps): GoogleCh
   const subscriptionFn = deps.subscriptionFn ?? openSubscription;
   const clientDeps = { tokenSource };
   const sentMessageNames = new Set<string>();
+  /** The texts for `principal`, on the client language `hint`. */
+  const textsFor = async (principal: Principal, hint: string | undefined): Promise<Translate> =>
+    deps.i18n ? (await deps.i18n.forRequest(principal, hint)).t : englishChat;
   // Per-session serialization: pollOnce's setInterval fires on a fixed
   // clock regardless of whether the previous tick's turn finished, so two
   // overlapping ticks could otherwise both call handleTurn for the SAME
@@ -399,9 +422,16 @@ export function createGoogleChatProvider(deps: GoogleChatProviderDeps): GoogleCh
     }
   }
 
-  /** Resumes the session's turn after a confirmation whose result went back to the model (`RESUME_AFTER_CONFIRM`). */
-  function resumeTurn(handleTurn: HandleTurn, space: string, principal: Principal, isDirectMessage: boolean): Promise<void> {
+  /** Resumes the session's turn after a confirmation whose result went back to the model (`ConfirmReply.resume`). */
+  async function resumeTurn(
+    handleTurn: HandleTurn,
+    space: string,
+    principal: Principal,
+    isDirectMessage: boolean,
+    locale: string | undefined,
+  ): Promise<void> {
     const sessionKey = deriveSessionKey(space, principal.id);
+    const t = await textsFor(principal, locale);
     return runInSession(sessionKey, () =>
       handleTurn(
         {
@@ -412,8 +442,9 @@ export function createGoogleChatProvider(deps: GoogleChatProviderDeps): GoogleCh
           principal,
           logPrefix: `[chat:${space}:${principal.id}] `,
           resumeAfterConfirm: true,
+          ...(locale === undefined ? {} : { languageHint: locale }),
         },
-        createSink(space, { user: principal.id, isDirectMessage }),
+        createSink(space, { user: principal.id, isDirectMessage }, t),
       ),
     );
   }
@@ -429,7 +460,7 @@ export function createGoogleChatProvider(deps: GoogleChatProviderDeps): GoogleCh
    */
   const onCardClick: CardClickHandler =
     deps.onCardClick ??
-    (async (params, space, sender, senderEmail, isDirectMessage = false, messageName) => {
+    (async (params, space, sender, senderEmail, isDirectMessage = false, messageName, locale) => {
       const token = params.token;
       if (!token) {
         log(`[chat] card click with no token parameter`);
@@ -441,13 +472,14 @@ export function createGoogleChatProvider(deps: GoogleChatProviderDeps): GoogleCh
         ...(senderEmail === undefined ? {} : { claims: { email: senderEmail } }),
       };
       const sessionKey = deriveSessionKey(space, sender);
-      let reply: string | null;
+      let reply: ConfirmReply | null;
       if (deps.resolveConfirmation) {
-        const outcome = await deps.resolveConfirmation(token, sessionKey, principal);
+        const outcome = await deps.resolveConfirmation(token, sessionKey, principal, locale);
         const accepted = outcome.status === "ok" || outcome.status === "failed" || outcome.status === "resume";
         if (accepted && messageName !== undefined && params.summary !== undefined) {
           try {
-            await updateCardFn(messageName, buildChosenCard(params.summary, params.label), clientDeps);
+            const t = await textsFor(principal, locale);
+            await updateCardFn(messageName, buildChosenCard(params.summary, params.label, t), clientDeps);
             log(`[chat:${space}] [out] confirm card ${messageName} patched to the choice taken`);
           } catch (err) {
             log(`[chat:${space}] confirm card patch failed: ${String(err)}`);
@@ -456,17 +488,19 @@ export function createGoogleChatProvider(deps: GoogleChatProviderDeps): GoogleCh
         // On not-found nothing was taken, so `confirm` gives the reply as it
         // always did: the core's own message for someone it won't talk to,
         // which the outcome doesn't carry.
-        reply = outcome.status === "not-found" ? await deps.confirm(token, sessionKey, principal) : confirmReply(outcome);
+        if (outcome.status === "not-found") reply = await deps.confirm(token, sessionKey, principal, locale);
+        else if (outcome.text === null) reply = null;
+        else reply = outcome.status === "resume" ? { text: outcome.text, resume: true } : { text: outcome.text };
       } else {
-        reply = await deps.confirm(token, sessionKey, principal);
+        reply = await deps.confirm(token, sessionKey, principal, locale);
       }
-      if (reply === RESUME_AFTER_CONFIRM && activeHandleTurn) {
-        await resumeTurn(activeHandleTurn, space, principal, isDirectMessage);
+      if (reply?.resume && activeHandleTurn) {
+        await resumeTurn(activeHandleTurn, space, principal, isDirectMessage, locale);
         return;
       }
       if (reply !== null) {
-        log(`[chat:${space}] [out] ${reply}`);
-        const sent = await sendMessageFn(space, reply, clientDeps);
+        log(`[chat:${space}] [out] ${reply.text}`);
+        const sent = await sendMessageFn(space, reply.text, clientDeps);
         sentMessageNames.add(sent.name);
       }
     });
@@ -476,8 +510,9 @@ export function createGoogleChatProvider(deps: GoogleChatProviderDeps): GoogleCh
    * Per-turn output sink — same responsibilities as the retired `ChatStreamer`,
    * rebuilt against the new client. `viewer` is the person the turn is for;
    * outside a direct message, what only they may see is sent to them alone.
+   * `t` gives the cards' texts in their language.
    */
-  function createSink(space: string, viewer: { user: string; isDirectMessage: boolean }): TurnSink {
+  function createSink(space: string, viewer: { user: string; isDirectMessage: boolean }, t: Translate): TurnSink {
     let chain: Promise<void> = Promise.resolve();
 
     function enqueue(fn: () => Promise<void>): void {
@@ -519,7 +554,7 @@ export function createGoogleChatProvider(deps: GoogleChatProviderDeps): GoogleCh
     const shownLogins = new Set<string>();
     enqueue(async () => {
       log(`[chat:${space}] [out] receiving card`);
-      const sent = await sendCardFn(space, buildReceivingCard(), clientDeps);
+      const sent = await sendCardFn(space, buildReceivingCard(t), clientDeps);
       sentMessageNames.add(sent.name);
       receivingCardName = sent.name;
     });
@@ -531,7 +566,7 @@ export function createGoogleChatProvider(deps: GoogleChatProviderDeps): GoogleCh
           return;
         }
         enqueue(async () => {
-          const card = buildToolCallCard(label, detail ?? "", "loading");
+          const card = buildToolCallCard(label, detail ?? "", "loading", t);
           log(`[chat:${space}] [out] tool card: ${label}`);
           const sent = await sendCardFn(space, card, clientDeps);
           sentMessageNames.add(sent.name);
@@ -545,7 +580,7 @@ export function createGoogleChatProvider(deps: GoogleChatProviderDeps): GoogleCh
             log(`[chat:${space}] onToolFinish for unknown toolCallId ${toolCallId}`);
             return;
           }
-          const card = buildToolCallCard(entry.label, entry.detail, outcome);
+          const card = buildToolCallCard(entry.label, entry.detail, outcome, t);
           log(`[chat:${space}] [out] patching ${entry.name} to "${outcome}"`);
           const patched = await updateCardFn(entry.name, card, clientDeps);
           log(`[chat:${space}] [out] patched ${patched.name}`);
@@ -562,9 +597,9 @@ export function createGoogleChatProvider(deps: GoogleChatProviderDeps): GoogleCh
           entry = { name: undefined, buffer: chunk };
           reasoningCards.set(id, entry);
           enqueue(async () => {
-            const card = buildToolCallCard("Sto pensando…", "", "loading");
+            const card = buildToolCallCard(t("google-chat.thinking"), "", "loading", t);
             if (receivingCardName !== undefined) {
-              // Replace the "Stato" placeholder in place instead of
+              // Replace the "Status" placeholder in place instead of
               // sending a second message.
               log(`[chat:${space}] [out] reasoning card (${id}) — replacing receiving card`);
               const patched = await updateCardFn(receivingCardName, card, clientDeps);
@@ -591,7 +626,7 @@ export function createGoogleChatProvider(deps: GoogleChatProviderDeps): GoogleCh
         enqueue(async () => {
           if (entry.name === undefined) return; // shouldn't happen given enqueue's own FIFO ordering, but stays defensive
           const status = failed ? "failed" : "success";
-          const card = buildToolCallCard("Sto pensando…", tailTruncate(entry.buffer, REASONING_TAIL_CHARS), status);
+          const card = buildToolCallCard(t("google-chat.thinking"), tailTruncate(entry.buffer, REASONING_TAIL_CHARS), status, t);
           log(`[chat:${space}] [out] reasoning patch (${id}): status=${status} bufferLen=${entry.buffer.length}`);
           await updateCardFn(entry.name, card, clientDeps);
           reasoningCards.delete(id);
@@ -607,7 +642,7 @@ export function createGoogleChatProvider(deps: GoogleChatProviderDeps): GoogleCh
         if (pending) {
           enqueue(async () => {
             log(`[chat:${space}] [out] confirm card: ${pending.summary}`);
-            const sent = await sendCardFn(space, buildConfirmCard(pending), clientDeps);
+            const sent = await sendCardFn(space, buildConfirmCard(pending, t), clientDeps);
             sentMessageNames.add(sent.name);
           });
         }
@@ -617,14 +652,18 @@ export function createGoogleChatProvider(deps: GoogleChatProviderDeps): GoogleCh
           enqueue(async () => {
             log(`[chat:${space}] [out] login card: ${login.service}`);
             const options = viewer.isDirectMessage ? undefined : { privateViewer: viewer.user };
-            const sent = await sendCardFn(space, buildLoginCard(login), clientDeps, options);
+            const sent = await sendCardFn(space, buildLoginCard(login, t), clientDeps, options);
             sentMessageNames.add(sent.name);
           });
         }
       },
-      finalize: async (finalText: string) => {
-        const trimmed = finalText.trim();
-        if (trimmed.length > 0 && trimmed !== NO_REPLY && trimmed !== PENDING_CONFIRMATION_NOTE) {
+      finalize: async (finalText, info) => {
+        // The core's stand-in for an answer the model didn't write: the
+        // confirmation card already says it; only a list after it is sent.
+        const note = info?.pendingNote;
+        const shown = note !== undefined && finalText.startsWith(note) ? finalText.slice(note.length) : finalText;
+        const trimmed = shown.trim();
+        if (trimmed.length > 0 && trimmed !== NO_REPLY) {
           for (const message of splitForSendLimit(trimmed)) {
             sendPlain(message);
           }
@@ -651,19 +690,20 @@ export function createGoogleChatProvider(deps: GoogleChatProviderDeps): GoogleCh
       ...(event.senderEmail === undefined ? {} : { claims: { email: event.senderEmail } }),
     };
 
-    const confirmReply = await deps.confirm(event.text, sessionKey, principal);
-    if (confirmReply === RESUME_AFTER_CONFIRM) {
-      await resumeTurn(handleTurn, event.space, principal, event.isDirectMessage);
+    const reply = await deps.confirm(event.text, sessionKey, principal, event.locale);
+    if (reply?.resume) {
+      await resumeTurn(handleTurn, event.space, principal, event.isDirectMessage, event.locale);
       return;
     }
-    if (confirmReply !== null) {
-      log(`[chat:${event.space}] [out] ${confirmReply}`);
-      const sent = await sendMessageFn(event.space, confirmReply, clientDeps);
+    if (reply !== null) {
+      log(`[chat:${event.space}] [out] ${reply.text}`);
+      const sent = await sendMessageFn(event.space, reply.text, clientDeps);
       sentMessageNames.add(sent.name);
       return;
     }
 
-    // Only the actual model turn needs serializing — tryConfirm above
+    const t = await textsFor(principal, event.locale);
+    // Only the actual model turn needs serializing — the confirmation above
     // never touches SessionHistory, so it's always safe to run right
     // away regardless of whether this session is mid-turn.
     await runInSession(sessionKey, () =>
@@ -675,8 +715,9 @@ export function createGoogleChatProvider(deps: GoogleChatProviderDeps): GoogleCh
           sessionKey,
           principal,
           logPrefix: `[chat:${event.space}:${event.sender}] `,
+          ...(event.locale === undefined ? {} : { languageHint: event.locale }),
         },
-        createSink(event.space, { user: event.sender, isDirectMessage: event.isDirectMessage }),
+        createSink(event.space, { user: event.sender, isDirectMessage: event.isDirectMessage }, t),
       ),
     );
   }
@@ -709,7 +750,7 @@ export function createGoogleChatProvider(deps: GoogleChatProviderDeps): GoogleCh
       if (parsed.kind === "message") {
         await processMessageEvent(parsed, handleTurn);
       } else {
-        await onCardClick(parsed.parameters, parsed.space, parsed.sender, parsed.senderEmail, parsed.isDirectMessage, parsed.messageName);
+        await onCardClick(parsed.parameters, parsed.space, parsed.sender, parsed.senderEmail, parsed.isDirectMessage, parsed.messageName, parsed.locale);
       }
     } catch (err) {
       log(`[chat] event handling failed: ${String(err)}`);

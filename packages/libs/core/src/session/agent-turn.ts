@@ -54,25 +54,25 @@ import { generateText, streamText } from "ai-sdk-ollama";
 import type { SessionHistory } from "./history.ts";
 import type { StepInfo } from "./step-info.ts";
 import { detectPendingConfirmation } from "./pending-confirmation.ts";
-// The sentinel is a channel-side contract value (see `@mercury-fw/channel-types`);
-// re-exported here for the core callers importing it from this module.
-import { PENDING_CONFIRMATION_NOTE } from "@mercury-fw/channel-types";
-export { PENDING_CONFIRMATION_NOTE };
+import { CORE_MESSAGES } from "../i18n/core-messages.ts";
 
-/** `""` unless `lastStep` staged a confirm-required command, in which case `PENDING_CONFIRMATION_NOTE`. */
-function resolveEmptyText(lastStep: StepInfo | undefined): string {
-  return lastStep && detectPendingConfirmation(lastStep) ? PENDING_CONFIRMATION_NOTE : "";
+/** The stand-in for an answer the model didn't write, in English: what a turn with no `pendingNote` of its own uses. */
+const DEFAULT_PENDING_NOTE = CORE_MESSAGES["core.pending.note"]!;
+
+/** `""` unless `lastStep` staged a confirm-required command, in which case `note`, the stand-in for the answer. */
+function resolveEmptyText(lastStep: StepInfo | undefined, note: string): string {
+  return lastStep && detectPendingConfirmation(lastStep) ? note : "";
 }
 
 /**
  * What actually gets recorded into `SessionHistory` for this turn — `displayText`
  * unchanged, except when `lastStep` staged a confirm-required command: then
  * it's the opaque `[REQ:<token>]` marker instead, regardless of `displayText`.
- * The two diverge on purpose: `displayText` (what the channel shows/streams)
- * stays the fixed `PENDING_CONFIRMATION_NOTE` sentence — both channels
- * already suppress that exact string and show their own UI instead (a card,
- * a printed instruction) — but that sentence must never reach persistent
- * memory. A confirmation token is ephemeral by design (in-memory only, a
+ * The two diverge on purpose: `displayText` (what the channel gets) is the
+ * stand-in note (`core.pending.note`), which the channels drop in favour of
+ * their own UI (a card, a printed instruction) when the turn says so
+ * (`FinalizeInfo.pendingNote`) — but that sentence must never reach
+ * persistent memory. A confirmation token is ephemeral by design (in-memory only, a
  * few minutes' TTL — see `confirmation-store.ts`), so any summarized record
  * claiming an action is "still pending" goes stale almost immediately;
  * this is the stale-primer bug's actual fix. The marker forces a reader
@@ -88,8 +88,7 @@ function resolveHistoryText(lastStep: StepInfo | undefined, displayText: string)
 /**
  * Stops the tool-calling loop immediately after a step that staged a
  * confirm-required command — the model never gets a further step to
- * write anything about it (see `PENDING_CONFIRMATION_NOTE` above for
- * why). `stopWhen` conditions are OR'd together (confirmed against the
+ * write anything about it (see `resolveHistoryText` above for why). `stopWhen` conditions are OR'd together (confirmed against the
  * AI SDK's own source: `isStopConditionMet` resolves every condition and
  * stops if *any* is true), so combining this with `stepCountIs(100)`
  * doesn't change when the step-budget cap itself kicks in.
@@ -343,6 +342,12 @@ export async function runTurn(
     /** Set when the turn resumes after a confirmed action: the model gets
      * that action back as a tool call and its result, after the history. */
     resumed?: ResumedAction;
+    /** The stand-in for an answer the model didn't write because it staged
+     * an action, in the person's language; English when absent. Never
+     * streamed: it isn't the model's. */
+    pendingNote?: string;
+    /** Called when the turn's text is that stand-in, so the caller knows without comparing text. */
+    onPendingNote?: () => void;
   },
 ): Promise<string> {
   await history.addUserMessage(userInput);
@@ -415,8 +420,8 @@ export async function runTurn(
     deps.onUsage?.((await result.usage)?.inputTokens);
 
     if (fullText.trim().length === 0) {
-      fullText = resolveEmptyText(lastStep);
-      if (fullText.length > 0) deps.onTextChunk?.(fullText);
+      fullText = resolveEmptyText(lastStep, deps.pendingNote ?? DEFAULT_PENDING_NOTE);
+      if (fullText.length > 0) deps.onPendingNote?.();
     }
 
     await history.addAssistantMessage(resolveHistoryText(lastStep, fullText));
@@ -439,7 +444,8 @@ export async function runTurn(
   deps.onUsage?.(result.usage?.inputTokens);
   if (result.finishReason !== undefined) deps.onFinish?.(result.finishReason);
 
-  const text = result.text.trim().length === 0 ? resolveEmptyText(lastStep) : result.text;
+  const text = result.text.trim().length === 0 ? resolveEmptyText(lastStep, deps.pendingNote ?? DEFAULT_PENDING_NOTE) : result.text;
+  if (result.text.trim().length === 0 && text.length > 0) deps.onPendingNote?.();
   await history.addAssistantMessage(resolveHistoryText(lastStep, text));
   return text;
 }

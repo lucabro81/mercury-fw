@@ -93,6 +93,20 @@ describe("identify with a directory", () => {
     });
   });
 
+  // #281: whoever is refused isn't known, so has no language of their own;
+  // the channel's hint is all there is to go by, before the default.
+  test("a refusal reads in the language the channel hints at, each time, the cached answer included", async () => {
+    const { directory } = directoryOf({});
+    const texts = createTexts(
+      createI18n({ english: CORE_MESSAGES, locales: { it: { "core.access.unknown": "Chiedi l'accesso." } } }),
+      () => undefined,
+    );
+    const people = createPeople({ directory: { name: "people", directory }, texts });
+    expect(await people.identify(alice, "it-IT")).toMatchObject({ ok: false, message: "Chiedi l'accesso." });
+    expect(await people.identify(alice)).toMatchObject({ ok: false, message: UNKNOWN_MESSAGE });
+    expect(await people.admit(alice, "it")).toMatchObject({ ok: false, message: "Chiedi l'accesso." });
+  });
+
   test("an open instance talks to someone it doesn't know, as the channel says, with no roles", async () => {
     const { directory } = directoryOf({});
     const people = createPeople({ directory: { name: "people", directory }, unknown: "allow" });
