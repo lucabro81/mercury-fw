@@ -5,10 +5,10 @@ import {
   parseChatEvent,
   type GoogleChatProviderDeps,
 } from "./google-chat-provider.ts";
+import { GOOGLE_CHAT_MESSAGES } from "./messages.ts";
 import {
-  PENDING_CONFIRMATION_NOTE,
-  RESUME_AFTER_CONFIRM,
   type ConfirmOutcome,
+  type ChannelI18n,
   type HandleTurn,
   type InboundTurn,
   type TurnSink,
@@ -45,8 +45,19 @@ function fakeMessage(data: unknown, acked: string[], ackId = "a1") {
   };
 }
 
+/** The texts in English: the channel's, and the core's login link words, as the core would hand them. */
+const ENGLISH: Record<string, string> = {
+  ...GOOGLE_CHAT_MESSAGES,
+  "core.login.link": "Log in to {service}",
+  "core.login.link-any": "Log in to the service",
+};
+const english = (key: string, params?: Record<string, string | number>) =>
+  (ENGLISH[key] ?? key).replace(/\{(\w+)\}/g, (whole, name: string) => (params && name in params ? String(params[name]) : whole));
+const englishI18n: ChannelI18n = { forRequest: async () => ({ locale: "en", t: english }) };
+
 function baseDeps(overrides: Partial<GoogleChatProviderDeps> = {}): GoogleChatProviderDeps {
   return {
+    i18n: englishI18n,
     credentials: creds,
     subscription: "projects/p/subscriptions/s",
     // Default: input is never token-shaped, so every message falls through to
@@ -55,7 +66,7 @@ function baseDeps(overrides: Partial<GoogleChatProviderDeps> = {}): GoogleChatPr
     confirm: async () => null,
     tokenSourceFn: () => ({ getToken: async () => "fake-token" }),
     sendMessageFn: async (_space, _text) => ({ name: "spaces/X/messages/sent" }),
-    // Every turn now sends an immediate "Stato" card on start (see
+    // Every turn now sends an immediate "Status" card on start (see
     // createSink) — a safe default so tests that don't care about cards
     // specifically don't trigger a real HTTP call to the Chat API.
     sendCardFn: async (_space, _card) => ({ name: "spaces/X/messages/card-sent" }),
@@ -332,7 +343,7 @@ describe("createGoogleChatProvider — StreamingPull", () => {
     const deps = baseDeps({
       confirm: async (t, sessionKey, principal) => {
         confirmArgs.push([t, sessionKey, principal]);
-        return t === token ? 'Confermato ed eseguito: {"deleted":true}' : null;
+        return t === token ? { text: "Confirmed and done." } : null;
       },
       subscriptionFn: () => sub as any,
       sendMessageFn: async (_space, text) => {
@@ -349,7 +360,7 @@ describe("createGoogleChatProvider — StreamingPull", () => {
     await new Promise((r) => setTimeout(r, 20));
 
     expect(handleTurnCalled).toBe(false);
-    expect(sent).toEqual(['Confermato ed eseguito: {"deleted":true}']);
+    expect(sent).toEqual(["Confirmed and done."]);
     // The sender as the core keys people: only they can confirm what they staged.
     expect(confirmArgs).toEqual([
       [token, "spaces/X:users/42", { id: "users/42", provider: "google-chat", displayName: "Luca", claims: { email: "luca@example.com" } }],
@@ -420,7 +431,7 @@ describe("createGoogleChatProvider — StreamingPull", () => {
     const deps = baseDeps({
       confirm: async (t, sessionKey, principal) => {
         confirmArgs.push([t, sessionKey, principal]);
-        return t === token ? 'Confermato ed eseguito: {"deleted":true}' : null;
+        return t === token ? { text: "Confirmed and done." } : null;
       },
       subscriptionFn: () => sub as any,
       sendMessageFn: async (_space, text) => {
@@ -445,7 +456,7 @@ describe("createGoogleChatProvider — StreamingPull", () => {
     );
     await new Promise((r) => setTimeout(r, 20));
 
-    expect(sent).toEqual(['Confermato ed eseguito: {"deleted":true}']);
+    expect(sent).toEqual(["Confirmed and done."]);
     // The sender as the core keys people: only they can confirm what they staged.
     expect(confirmArgs).toEqual([[token, "spaces/X:users/42", { id: "users/42", provider: "google-chat", claims: { email: "luca@example.com" } }]]);
   });
@@ -457,7 +468,7 @@ describe("createGoogleChatProvider — StreamingPull", () => {
     const sub = fakeSubscription();
 
     const deps = baseDeps({
-      confirm: async () => "Nessuna conferma in sospeso per questo token — potrebbe essere scaduta, già usata, o mai esistita.",
+      confirm: async () => ({ text: "There's no pending confirmation for this token." }),
       subscriptionFn: () => sub as any,
       sendMessageFn: async (_space, text) => {
         sent.push(text);
@@ -476,7 +487,7 @@ describe("createGoogleChatProvider — StreamingPull", () => {
     );
     await new Promise((r) => setTimeout(r, 20));
 
-    expect(sent).toEqual(["Nessuna conferma in sospeso per questo token — potrebbe essere scaduta, già usata, o mai esistita."]);
+    expect(sent).toEqual(["There's no pending confirmation for this token."]);
   });
 
   // Regression test for the redelivery/duplicate-processing bug (fixed
@@ -592,7 +603,7 @@ describe("createGoogleChatProvider — StreamingPull", () => {
     sub.emit("message", fakeMessage(messageEvent(), []));
     await new Promise((r) => setTimeout(r, 20));
 
-    // sentCards[0] is the turn's own immediate "Stato" card; the confirm card is the one after it.
+    // sentCards[0] is the turn's own immediate "Status" card; the confirm card is the one after it.
     expect(sentCards).toHaveLength(2);
     const confirmCard = sentCards.find((c) => JSON.stringify(c.card).includes("TOK1"))!;
     expect(confirmCard.space).toBe("spaces/X");
@@ -654,7 +665,8 @@ describe("createGoogleChatProvider — StreamingPull", () => {
     ]);
   });
 
-  test("a single-token staging keeps its one Conferma button", async () => {
+  // #281: the single button's word is the channel's, in the person's language.
+  test("a single-token staging gets one Confirm button", async () => {
     const sentCards: unknown[] = [];
     const sub = fakeSubscription();
     const provider = createGoogleChatProvider(
@@ -679,7 +691,7 @@ describe("createGoogleChatProvider — StreamingPull", () => {
     await new Promise((r) => setTimeout(r, 20));
 
     const card = JSON.stringify(sentCards.find((c) => JSON.stringify(c).includes("TOK1")));
-    expect(card).toContain('"text":"Conferma"');
+    expect(card).toContain('"text":"Confirm"');
     expect(card.match(/"function":"confirm"/g)).toHaveLength(1);
   });
 
@@ -690,7 +702,7 @@ describe("createGoogleChatProvider — StreamingPull", () => {
     const provider = createGoogleChatProvider(
       baseDeps({
         subscriptionFn: () => sub as any,
-        confirm: async (t) => (t === "ab12-cd34" ? RESUME_AFTER_CONFIRM : null),
+        confirm: async (t) => (t === "ab12-cd34" ? { text: "Confirmed, picking up where I left off.", resume: true } : null),
         sendMessageFn: async (_space, text) => {
           sent.push(text);
           return { name: `spaces/X/messages/${sent.length}` };
@@ -707,7 +719,7 @@ describe("createGoogleChatProvider — StreamingPull", () => {
 
     expect(turns).toHaveLength(1);
     expect(turns[0]).toMatchObject({ channel: "google-chat", text: "", resumeAfterConfirm: true, sessionKey: "spaces/X:users/42", multiUser: false });
-    expect(sent).not.toContain(RESUME_AFTER_CONFIRM);
+    expect(sent).not.toContain("Confirmed, picking up where I left off.");
     expect(sent).toContain("The page says hello.");
   });
 
@@ -718,7 +730,7 @@ describe("createGoogleChatProvider — StreamingPull", () => {
     const provider = createGoogleChatProvider(
       baseDeps({
         subscriptionFn: () => sub as any,
-        confirm: async () => RESUME_AFTER_CONFIRM,
+        confirm: async () => ({ text: "Confirmed, picking up where I left off.", resume: true }),
         sendMessageFn: async (_space, text) => {
           sent.push(text);
           return { name: `spaces/X/messages/${sent.length}` };
@@ -752,7 +764,7 @@ describe("createGoogleChatProvider — StreamingPull", () => {
       multiUser: true,
       principal: { id: "users/42", provider: "google-chat", claims: { email: "luca@example.com" } },
     });
-    expect(sent).not.toContain(RESUME_AFTER_CONFIRM);
+    expect(sent).not.toContain("Confirmed, picking up where I left off.");
   });
 
   test("a resumed turn waits for the session's turn in flight, like any message", async () => {
@@ -762,7 +774,7 @@ describe("createGoogleChatProvider — StreamingPull", () => {
     const provider = createGoogleChatProvider(
       baseDeps({
         subscriptionFn: () => sub as any,
-        confirm: async (t) => (t === "ab12-cd34" ? RESUME_AFTER_CONFIRM : null),
+        confirm: async (t) => (t === "ab12-cd34" ? { text: "Confirmed, picking up where I left off.", resume: true } : null),
       }),
     );
 
@@ -782,12 +794,11 @@ describe("createGoogleChatProvider — StreamingPull", () => {
     expect(order).toEqual(["message:start", "message:end", "resume:start", "resume:end"]);
   });
 
-  // agent-turn.ts returns PENDING_CONFIRMATION_NOTE as the turn's "text"
-  // when the loop stopped for a pending confirmation (see
-  // pendingConfirmationStop) — the card (test above) already says
-  // everything a human needs. Sending this note too would be a second,
-  // redundant message for the exact thing the card just covered.
-  test("does not send PENDING_CONFIRMATION_NOTE as a message — the card already covers it", async () => {
+  // The core hands over its stand-in note as the turn's text when the loop
+  // stopped for a pending confirmation, and says so — the card (test above)
+  // already says everything a human needs. Sending the note too would be a
+  // second, redundant message for the exact thing the card just covered.
+  test("does not send the core's pending note as a message — the card already covers it", async () => {
     const sent: string[] = [];
     const sub = fakeSubscription();
 
@@ -801,7 +812,7 @@ describe("createGoogleChatProvider — StreamingPull", () => {
     const provider = createGoogleChatProvider(deps);
 
     await provider.start(async (_turn, sink) => {
-      await sink.finalize(PENDING_CONFIRMATION_NOTE);
+      await sink.finalize("Action pending.", { pendingNote: "Action pending." });
     });
     sub.emit("message", fakeMessage(messageEvent(), []));
     await new Promise((r) => setTimeout(r, 20));
@@ -946,7 +957,7 @@ describe("createSink — tool-call cards", () => {
     await new Promise((r) => setTimeout(r, 10));
 
     expect(sentMessages).toEqual([]);
-    // sentCards[0] is the "Stato" card every turn sends immediately
+    // sentCards[0] is the "Status" card every turn sends immediately
     // on start (see createSink); the tool card is the one after it.
     expect(sentCards).toHaveLength(2);
     const toolCard = sentCards.find((c) => c.card.sections[0].header === "Sto leggendo dati con jira…")!;
@@ -955,7 +966,7 @@ describe("createSink — tool-call cards", () => {
     expect(section.collapsible).toBe(true);
     expect(section.uncollapsibleWidgetsCount).toBe(0);
     expect(JSON.stringify(section.widgets)).toContain("jira issue search --jql X");
-    expect(JSON.stringify(section.widgets)).toContain("In corso…");
+    expect(JSON.stringify(section.widgets)).toContain("In progress…");
   });
 
   test("onToolStart with no toolCallId still sends plain text via sendMessageFn (capture-ping path unchanged)", async () => {
@@ -976,10 +987,10 @@ describe("createSink — tool-call cards", () => {
     await new Promise((r) => setTimeout(r, 10));
 
     expect(sentMessages).toEqual(["_Mi sto segnando un'informazione importante…_"]);
-    // Only the turn's own immediate "Stato" card — no tool card, since a
+    // Only the turn's own immediate "Status" card — no tool card, since a
     // capture-ping has no toolCallId.
     expect(sentCards).toHaveLength(1);
-    expect((sentCards[0] as any).sections[0].header).toBe("Stato");
+    expect((sentCards[0] as any).sections[0].header).toBe("Status");
   });
 
   test("onToolFinish patches the exact message name onToolStart created, with the outcome's status line", async () => {
@@ -1003,13 +1014,13 @@ describe("createSink — tool-call cards", () => {
     // The title itself must also reflect completion, not just the collapsed
     // body — a card whose header still reads "Sto leggendo..." forever
     // (present progressive) looked stuck-in-progress even once patched.
-    expect(section.header).toBe("Sto leggendo dati con jira… Fatto.");
-    expect(JSON.stringify(section.widgets)).toContain("Fatto.");
+    expect(section.header).toBe("Sto leggendo dati con jira… Done.");
+    expect(JSON.stringify(section.widgets)).toContain("Done.");
   });
 
   test.each([
-    ["failed", "Non riuscito."],
-    ["pending", "In attesa di conferma."],
+    ["failed", "Failed."],
+    ["pending", "Waiting for confirmation."],
   ] as const)("onToolFinish for '%s' renders the corresponding status line in both the title and the body", async (outcome, statusText) => {
     const patched: Array<{ card: any }> = [];
     const sink = await captureSink({
@@ -1070,7 +1081,7 @@ describe("createSink — tool-call cards", () => {
     sink.onToolFinish?.("tc-2", "success");
     await new Promise((r) => setTimeout(r, 10));
 
-    // 3 sends: the turn's own immediate "Stato" card, plus one per tool call.
+    // 3 sends: the turn's own immediate "Status" card, plus one per tool call.
     expect(sent).toHaveLength(3);
     expect(patched).toHaveLength(2);
     expect(patched[0]!.name).not.toBe(patched[1]!.name);
@@ -1095,7 +1106,7 @@ describe("createSink — immediate receiving card", () => {
   // Covers the real gap (confirmed live, ~10s) between a message arriving
   // and the first visible activity — Ollama's own prompt-prefill/model-load
   // time, which happens before even the first reasoning token.
-  test("a non-expandable 'Stato' card ('Messaggio in ricezione…') is sent immediately when the turn starts, before any tool/reasoning activity", async () => {
+  test("a non-expandable 'Status' card ('Message received…') is sent immediately when the turn starts, before any tool/reasoning activity", async () => {
     const sentCards: any[] = [];
     await captureSink({
       sendCardFn: async (space, card) => {
@@ -1109,11 +1120,11 @@ describe("createSink — immediate receiving card", () => {
     const section = sentCards[0]!.card.sections[0];
     // Generic "Stato" title, not a restatement of the body — leaves room
     // for a genuinely different state to reuse this same card shape later.
-    expect(section.header).toBe("Stato");
+    expect(section.header).toBe("Status");
     // A section with zero widgets rendered as a near-empty grey sliver in
     // Google Chat (confirmed live) — must always carry visible text.
     expect(section.widgets).not.toEqual([]);
-    expect(JSON.stringify(section.widgets)).toContain("Messaggio in ricezione…");
+    expect(JSON.stringify(section.widgets)).toContain("Message received…");
     expect(section.collapsible).toBeUndefined(); // nothing to expand
   });
 
@@ -1168,7 +1179,7 @@ describe("createSink — reasoning card", () => {
     await new Promise((r) => setTimeout(r, 20));
 
     expect(sentCards).toHaveLength(1);
-    expect(sentCards[0]!.sections[0].header).toBe("Stato");
+    expect(sentCards[0]!.sections[0].header).toBe("Status");
   });
 
   // No live peek: the reasoning text itself must never appear before the
@@ -1177,10 +1188,10 @@ describe("createSink — reasoning card", () => {
   // (native `collapsible` resets on every PATCH; not patching at all while
   // loading is what actually fixes that, not forcing the card open).
   //
-  // The first chunk claims the turn's own immediate "Stato" card
+  // The first chunk claims the turn's own immediate "Status" card
   // (see buildReceivingCard) by PATCHING it into this loading state,
   // rather than sending a second message — so this is a patch, not a send.
-  test("the first onReasoningChunk patches the receiving card into a loading 'Sto pensando…' card with no reasoning content", async () => {
+  test("the first onReasoningChunk patches the receiving card into a loading 'Thinking…' card with no reasoning content", async () => {
     const patched: Array<{ name: string; card: any }> = [];
     const sink = await captureReasoningSink({
       sendCardFn: async () => ({ name: "spaces/X/messages/r1" }),
@@ -1196,10 +1207,10 @@ describe("createSink — reasoning card", () => {
     expect(patched).toHaveLength(1);
     expect(patched[0]!.name).toBe("spaces/X/messages/r1"); // the receiving card's own message
     const section = patched[0]!.card.sections[0];
-    expect(section.header).toBe("Sto pensando…");
+    expect(section.header).toBe("Thinking…");
     expect(section.collapsible).toBe(true);
     expect(section.uncollapsibleWidgetsCount).toBe(0);
-    expect(JSON.stringify(section.widgets)).toContain("In corso…");
+    expect(JSON.stringify(section.widgets)).toContain("In progress…");
     expect(JSON.stringify(section.widgets)).not.toContain("primo pezzo");
   });
 
@@ -1241,7 +1252,7 @@ describe("createSink — reasoning card", () => {
     // patched[0] is the first chunk's claim (loading); patched[1] is the final reveal.
     expect(patched).toHaveLength(2);
     const section = patched[1]!.card.sections[0];
-    expect(section.header).toBe("Sto pensando… Fatto.");
+    expect(section.header).toBe("Thinking… Done.");
     // Native collapsible, collapsed by default — this is the LAST patch
     // this message will ever receive, so nothing can reset it out from
     // under the user again.
@@ -1265,7 +1276,7 @@ describe("createSink — reasoning card", () => {
     await new Promise((r) => setTimeout(r, 20));
 
     expect(patched).toHaveLength(2);
-    expect(patched[1]!.card.sections[0].header).toBe("Sto pensando… Non riuscito.");
+    expect(patched[1]!.card.sections[0].header).toBe("Thinking… Failed.");
   });
 
   test("tail-truncation shows the buffer's actual end, prefixed with '…', not its start", async () => {
@@ -1326,7 +1337,7 @@ describe("createSink — reasoning card", () => {
 
     // block-2 got a genuinely new card (the receiving card was already
     // claimed by block-1), not a reused/patched one.
-    const block2Send = sent.find((s) => (s.card.sections[0].header as string) === "Sto pensando…");
+    const block2Send = sent.find((s) => (s.card.sections[0].header as string) === "Thinking…");
     expect(block2Send).toBeDefined();
   });
 
@@ -1354,11 +1365,11 @@ describe("createSink — reasoning card", () => {
     await new Promise((r) => setTimeout(r, 20));
 
     expect(events).toEqual([
-      "send:Stato", // the turn's own immediate card, sent before any of the above
-      "patch:Sto pensando…", // block-1's first chunk claims it
+      "send:Status", // the turn's own immediate card, sent before any of the above
+      "patch:Thinking…", // block-1's first chunk claims it
       "send:Sto leggendo dati con jira…",
-      "patch:Sto pensando… Fatto.",
-      "patch:Sto leggendo dati con jira… Fatto.",
+      "patch:Thinking… Done.",
+      "patch:Sto leggendo dati con jira… Done.",
     ]);
   });
 });
@@ -1376,7 +1387,7 @@ describe("createSink — login card", () => {
   }
 
   const expectedCard = {
-    sections: [{ widgets: [{ buttonList: { buttons: [{ text: "Accedi a jira", onClick: { openLink: { url: LOGIN_URL } } }] } }] }],
+    sections: [{ widgets: [{ buttonList: { buttons: [{ text: "Log in to jira", onClick: { openLink: { url: LOGIN_URL } } }] } }] }],
   };
 
   /** Runs one turn for `event` whose handler calls `turn`, and returns every card sent with its options. */
@@ -1394,11 +1405,11 @@ describe("createSink — login card", () => {
     );
     await provider.start(async (_turn, sink) => {
       turn(sink);
-      await sink.finalize("Accedi a Jira con il link che ti è stato mostrato.");
+      await sink.finalize("Log in to Jira con il link che ti è stato mostrato.");
     });
     sub.emit("message", fakeMessage(event, []));
     await new Promise((r) => setTimeout(r, 20));
-    // sent[0] is the turn's own immediate "Stato" card.
+    // sent[0] is the turn's own immediate "Status" card.
     return sent.slice(1);
   }
 
@@ -1459,7 +1470,7 @@ describe("createSink — login card", () => {
     expect(cards).toHaveLength(2);
     expect(JSON.stringify(cards[0]!.card)).toContain("TOK1");
     expect(cards[1]!.card).toEqual({
-      sections: [{ widgets: [{ buttonList: { buttons: [{ text: "Accedi a bitbucket", onClick: { openLink: { url: "https://bb.example/authorize" } } }] } }] }],
+      sections: [{ widgets: [{ buttonList: { buttons: [{ text: "Log in to bitbucket", onClick: { openLink: { url: "https://bb.example/authorize" } } }] } }] }],
     });
   });
 });
@@ -1485,9 +1496,25 @@ describe("createGoogleChatProvider — the confirmation card after a click", () 
 
   /** The card a taken choice leaves: the request, the choice, no buttons. */
   const chosen = (line: string) => ({
-    header: { title: "Conferma richiesta" },
+    header: { title: "Confirmation needed" },
     sections: [{ widgets: [{ textParagraph: { text: "`https://example.org/a`" } }, { textParagraph: { text: line } }] }],
   });
+
+  /** What the core would tell the person about `outcome`, in English. */
+  const replyTo = (outcome: ConfirmOutcome): string | null => {
+    switch (outcome.status) {
+      case "not-a-token":
+        return null;
+      case "not-found":
+        return "There's no pending confirmation for this token.";
+      case "ok":
+        return "Confirmed and done.";
+      case "failed":
+        return `Confirmed, but it failed: ${outcome.error}`;
+      case "resume":
+        return "Confirmed, picking up where I left off.";
+    }
+  };
 
   function setup(outcome: ConfirmOutcome | undefined, overrides: Partial<GoogleChatProviderDeps> = {}) {
     const sub = fakeSubscription();
@@ -1504,7 +1531,7 @@ describe("createGoogleChatProvider — the confirmation card after a click", () 
           : {
               resolveConfirmation: async (token, sessionKey, principal) => {
                 resolved.push([token, sessionKey, principal]);
-                return outcome;
+                return { ...outcome, text: replyTo(outcome) };
               },
             }),
         updateCardFn: async (name, card) => {
@@ -1540,10 +1567,10 @@ describe("createGoogleChatProvider — the confirmation card after a click", () 
     await t.emit(click());
 
     expect(t.resolved).toEqual([["T2", "spaces/X:users/42", { id: "users/42", provider: "google-chat", claims: { email: "luca@example.com" } }]]);
-    expect(t.patched).toEqual([{ name: CARD, card: chosen("Scelto: Sempre per example.org") }]);
+    expect(t.patched).toEqual([{ name: CARD, card: chosen("Chosen: Sempre per example.org") }]);
     expect(t.order).toEqual(["patch", "turn"]);
     expect(t.turns[0]).toMatchObject({ resumeAfterConfirm: true, sessionKey: "spaces/X:users/42" });
-    expect(t.sent).not.toContain(RESUME_AFTER_CONFIRM);
+    expect(t.sent).not.toContain("Confirmed, picking up where I left off.");
   });
 
   test("a choice whose action ran shows on the card, and the reply is sent as before", async () => {
@@ -1551,8 +1578,8 @@ describe("createGoogleChatProvider — the confirmation card after a click", () 
     await t.start();
     await t.emit(click());
 
-    expect(t.patched).toEqual([{ name: CARD, card: chosen("Scelto: Sempre per example.org") }]);
-    expect(t.sent).toEqual(['Confermato ed eseguito: {"deleted":true}']);
+    expect(t.patched).toEqual([{ name: CARD, card: chosen("Chosen: Sempre per example.org") }]);
+    expect(t.sent).toEqual(["Confirmed and done."]);
     expect(t.turns).toHaveLength(0);
   });
 
@@ -1561,19 +1588,19 @@ describe("createGoogleChatProvider — the confirmation card after a click", () 
     await t.start();
     await t.emit(click());
 
-    expect(t.patched).toEqual([{ name: CARD, card: chosen("Scelto: Sempre per example.org") }]);
-    expect(t.sent).toEqual(["Confermato, ma l'esecuzione è fallita: boom"]);
+    expect(t.patched).toEqual([{ name: CARD, card: chosen("Chosen: Sempre per example.org") }]);
+    expect(t.sent).toEqual(["Confirmed, but it failed: boom"]);
   });
 
   test("a click that matched nothing leaves the card alone: in a shared space it may be someone else's", async () => {
     const t = setup({ status: "not-found" }, {
-      confirm: async () => "Nessuna conferma in sospeso per questo token — potrebbe essere scaduta, già usata, o mai esistita.",
+      confirm: async () => ({ text: "There's no pending confirmation for this token." }),
     });
     await t.start();
     await t.emit(click({ spaceType: "SPACE" }));
 
     expect(t.patched).toEqual([]);
-    expect(t.sent).toEqual(["Nessuna conferma in sospeso per questo token — potrebbe essere scaduta, già usata, o mai esistita."]);
+    expect(t.sent).toEqual(["There's no pending confirmation for this token."]);
   });
 
   // Cold review of #269: resolveConfirmation says only not-found for someone the
@@ -1583,7 +1610,7 @@ describe("createGoogleChatProvider — the confirmation card after a click", () 
     const t = setup({ status: "not-found" }, {
       confirm: async (token) => {
         confirmed.push(token);
-        return "Non ti conosco: chiedi a chi gestisce questa istanza di aggiungerti.";
+        return { text: "I don't know you: ask whoever runs this instance to add you." };
       },
     });
     await t.start();
@@ -1591,7 +1618,7 @@ describe("createGoogleChatProvider — the confirmation card after a click", () 
 
     expect(confirmed).toEqual(["T2"]);
     expect(t.patched).toEqual([]);
-    expect(t.sent).toEqual(["Non ti conosco: chiedi a chi gestisce questa istanza di aggiungerti."]);
+    expect(t.sent).toEqual(["I don't know you: ask whoever runs this instance to add you."]);
   });
 
   test("a click whose token isn't token-shaped sends nothing and leaves the card", async () => {
@@ -1609,7 +1636,7 @@ describe("createGoogleChatProvider — the confirmation card after a click", () 
     await t.start();
     await t.emit(click({ label: null }));
 
-    expect(t.patched).toEqual([{ name: CARD, card: chosen("Scelta registrata.") }]);
+    expect(t.patched).toEqual([{ name: CARD, card: chosen("Choice recorded.") }]);
   });
 
   test("a click without the card's message resolves as before, with nothing to update", async () => {
@@ -1642,7 +1669,7 @@ describe("createGoogleChatProvider — the confirmation card after a click", () 
     const t = setup(undefined, {
       confirm: async (token) => {
         confirmed.push(token);
-        return RESUME_AFTER_CONFIRM;
+        return { text: "Confirmed, picking up where I left off.", resume: true };
       },
     });
     await t.start();
@@ -1651,5 +1678,74 @@ describe("createGoogleChatProvider — the confirmation card after a click", () 
     expect(confirmed).toEqual(["T2"]);
     expect(t.patched).toEqual([]);
     expect(t.turns).toHaveLength(1);
+  });
+});
+
+// #281: what Google Chat's own client says about the person's language is
+// the turn's hint, and every card speaks the language the core resolves.
+describe("createGoogleChatProvider — the person's language", () => {
+  test("reads the client's language off a message and a card click, when the event carries it", () => {
+    expect(parseChatEvent({ ...messageEvent(), common: { userLocale: "it-IT" } })).toMatchObject({ kind: "message", locale: "it-IT" });
+    expect(parseChatEvent(messageEvent())).not.toHaveProperty("locale");
+    expect(
+      parseChatEvent({
+        type: "CARD_CLICKED",
+        space: { name: "spaces/X" },
+        user: { name: "users/42" },
+        action: { parameters: [{ key: "token", value: "T1" }] },
+        common: { userLocale: "it" },
+      }),
+    ).toMatchObject({ kind: "card-click", locale: "it" });
+  });
+
+  test("hands the language to the confirmation and the turn, and words the cards in the one the core resolves", async () => {
+    const sub = fakeSubscription();
+    const seen: unknown[] = [];
+    const cards: unknown[] = [];
+    const italian: ChannelI18n = {
+      forRequest: async (principal, hint) => {
+        seen.push(["texts", principal?.id, hint]);
+        return { locale: "it", t: (key) => `it:${key}` };
+      },
+    };
+    const provider = createGoogleChatProvider(
+      baseDeps({
+        subscriptionFn: () => sub as any,
+        i18n: italian,
+        confirm: async (_text, _key, _principal, hint) => (seen.push(["confirm", hint]), null),
+        sendCardFn: async (_space, card) => (cards.push(card), { name: "spaces/X/messages/card" }),
+      }),
+    );
+    await provider.start(async (turn, sink) => {
+      seen.push(["turn", turn.languageHint]);
+      await sink.finalize("Ciao.");
+    });
+    sub.emit("message", fakeMessage({ ...messageEvent(), common: { userLocale: "it-IT" } }, []));
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect(seen).toEqual([
+      ["confirm", "it-IT"],
+      ["texts", "users/42", "it-IT"],
+      ["turn", "it-IT"],
+    ]);
+    expect(cards).toEqual([{ sections: [{ header: "it:google-chat.receiving.title", widgets: [{ textParagraph: { text: "it:google-chat.receiving.text" } }] }] }]);
+  });
+
+  test("after the core's pending note, sends only the list that follows it", async () => {
+    const sub = fakeSubscription();
+    const sent: string[] = [];
+    const provider = createGoogleChatProvider(
+      baseDeps({
+        subscriptionFn: () => sub as any,
+        sendMessageFn: async (_space, text) => (sent.push(text), { name: "spaces/X/messages/1" }),
+      }),
+    );
+    await provider.start(async (_turn, sink) => {
+      await sink.finalize("Azione in sospeso.\n\nMER-1 Title", { pendingNote: "Azione in sospeso." });
+    });
+    sub.emit("message", fakeMessage(messageEvent(), []));
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect(sent).toEqual(["MER-1 Title"]);
   });
 });
