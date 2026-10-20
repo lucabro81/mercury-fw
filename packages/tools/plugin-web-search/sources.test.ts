@@ -9,7 +9,6 @@ const english: Translate = (key, params) =>
     params !== undefined && Object.hasOwn(params, name) ? String(params[name]) : whole,
   );
 
-
 /** A step with one call to `toolName` that returned `output`. */
 function step(toolName: string, output: unknown, id = "1"): StepInfo {
   return { toolCalls: [{ toolCallId: id, toolName, input: {} }], toolResults: [{ toolCallId: id, toolName, output }], content: [] };
@@ -38,6 +37,23 @@ describe("createSourcesGuard", () => {
     expect((await guard.run("Risposta.\n\nSources:\n- https://a.test/", steps, italian)).text).toBe(
       "Risposta.\n\nFonti:\n- A: https://a.test/",
     );
+  });
+
+  it("takes a translated heading as text, not as a pattern", async () => {
+    const odd: Translate = (key, params) => (key === "web-search.sources.heading" ? "Fonti (web)" : english(key, params));
+    const steps = [step("web_fetch", page("https://a.test/", "A"))];
+    expect((await guard.run("R.\n\nFonti (web):\n- https://a.test/", steps, odd)).text).toBe("R.\n\nFonti (web):\n- A: https://a.test/");
+    expect((await guard.run("R.\n\nFonti web:\n- https://a.test/", steps, odd)).text).toBe(
+      "R.\n\nFonti web:\n- https://a.test/\n\nFonti (web):\n- A: https://a.test/",
+    );
+  });
+
+  // A translation missing from the person's language shows as its key, the
+  // heading too: the gap is visible where it happens.
+  it("writes the key as the heading when the person's language lacks it", async () => {
+    const lacking: Translate = (key, params) => (key === "web-search.sources.heading" ? key : english(key, params));
+    const out = await guard.run("R.", [step("web_fetch", page("https://a.test/", "A"))], lacking);
+    expect(out.text).toBe("R.\n\nweb-search.sources.heading:\n- A: https://a.test/");
   });
 
   it("runs only when the turn read at least one page", () => {
