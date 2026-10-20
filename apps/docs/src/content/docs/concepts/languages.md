@@ -71,7 +71,8 @@ export default defineMercuryConfig({
 ```
 
 A language is named by its tag, `it` or `pt-br`. `defaultLocale` must be `en` or one of the languages listed, or the
-agent doesn't start. An app made with `mfw create` already has an empty `locales/en.json`, listed in the config.
+agent doesn't start. An app made with `mfw create` already has a `locales/en.json`, listed in the config: empty, or with the starting
+formatter rules' own texts (`app.jira.no-issues` with Jira).
 
 Not every fixed text goes through the language files yet: Mercury's own and the plugins' do, while the channels'
 texts (a Google Chat card's title, its buttons' default label) are still written in their code.
