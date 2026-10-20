@@ -11,6 +11,7 @@
  * would read as intended. At startup `report` names, per language, the keys
  * missing and the keys no package declares.
  */
+import { CORE_MESSAGES } from "./core-messages.ts";
 
 /** A catalog: key → text, `{param}` marking where a value goes. */
 export type Messages = Record<string, string>;
@@ -149,4 +150,25 @@ export function createI18n(opts: {
 /** `1 key`, `3 keys`. */
 function count(n: number, noun: string): string {
   return `${n} ${noun}${n === 1 ? "" : "s"}`;
+}
+
+/** The texts for a person: their language (see `I18n.languageFor`) and its translator. */
+export type Texts = {
+  /** For the person with `key` (undefined when nobody is known yet) on a channel hinting `hint`. */
+  forPerson: (key: string | undefined, hint?: string) => { locale: string; t: Translate };
+};
+
+/** `i18n`'s texts, each person's language read through `languageOf` (their profile). */
+export function createTexts(i18n: I18n, languageOf: (key: string) => string | undefined): Texts {
+  return {
+    forPerson: (key, hint) => {
+      const locale = i18n.languageFor(key === undefined ? undefined : languageOf(key), hint);
+      return { locale, t: i18n.translator(locale) };
+    },
+  };
+}
+
+/** The core's texts in English and nothing else: what a part of the core uses when it isn't handed the instance's. */
+export function englishTexts(): Texts {
+  return createTexts(createI18n({ english: CORE_MESSAGES }), () => undefined);
 }

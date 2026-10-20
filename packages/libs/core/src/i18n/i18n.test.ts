@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { createI18n, interpolate, namespaceErrors, negotiate } from "./i18n.ts";
+import { CORE_MESSAGES } from "./core-messages.ts";
+import { createI18n, createTexts, englishTexts, interpolate, namespaceErrors, negotiate } from "./i18n.ts";
 
 describe("interpolate", () => {
   test("fills every {param}, numbers included", () => {
@@ -167,5 +168,40 @@ describe("createI18n", () => {
         "[i18n] en: 1 key no package declares: core.old",
       ]);
     });
+  });
+});
+
+describe("createTexts", () => {
+  const english = { "core.bye": "Bye." };
+  const i18n = createI18n({ english, locales: { it: { "core.bye": "Ciao." } } });
+  const saved: Record<string, string> = { "static:alice": "it" };
+  const texts = createTexts(i18n, (key) => saved[key]);
+
+  test("a known person gets the language they saved", () => {
+    const { locale, t } = texts.forPerson("static:alice");
+    expect(locale).toBe("it");
+    expect(t("core.bye")).toBe("Ciao.");
+  });
+
+  test("someone with no saved language, or nobody known, gets the hint's, then the default", () => {
+    expect(texts.forPerson("static:bob").locale).toBe("en");
+    expect(texts.forPerson(undefined, "it-IT").t("core.bye")).toBe("Ciao.");
+    expect(texts.forPerson(undefined).t("core.bye")).toBe("Bye.");
+  });
+
+  test("the saved language beats the hint", () => {
+    expect(texts.forPerson("static:alice", "en").locale).toBe("it");
+  });
+});
+
+describe("englishTexts", () => {
+  test("the core's own texts in English, for whoever isn't given an instance's", () => {
+    expect(englishTexts().forPerson("anyone").t("core.access.unknown")).toBe(CORE_MESSAGES["core.access.unknown"]!);
+  });
+});
+
+describe("CORE_MESSAGES", () => {
+  test("every key is in the core's namespace", () => {
+    expect(namespaceErrors("core", CORE_MESSAGES)).toEqual([]);
   });
 });
