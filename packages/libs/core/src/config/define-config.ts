@@ -14,15 +14,30 @@
 import type { Plugin } from "@mercury-fw/plugin-types";
 import type { AuthPlugin, ChannelPlugin, DirectoryPlugin } from "@mercury-fw/channel-types";
 import type { Persona } from "../session/system-prompt.ts";
+import type { Messages } from "../i18n/i18n.ts";
 
 /** Who may talk to the instance and what they may use, on top of the directory. */
 export type MercuryAccess = {
   /** What to do with someone the directory doesn't know: `refuse` (the default) or `allow`, taking them as the channel says, with no roles. Without a directory everyone is known. */
   unknown?: "refuse" | "allow";
-  /** What a refused person is told. */
-  unknownMessage?: string;
   /** The installer's restriction: a plugin, by name, only for people holding one of these roles. The terminal is exempt. */
   plugins?: Record<string, { roles: string[] }>;
+};
+
+/**
+ * The languages the instance speaks. Every text a person sees is in English
+ * unless the instance ships a language file: `locales` maps a language tag
+ * (`it`, `pt-br`) to that file's texts, keyed as the packages declare them
+ * (`core.access.unknown`, …); an `en` file overrides English. Each person
+ * gets the language they saved, then the one their channel asks for, then
+ * `defaultLocale` (English when left out). A key a language's file lacks
+ * shows as the key itself.
+ */
+export type MercuryI18n = {
+  /** The language when neither the person nor the channel says; `en` or a key of `locales`. */
+  defaultLocale?: string;
+  /** The instance's language files, by language tag. */
+  locales?: Record<string, Messages>;
 };
 
 /** The shape of a Mercury instance's composition config: the tool plugins
@@ -31,14 +46,15 @@ export type MercuryAccess = {
  * channel like HTTP who is calling (one, or several tried in order; that
  * channel won't start without one),
  * the directory that tells the core who that is and their roles, who may
- * use what (`access`), plus the assistant's persona (its identity and tone;
- * the defaults when left out). */
+ * use what (`access`), the languages it speaks (`i18n`), plus the
+ * assistant's persona (its identity and tone; the defaults when left out). */
 export type MercuryConfig = {
   plugins: Plugin[];
   channels?: ChannelPlugin[];
   auth?: AuthPlugin | AuthPlugin[];
   directory?: DirectoryPlugin;
   access?: MercuryAccess;
+  i18n?: MercuryI18n;
   persona?: Persona;
 };
 

@@ -75,6 +75,8 @@ import { createHostReads } from "./identity/host-reads.ts";
 import { bindConfirm } from "./identity/confirm-binding.ts";
 import { createPersonLogins } from "./identity/person-logins.ts";
 import { createProfileStore, profilesPath } from "./identity/profiles.ts";
+import { createI18n, createTexts, type Texts } from "./i18n/i18n.ts";
+import { CORE_MESSAGES } from "./i18n/core-messages.ts";
 import { createProfileTools } from "./identity/profile-tools.ts";
 import { createPeople, type TurnWho } from "./identity/people.ts";
 import { createLinkStore, linksPath } from "./identity/links.ts";
@@ -116,6 +118,8 @@ export type ComposedApp = {
   channelRuntime: ChannelRuntimeContext;
   /** The confirm binding, for a caller (the terminal) that intercepts tokens directly. */
   confirmDeps: ConfirmDeps;
+  /** The texts a person sees, in their language: for the terminal's own lines. */
+  texts: Texts;
   ollamaHost: string;
   ollamaModel: string;
   /** Starts the Layer-3 idle-capture and self-review crons; returns a single stopper for shutdown. */
@@ -196,18 +200,31 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   // know unless the config opens it. The links live on the vault's volume,
   // where no model tool or HTTP read reaches.
   const accountLinks = createLinkStore({ path: linksPath(requireEnv("WIKI_VAULT_PATH")) });
-  // How each person wants to be called, kept next to the links.
+  // How each person wants to be called and the language they want, kept next to the links.
   const profiles = createProfileStore({ path: profilesPath(requireEnv("WIKI_VAULT_PATH")) });
+
+  // The texts a person sees, in their language (see i18n/i18n.ts): the
+  // packages' English, the instance's language files over it. A default
+  // language the instance doesn't ship stops the start; a file's gaps are
+  // logged, and show as their keys.
+  const i18n = createI18n({
+    english: CORE_MESSAGES,
+    ...(config.i18n?.locales === undefined ? {} : { locales: config.i18n.locales }),
+    ...(config.i18n?.defaultLocale === undefined ? {} : { defaultLocale: config.i18n.defaultLocale }),
+  });
+  for (const line of i18n.report()) console.error(line);
+  const texts = createTexts(i18n, (key) => profiles.languageOf(key));
+
   const people = createPeople({
     links: accountLinks,
     directory: loadDirectory(config.directory, { env: process.env, log: (msg) => console.error(msg) }),
     ...(config.access?.unknown === undefined ? {} : { unknown: config.access.unknown }),
-    ...(config.access?.unknownMessage === undefined ? {} : { unknownMessage: config.access.unknownMessage }),
+    texts,
     log: (msg) => console.error(msg),
   });
 
   // Linking a second account to a person, by a code (see identity/linking.ts).
-  const linking = createLinking({ people, links: accountLinks, assistantName });
+  const linking = createLinking({ people, links: accountLinks, assistantName, texts });
 
   // What a person is offered of the loaded plugins (see plugins/offering.ts).
   const offeringOf = (who: TurnWho): Offering =>
@@ -230,7 +247,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
 
   // People's pending logins to the plugins' services, finished by the channel
   // that receives the provider's redirect.
-  const personLogins = createPersonLogins({ log: (msg) => console.error(msg), assistantName });
+  const personLogins = createPersonLogins({ log: (msg) => console.error(msg), assistantName, texts });
 
   const histories = new Map<string, SessionHistory>();
   /**
@@ -332,8 +349,13 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   const sessionCapture = createSessionCapture({
     capture: (userId, sessionKey, messages) => captureSessionToMemory(userId, sessionKey, messages, Date.now(), captureDeps),
     threshold: MESSAGE_COUNT_CAPTURE_THRESHOLD,
-    describe: (pending) =>
-      `Conversazione recente (${pending.length} messaggi: "${previewMessages(pending, MESSAGE_PREVIEW_CHARS)}"), collection "${episodicCollection}"`,
+    texts,
+    describe: (pending, t) =>
+      t("core.status.capture-detail", {
+        count: pending.length,
+        preview: previewMessages(pending, MESSAGE_PREVIEW_CHARS),
+        collection: episodicCollection,
+      }),
   });
 
   // Procedural corrections (punto 2/Fase D): per-turn, not per-idle-session —
@@ -379,15 +401,21 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
    */
   async function processToolCorrections(
     steps: StepInfo[],
-    onToolStart?: TurnSink["onToolStart"],
-    onToolFinish?: TurnSink["onToolFinish"],
+    onToolStart: TurnSink["onToolStart"] | undefined,
+    onToolFinish: TurnSink["onToolFinish"] | undefined,
+    key: string,
   ): Promise<void> {
     const corrections = await extractToolCorrections(steps);
+    const { t } = texts.forPerson(key);
     for (const correction of corrections) {
       const correctionId = crypto.randomUUID();
       onToolStart?.(
-        "Mi sto segnando un'informazione importante…",
-        `Correzione per lo strumento "${correction.tool}" (argomento: "${correction.topic}", collection: "${toolCorrectionsCollection}")`,
+        t("core.status.remembering"),
+        t("core.status.correction-detail", {
+          tool: correction.tool,
+          topic: correction.topic,
+          collection: toolCorrectionsCollection,
+        }),
         correctionId,
       );
       try {
@@ -455,7 +483,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
       sessionTools,
       createWikiTools({ vaultPath: wikiVaultPath, key, stageConfirmation: sessionToolContext.stageConfirmation }),
     );
-    Object.assign(sessionTools, createProfileTools({ store: profiles, key }));
+    Object.assign(sessionTools, createProfileTools({ store: profiles, key, languages: i18n.supported }));
     Object.assign(sessionTools, createToolLogRecallTool({ sessionKey, owner: key }));
     // Verbatim archive recall, scoped to this person — lets the model resurface
     // what was actually said in earlier conversations, beyond the live window.
@@ -466,7 +494,9 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
     }
     // Every description, the plugins' included, names the assistant as the app does.
     const named = toolsWithAssistantName(sessionTools, assistantName);
-    return onToolStart ? withToolStartHook(named, onToolStart, toolStatusDescribers, onToolFinish) : named;
+    return onToolStart
+      ? withToolStartHook(named, onToolStart, toolStatusDescribers, onToolFinish, texts.forPerson(key).t)
+      : named;
   }
 
   const confirmationStore = createConfirmationStore();
@@ -513,6 +543,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
     systemPrompts: systemPromptsFor({ person: { key: "", roles: [] }, operator: false }),
     systemPromptsFor,
     preferredName: (key) => profiles.nameOf(key),
+    preferredLanguage: (key) => profiles.languageOf(key),
     stallTimeoutMs,
     shownLists: (sessionKey) => displayStore.shown(sessionKey),
     identify: people.identify,
@@ -598,6 +629,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
       },
       health: () => getSelfHealth({ qdrant, ollamaHost }),
       preferredName: (key) => profiles.nameOf(key),
+      preferredLanguage: (key) => profiles.languageOf(key),
     }),
     logins: { accept: personLogins.accept, complete: personLogins.complete },
     linking: { start: linking.start },
@@ -653,6 +685,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
     channels: config.channels ?? [],
     channelRuntime,
     confirmDeps,
+    texts,
     ollamaHost,
     ollamaModel,
     startCrons,

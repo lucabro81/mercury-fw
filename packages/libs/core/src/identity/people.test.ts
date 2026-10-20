@@ -5,8 +5,8 @@ import { CORE_MESSAGES } from "../i18n/core-messages.ts";
 import { createI18n, createTexts } from "../i18n/i18n.ts";
 import type { LinkStore } from "./links.ts";
 
-const UNKNOWN_MESSAGE = CORE_MESSAGES["core.access.unknown"];
-const UNAVAILABLE_MESSAGE = CORE_MESSAGES["core.access.unavailable"];
+const UNKNOWN_MESSAGE = CORE_MESSAGES["core.access.unknown"]!;
+const UNAVAILABLE_MESSAGE = CORE_MESSAGES["core.access.unavailable"]!;
 
 const alice: Principal = { id: "alice", provider: "static", displayName: "Alice" };
 const terminal = OPERATOR_PRINCIPAL;
