@@ -4,7 +4,8 @@
  * `<channel>.`); the instance ships one file per other language it supports,
  * and may override English too. Which language a text comes out in is decided
  * per person: the language they saved, then the channel's hint (an
- * `Accept-Language`-style list), then the instance's default, then English.
+ * `Accept-Language`-style list) when the caller passes one, then the
+ * instance's default, then English. No channel passes a hint yet.
  *
  * A key a supported language's file lacks comes out as the key itself, never
  * as English: a missing translation is a gap to fix, and English in its place

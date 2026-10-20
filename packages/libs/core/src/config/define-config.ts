@@ -29,12 +29,11 @@ export type MercuryAccess = {
  * unless the instance ships a language file: `locales` maps a language tag
  * (`it`, `pt-br`) to that file's texts, keyed as the packages declare them
  * (`core.access.unknown`, …); an `en` file overrides English. Each person
- * gets the language they saved, then the one their channel asks for, then
- * `defaultLocale` (English when left out). A key a language's file lacks
- * shows as the key itself.
+ * gets the language they saved, then `defaultLocale` (English when left
+ * out). A key a language's file lacks shows as the key itself.
  */
 export type MercuryI18n = {
-  /** The language when neither the person nor the channel says; `en` or a key of `locales`. */
+  /** The language of whoever hasn't picked one; `en` or a key of `locales`. */
   defaultLocale?: string;
   /** The instance's language files, by language tag. */
   locales?: Record<string, Messages>;
