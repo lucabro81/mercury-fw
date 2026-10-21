@@ -98,12 +98,13 @@ What a refused person is told is the text `core.access.unknown`, which a languag
 
 ## `i18n`
 
-The languages the agent speaks, beyond English. See [Languages](../../concepts/languages/).
+The languages the agent speaks, beyond English, and the time zone its people are in. See [Languages](../../concepts/languages/).
 
 | Field | |
 |---|---|
 | `locales` | The app's language files, by language tag: `{ en, it }`, each imported from `locales/<tag>.json`. A file maps a text's key to its translation; `en` replaces the English texts it names, and also declares the app's own `app.` texts. |
 | `defaultLocale` | The language of someone who hasn't picked one and whose app asks for none the agent has: `en` (the default) or a key of `locales`. Any other value stops the agent at startup. |
+| `timeZone` | The time zone of someone who hasn't saved one and whose app says none, by its IANA name (`Europe/Rome`): every message reaches the model with the time there. The agent's machine's when left out; a value that isn't a zone's name stops the agent at startup. See [The time where the person is](../../concepts/languages/#the-time-where-the-person-is). |
 
 ## `persona`
 

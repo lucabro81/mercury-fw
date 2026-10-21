@@ -111,10 +111,10 @@ mercury/                       # repo root
 ├── packages/                  # grouped into per-role buckets; every workspace is @mercury-fw/*
 │   ├── types/
 │   │   ├── plugin-types/          # the shared Plugin contract (tools, version 6) — types + apiVersion + skill/status helpers + the texts a person sees (`Messages`, `Params`, `Translate`), imported by core and plugins
-│   │   └── channel-types/         # the shared ChannelPlugin contract (channels, version 6) — Provider/TurnSink + confirm helpers + the channel's texts (`messages`, `ctx.i18n`, `languageHint`, `FinalizeInfo.pendingNote`), imported by core and channels
+│   │   └── channel-types/         # the shared ChannelPlugin contract (channels, version 6) — Provider/TurnSink + confirm helpers + the channel's texts (`messages`, `ctx.i18n`, `languageHint`, `FinalizeInfo.pendingNote`) + the turn's `timeZoneHint` and the person's settings (`ctx.settings`), imported by core and channels
 │   ├── channels/
 │   │   ├── channel-google-chat/   # Google Chat channel plugin: the registered-app transport (Pub/Sub + REST), loaded by the channel loader
-│   │   └── channel-http/          # HTTP channel plugin: the opt-in conversational HTTP surface (SSE /turn, /confirm, read routes, OpenAPI) for a custom UI; needs an auth provider
+│   │   └── channel-http/          # HTTP channel plugin: the opt-in conversational HTTP surface (SSE /turn, /confirm, read routes, PATCH /me, OpenAPI) for a custom UI; needs an auth provider
 │   ├── auth/
 │   │   ├── auth-oidc/             # auth provider: verifies an OpenID Connect bearer token (issuer's JWKS via jose) into a Principal
 │   │   └── auth-static/           # auth provider: a fixed token→principal map from AUTH_STATIC_TOKENS, for the test bed and e2e
@@ -160,7 +160,7 @@ packages/libs/core/
 └── src/
     ├── compose.ts            # builds the instance from the config it's given (model/tools/memory/turn pipeline); returns handleTurn + deferred start closures
     ├── model/                # Ollama provider, real context-window lookup
-    ├── session/               # Layer 1 history + summarizer + agent-turn loop + the system prompt (the plugins offered with their descriptions, their fragments and skill descriptors)
+    ├── session/               # Layer 1 history + summarizer + agent-turn loop + the system prompt (the plugins offered with their descriptions, their fragments and skill descriptors) + the stamp on each turn (turn-stamp.ts: when and where the person wrote it, the time zone it's in)
     ├── config/               # defineMercuryConfig + the MercuryConfig contract (plugins, channels, persona)
     ├── tools/                 # CLI executor + command parser/allowlist (cli-tool.ts) + config schema/loader/version-check
     ├── plugins/               # generic fail-soft tool-plugin loader (plugin-loader.ts; refuses a plugin with no description, whose `messages` reach outside its name, or named `core`/`app`), what each person is offered (offering.ts: act-as-self, access.plugins, the plugins listed with their descriptions) and the tools acting as Mercury for them (act-as-self.ts), the manifest
@@ -172,7 +172,7 @@ packages/libs/core/
     │   ├── directory-loader.ts # builds the declared user directory; closed when it fails (nobody but the terminal is let in)
     │   ├── terminal.ts         # the REPL loop (stdin/stdout), driven by the app's repl.ts — a dev console, not a channel
     │   └── tool-log.ts         # terminal-only debug visibility helpers
-    ├── identity/              # who sees what, decided in one place: who a principal is (people.ts: account links first, then the directory, cached, closed for unknown people by default, failing closed), the account links Mercury owns (links.ts, a file on the vault's volume out of its git; linking.ts, the one-time code; links-cli.ts, behind `mfw identity`), the user key (`<provider>:<id>`), a person's vault area (`users/<key>/`, `personal/` to the model) and its access checks, the per-person channel reads, people's pending logins to the services plugins act on as them, the startup migration of pre-key data
+    ├── identity/              # who sees what, decided in one place: who a principal is (people.ts: account links first, then the directory, cached, closed for unknown people by default, failing closed), the account links Mercury owns (links.ts, a file on the vault's volume out of its git; linking.ts, the one-time code; links-cli.ts, behind `mfw identity`), the user key (`<provider>:<id>`), a person's vault area (`users/<key>/`, `personal/` to the model) and its access checks, the per-person channel reads and settings (channel-settings.ts: the time zone a UI saves), people's pending logins to the services plugins act on as them, the startup migration of pre-key data
     ├── i18n/                  # the texts a person sees, in their language: the core's English catalog (core-messages.ts) and the loaded plugins' and channels' (`instanceI18n`), the instance's language files over them (its own `app.` keys declared by its `locales/en.json`), each person's language (their profile, the channel's language hint, then the default), the startup report of missing keys
     ├── credentials/           # at startup, links each plugin-declared CLI login kept outside ~/.config to the credentials volume, and reports one not set up yet
     ├── memory/                # Layer 3 — episodic store (Qdrant)

@@ -89,5 +89,9 @@ one message to POST localhost:4100/turn with curl, showing me the final event.
   empty label, which your interface words itself (a "Confirm" button), and when the model wrote nothing because the
   turn is waiting for a confirmation, the `final` event says so with `pendingNote`, so your interface can hide that
   sentence next to its own confirmation. See [Languages](../../concepts/languages/).
+- **The time.** The model reads each message with the time the person wrote it, in their time zone: send the
+  browser's in an `X-Time-Zone` header (`Intl.DateTimeFormat().resolvedOptions().timeZone` gives it), and offer it
+  in your settings with `PATCH /me`, which saves it for the person. A zone they saved wins over the header. See
+  [The time where the person is](../../concepts/languages/#the-time-where-the-person-is).
 
 The [HTTP API reference](../../reference/http-api/) describes every route and event.

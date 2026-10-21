@@ -1,6 +1,6 @@
 ---
 title: Languages
-description: The texts a person reads in their own language, and how an app adds a language.
+description: The texts a person reads in their own language, how an app adds a language, and the time zone a person is in.
 sidebar:
   order: 7
 ---
@@ -81,3 +81,28 @@ formatter rules' own texts (`app.jira.no-issues` with Jira).
 Every fixed text goes through the language files: Mercury's own, the plugins' and the channels' (a Google Chat card's
 title, the HTTP channel's login page, `google-chat.` and `http.` keys). What the model writes isn't one of them: it
 answers in the person's language on its own.
+
+## The time where the person is
+
+A model doesn't know what day it is. Mercury tells it: every message reaches the model after a line saying when and
+where it was written, `[Wednesday 2026-10-21 14:32 Europe/Rome]`, so "today", "next Monday" or "is it still open?"
+mean something. The line goes only to the model: the conversation's archive, and what a web UI shows of it, keep the
+message as it was written.
+
+The time is the person's, in their **time zone**, named as the official list of time zones (the IANA list) names it:
+`Europe/Rome`, `America/New_York`. A fixed offset like `+02:00` isn't one, because it's wrong for half the year. The
+zone is picked like the language:
+
+1. **The one the person saved.** Someone who tells the agent "I'm in Tokyo" gets Tokyo's time from then on, in every
+   conversation: the agent saves it as one of their settings. A web UI can offer it in its own settings too.
+2. **Otherwise, the one their app says**, when the channel passes it on: a web UI sends its browser's over the HTTP
+   channel (the `X-Time-Zone` header), Google Chat the one of the person's Chat client, when Google includes it.
+3. **Otherwise, the app's own**, `timeZone` next to the languages in the config:
+
+   ```ts title="mercury.config.ts"
+   i18n: { defaultLocale: "it", locales: { en, it }, timeZone: "Europe/Rome" },
+   ```
+
+4. **Otherwise, the one of the machine the agent runs on**, often UTC inside a container.
+
+A `timeZone` that isn't a zone's name stops the agent at startup.

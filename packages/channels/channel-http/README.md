@@ -2,7 +2,7 @@
 
 Gives a [Mercury](https://github.com/lucabro81/mercury-fw) agent an HTTP surface to build a custom UI on: one conversational turn per request, streamed back as Server-Sent Events, plus confirmation and read-only routes over what the agent holds (conversations, the wiki, memory, its plugins).
 
-This version is written for version 6 of the channel contract, the one that brings the channels' texts in the person's language, and needs the framework at 0.54 or later: a core with an older contract skips it, and the log says why.
+This version is written for version 6 of the channel contract, the one that brings the channels' texts in the person's language, and needs the framework at 0.54 or later: a core with an older contract skips it, and the log says why. `X-Time-Zone` and `PATCH /me` need the framework at 0.56 or later: an older core ignores the header and offers no `PATCH /me`.
 
 ```bash
 bun add @mercury-fw/channel-http
@@ -56,6 +56,8 @@ Runs one conversational turn; the reply streams back as Server-Sent Events.
 
 **Languages.** Every text a person reads that isn't the model's (a refusal, a tool's status line, a choice's label, a confirmation's reply, the login page) is in their language: the one they asked the assistant for, else the one the request's `Accept-Language` header asks for (what browsers send on their own), else the app's default. The responses of `POST /turn` and `POST /confirm`, a refusal and the login page say which with `Content-Language` (as it stood when the response started: a language picked during a turn counts from the next one).
 
+**Time zone.** The model reads each message with the time the person wrote it, in their time zone: the one they saved, else the one the request's `X-Time-Zone` header names (an IANA name such as `Europe/Rome`, what `Intl.DateTimeFormat().resolvedOptions().timeZone` gives in a browser), else the app's. A UI saves the person's with `PATCH /me`.
+
 Reasoning and answer text arrive as **incremental deltas** — never one finished block — so a UI renders them live; treat the `final` event as the authoritative text. **To cancel** a turn (e.g. a generation that's diverging), close the connection: Mercury aborts the in-flight generation.
 
 **SSE events** — each is `event: <name>` followed by `data: <json>`:
@@ -89,6 +91,10 @@ Whoever opens the link and accepts decides which account gets linked: a link bel
 
 A code for linking another of the caller's accounts to them, for the UI to show: `{ ok: true, code, expiresAt }`, or `400` with the reason when there's none. The person sends the code from the other account, on any channel, twice: the first time Mercury says whom the account would be linked to, the second time it links it, and from then on both accounts are one person (one private area, the same roles). The code lasts ten minutes, works once, and only the caller sees it; the model never does. It belongs to the first account that sends it, so it should be sent in a one-to-one conversation, never in a shared space where someone else could send it first. Over HTTP only an account the instance already admits can send it (anyone else is refused before the turn), so an account a closed instance doesn't know links from a chat.
 
+## `PATCH /me`
+
+Saves the caller's time zone, for a UI's settings: body `{ timeZone }`, an IANA name such as `Europe/Rome`; returns `{ ok: true, timeZone }` as saved (`europe/rome` is saved as `Europe/Rome`), or `400` with the reason for what isn't a zone's name (a fixed offset such as `+02:00` isn't one) and for a body without it. From then on the caller's turns are stamped with the time there, whatever `X-Time-Zone` says. Not there on a core without settings.
+
 ## `POST /confirm`
 
 Explicit alternative to re-sending a token as `/turn` `text`. Body `{ token, conversationId }`; returns `{ ok: true, resolved: true, text }` when the token was a pending confirmation (`text`: the core's reply in the caller's language, "Confirmed and done." or the failure, never the action's raw result), `{ ok: true, resolved: false }` otherwise. When the confirmed action hands its result back to the model, it returns `{ ok: true, resolved: true, resume: true }` instead: open `POST /turn { resume: true, conversationId }` to hear the model's answer. `400` if `token` or `conversationId` is missing, or the id has other characters than `/turn` accepts. Never invokes the model.
@@ -103,7 +109,7 @@ All `GET`, all JSON, all reporting state already held in-process. They need an a
 | `GET /conversations?limit=<n>` | `{ conversations: [{ conversationId, lastTimestamp, preview }] }` — your conversations, most-recently-active first |
 | `GET /manifest` | `{ manifest: { coreApiVersion, plugins: [{ name, apiVersion, active, skills, hasBuild, customStatus }], activeClis, skills } }` |
 | `GET /confirmations` | `{ pending: [{ sessionKey, summary, expiresAt }] }` — your pending confirmations; tokens are deliberately never included |
-| `GET /me` | `{ name, language }` — how you asked the assistant to call you and the language you asked it to use, `null` when you never said; `language` is missing on a core that doesn't know languages, and the route isn't there on a core older than this channel |
+| `GET /me` | `{ name, language, timeZone }` — how you asked the assistant to call you, the language you asked it to use and the time zone you saved, `null` when you never said; `language` and `timeZone` are missing on a core that doesn't know them, and the route isn't there on a core older than this channel |
 | `GET /tool-log` | `{ entries: [...] }` — the tool calls of your recent turns |
 | `GET /health` | `{ uptimeSeconds, memory, qdrantReachable, ollamaReachable }` |
 | `GET /wiki/list` | `{ files: [...] }` — `curated/...` and `personal/...` paths |
