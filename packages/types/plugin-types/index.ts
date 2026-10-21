@@ -380,7 +380,8 @@ export type PluginSurface = {
  *   system prompt lists the plugins offered to the person with theirs, and the
  *   model answers "what can you do?" from that list. It says what, never how:
  *   usage instructions belong to `skills` and `systemPromptFragment`.
- *   Mandatory; the loader refuses a plugin without one.
+ *   Mandatory and on one line; the loader refuses a plugin without one, or
+ *   with a line break inside it.
  * - `dependsOn`: names of plugins this one requires present. The loader loads
  *   dependencies first and skips this plugin fail-soft if any is absent or
  *   failed (see `loadPlugins`). Presence + ordering only — a dependency shares

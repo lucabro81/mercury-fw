@@ -4,3 +4,4 @@ tests/*
 !tests/example.e2e.ts
 !tests/http-auth.e2e.ts
 !tests/concurrency.e2e.ts
+!tests/capabilities.e2e.ts

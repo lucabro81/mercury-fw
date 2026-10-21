@@ -213,6 +213,13 @@ export async function loadPlugins(plugins: Plugin[], ctx: PluginLoadContext): Pr
       ctx.log(`plugin "${plugin.name}" not activated: it has no description`);
       continue;
     }
+    // The prompt lists the plugins one per line: a line break inside would
+    // split this one's entry.
+    const description = plugin.description.trim();
+    if (/[\r\n]/.test(description)) {
+      ctx.log(`plugin "${plugin.name}" not activated: its description isn't one line`);
+      continue;
+    }
     // A plugin's texts are its own: a key outside its name could shadow
     // another plugin's or the core's, and the core's and the app's names
     // are taken.
@@ -246,7 +253,7 @@ export async function loadPlugins(plugins: Plugin[], ctx: PluginLoadContext): Pr
       const actsAs = plugin.actsAs === "person" || plugin.actsAs === "anyone" ? plugin.actsAs : "mercury";
       loaded.push({
         name: plugin.name,
-        description: plugin.description,
+        description,
         actsAs,
         ...(plugin.systemPromptFragment === undefined ? {} : { promptFragment: plugin.systemPromptFragment }),
         skills: [...(plugin.skills ?? [])],
