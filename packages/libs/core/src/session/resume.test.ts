@@ -34,6 +34,18 @@ const summary = (text: string, minute: number) => ({ summary: text, timestamp: a
 describe("resumeConversation", () => {
   // #293: a resumed conversation reaches the model as the live one did, each
   // message of the person's after when it was written.
+  // Review of #293: the stamps were added after the tail was trimmed to the
+  // budget, so a resumed conversation could exceed it by a stamp per message.
+  test("the stamps count toward the budget", async () => {
+    // Each stamp is 39 characters: without counting them, both messages (180) fit 200; with them (219) the oldest pair goes.
+    const tail = { messages: [user("a".repeat(50), 1), assistant("b".repeat(50), 2), user("c".repeat(40), 3), assistant("d".repeat(40), 4)], complete: false };
+    const { d } = deps(tail);
+    const resumed = await resumeConversation({ ...query, maxChars: 260 }, d, "Europe/Rome");
+    const chars = resumed!.messages.reduce((sum, m) => sum + m.content.length, 0);
+    expect(chars).toBeLessThanOrEqual(260 - Math.floor(260 / 4));
+    expect(resumed!.messages.map((m) => m.content.slice(-1))).toEqual(["c", "d"]);
+  });
+
   test("given the turn's time zone, the person's messages come back stamped with when they were archived", async () => {
     const { d } = deps({ messages: [user("verde", 1), assistant("ok", 2)], complete: true });
     expect(await resumeConversation(query, d, "Europe/Rome")).toEqual({

@@ -11,12 +11,12 @@ export type Persona = { name?: string; identity?: string; tone?: string };
 /** The identity an instance gets when its config sets none. */
 export const DEFAULT_PERSONA_IDENTITY = "You are {{assistant}}, an internal assistant.";
 
-/** The tone an instance gets when its config sets none. */
 /** What the stamp on each message is (`turn-stamp.ts`, #293): its shape, never an example date, which a small model would take for today. */
 export const TURN_STAMP_NOTE =
   "Each message from a user starts with when and where they wrote it, in brackets: [weekday YYYY-MM-DD HH:MM time zone]. " +
   "That is the current date and their local time: use it for anything that depends on the date or the time. Never repeat that line in your answers.";
 
+/** The tone an instance gets when its config sets none. */
 export const DEFAULT_PERSONA_TONE = [
   "DO:",
   "- Answer directly, in plain text only.",

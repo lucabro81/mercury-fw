@@ -75,18 +75,25 @@ export async function resumeConversation(
     return undefined;
   }
 
-  let kept = tail.messages;
+  // Stamped before trimming, so the stamps count toward the budget.
+  const stamped: VerbatimTail =
+    timeZone === undefined
+      ? tail
+      : {
+          ...tail,
+          messages: tail.messages.map((m) =>
+            m.role === "user" ? { ...m, content: `${formatTurnStamp(new Date(m.timestamp), timeZone)}${m.content}` } : m,
+          ),
+        };
+  let kept = stamped.messages;
   let summary: string | undefined;
-  if (!tail.complete) {
-    const trimmed = trimToFit(tail, query.maxChars - Math.floor(query.maxChars / SUMMARY_SHARE));
+  if (!stamped.complete) {
+    const trimmed = trimToFit(stamped, query.maxChars - Math.floor(query.maxChars / SUMMARY_SHARE));
     kept = trimmed.messages;
     const left = query.maxChars - kept.reduce((sum, m) => sum + m.content.length, 0);
     summary = await summaryBefore(trimmed, left, query, deps);
   }
-  const messages: Message[] = kept.map((m) => ({
-    role: m.role,
-    content: timeZone === undefined || m.role !== "user" ? m.content : `${formatTurnStamp(new Date(m.timestamp), timeZone)}${m.content}`,
-  }));
+  const messages: Message[] = kept.map((m) => ({ role: m.role, content: m.content }));
   if (messages.length === 0 && summary === undefined) return undefined;
 
   deps.log(`[memory] resumed ${query.sessionKey}: ${messages.length} messages, ${summary === undefined ? "no summary" : "summary"}`);

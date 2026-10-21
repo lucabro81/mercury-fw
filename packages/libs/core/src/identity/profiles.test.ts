@@ -181,14 +181,23 @@ describe("createProfileStore", () => {
       expect(store.timeZoneOf("static:alice")).toBe("Europe/Rome");
     });
 
-    test("an entry whose time zone isn't one is malformed: skipped, kept on disk", async () => {
+    // Review of #293: a zone the runtime no longer reads as written (an
+    // alias renamed in a newer image) dropped the person's name and language too.
+    test("a time zone that isn't one is left out, the rest of the profile kept", async () => {
       const path = await tempPath();
       await mkdir(dirname(path), { recursive: true });
-      await writeFile(path, JSON.stringify({ version: 1, people: { "static:alice": { name: "Luca", timeZone: "Mars/Olympus" } } }));
+      await writeFile(path, JSON.stringify({ version: 1, people: { "static:alice": { name: "Luca", language: "it", timeZone: "Mars/Olympus" } } }));
       const store = createProfileStore({ path, log: () => {} });
-      expect(store.nameOf("static:alice")).toBeUndefined();
-      store.setTimeZone("static:bob", "UTC");
-      expect(JSON.parse(await readFile(path, "utf8")).people["static:alice"]).toEqual({ name: "Luca", timeZone: "Mars/Olympus" });
+      expect(store.nameOf("static:alice")).toBe("Luca");
+      expect(store.languageOf("static:alice")).toBe("it");
+      expect(store.timeZoneOf("static:alice")).toBeUndefined();
+    });
+
+    test("a zone written in another case reads as the IANA list writes it", async () => {
+      const path = await tempPath();
+      await mkdir(dirname(path), { recursive: true });
+      await writeFile(path, JSON.stringify({ version: 1, people: { "static:alice": { timeZone: "europe/rome" } } }));
+      expect(createProfileStore({ path, log: () => {} }).timeZoneOf("static:alice")).toBe("Europe/Rome");
     });
   });
 });

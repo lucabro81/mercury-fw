@@ -161,7 +161,12 @@ export function createProfileStore(opts: { path: string; now?: () => Date; log?:
   };
 }
 
-/** A profile as read from the file, or undefined when it's malformed: a name, a language or a time zone that isn't valid, or none of them. */
+/**
+ * A profile as read from the file, or undefined when it's malformed: a name
+ * or a language that isn't valid, or nothing usable. A time zone that isn't
+ * one (an alias a newer runtime no longer knows) is left out alone, the rest
+ * kept; one in another case reads as the IANA list writes it.
+ */
 function readProfile(raw: unknown): Profile | undefined {
   if (typeof raw !== "object" || raw === null) return undefined;
   const { name, language, timeZone, updatedAt } = raw as Record<string, unknown>;
@@ -174,9 +179,7 @@ function readProfile(raw: unknown): Profile | undefined {
     if (typeof language !== "string" || languageError(language) !== undefined) return undefined;
     profile.language = language;
   }
-  if (timeZone !== undefined) {
-    if (typeof timeZone !== "string" || timeZoneName(timeZone) !== timeZone) return undefined;
-    profile.timeZone = timeZone;
-  }
+  const zone = typeof timeZone === "string" ? timeZoneName(timeZone) : undefined;
+  if (zone !== undefined) profile.timeZone = zone;
   return profile.name === undefined && profile.language === undefined && profile.timeZone === undefined ? undefined : profile;
 }
