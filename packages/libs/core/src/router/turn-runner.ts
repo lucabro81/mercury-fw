@@ -205,13 +205,15 @@ export type TurnRunnerDeps = {
    * context primer (see `src/session/context-primer.ts`); `undefined` when
    * nobody vouched for the person, since a primer needs a real identity.
    * `resume` is the turn's own (`InboundTurn.resume`), for a tracked turn
-   * only: a history created for it is rebuilt from the archive.
+   * only: a history created for it is rebuilt from the archive, its person's
+   * messages stamped in `timeZone`, the turn's, when there is one.
    */
   getOrCreateHistory: (
     sessionKey: string,
     trackForCapture: boolean,
     key: string | undefined,
     resume?: InboundTurn["resume"],
+    timeZone?: string,
   ) => Promise<SessionHistory> | SessionHistory;
   /** Layer-3 session tracking (sessionUsers map + idle scanner touch). Only for turns whose person a provider vouched for. */
   trackSession: (sessionKey: string, key: string, at: number) => void;
@@ -395,10 +397,8 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
       ].join("\n\n");
     const message = resumed ? RESUMED_LINE(resumed) : turn.opening ? OPENING_CUE : turn.text;
     // On the model's input only: the archive keeps `turn.text` and its own timestamp.
-    const input =
-      deps.timeZoneFor === undefined
-        ? message
-        : `${formatTurnStamp(new Date((deps.now ?? Date.now)()), deps.timeZoneFor(key, turn.timeZoneHint))}${message}`;
+    const timeZone = deps.timeZoneFor?.(key, turn.timeZoneHint);
+    const input = timeZone === undefined ? message : `${formatTurnStamp(new Date((deps.now ?? Date.now)()), timeZone)}${message}`;
     if (tracked) {
       deps.trackSession(turn.sessionKey, key, (deps.now ?? Date.now)());
       deps.registerCaptureCallback(turn.sessionKey, sink.onToolStart, sink.onToolFinish);
@@ -454,7 +454,13 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
       // already scheduled when the sink was constructed keeps running
       // otherwise, firing on its own 60s schedule regardless of whether
       // the turn itself already failed and was reported.
-      history = await deps.getOrCreateHistory(turn.sessionKey, tracked, tracked ? key : undefined, tracked ? turn.resume : undefined);
+      history = await deps.getOrCreateHistory(
+        turn.sessionKey,
+        tracked,
+        tracked ? key : undefined,
+        tracked ? turn.resume : undefined,
+        tracked ? timeZone : undefined,
+      );
       watchdog = createWatchdog(
         stallMs,
         () => {

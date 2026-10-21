@@ -32,6 +32,15 @@ const plain = (m: { role: "user" | "assistant"; content: string }) => ({ role: m
 const summary = (text: string, minute: number) => ({ summary: text, timestamp: at(minute) });
 
 describe("resumeConversation", () => {
+  // #293: a resumed conversation reaches the model as the live one did, each
+  // message of the person's after when it was written.
+  test("given the turn's time zone, the person's messages come back stamped with when they were archived", async () => {
+    const { d } = deps({ messages: [user("verde", 1), assistant("ok", 2)], complete: true });
+    expect(await resumeConversation(query, d, "Europe/Rome")).toEqual({
+      messages: [{ role: "user", content: "[Monday 2026-10-12 12:01 Europe/Rome]\nverde" }, plain(assistant("ok"))],
+    });
+  });
+
   test("a tail that reaches the start comes back alone, without reading summaries", async () => {
     const { d, calls, logs } = deps({ messages: [user("verde", 1), assistant("ok", 2)], complete: true }, [summary("unused", 3)]);
     expect(await resumeConversation(query, d)).toEqual({ messages: [plain(user("verde")), plain(assistant("ok"))] });

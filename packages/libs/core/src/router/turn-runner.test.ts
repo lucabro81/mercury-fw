@@ -2364,11 +2364,12 @@ describe("createTurnRunner: the turn's time", () => {
     const calls: string[] = [];
     const captured: Array<{ role: string; content: string }> = [];
     const asked: Array<{ key: string; hint: string | undefined }> = [];
+    const histories: Array<string | undefined> = [];
     const runner = createTurnRunner({
       model: {} as any,
       systemPrompts: { singleUser: "single", multiUser: "multi" },
       buildTools: () => ({}),
-      getOrCreateHistory: () => fakeHistory(),
+      getOrCreateHistory: (_sessionKey, _tracked, _key, _resume, timeZone) => (histories.push(timeZone), fakeHistory()),
       trackSession: () => {},
       registerCaptureCallback: () => {},
       maybeCapture: async () => {},
@@ -2393,7 +2394,7 @@ describe("createTurnRunner: the turn's time", () => {
         return "reply";
       },
     });
-    return { runner, calls, captured, asked };
+    return { runner, calls, captured, asked, histories };
   }
 
   test("the model reads the message after when and where it was written; the archive keeps the message alone", async () => {
@@ -2431,6 +2432,13 @@ describe("createTurnRunner: the turn's time", () => {
       `[Wednesday 2026-10-21 14:32 Europe/Rome]\n${OPENING_CUE}`,
       `[Wednesday 2026-10-21 14:32 Europe/Rome]\n${RESUMED_LINE({ describe: "fetch a page", toolName: "web_fetch", input: {}, output: {} })}`,
     ]);
+  });
+
+  test("a resumed conversation's history is rebuilt in the turn's zone, for a person the channel vouched for", async () => {
+    const { runner, histories } = setup({ saved: { "google-chat:u1": "Asia/Tokyo" } });
+    await runner(baseTurn({ principal: verified("u1") }), baseSink());
+    await runner(baseTurn({ principal: anonymous("u2"), timeZoneHint: "America/New_York" }), baseSink());
+    expect(histories).toEqual(["Asia/Tokyo", undefined]);
   });
 
   test("without a zone to stamp in, the message goes as it is", async () => {

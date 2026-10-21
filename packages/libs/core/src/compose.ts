@@ -561,7 +561,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
     // Post-turn guards contributed by whatever plugins loaded — the core runs
     // them without knowing what any does (see PostTurnGuard).
     postTurnGuards: loadedPlugins.postTurnGuards,
-    getOrCreateHistory: async (key, trackForCapture, userId, resume) => {
+    getOrCreateHistory: async (key, trackForCapture, userId, resume, timeZone) => {
       if (trackForCapture && userId && !histories.has(key)) {
         // A conversation its client reopens comes back from the archive (#163).
         const resumed = await resumeConversation(
@@ -571,6 +571,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
             readSummaries: (q) => getEpisodicSummariesBySession(qdrant, episodicCollection, q),
             log: (msg) => console.error(msg),
           },
+          timeZone,
         );
         // A conversation its client reopens at will starts without the last
         // one (#233): the person opened a new one on purpose.
