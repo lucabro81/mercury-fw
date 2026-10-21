@@ -9,12 +9,13 @@
  * (that inference is a separate, deterministic consolidation step,
  * not this LLM call's job).
  *
- * Deliberately never asks the model for a date: it has no reliable notion
- * of "today" and would invent one (observed live: dates from the wrong
- * year, hedged with "replace with current date if applicable"). The
- * entry's own `timestamp` field (computed by the caller,
- * `idle-session-cron.ts`) is the one and only source of truth for "when" —
- * never duplicated into this text, mechanically or otherwise.
+ * The model has no notion of "today" of its own and invented dates when it
+ * wrote one (observed live: dates from the wrong year, hedged with "replace
+ * with current date if applicable"). Each message from the person now says
+ * when it was written (the turn's stamp, `turn-stamp.ts`, #293), so a date
+ * may be copied from there, never guessed: a conversation spanning days keeps
+ * when things happened. The entry's own `timestamp` field (computed by the
+ * caller, `idle-session-cron.ts`) is when the session was saved.
  *
  * `generateText` is injectable, so a test can check what the model is told.
  */
@@ -27,7 +28,7 @@ export const EPISODIC_SUMMARY_INSTRUCTIONS =
   "Describe only what occurred in this session. " +
   "Record what was asked, discussed and decided, not the data a tool returned (lists, counts, statuses, values): it changes, and is read again when needed. " +
   "Do not infer patterns, habits, or preferences about the user — that is a separate process, not this one. " +
-  "Never mention or guess a date — you don't reliably know the current date, and it's tracked separately from this text.";
+  "Each message from the user starts with when it was written, in brackets: mention a date only as written there, and never guess one.";
 
 /** The part of `generateText` the summarizer calls. */
 type GenerateFn = (params: { model: LanguageModel; instructions: string; prompt: string }) => Promise<{ text: string }>;

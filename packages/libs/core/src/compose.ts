@@ -73,7 +73,7 @@ import { findOrphanCuratedDocs } from "./wiki/orphan-detector.ts";
 import { listWikiFilesInRoots, readWikiFileInRoots, readIndexFile } from "./wiki/wiki-read.ts";
 import { createHostReads } from "./identity/host-reads.ts";
 import { createChannelSettings } from "./identity/channel-settings.ts";
-import { resolveTimeZone } from "./session/turn-stamp.ts";
+import { resolveTimeZone, stripTurnStamp } from "./session/turn-stamp.ts";
 import { bindConfirm } from "./identity/confirm-binding.ts";
 import { createPersonLogins } from "./identity/person-logins.ts";
 import { createProfileStore, profilesPath } from "./identity/profiles.ts";
@@ -342,9 +342,9 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   // card's detail — enough to recognize which exchange is being saved.
   const MESSAGE_PREVIEW_CHARS = 200;
 
-  /** Joins `messages`' content and head-truncates to `maxChars`, "…"-suffixed when cut. */
+  /** Joins `messages`' content, without the turns' stamps, and head-truncates to `maxChars`, "…"-suffixed when cut. */
   function previewMessages(messages: Message[], maxChars: number): string {
-    const joined = messages.map((m) => m.content).join(" ");
+    const joined = messages.map((m) => stripTurnStamp(m.content)).join(" ");
     return joined.length <= maxChars ? joined : `${joined.slice(0, maxChars)}…`;
   }
 
