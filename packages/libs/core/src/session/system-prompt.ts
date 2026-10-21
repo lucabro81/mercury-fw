@@ -12,6 +12,11 @@ export type Persona = { name?: string; identity?: string; tone?: string };
 export const DEFAULT_PERSONA_IDENTITY = "You are {{assistant}}, an internal assistant.";
 
 /** The tone an instance gets when its config sets none. */
+/** What the stamp on each message is (`turn-stamp.ts`, #293): its shape, never an example date, which a small model would take for today. */
+export const TURN_STAMP_NOTE =
+  "Each message from a user starts with when and where they wrote it, in brackets: [weekday YYYY-MM-DD HH:MM time zone]. " +
+  "That is the current date and their local time: use it for anything that depends on the date or the time. Never repeat that line in your answers.";
+
 export const DEFAULT_PERSONA_TONE = [
   "DO:",
   "- Answer directly, in plain text only.",
@@ -50,7 +55,8 @@ export function buildSystemPrompt(opts: {
   persona?: Persona;
 }): string {
   const assistantName = assistantNameOf(opts.persona);
-  const lines = [personaSlot(opts.persona?.identity, DEFAULT_PERSONA_IDENTITY)];
+  // Right after the identity: what the line on every message is, whatever the plugins.
+  const lines = [personaSlot(opts.persona?.identity, DEFAULT_PERSONA_IDENTITY), TURN_STAMP_NOTE];
   // What the assistant can do, one line per plugin offered: the list it
   // answers "what can you do?" from. How to use each one is the business of
   // its fragment and skills, below.
