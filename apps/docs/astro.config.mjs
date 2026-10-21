@@ -20,11 +20,13 @@ export default defineConfig({
         "@fontsource/ibm-plex-serif/latin-400-italic.css",
         "@fontsource/ibm-plex-serif/latin-700.css",
         "@fontsource/ibm-plex-mono/latin-400.css",
+        "@fontsource/ibm-plex-mono/latin-700.css",
         "./src/styles/theme.css",
       ],
       components: {
         Header: "./src/components/Header.astro",
         Footer: "./src/components/Footer.astro",
+        PageTitle: "./src/components/PageTitle.astro",
       },
       expressiveCode: {
         themes: ["github-dark-default", "github-light-default"],
