@@ -19,6 +19,7 @@
     "astro": "^7.4.0",
     "hast-util-select": "^6.0.4",
     "hast-util-to-string": "^3.0.1",
+    "opentype.js": "^2.0.0",
     "rehype-parse": "^9.0.1",
     "rehype-remark": "^10.0.1",
     "remark-gfm": "^4.0.1",

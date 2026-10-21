@@ -32,7 +32,13 @@ for (const theme of ["dark", "light"] as const) {
   for (const path of PAGES) {
     test(`${theme}: /${path} has no WCAG 2.2 AA violations`, async ({ page }) => {
       await open(page, path, theme);
-      const results = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"]).analyze();
+      // The home's character field is decoration around the site's name, hidden
+      // from assistive technology (the real title is a screen-reader-only h1):
+      // WCAG 1.4.3 exempts it from contrast, so axe doesn't check it.
+      const results = await new AxeBuilder({ page })
+        .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"])
+        .exclude(".mfw-field")
+        .analyze();
       const summary = results.violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(" ")).join(", ")}`);
       expect(summary).toEqual([]);
     });
@@ -47,6 +53,13 @@ test("the first Tab reaches a visible skip link that moves focus to the content"
   await expect(skip).toBeVisible();
   await page.keyboard.press("Enter");
   await expect(page).toHaveURL(/#_top$/);
+});
+
+test("the home's character field is hidden from assistive technology, which reads the real title", async ({ page }) => {
+  await open(page, "", "dark");
+  await expect(page.locator(".mfw-field")).toHaveAttribute("aria-hidden", "true");
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Mercury Framework");
+  await expect(page.getByRole("heading", { level: 1 })).toHaveAttribute("id", "_top");
 });
 
 test("with no stored choice the theme follows the system", async ({ browser }) => {

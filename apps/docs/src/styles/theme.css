@@ -13,6 +13,7 @@
   --mfw-accent: #22d3ee;
   --mfw-accent-low: #0b2a30;
   --mfw-border: #2a2a2a;
+  --mfw-dot: #202020;
 }
 
 :root[data-theme="light"] {
@@ -23,6 +24,7 @@
   --mfw-accent: #0e6a82;
   --mfw-accent-low: #dcecef;
   --mfw-border: #dddddd;
+  --mfw-dot: #c4c4c4;
 }
 
 /* Starlight's variables, on our tokens. In both themes "white" is the
@@ -66,6 +68,18 @@
   transition: none;
   animation: none;
   scroll-behavior: auto;
+}
+
+/* A dot every 20px on both axes behind the whole page. Fixed to the viewport,
+   so the grid lines up across the page, the header and the sidebars, which
+   paint their own background over the page's. Decorative only. */
+body,
+.header,
+.sidebar-pane,
+mobile-starlight-toc nav {
+  background-image: radial-gradient(circle, var(--mfw-dot) 1px, transparent 1px);
+  background-size: 20px 20px;
+  background-attachment: fixed;
 }
 
 :focus-visible {

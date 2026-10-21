@@ -1,0 +1,119 @@
+---
+/**
+ * The page title, replacing Starlight's: on the home the site's name, set in
+ * IBM Plex Mono Bold, shows through a field of Mercury's own source code
+ * (src/lib/text-mask.ts, src/lib/char-field.ts), with Starlight's own title
+ * kept for screen readers only; every other page gets Starlight's title.
+ */
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import DefaultPageTitle from "@astrojs/starlight/components/PageTitle.astro";
+import { charField, codeText, type Cell } from "../lib/char-field.ts";
+import { loadFont, padMask, textMask } from "../lib/text-mask.ts";
+
+const isHome = Astro.locals.starlightRoute.id === "";
+
+const escape = (text: string) => text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+const TAG = { on: "b", bright: "i" } as const;
+
+/**
+ * A row as HTML: each run of cells of one kind wrapped in its tag (<b> for the
+ * letters, <i> for the bright cells), the rest bare. Built as one string
+ * because a <pre> would keep the template's whitespace.
+ */
+function rowHtml(row: Cell[]): string {
+  let html = "";
+  for (let i = 0; i < row.length; ) {
+    const kind = row[i].kind;
+    let run = "";
+    while (i < row.length && row[i].kind === kind) run += row[i++].ch;
+    html += kind === "off" ? escape(run) : `<${TAG[kind]}>${escape(run)}</${TAG[kind]}>`;
+  }
+  return html;
+}
+
+/** Columns the text is laid out on; the characters are sized so these fit the band. */
+const COLS = 180;
+/** Columns of code added on each side, enough to reach the edges of a wide screen. */
+const SIDE_COLS = 150;
+const field = isHome
+  ? charField(
+      padMask(
+        textMask(
+          loadFont("@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-700-normal.woff"),
+          ["Mercury", "Framework"],
+          // A negative gap: the y's descender and the F's top sit at opposite ends.
+          { cols: COLS, margin: 0.12, lineGap: -0.12 },
+        ),
+        SIDE_COLS,
+      ),
+      codeText(readFileSync(resolve(process.cwd(), "../../packages/libs/core/src/compose.ts"), "utf8")),
+      { random: Math.random, brightShare: 0.015 },
+    )
+  : null;
+---
+
+{
+  field ? (
+    <div class="mfw-title">
+      <div class="sr-only">
+        <DefaultPageTitle />
+      </div>
+      <pre
+        class="mfw-field"
+        aria-hidden="true"
+        style={`--mfw-cols: ${COLS}`}
+        set:html={field.map(rowHtml).join("\n")}
+      />
+    </div>
+  ) : (
+    <DefaultPageTitle />
+  )
+}
+
+<style>
+  /* The title's panel loses its padding and its column (the home has no
+     sidebar), so the field runs edge to edge, from the navigation bar to the
+     line under the title. */
+  :global(:root:not([data-has-sidebar]) .content-panel:has(.mfw-title)) {
+    padding: 0;
+  }
+  :global(:root:not([data-has-sidebar]) .content-panel:has(.mfw-title) .sl-container) {
+    max-width: none;
+  }
+  .mfw-title {
+    container-type: inline-size;
+    overflow: hidden;
+    background: var(--mfw-bg);
+  }
+  /* Wider than the screen and centered, the overflow cut by the title. The
+     characters are sized so the text's --mfw-cols fit a band of at most 72rem:
+     one of IBM Plex Mono is 0.6em wide, so the size is the band over cols × 0.6. */
+  .mfw-field {
+    position: relative;
+    left: 50%;
+    translate: -50%;
+    width: max-content;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    font-family: var(--sl-font-mono);
+    font-size: calc(min(100cqi - 2rem, 72rem) / (var(--mfw-cols) * 0.6));
+    line-height: 1.2;
+    color: var(--mfw-dot);
+    user-select: none;
+  }
+  .mfw-field :global(b) {
+    font-weight: 700;
+    color: var(--mfw-accent);
+    text-shadow:
+      0 0 0.50em var(--mfw-accent),
+      0 0 1.5em color-mix(in srgb, var(--mfw-accent) 70%, transparent),
+      0 0 2.8em color-mix(in srgb, var(--mfw-accent) 90%, transparent);
+  }
+  .mfw-field :global(i) {
+    font-style: normal;
+    color: var(--mfw-text-muted);
+  }
+</style>
