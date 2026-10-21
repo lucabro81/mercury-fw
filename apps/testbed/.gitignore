@@ -6,3 +6,4 @@ tests/*
 !tests/concurrency.e2e.ts
 !tests/capabilities.e2e.ts
 !tests/turn-time.e2e.ts
+!tests/web-search-when.e2e.ts

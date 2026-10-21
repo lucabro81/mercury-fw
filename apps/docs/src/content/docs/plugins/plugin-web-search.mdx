@@ -12,6 +12,12 @@ The agent gets two tools: `web_search`, which returns the title, address and a s
 on pages ends with the list of what was read, written by the plugin, so the model can't leave it out or make it up; a
 list the model writes at the end of its answer anyway is replaced by it.
 
+The model searches when the question shows it needs to: something that changes over time (news, versions, prices,
+who holds a role), something recent compared with the date of the message (the agent tells the model the date, see
+[Languages](../../concepts/languages/#the-time-where-the-person-is)), a precise detail it would otherwise guess, a
+name it doesn't recognize, or a request to look something up. Lasting facts, reasoning and writing need no search.
+A model can't tell what it doesn't know, so it isn't asked to.
+
 It needs no login, and everyone may use it (`actsAs: "anyone"`).
 
 What the person reads in its words (the two choices, the status lines, the `Sources:` heading) is English, under
