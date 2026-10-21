@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { formatTurnStamp, isTimeZone, resolveTimeZone, stripTurnStamp } from "./turn-stamp.ts";
+import { formatTurnStamp, resolveTimeZone, stripTurnStamp, timeZoneName } from "./turn-stamp.ts";
 
 // 2026-10-21T12:32:00Z: a Wednesday in Rome (14:32, summer time) and in New York (08:32).
 const NOON = new Date("2026-10-21T12:32:00Z");
@@ -34,13 +34,15 @@ describe("stripTurnStamp", () => {
   });
 });
 
-describe("isTimeZone", () => {
-  test("is true for a zone name, false for anything else", () => {
-    expect(isTimeZone("Europe/Rome")).toBe(true);
-    expect(isTimeZone("UTC")).toBe(true);
-    expect(isTimeZone("Mars/Olympus")).toBe(false);
-    expect(isTimeZone("")).toBe(false);
-    expect(isTimeZone("  ")).toBe(false);
+describe("timeZoneName", () => {
+  test("is a zone's name as written in the IANA list, whatever its case", () => {
+    expect(timeZoneName("Europe/Rome")).toBe("Europe/Rome");
+    expect(timeZoneName(" europe/rome ")).toBe("Europe/Rome");
+    expect(timeZoneName("UTC")).toBe("UTC");
+  });
+
+  test("is undefined for what isn't a zone's name, a fixed offset included: it's wrong for half the year", () => {
+    for (const bad of ["", "  ", "Mars/Olympus", "Rome", "+02:00", "-0500"]) expect(timeZoneName(bad)).toBeUndefined();
   });
 });
 
@@ -54,6 +56,7 @@ describe("resolveTimeZone", () => {
 
   test("skips a name that isn't a zone: a hint is whatever the client sent", () => {
     expect(resolveTimeZone("Mars/Olympus", "nonsense", "Europe/Rome")).toBe("Europe/Rome");
-    expect(resolveTimeZone(undefined, " America/New_York ", undefined)).toBe("America/New_York");
+    expect(resolveTimeZone(undefined, " america/new_york ", undefined)).toBe("America/New_York");
+    expect(resolveTimeZone("+09:00", undefined, "Europe/Rome")).toBe("Europe/Rome");
   });
 });

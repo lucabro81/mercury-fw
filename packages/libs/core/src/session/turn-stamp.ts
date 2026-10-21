@@ -13,14 +13,18 @@
 /** Matches a stamp at the start of a message, line break included. */
 const STAMP_RE = /^\[[A-Z][a-z]+day \d{4}-\d{2}-\d{2} \d{2}:\d{2} [^\]\s]+\]\n/;
 
-/** Whether `name` is a time zone `Intl` knows (an IANA name such as `Europe/Rome`). */
-export function isTimeZone(name: string): boolean {
-  if (name.trim() === "") return false;
+/**
+ * `name` as the IANA list writes it (`europe/rome` is `Europe/Rome`), or
+ * undefined when it isn't a zone's name. `Intl` also takes a fixed offset
+ * (`+02:00`), which isn't one.
+ */
+export function timeZoneName(name: string): string | undefined {
+  const trimmed = name.trim();
+  if (trimmed === "" || /^[+-]/.test(trimmed)) return undefined;
   try {
-    new Intl.DateTimeFormat("en-US", { timeZone: name });
-    return true;
+    return new Intl.DateTimeFormat("en-US", { timeZone: trimmed }).resolvedOptions().timeZone;
   } catch {
-    return false;
+    return undefined;
   }
 }
 
@@ -31,8 +35,8 @@ export function isTimeZone(name: string): boolean {
  */
 export function resolveTimeZone(saved: string | undefined, hint: string | undefined, instance: string | undefined): string {
   for (const candidate of [saved, hint, instance]) {
-    const name = candidate?.trim();
-    if (name !== undefined && isTimeZone(name)) return name;
+    const name = candidate === undefined ? undefined : timeZoneName(candidate);
+    if (name !== undefined) return name;
   }
   return Intl.DateTimeFormat().resolvedOptions().timeZone;
 }
