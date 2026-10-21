@@ -1,5 +1,13 @@
 # @mercury-fw/confirm-engine
 
+## 0.55.0
+
+### Patch Changes
+
+- Updated dependencies [eac72fa]
+  - @mercury-fw/plugin-types@0.55.0
+  - @mercury-fw/channel-types@0.55.0
+
 ## 0.54.0
 
 ### Minor Changes
