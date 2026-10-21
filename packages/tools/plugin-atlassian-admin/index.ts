@@ -26,6 +26,7 @@ function commandOf(input: unknown): string | undefined {
 export const atlassianAdminPlugin: Plugin = {
   apiVersion: PLUGIN_API_VERSION,
   name: "atlassian-admin",
+  description: "Looks up users in the Atlassian organization (read-only).",
   // The organization's API key is Mercury's own: whoever asks, it answers as
   // the organization, so only someone allowed to make Mercury act as itself
   // may use it.

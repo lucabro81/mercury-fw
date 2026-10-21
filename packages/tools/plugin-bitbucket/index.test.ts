@@ -22,6 +22,10 @@ const sctx: SessionToolContext = {
 };
 
 describe("bitbucketPlugin", () => {
+  it("says what it does, for the model", () => {
+    expect(bitbucketPlugin.description).toBe("Lists and reads Bitbucket pull requests.");
+  });
+
   it("declares the compatible apiVersion and the bitbucket name", () => {
     expect(bitbucketPlugin.apiVersion).toBe(PLUGIN_API_VERSION);
     expect(bitbucketPlugin.name).toBe("bitbucket");
@@ -85,6 +89,7 @@ describe("bitbucketPlugin's texts for the model", () => {
   it("never name Mercury", () => {
     const c = bitbucketPlugin.build!({ model: {} as never, env: {}, log: () => {} });
     const texts = [
+      bitbucketPlugin.description,
       bitbucketPlugin.systemPromptFragment ?? "",
       ...(bitbucketPlugin.skills ?? []).flatMap((s) => [s.description, s.body]),
       ...Object.values(c.sessionTools!(sctx, c.postProcess)).map((t) => (typeof t.description === "string" ? t.description : "")),

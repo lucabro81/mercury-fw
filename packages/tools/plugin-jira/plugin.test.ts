@@ -27,6 +27,10 @@ const sctx: SessionToolContext = {
 };
 
 describe("jiraPlugin", () => {
+  it("says what it does, for the model", () => {
+    expect(jiraPlugin.description).toBe("Searches and reads Jira issues, and creates, transitions, assigns, comments on and deletes them.");
+  });
+
   it("declares the jira name and a jira skill (not an always-on fragment)", () => {
     expect(jiraPlugin.apiVersion).toBe(PLUGIN_API_VERSION);
     expect(jiraPlugin.name).toBe("jira");
@@ -173,6 +177,7 @@ describe("jiraPlugin's texts for the model", () => {
   it("never name Mercury", () => {
     const c = jiraPlugin.build!({ model: MODEL, env: ENV, log: noLog });
     const texts = [
+      jiraPlugin.description,
       jiraPlugin.systemPromptFragment ?? "",
       ...(jiraPlugin.skills ?? []).flatMap((s) => [s.description, s.body]),
       ...Object.values(c.sessionTools!(sctx, c.postProcess)).map((t) => (typeof t.description === "string" ? t.description : "")),

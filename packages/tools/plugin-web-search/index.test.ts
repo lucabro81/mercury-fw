@@ -54,6 +54,7 @@ describe("webSearchPlugin", () => {
     const plugin = webSearchPlugin({ backend });
     expect(plugin.apiVersion).toBe(PLUGIN_API_VERSION);
     expect(plugin.name).toBe("web-search");
+    expect(plugin.description).toBe("Searches the web and reads web pages, for what is current or outside what you know.");
     expect(plugin.actsAs).toBe("anyone");
     expect(plugin.systemPromptFragment).toContain("web_search");
     expect(plugin.systemPromptFragment).toContain("{{assistant}}");
