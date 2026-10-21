@@ -73,6 +73,7 @@ import { findOrphanCuratedDocs } from "./wiki/orphan-detector.ts";
 import { listWikiFilesInRoots, readWikiFileInRoots, readIndexFile } from "./wiki/wiki-read.ts";
 import { createHostReads } from "./identity/host-reads.ts";
 import { createChannelSettings } from "./identity/channel-settings.ts";
+import { resolveTimeZone } from "./session/turn-stamp.ts";
 import { bindConfirm } from "./identity/confirm-binding.ts";
 import { createPersonLogins } from "./identity/person-logins.ts";
 import { createProfileStore, profilesPath } from "./identity/profiles.ts";
@@ -551,6 +552,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
     systemPromptsFor,
     preferredName: (key) => profiles.nameOf(key),
     preferredLanguage: (key) => texts.savedLanguage(key),
+    timeZoneFor: (key, hint) => resolveTimeZone(profiles.timeZoneOf(key), hint, i18n.timeZone),
     translatorFor: (key, hint) => texts.forPerson(key, hint).t,
     stallTimeoutMs,
     shownLists: (sessionKey) => displayStore.shown(sessionKey),

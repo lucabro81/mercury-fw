@@ -12,6 +12,7 @@
 import type { LanguageModel, Tool } from "ai";
 import { runTurn } from "../session/agent-turn.ts";
 import type { StepInfo } from "../session/step-info.ts";
+import { formatTurnStamp } from "../session/turn-stamp.ts";
 // `PostTurnGuard` is part of the plugin contract (a plugin's `build()` may
 // return these to inspect/rewrite the model's finished text), so it lives in
 // `@mercury-fw/plugin-types` and is re-exported here for the core callers that
@@ -182,6 +183,12 @@ export type TurnRunnerDeps = {
   preferredName?: (key: string) => string | undefined;
   /** The language the person with `key` saved, or undefined; nobody has one when absent. */
   preferredLanguage?: (key: string) => string | undefined;
+  /**
+   * The time zone the turn of the person with `key` is stamped in, given the
+   * channel's hint (see `session/turn-stamp.ts`): the model reads each message
+   * after when and where it was written. Turns go unstamped when absent.
+   */
+  timeZoneFor?: (key: string, hint: string | undefined) => string;
   /** `key` is the person's key, `who` whom the tools are offered to and act for. */
   buildTools: (
     sessionKey: string,
@@ -386,7 +393,12 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
         // Last, where a small model pays the most attention.
         ...(shown.length > 0 ? [SHOWN_LISTS_NOTE(shown)] : []),
       ].join("\n\n");
-    const input = resumed ? RESUMED_LINE(resumed) : turn.opening ? OPENING_CUE : turn.text;
+    const message = resumed ? RESUMED_LINE(resumed) : turn.opening ? OPENING_CUE : turn.text;
+    // On the model's input only: the archive keeps `turn.text` and its own timestamp.
+    const input =
+      deps.timeZoneFor === undefined
+        ? message
+        : `${formatTurnStamp(new Date((deps.now ?? Date.now)()), deps.timeZoneFor(key, turn.timeZoneHint))}${message}`;
     if (tracked) {
       deps.trackSession(turn.sessionKey, key, (deps.now ?? Date.now)());
       deps.registerCaptureCallback(turn.sessionKey, sink.onToolStart, sink.onToolFinish);
