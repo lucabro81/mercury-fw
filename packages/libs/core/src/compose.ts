@@ -72,6 +72,7 @@ import { initVault } from "./wiki/vault-init.ts";
 import { findOrphanCuratedDocs } from "./wiki/orphan-detector.ts";
 import { listWikiFilesInRoots, readWikiFileInRoots, readIndexFile } from "./wiki/wiki-read.ts";
 import { createHostReads } from "./identity/host-reads.ts";
+import { createChannelSettings } from "./identity/channel-settings.ts";
 import { bindConfirm } from "./identity/confirm-binding.ts";
 import { createPersonLogins } from "./identity/person-logins.ts";
 import { createProfileStore, profilesPath } from "./identity/profiles.ts";
@@ -640,7 +641,9 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
       health: () => getSelfHealth({ qdrant, ollamaHost }),
       preferredName: (key) => profiles.nameOf(key),
       preferredLanguage: (key) => texts.savedLanguage(key),
+      preferredTimeZone: (key) => profiles.timeZoneOf(key),
     }),
+    settings: createChannelSettings({ identify: people.identify, setTimeZone: (key, timeZone) => profiles.setTimeZone(key, timeZone) }),
     logins: { accept: personLogins.accept, complete: personLogins.complete },
     linking: { start: linking.start },
     assistantName,
