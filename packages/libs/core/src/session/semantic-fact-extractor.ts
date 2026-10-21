@@ -11,6 +11,7 @@
 import { generateObject, type LanguageModel } from "ai";
 import { z } from "zod";
 import type { Message } from "./history.ts";
+import { stripTurnStamp } from "./turn-stamp.ts";
 
 /**
  * Closed vocabulary — the model can only ever return one of these exact
@@ -49,7 +50,8 @@ const SYSTEM_PROMPT =
 // extractor mistakes the marker repeating in every turn for a "stable,
 // recurring fact" (this is exactly how the live name/user-name duplicate
 // happened): stripped here, only in this extractor, before the messages
-// are joined into the prompt.
+// are joined into the prompt. The turn's stamp (`turn-stamp.ts`), which the
+// core puts before it, goes first, for the same reason.
 const SENDER_MARKER_RE = /^\[Da: [^\]]*\]\n/;
 
 /** Returns a function that extracts standing {topic, value} facts from a closed session's messages. */
@@ -63,7 +65,7 @@ export function createSemanticFactExtractor(
       output: "array",
       schema: SemanticFactSchema,
       instructions: SYSTEM_PROMPT,
-      prompt: messages.map((m) => `${m.role}: ${m.content.replace(SENDER_MARKER_RE, "")}`).join("\n"),
+      prompt: messages.map((m) => `${m.role}: ${stripTurnStamp(m.content).replace(SENDER_MARKER_RE, "")}`).join("\n"),
     });
     return object;
   };

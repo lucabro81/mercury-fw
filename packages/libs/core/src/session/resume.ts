@@ -12,6 +12,7 @@
  */
 import { MAX_HISTORY_CHARS, type ResumedConversation, type Message } from "./history.ts";
 import type { VerbatimTail } from "../memory/verbatim-archive-store.ts";
+import { formatTurnStamp } from "./turn-stamp.ts";
 
 /** What resuming reads, and where it says what it did. */
 export type ResumeDeps = {
@@ -56,11 +57,14 @@ type TailMessage = VerbatimTail["messages"][number];
  * less, nothing archived, or an archive that can't be read). A tail that
  * reaches the conversation's start comes back alone. Otherwise the tail keeps
  * three quarters of the budget at most, still opening with what the person
- * said, and the summaries of what came before it take what's left.
+ * said, and the summaries of what came before it take what's left. With
+ * `timeZone` (the turn's), the person's messages come back stamped with when
+ * they were archived, as the live turns reached the model (#293).
  */
 export async function resumeConversation(
   query: { userId: string; sessionKey: string; maxChars: number },
   deps: ResumeDeps,
+  timeZone?: string,
 ): Promise<ResumedConversation | undefined> {
   if (query.maxChars <= 0) return undefined;
   let tail: VerbatimTail;
@@ -71,10 +75,23 @@ export async function resumeConversation(
     return undefined;
   }
 
-  let kept = tail.messages;
+  // Stamped before trimming, so the stamps count toward the budget.
+  const stamped: VerbatimTail =
+    timeZone === undefined
+      ? tail
+      : {
+          ...tail,
+          messages: tail.messages.map((m) =>
+            // A timestamp that isn't a date leaves its message unstamped, never the turn failed.
+            m.role === "user" && !Number.isNaN(Date.parse(m.timestamp))
+              ? { ...m, content: `${formatTurnStamp(new Date(m.timestamp), timeZone)}${m.content}` }
+              : m,
+          ),
+        };
+  let kept = stamped.messages;
   let summary: string | undefined;
-  if (!tail.complete) {
-    const trimmed = trimToFit(tail, query.maxChars - Math.floor(query.maxChars / SUMMARY_SHARE));
+  if (!stamped.complete) {
+    const trimmed = trimToFit(stamped, query.maxChars - Math.floor(query.maxChars / SUMMARY_SHARE));
     kept = trimmed.messages;
     const left = query.maxChars - kept.reduce((sum, m) => sum + m.content.length, 0);
     summary = await summaryBefore(trimmed, left, query, deps);

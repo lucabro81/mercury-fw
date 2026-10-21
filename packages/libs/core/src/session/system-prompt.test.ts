@@ -5,6 +5,7 @@ import {
   buildSystemPrompts,
   DEFAULT_PERSONA_IDENTITY,
   DEFAULT_PERSONA_TONE,
+  TURN_STAMP_NOTE,
 } from "./system-prompt.ts";
 import { withAssistantName } from "./assistant-name.ts";
 import type { Skill } from "@mercury-fw/plugin-types";
@@ -71,10 +72,11 @@ describe("buildSystemPrompt plugins", () => {
     { name: "web-search", description: "Searches the web." },
   ];
 
-  it("lists the plugins offered right after the identity, each with what it does, and says to answer from the list", () => {
+  it("lists the plugins offered right after the identity and the turn's time, each with what it does, and says to answer from the list", () => {
     const prompt = buildSystemPrompt({ pluginFragments: ["FRAG"], plugins, skills: [], multiUserChannel: false });
     expect(prompt.startsWith(
       "You are Mercury, an internal assistant.\n" +
+        `${TURN_STAMP_NOTE}\n` +
         "Your plugins, and what each one lets you do:\n" +
         "- jira: Reads Jira issues.\n" +
         "- web-search: Searches the web.\n" +
@@ -87,6 +89,22 @@ describe("buildSystemPrompt plugins", () => {
     const prompt = buildSystemPrompt({ pluginFragments: [], plugins: [], skills: [], multiUserChannel: false });
     expect(prompt).not.toContain("Your plugins");
     expect(prompt).not.toContain("When asked what you can do");
+  });
+});
+
+// #293: every message the model reads starts with when it was written; the
+// prompt says what that line is, once, whatever the plugins.
+describe("buildSystemPrompt turn time", () => {
+  it("says, right after the identity, what the stamp on each message is and not to repeat it", () => {
+    for (const multiUserChannel of [false, true]) {
+      const lines = buildSystemPrompt({ pluginFragments: [], plugins: [], skills: [], multiUserChannel }).split("\n");
+      expect(lines[1]).toBe(TURN_STAMP_NOTE);
+    }
+    // The shape, not a date: a small model would take an example's date for today.
+    expect(TURN_STAMP_NOTE).toBe(
+      "Each message from a user starts with when and where they wrote it, in brackets: [weekday YYYY-MM-DD HH:MM time zone]. " +
+        "That is the current date and their local time: use it for anything that depends on the date or the time. Never repeat that line in your answers.",
+    );
   });
 });
 

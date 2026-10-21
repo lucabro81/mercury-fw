@@ -141,4 +141,63 @@ describe("createProfileStore", () => {
       expect(JSON.parse(await readFile(path, "utf8")).people["static:alice"]).toEqual({ name: "Luca", language: "klingon!" });
     });
   });
+
+  describe("time zone", () => {
+    test("none before anything is written", async () => {
+      expect(createProfileStore({ path: await tempPath() }).timeZoneOf("static:alice")).toBeUndefined();
+    });
+
+    test("is the person's, as the IANA list writes it, survives a new store, and leaves the rest of the profile alone", async () => {
+      const path = await tempPath();
+      const store = createProfileStore({ path, now: () => new Date("2026-10-21T10:00:00Z") });
+      store.setName("static:alice", "Luca");
+      store.setLanguage("static:alice", "it");
+      expect(store.setTimeZone("static:alice", " europe/rome ")).toBe("Europe/Rome");
+      expect(store.timeZoneOf("static:alice")).toBe("Europe/Rome");
+      expect(store.timeZoneOf("static:bob")).toBeUndefined();
+      expect(createProfileStore({ path }).timeZoneOf("static:alice")).toBe("Europe/Rome");
+      expect(JSON.parse(await readFile(path, "utf8")).people["static:alice"]).toEqual({
+        name: "Luca",
+        language: "it",
+        timeZone: "Europe/Rome",
+        updatedAt: "2026-10-21T10:00:00.000Z",
+      });
+    });
+
+    test("a person can have only a time zone", async () => {
+      const path = await tempPath();
+      createProfileStore({ path }).setTimeZone("static:alice", "Asia/Tokyo");
+      const store = createProfileStore({ path });
+      expect(store.timeZoneOf("static:alice")).toBe("Asia/Tokyo");
+      expect(store.nameOf("static:alice")).toBeUndefined();
+    });
+
+    test("refuses what isn't a time zone, and keeps the old one", async () => {
+      const store = createProfileStore({ path: await tempPath() });
+      store.setTimeZone("static:alice", "Europe/Rome");
+      for (const bad of ["", "  ", "Mars/Olympus", "+02:00", "Rome"]) {
+        expect(() => store.setTimeZone("static:alice", bad)).toThrow();
+      }
+      expect(store.timeZoneOf("static:alice")).toBe("Europe/Rome");
+    });
+
+    // Review of #293: a zone the runtime no longer reads as written (an
+    // alias renamed in a newer image) dropped the person's name and language too.
+    test("a time zone that isn't one is left out, the rest of the profile kept", async () => {
+      const path = await tempPath();
+      await mkdir(dirname(path), { recursive: true });
+      await writeFile(path, JSON.stringify({ version: 1, people: { "static:alice": { name: "Luca", language: "it", timeZone: "Mars/Olympus" } } }));
+      const store = createProfileStore({ path, log: () => {} });
+      expect(store.nameOf("static:alice")).toBe("Luca");
+      expect(store.languageOf("static:alice")).toBe("it");
+      expect(store.timeZoneOf("static:alice")).toBeUndefined();
+    });
+
+    test("a zone written in another case reads as the IANA list writes it", async () => {
+      const path = await tempPath();
+      await mkdir(dirname(path), { recursive: true });
+      await writeFile(path, JSON.stringify({ version: 1, people: { "static:alice": { timeZone: "europe/rome" } } }));
+      expect(createProfileStore({ path, log: () => {} }).timeZoneOf("static:alice")).toBe("Europe/Rome");
+    });
+  });
 });

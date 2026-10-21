@@ -11,7 +11,7 @@
  * injected (`confirm`/`resolveConfirmation`), so this package never imports the app.
  */
 import { startHttpServer, type AdmitFn, type CompleteLoginFn, type ConfirmFn, type ResolveConfirmationFn } from "./http-server.ts";
-import type { Authenticate, Provider, HandleTurn, ChannelHostReads, ChannelI18n, ChannelLinking } from "@mercury-fw/channel-types";
+import type { Authenticate, Provider, HandleTurn, ChannelHostReads, ChannelI18n, ChannelLinking, ChannelSettings } from "@mercury-fw/channel-types";
 
 export type HttpProviderDeps = {
   port: number;
@@ -31,6 +31,8 @@ export type HttpProviderDeps = {
   logins?: { callbackUrl: string; accept: (callbackUrl: string) => void; complete: CompleteLoginFn };
   /** Linking another account to the caller (`POST /link`). */
   linking?: ChannelLinking;
+  /** The person's own settings (`PATCH /me`). */
+  settings?: ChannelSettings;
   /** The surface's budget for a reopened conversation (`HTTP_SURFACE_RESUME_MAX_CHARS`). */
   resumeMaxChars?: number;
   /** What the pages people read call the assistant. */
@@ -54,6 +56,7 @@ export function createHttpProvider(deps: HttpProviderDeps): Provider & { stop():
         corsOrigin: deps.corsOrigin,
         completeLogin: deps.logins?.complete,
         ...(deps.linking === undefined ? {} : { linking: deps.linking }),
+        ...(deps.settings === undefined ? {} : { settings: deps.settings }),
         ...(deps.resumeMaxChars === undefined ? {} : { resumeMaxChars: deps.resumeMaxChars }),
         ...(deps.assistantName === undefined ? {} : { assistantName: deps.assistantName }),
         ...(deps.i18n === undefined ? {} : { i18n: deps.i18n }),

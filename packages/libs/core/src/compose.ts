@@ -72,6 +72,8 @@ import { initVault } from "./wiki/vault-init.ts";
 import { findOrphanCuratedDocs } from "./wiki/orphan-detector.ts";
 import { listWikiFilesInRoots, readWikiFileInRoots, readIndexFile } from "./wiki/wiki-read.ts";
 import { createHostReads } from "./identity/host-reads.ts";
+import { createChannelSettings } from "./identity/channel-settings.ts";
+import { resolveTimeZone, stripTurnStamp } from "./session/turn-stamp.ts";
 import { bindConfirm } from "./identity/confirm-binding.ts";
 import { createPersonLogins } from "./identity/person-logins.ts";
 import { createProfileStore, profilesPath } from "./identity/profiles.ts";
@@ -340,9 +342,9 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   // card's detail — enough to recognize which exchange is being saved.
   const MESSAGE_PREVIEW_CHARS = 200;
 
-  /** Joins `messages`' content and head-truncates to `maxChars`, "…"-suffixed when cut. */
+  /** Joins `messages`' content, without the turns' stamps, and head-truncates to `maxChars`, "…"-suffixed when cut. */
   function previewMessages(messages: Message[], maxChars: number): string {
-    const joined = messages.map((m) => m.content).join(" ");
+    const joined = messages.map((m) => stripTurnStamp(m.content)).join(" ");
     return joined.length <= maxChars ? joined : `${joined.slice(0, maxChars)}…`;
   }
 
@@ -550,6 +552,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
     systemPromptsFor,
     preferredName: (key) => profiles.nameOf(key),
     preferredLanguage: (key) => texts.savedLanguage(key),
+    timeZoneFor: (key, hint) => resolveTimeZone(profiles.timeZoneOf(key), hint, i18n.timeZone),
     translatorFor: (key, hint) => texts.forPerson(key, hint).t,
     stallTimeoutMs,
     shownLists: (sessionKey) => displayStore.shown(sessionKey),
@@ -558,7 +561,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
     // Post-turn guards contributed by whatever plugins loaded — the core runs
     // them without knowing what any does (see PostTurnGuard).
     postTurnGuards: loadedPlugins.postTurnGuards,
-    getOrCreateHistory: async (key, trackForCapture, userId, resume) => {
+    getOrCreateHistory: async (key, trackForCapture, userId, resume, timeZone) => {
       if (trackForCapture && userId && !histories.has(key)) {
         // A conversation its client reopens comes back from the archive (#163).
         const resumed = await resumeConversation(
@@ -568,6 +571,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
             readSummaries: (q) => getEpisodicSummariesBySession(qdrant, episodicCollection, q),
             log: (msg) => console.error(msg),
           },
+          timeZone,
         );
         // A conversation its client reopens at will starts without the last
         // one (#233): the person opened a new one on purpose.
@@ -640,7 +644,9 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
       health: () => getSelfHealth({ qdrant, ollamaHost }),
       preferredName: (key) => profiles.nameOf(key),
       preferredLanguage: (key) => texts.savedLanguage(key),
+      preferredTimeZone: (key) => profiles.timeZoneOf(key),
     }),
+    settings: createChannelSettings({ identify: people.identify, setTimeZone: (key, timeZone) => profiles.setTimeZone(key, timeZone) }),
     logins: { accept: personLogins.accept, complete: personLogins.complete },
     linking: { start: linking.start },
     assistantName,

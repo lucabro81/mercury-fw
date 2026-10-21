@@ -11,10 +11,19 @@ describe("the episodic summarizer's instructions", () => {
     );
   });
 
-  it("still describes only this session, with no inferred habits and no dates", () => {
+  it("still describes only this session, with no inferred habits", () => {
     expect(EPISODIC_SUMMARY_INSTRUCTIONS).toContain("Describe only what occurred in this session.");
     expect(EPISODIC_SUMMARY_INSTRUCTIONS).toContain("Do not infer patterns, habits, or preferences about the user");
-    expect(EPISODIC_SUMMARY_INSTRUCTIONS).toContain("Never mention or guess a date");
+  });
+
+  // #293: the model used to invent dates (the wrong year, "replace with the
+  // current date"); every message now says when it was written, and a date
+  // is copied from there or not written at all.
+  it("dates something only as a message's stamp says, never guessing", () => {
+    expect(EPISODIC_SUMMARY_INSTRUCTIONS).toContain(
+      "Each message from the user starts with when it was written, in brackets: mention a date only as written there, and never guess one.",
+    );
+    expect(EPISODIC_SUMMARY_INSTRUCTIONS).not.toContain("Never mention or guess a date");
   });
 });
 

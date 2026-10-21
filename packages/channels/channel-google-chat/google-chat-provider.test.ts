@@ -1749,3 +1749,58 @@ describe("createGoogleChatProvider — the person's language", () => {
     expect(sent).toEqual(["MER-1 Title"]);
   });
 });
+
+// #293: Google Chat may say which time zone the person's client is in
+// (`common.timeZone`); the turn is stamped with it unless they saved one.
+describe("createGoogleChatProvider — the person's time zone", () => {
+  test("reads the client's zone off a message and a card click, when the event carries it", () => {
+    expect(parseChatEvent({ ...messageEvent(), common: { timeZone: { id: "Europe/Rome", offset: 7200000 } } })).toMatchObject({
+      kind: "message",
+      timeZone: "Europe/Rome",
+    });
+    expect(parseChatEvent(messageEvent())).not.toHaveProperty("timeZone");
+    expect(parseChatEvent({ ...messageEvent(), common: { timeZone: { id: " " } } })).not.toHaveProperty("timeZone");
+    expect(
+      parseChatEvent({
+        type: "CARD_CLICKED",
+        space: { name: "spaces/X" },
+        user: { name: "users/42" },
+        action: { parameters: [{ key: "token", value: "T1" }] },
+        common: { timeZone: { id: "Asia/Tokyo" } },
+      }),
+    ).toMatchObject({ kind: "card-click", timeZone: "Asia/Tokyo" });
+  });
+
+  test("hands the zone to a message's turn and to the turn a click resumes", async () => {
+    const sub = fakeSubscription();
+    const turns: InboundTurn[] = [];
+    const provider = createGoogleChatProvider(
+      baseDeps({
+        subscriptionFn: () => sub as any,
+        confirm: async (t) => (t === "T2" ? { text: "Confirmed.", resume: true } : null),
+      }),
+    );
+    await provider.start(async (turn, sink) => {
+      turns.push(turn);
+      await sink.finalize("Done.");
+    });
+    sub.emit("message", fakeMessage({ ...messageEvent(), common: { timeZone: { id: "Europe/Rome" } } }, []));
+    await new Promise((r) => setTimeout(r, 30));
+    sub.emit(
+      "message",
+      fakeMessage(
+        {
+          type: "CARD_CLICKED",
+          space: { name: "spaces/X", type: "DM" },
+          user: { name: "users/42" },
+          action: { parameters: [{ key: "token", value: "T2" }] },
+          common: { timeZone: { id: "Asia/Tokyo" } },
+        },
+        [],
+      ),
+    );
+    await new Promise((r) => setTimeout(r, 30));
+
+    expect(turns.map((t) => t.timeZoneHint)).toEqual(["Europe/Rome", "Asia/Tokyo"]);
+  });
+});

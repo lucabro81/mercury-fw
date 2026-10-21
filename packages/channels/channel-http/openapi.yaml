@@ -104,9 +104,12 @@ paths:
         an empty text. Every text the person reads that isn't the model's (a
         refusal, a status line, a confirmation's reply) is in their language:
         the one they saved, else the one `Accept-Language` asks for, else the
-        instance's default.
+        instance's default. The model reads the person's message after when
+        and where they wrote it: in the time zone they saved, else the one
+        `X-Time-Zone` says, else the instance's.
       parameters:
         - $ref: "#/components/parameters/AcceptLanguage"
+        - $ref: "#/components/parameters/TimeZone"
       requestBody:
         required: true
         content:
@@ -344,9 +347,9 @@ paths:
       description: >
         How the caller asked to be called, `null` when they never said: a UI
         asks for an opening turn after a sign-in only then. Also the language
-        they asked the assistant to use, `null` when they never said (missing
-        when the core doesn't know languages). Not there on an older core,
-        which can't say.
+        they asked the assistant to use and the time zone they saved, `null`
+        when they never said (missing on a core that doesn't know them). Not
+        there on an older core, which can't say.
       responses:
         "401":
           $ref: "#/components/responses/Unauthorized"
@@ -355,7 +358,7 @@ paths:
         "503":
           $ref: "#/components/responses/NotAdmitted"
         "200":
-          description: The caller's name and language, or null.
+          description: The caller's name, language and time zone, or null.
           content:
             application/json:
               schema:
@@ -369,6 +372,52 @@ paths:
                   language:
                     type: [string, "null"]
                     description: A language tag such as `it` or `pt-br`, one the instance ships.
+                  timeZone:
+                    type: [string, "null"]
+                    description: The time zone's IANA name, such as `Europe/Rome`.
+    patch:
+      summary: Saves the caller's time zone
+      description: >
+        The time zone the caller is in, by its IANA name, for a UI's settings:
+        from then on their turns are stamped with the time there, whatever
+        `X-Time-Zone` says. Saved as the IANA list writes it (`europe/rome` is
+        `Europe/Rome`). Not there on a core without settings.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [timeZone]
+              properties:
+                timeZone:
+                  type: string
+                  description: An IANA name such as `Europe/Rome`; a fixed offset (`+02:00`) isn't one.
+      responses:
+        "400":
+          description: The body has no `timeZone`, or it isn't a zone's name.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/NotAdmitted"
+        "503":
+          $ref: "#/components/responses/NotAdmitted"
+        "200":
+          description: The time zone as saved.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, timeZone]
+                properties:
+                  ok:
+                    type: boolean
+                  timeZone:
+                    type: string
   /tool-log:
     get:
       summary: The tool calls made in the caller's recent turns
@@ -562,6 +611,17 @@ components:
         (`it-IT,it;q=0.9,en;q=0.8`). Used for the texts the person reads when
         they saved no language of their own; a language the instance doesn't
         ship is passed over.
+      schema:
+        type: string
+    TimeZone:
+      name: X-Time-Zone
+      in: header
+      required: false
+      description: >
+        The time zone the client is in, by its IANA name, as a browser gives
+        it (`Intl.DateTimeFormat().resolvedOptions().timeZone`). Used for the
+        turn's time when the person saved no time zone of their own; a name
+        that isn't a zone is passed over.
       schema:
         type: string
   headers:

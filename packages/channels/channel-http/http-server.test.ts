@@ -1,6 +1,6 @@
 import { describe, it, expect } from "bun:test";
 import { handleTurnRequest, handleConfirmRequest, handleLinkRequest, handleLoginCallback, openApiResponse, readRoutes, startHttpServer } from "./http-server.ts";
-import { type Admission, type Authenticate, type HandleTurn, type InboundTurn, type TurnSink, type ChannelHostReads, type Principal } from "@mercury-fw/channel-types";
+import { type Admission, type Authenticate, type HandleTurn, type InboundTurn, type TurnSink, type ChannelHostReads, type ChannelSettings, type Principal } from "@mercury-fw/channel-types";
 import type { StepInfo } from "@mercury-fw/plugin-types";
 
 /**
@@ -1306,5 +1306,85 @@ describe("the caller's language", () => {
     });
     expect(await done.text()).toBe('it|nobody|http.login.done{"service":"jira"}');
     expect(done.headers.get("content-language")).toBe("it");
+  });
+});
+
+// #293: the browser knows the zone its person is in; the turn is stamped
+// with it unless the person saved one, which a UI's settings do.
+describe("the caller's time zone", () => {
+  it("hands X-Time-Zone to the turn, and nothing when the client sends none", async () => {
+    const seen: unknown[] = [];
+    const deps = {
+      handleTurn: async (turn: { timeZoneHint?: string }, sink: { finalize: (t: string) => Promise<void> }) => {
+        seen.push(turn.timeZoneHint);
+        await sink.finalize("ok");
+      },
+      confirm: async () => null,
+      authenticate: asAlice,
+    } as never;
+    const zoned = turnReq({ text: "ciao", conversationId: "c" });
+    zoned.headers.set("x-time-zone", " Europe/Rome ");
+    await (await handleTurnRequest(zoned, deps)).text();
+    await (await handleTurnRequest(turnReq({ text: "ciao", conversationId: "c" }), deps)).text();
+    expect(seen).toEqual(["Europe/Rome", undefined]);
+  });
+
+  it("lets a browser on another origin send it, and save it", () => {
+    const res = openApiResponse("*");
+    expect(res.headers.get("access-control-allow-headers")).toContain("x-time-zone");
+    expect(res.headers.get("access-control-allow-methods")).toContain("PATCH");
+  });
+
+  describe("PATCH /me", () => {
+    const base: ChannelHostReads = {
+      manifest: async () => ({}),
+      pendingConfirmations: async () => [],
+      conversation: async () => ({}),
+      conversations: async () => ({ conversations: [] }),
+      wikiList: async () => [],
+      wikiRead: async () => null,
+      wikiGrep: async () => [],
+      memoryScroll: async () => null,
+      toolLog: async () => [],
+      health: async () => ({}),
+      me: async () => ({ name: "Luca", language: null, timeZone: "Asia/Tokyo" }),
+    };
+    const patch = (body: string) => new Request("http://x/me", { method: "PATCH", body, headers: { "content-type": "application/json" } });
+
+    it("saves the caller's time zone through the core, and answers it as saved", async () => {
+      const saved: unknown[] = [];
+      const settings: ChannelSettings = { setTimeZone: async (p, zone) => (saved.push([p, zone]), { ok: true, value: "Asia/Tokyo" }) };
+      const res = await readRoutes(base, asAlice, "*", undefined, settings)["/me"]!.PATCH!(patch(JSON.stringify({ timeZone: "asia/tokyo" })));
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ ok: true, timeZone: "Asia/Tokyo" });
+      expect(saved).toEqual([[ALICE, "asia/tokyo"]]);
+    });
+
+    it("is 400 with the core's reason for what isn't a zone, and for a body without one", async () => {
+      const settings: ChannelSettings = { setTimeZone: async () => ({ ok: false, error: '"Rome" isn\'t a time zone' }) };
+      const route = readRoutes(base, asAlice, "*", undefined, settings)["/me"]!;
+      const refused = await route.PATCH!(patch(JSON.stringify({ timeZone: "Rome" })));
+      expect(refused.status).toBe(400);
+      expect(await refused.json()).toEqual({ ok: false, error: '"Rome" isn\'t a time zone' });
+      for (const body of ["not json", "{}", JSON.stringify({ timeZone: 3 })]) {
+        const res = await route.PATCH!(patch(body));
+        expect(res.status).toBe(400);
+        expect(await res.json()).toEqual({ ok: false, error: "the body must be {\"timeZone\": \"<IANA name>\"}" });
+      }
+    });
+
+    it("is refused to a caller nobody vouches for, saving nothing", async () => {
+      const saved: unknown[] = [];
+      const settings: ChannelSettings = { setTimeZone: async (p, zone) => (saved.push(zone), { ok: true, value: zone }) };
+      const res = await readRoutes(base, refuse, "*", undefined, settings)["/me"]!.PATCH!(patch(JSON.stringify({ timeZone: "UTC" })));
+      expect(res.status).toBe(401);
+      expect(saved).toEqual([]);
+    });
+
+    it("isn't there on a core without settings; GET /me passes the saved zone on", async () => {
+      const route = readRoutes(base, asAlice)["/me"]!;
+      expect(route.PATCH).toBeUndefined();
+      expect(await (await route.GET(new Request("http://x/me"))).json()).toEqual({ ok: true, name: "Luca", language: null, timeZone: "Asia/Tokyo" });
+    });
   });
 });

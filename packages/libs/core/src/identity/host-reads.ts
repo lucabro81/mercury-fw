@@ -35,6 +35,8 @@ export type HostReadsDeps = {
   preferredName?: (key: string) => string | undefined;
   /** The language the person with `key` saved (`profiles.ts`); nobody has one when absent. */
   preferredLanguage?: (key: string) => string | undefined;
+  /** The time zone the person with `key` saved (`profiles.ts`); nobody has one when absent. */
+  preferredTimeZone?: (key: string) => string | undefined;
 };
 
 /** Builds the per-person `ChannelHostReads` over this instance's vault, Qdrant and stores. */
@@ -71,6 +73,7 @@ export function createHostReads(deps: HostReadsDeps): ChannelHostReads {
     me: forPerson((who) => ({
       name: deps.preferredName?.(who.person.key) ?? null,
       language: deps.preferredLanguage?.(who.person.key) ?? null,
+      timeZone: deps.preferredTimeZone?.(who.person.key) ?? null,
     })),
   };
 }

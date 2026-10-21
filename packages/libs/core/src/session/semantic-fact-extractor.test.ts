@@ -103,6 +103,24 @@ describe("createSemanticFactExtractor", () => {
     expect(received?.prompt).not.toContain("Luca Brognara");
     expect(received?.prompt).toContain("preferisco che le risposte siano in italiano");
   });
+
+  // #293: the core stamps every turn with when it was written, before the
+  // sender marker; the time repeating in every turn isn't a fact either.
+  it("strips the turn's stamp, then the sender marker, from user messages", async () => {
+    let received: { prompt: string } | undefined;
+    const generateObjectFn = async (params: { prompt: string }) => {
+      received = params;
+      return { object: [] };
+    };
+
+    const extract = createSemanticFactExtractor(MODEL, generateObjectFn);
+    await extract([
+      { role: "user", content: "[Wednesday 2026-10-21 14:32 Europe/Rome]\n[Da: Luca Brognara]\nlavoro nel team piattaforma" },
+      { role: "user", content: "[Wednesday 2026-10-21 14:40 Europe/Rome]\nuso Jira" },
+    ]);
+
+    expect(received?.prompt).toBe("user: lavoro nel team piattaforma\nuser: uso Jira");
+  });
 });
 
 describe("SemanticFactSchema", () => {

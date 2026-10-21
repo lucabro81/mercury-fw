@@ -16,6 +16,7 @@
  * missing and the keys no package declares.
  */
 import { CORE_MESSAGES } from "./core-messages.ts";
+import { timeZoneName } from "../session/turn-stamp.ts";
 
 import type { Messages, Params, Translate } from "@mercury-fw/plugin-types";
 import type { ChannelI18n, Principal } from "@mercury-fw/channel-types";
@@ -88,6 +89,8 @@ export type I18n = {
   supported: string[];
   /** The language when neither the person nor the channel says. */
   defaultLocale: string;
+  /** The instance's time zone (`MercuryI18n.timeZone`) as the IANA list writes it, undefined when the config sets none. */
+  timeZone: string | undefined;
   /** The language for someone: `saved` when still supported, then the hint's, then the default. */
   languageFor: (saved: string | undefined, hint: string | undefined) => string;
   /** The texts in `locale` (a supported language). */
@@ -99,15 +102,20 @@ export type I18n = {
 /**
  * The instance's languages over the packages' English. `english` is every
  * package's catalog merged; `locales` the instance's files by language. A
- * file with a value that isn't text, or a `defaultLocale` the instance
- * doesn't ship, stops the start.
+ * file with a value that isn't text, a `defaultLocale` the instance doesn't
+ * ship, or a `timeZone` that isn't a zone's name, stops the start.
  */
 export function createI18n(opts: {
   english: Messages;
   locales?: Record<string, Messages>;
   defaultLocale?: string;
+  timeZone?: string;
 }): I18n {
   const { english } = opts;
+  const timeZone = opts.timeZone === undefined ? undefined : timeZoneName(opts.timeZone);
+  if (opts.timeZone !== undefined && timeZone === undefined) {
+    throw new Error(`i18n.timeZone "${opts.timeZone}" isn't a time zone: use its IANA name, such as "Europe/Rome"`);
+  }
   const files = new Map<string, Messages>();
   for (const [tag, messages] of Object.entries(opts.locales ?? {})) {
     const bad = Object.entries(messages).find(([, text]) => typeof text !== "string");
@@ -133,6 +141,7 @@ export function createI18n(opts: {
   return {
     supported,
     defaultLocale,
+    timeZone,
     languageFor: (saved, hint) => {
       const kept = saved?.toLowerCase();
       if (kept !== undefined && supported.includes(kept)) return kept;
@@ -171,12 +180,13 @@ export function createI18n(opts: {
  */
 export function instanceI18n(
   pluginMessages: Messages,
-  i18n: { defaultLocale?: string; locales?: Record<string, Messages> } | undefined,
+  i18n: { defaultLocale?: string; locales?: Record<string, Messages>; timeZone?: string } | undefined,
 ): I18n {
   return createI18n({
     english: { ...CORE_MESSAGES, ...pluginMessages },
     ...(i18n?.locales === undefined ? {} : { locales: i18n.locales }),
     ...(i18n?.defaultLocale === undefined ? {} : { defaultLocale: i18n.defaultLocale }),
+    ...(i18n?.timeZone === undefined ? {} : { timeZone: i18n.timeZone }),
   });
 }
 

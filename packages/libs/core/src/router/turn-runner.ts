@@ -12,6 +12,7 @@
 import type { LanguageModel, Tool } from "ai";
 import { runTurn } from "../session/agent-turn.ts";
 import type { StepInfo } from "../session/step-info.ts";
+import { formatTurnStamp } from "../session/turn-stamp.ts";
 // `PostTurnGuard` is part of the plugin contract (a plugin's `build()` may
 // return these to inspect/rewrite the model's finished text), so it lives in
 // `@mercury-fw/plugin-types` and is re-exported here for the core callers that
@@ -182,6 +183,12 @@ export type TurnRunnerDeps = {
   preferredName?: (key: string) => string | undefined;
   /** The language the person with `key` saved, or undefined; nobody has one when absent. */
   preferredLanguage?: (key: string) => string | undefined;
+  /**
+   * The time zone the turn of the person with `key` is stamped in, given the
+   * channel's hint (see `session/turn-stamp.ts`): the model reads each message
+   * after when and where it was written. Turns go unstamped when absent.
+   */
+  timeZoneFor?: (key: string, hint: string | undefined) => string;
   /** `key` is the person's key, `who` whom the tools are offered to and act for. */
   buildTools: (
     sessionKey: string,
@@ -198,13 +205,15 @@ export type TurnRunnerDeps = {
    * context primer (see `src/session/context-primer.ts`); `undefined` when
    * nobody vouched for the person, since a primer needs a real identity.
    * `resume` is the turn's own (`InboundTurn.resume`), for a tracked turn
-   * only: a history created for it is rebuilt from the archive.
+   * only: a history created for it is rebuilt from the archive, its person's
+   * messages stamped in `timeZone`, the turn's, when there is one.
    */
   getOrCreateHistory: (
     sessionKey: string,
     trackForCapture: boolean,
     key: string | undefined,
     resume?: InboundTurn["resume"],
+    timeZone?: string,
   ) => Promise<SessionHistory> | SessionHistory;
   /** Layer-3 session tracking (sessionUsers map + idle scanner touch). Only for turns whose person a provider vouched for. */
   trackSession: (sessionKey: string, key: string, at: number) => void;
@@ -386,7 +395,10 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
         // Last, where a small model pays the most attention.
         ...(shown.length > 0 ? [SHOWN_LISTS_NOTE(shown)] : []),
       ].join("\n\n");
-    const input = resumed ? RESUMED_LINE(resumed) : turn.opening ? OPENING_CUE : turn.text;
+    const message = resumed ? RESUMED_LINE(resumed) : turn.opening ? OPENING_CUE : turn.text;
+    // On the model's input only: the archive keeps `turn.text` and its own timestamp.
+    const timeZone = deps.timeZoneFor?.(key, turn.timeZoneHint);
+    const input = timeZone === undefined ? message : `${formatTurnStamp(new Date((deps.now ?? Date.now)()), timeZone)}${message}`;
     if (tracked) {
       deps.trackSession(turn.sessionKey, key, (deps.now ?? Date.now)());
       deps.registerCaptureCallback(turn.sessionKey, sink.onToolStart, sink.onToolFinish);
@@ -442,7 +454,13 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
       // already scheduled when the sink was constructed keeps running
       // otherwise, firing on its own 60s schedule regardless of whether
       // the turn itself already failed and was reported.
-      history = await deps.getOrCreateHistory(turn.sessionKey, tracked, tracked ? key : undefined, tracked ? turn.resume : undefined);
+      history = await deps.getOrCreateHistory(
+        turn.sessionKey,
+        tracked,
+        tracked ? key : undefined,
+        tracked ? turn.resume : undefined,
+        tracked ? timeZone : undefined,
+      );
       watchdog = createWatchdog(
         stallMs,
         () => {

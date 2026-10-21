@@ -226,8 +226,8 @@ type RawChatEvent = {
   action?: { actionMethodName?: string; parameters?: Array<{ key?: string; value?: string }> };
   space?: { name?: string; type?: string };
   user?: RawChatSender;
-  /** What the person's Chat client says about them; `userLocale` is their language (`en-US`), when the event carries it. */
-  common?: { userLocale?: string };
+  /** What the person's Chat client says about them, when the event carries it: `userLocale` is their language (`en-US`), `timeZone.id` the zone they're in (`Europe/Rome`). */
+  common?: { userLocale?: string; timeZone?: { id?: string; offset?: number } };
 };
 
 export type ParsedMessageEvent = {
@@ -249,6 +249,8 @@ export type ParsedMessageEvent = {
   isDirectMessage: boolean;
   /** The language of the sender's Chat client (`common.userLocale`), when the event carries it: the turn's language hint. */
   locale?: string;
+  /** The time zone of the sender's Chat client (`common.timeZone.id`), when the event carries it: the turn's time zone hint. */
+  timeZone?: string;
 };
 
 export type ParsedCardClickEvent = {
@@ -263,12 +265,20 @@ export type ParsedCardClickEvent = {
   isDirectMessage: boolean;
   /** As on a message (see `ParsedMessageEvent.locale`). */
   locale?: string;
+  /** As on a message (see `ParsedMessageEvent.timeZone`). */
+  timeZone?: string;
 };
 
 /** The language the event says the person's client is in, when it says. */
 function localeOf(event: RawChatEvent | null | undefined): string | undefined {
   const locale = event?.common?.userLocale;
   return typeof locale === "string" && locale.trim() !== "" ? locale.trim() : undefined;
+}
+
+/** The time zone the event says the person's client is in, when it says. */
+function timeZoneOf(event: RawChatEvent | null | undefined): string | undefined {
+  const id = event?.common?.timeZone?.id;
+  return typeof id === "string" && id.trim() !== "" ? id.trim() : undefined;
 }
 
 /** The email Google vouches for on `sender`: a person's only (`HUMAN`), never a bot's or an unknown kind's. */
@@ -280,6 +290,7 @@ function emailOf(sender: RawChatSender | undefined): string | undefined {
 export function parseChatEvent(raw: unknown): ParsedMessageEvent | ParsedCardClickEvent | null {
   const event = raw as RawChatEvent;
   const locale = localeOf(event);
+  const timeZone = timeZoneOf(event);
   if (event?.type === "MESSAGE") {
     const m = event.message;
     if (!m || typeof m.name !== "string" || typeof m.text !== "string") return null;
@@ -295,6 +306,7 @@ export function parseChatEvent(raw: unknown): ParsedMessageEvent | ParsedCardCli
       senderEmail: emailOf(m.sender),
       isDirectMessage: m.space.type === "DM",
       ...(locale === undefined ? {} : { locale }),
+      ...(timeZone === undefined ? {} : { timeZone }),
     };
   }
   if (event?.type === "CARD_CLICKED") {
@@ -315,6 +327,7 @@ export function parseChatEvent(raw: unknown): ParsedMessageEvent | ParsedCardCli
       parameters,
       isDirectMessage: event.space.type === "DM",
       ...(locale === undefined ? {} : { locale }),
+      ...(timeZone === undefined ? {} : { timeZone }),
     };
   }
   return null;
@@ -329,6 +342,8 @@ export type CardClickHandler = (
   messageName?: string,
   /** The clicking person's client language (`ParsedCardClickEvent.locale`). */
   locale?: string,
+  /** The clicking person's client time zone (`ParsedCardClickEvent.timeZone`). */
+  timeZone?: string,
 ) => Promise<void>;
 
 export type GoogleChatProviderDeps = {
@@ -429,6 +444,7 @@ export function createGoogleChatProvider(deps: GoogleChatProviderDeps): GoogleCh
     principal: Principal,
     isDirectMessage: boolean,
     locale: string | undefined,
+    timeZone: string | undefined,
   ): Promise<void> {
     const sessionKey = deriveSessionKey(space, principal.id);
     const t = await textsFor(principal, locale);
@@ -443,6 +459,7 @@ export function createGoogleChatProvider(deps: GoogleChatProviderDeps): GoogleCh
           logPrefix: `[chat:${space}:${principal.id}] `,
           resumeAfterConfirm: true,
           ...(locale === undefined ? {} : { languageHint: locale }),
+          ...(timeZone === undefined ? {} : { timeZoneHint: timeZone }),
         },
         createSink(space, { user: principal.id, isDirectMessage }, t),
       ),
@@ -460,7 +477,7 @@ export function createGoogleChatProvider(deps: GoogleChatProviderDeps): GoogleCh
    */
   const onCardClick: CardClickHandler =
     deps.onCardClick ??
-    (async (params, space, sender, senderEmail, isDirectMessage = false, messageName, locale) => {
+    (async (params, space, sender, senderEmail, isDirectMessage = false, messageName, locale, timeZone) => {
       const token = params.token;
       if (!token) {
         log(`[chat] card click with no token parameter`);
@@ -495,7 +512,7 @@ export function createGoogleChatProvider(deps: GoogleChatProviderDeps): GoogleCh
         reply = await deps.confirm(token, sessionKey, principal, locale);
       }
       if (reply?.resume && activeHandleTurn) {
-        await resumeTurn(activeHandleTurn, space, principal, isDirectMessage, locale);
+        await resumeTurn(activeHandleTurn, space, principal, isDirectMessage, locale, timeZone);
         return;
       }
       if (reply !== null) {
@@ -692,7 +709,7 @@ export function createGoogleChatProvider(deps: GoogleChatProviderDeps): GoogleCh
 
     const reply = await deps.confirm(event.text, sessionKey, principal, event.locale);
     if (reply?.resume) {
-      await resumeTurn(handleTurn, event.space, principal, event.isDirectMessage, event.locale);
+      await resumeTurn(handleTurn, event.space, principal, event.isDirectMessage, event.locale, event.timeZone);
       return;
     }
     if (reply !== null) {
@@ -716,6 +733,7 @@ export function createGoogleChatProvider(deps: GoogleChatProviderDeps): GoogleCh
           principal,
           logPrefix: `[chat:${event.space}:${event.sender}] `,
           ...(event.locale === undefined ? {} : { languageHint: event.locale }),
+          ...(event.timeZone === undefined ? {} : { timeZoneHint: event.timeZone }),
         },
         createSink(event.space, { user: event.sender, isDirectMessage: event.isDirectMessage }, t),
       ),
@@ -750,7 +768,7 @@ export function createGoogleChatProvider(deps: GoogleChatProviderDeps): GoogleCh
       if (parsed.kind === "message") {
         await processMessageEvent(parsed, handleTurn);
       } else {
-        await onCardClick(parsed.parameters, parsed.space, parsed.sender, parsed.senderEmail, parsed.isDirectMessage, parsed.messageName, parsed.locale);
+        await onCardClick(parsed.parameters, parsed.space, parsed.sender, parsed.senderEmail, parsed.isDirectMessage, parsed.messageName, parsed.locale, parsed.timeZone);
       }
     } catch (err) {
       log(`[chat] event handling failed: ${String(err)}`);

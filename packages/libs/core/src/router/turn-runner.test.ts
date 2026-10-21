@@ -2354,3 +2354,96 @@ describe("createTurnRunner: the turn's language and the pending note", () => {
     expect(calls.finalize).toEqual([["answer"]]);
   });
 });
+
+// #293: the model doesn't know what day it is unless the turn says.
+describe("createTurnRunner: the turn's time", () => {
+  // 2026-10-21T12:32:00Z, a Wednesday: 14:32 in Rome.
+  const NOON = Date.parse("2026-10-21T12:32:00Z");
+
+  function setup(opts: { stamp?: boolean; saved?: Record<string, string> } = {}) {
+    const calls: string[] = [];
+    const captured: Array<{ role: string; content: string }> = [];
+    const asked: Array<{ key: string; hint: string | undefined }> = [];
+    const histories: Array<string | undefined> = [];
+    const runner = createTurnRunner({
+      model: {} as any,
+      systemPrompts: { singleUser: "single", multiUser: "multi" },
+      buildTools: () => ({}),
+      getOrCreateHistory: (_sessionKey, _tracked, _key, _resume, timeZone) => (histories.push(timeZone), fakeHistory()),
+      trackSession: () => {},
+      registerCaptureCallback: () => {},
+      maybeCapture: async () => {},
+      processToolCorrections: async () => {},
+      logStep: () => {},
+      logTurnFn: () => {},
+      now: () => NOON,
+      captureVerbatim: async (msg) => {
+        captured.push({ role: msg.role, content: msg.content });
+      },
+      takeResumed: () => ({ describe: "fetch a page", toolName: "web_fetch", input: {}, output: {} }),
+      ...(opts.stamp === false
+        ? {}
+        : {
+            timeZoneFor: (key: string, hint: string | undefined) => {
+              asked.push({ key, hint });
+              return opts.saved?.[key] ?? hint ?? "Europe/Rome";
+            },
+          }),
+      runTurnFn: async (_history, text) => {
+        calls.push(text);
+        return "reply";
+      },
+    });
+    return { runner, calls, captured, asked, histories };
+  }
+
+  test("the model reads the message after when and where it was written; the archive keeps the message alone", async () => {
+    const { runner, calls, captured } = setup();
+    await runner(baseTurn({ principal: verified("u1") }), baseSink());
+    expect(calls).toEqual(["[Wednesday 2026-10-21 14:32 Europe/Rome]\nhello"]);
+    expect(captured).toEqual([
+      { role: "user", content: "hello" },
+      { role: "assistant", content: "reply" },
+    ]);
+  });
+
+  test("the zone is the person's, asked with the channel's hint", async () => {
+    const { runner, calls, asked } = setup({ saved: { "google-chat:u1": "Asia/Tokyo" } });
+    await runner(baseTurn({ principal: verified("u1"), timeZoneHint: "America/New_York" }), baseSink());
+    await runner(baseTurn({ principal: verified("u2"), timeZoneHint: "America/New_York" }), baseSink());
+    expect(asked).toEqual([
+      { key: "google-chat:u1", hint: "America/New_York" },
+      { key: "google-chat:u2", hint: "America/New_York" },
+    ]);
+    expect(calls).toEqual(["[Wednesday 2026-10-21 21:32 Asia/Tokyo]\nhello", "[Wednesday 2026-10-21 08:32 America/New_York]\nhello"]);
+  });
+
+  test("a shared space stamps each message in its sender's zone", async () => {
+    const { runner, calls } = setup({ saved: { "google-chat:u1": "Asia/Tokyo" } });
+    await runner(baseTurn({ principal: verified("u1"), multiUser: true }), baseSink());
+    expect(calls).toEqual(["[Wednesday 2026-10-21 21:32 Asia/Tokyo]\nhello"]);
+  });
+
+  test("an opening and a resumed turn are stamped too", async () => {
+    const { runner, calls } = setup();
+    await runner(baseTurn({ principal: verified("u1"), opening: true, text: "" }), baseSink());
+    await runner(baseTurn({ principal: verified("u1"), text: "", resumeAfterConfirm: true }), baseSink());
+    expect(calls).toEqual([
+      `[Wednesday 2026-10-21 14:32 Europe/Rome]\n${OPENING_CUE}`,
+      `[Wednesday 2026-10-21 14:32 Europe/Rome]\n${RESUMED_LINE({ describe: "fetch a page", toolName: "web_fetch", input: {}, output: {} })}`,
+    ]);
+  });
+
+  test("a resumed conversation's history is rebuilt in the turn's zone, for a person the channel vouched for", async () => {
+    const { runner, histories } = setup({ saved: { "google-chat:u1": "Asia/Tokyo" } });
+    await runner(baseTurn({ principal: verified("u1") }), baseSink());
+    await runner(baseTurn({ principal: anonymous("u2"), timeZoneHint: "America/New_York" }), baseSink());
+    expect(histories).toEqual(["Asia/Tokyo", undefined]);
+  });
+
+  test("without a zone to stamp in, the message goes as it is", async () => {
+    const { runner, calls } = setup({ stamp: false });
+    await runner(baseTurn({ principal: verified("u1") }), baseSink());
+    expect(calls).toEqual(["hello"]);
+  });
+});

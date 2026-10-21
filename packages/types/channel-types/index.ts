@@ -153,6 +153,13 @@ export type InboundTurn = {
    * overrides the one they saved.
    */
   languageHint?: string;
+  /**
+   * The time zone the caller's client is in, as its IANA name (`Europe/Rome`),
+   * when the channel has one. The core stamps the turn with the time there
+   * when the person saved no time zone of their own; it never overrides the
+   * one they saved, and a name that isn't a zone is ignored.
+   */
+  timeZoneHint?: string;
 };
 
 /** What the core says about a turn's final text, beside it. */
@@ -336,7 +343,7 @@ export type ChannelHostReads = {
   memoryScroll: (principal: Principal, collection: string, limit: number, offset?: string) => Promise<unknown>;
   toolLog: (principal: Principal) => Promise<unknown>;
   health: () => Promise<unknown>;
-  /** Who the caller is to the core: `{ name, language }`, how they asked to be called and the language they saved, `null` for what they never said. Absent on an older core. */
+  /** Who the caller is to the core: `{ name, language, timeZone }`, how they asked to be called, the language and the time zone they saved, `null` for what they never said (`timeZone` absent on an older core). Absent on an older core. */
   me?: (principal: Principal) => Promise<unknown>;
 };
 
@@ -368,6 +375,20 @@ export type LinkStart = { ok: true; code: string; expiresAt: string } | { ok: fa
  */
 export type ChannelLinking = { start: (principal: Principal) => Promise<LinkStart> };
 
+/** A setting as the core saved it, or why it didn't. */
+export type SettingOutcome<T> = { ok: true; value: T } | { ok: false; error: string };
+
+/**
+ * The person's own settings, for a channel that can show them a settings
+ * area (the HTTP surface): what the model would otherwise save when the
+ * person tells it. `setTimeZone` saves the time zone `principal` is in, by
+ * its IANA name, as the IANA list writes it; it refuses what isn't a zone's
+ * name, and anyone the core doesn't admit.
+ */
+export type ChannelSettings = {
+  setTimeZone: (principal: Principal, timeZone: string) => Promise<SettingOutcome<string>>;
+};
+
 /**
  * The minimal capabilities every channel gets from the core — the intersection
  * across terminal, HTTP and Google Chat, nothing channel-specific. Anything
@@ -376,7 +397,7 @@ export type ChannelLinking = { start: (principal: Principal) => Promise<LinkStar
  * these, the channel imports none of them.
  *
  * `env`, `log`, `confirm` and `admit` are the floor every channel relies on.
- * `resolveConfirmation`, `reads`, `authenticate` and `logins` are optional in-process capabilities that
+ * `resolveConfirmation`, `reads`, `authenticate`, `logins`, `linking` and `settings` are optional in-process capabilities that
  * can't come from `env`: the core populates them, only a channel that needs them
  * (HTTP) reads them, the others ignore them.
  */
@@ -416,6 +437,8 @@ export type ChannelRuntimeContext = {
   logins?: ChannelLogins;
   /** Linking another account to a person (see `ChannelLinking`). */
   linking?: ChannelLinking;
+  /** The person's own settings (see `ChannelSettings`); absent on an older core. */
+  settings?: ChannelSettings;
   /** The assistant's name (the app's `persona.name`), for what the channel tells people itself (a login page, a card). The core always sets it; absent on an older core. */
   assistantName?: string;
 };

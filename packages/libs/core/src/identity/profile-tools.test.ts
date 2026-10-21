@@ -3,12 +3,20 @@ import { createProfileTools } from "./profile-tools.ts";
 import type { ProfileStore } from "./profiles.ts";
 
 /** A store in memory, refusing what the real one refuses. */
-function memoryStore(): ProfileStore & { names: Map<string, string>; languages: Map<string, string> } {
+function memoryStore(): ProfileStore & { names: Map<string, string>; languages: Map<string, string>; timeZones: Map<string, string> } {
   const names = new Map<string, string>();
   const languages = new Map<string, string>();
+  const timeZones = new Map<string, string>();
   return {
     names,
     languages,
+    timeZones,
+    timeZoneOf: (key) => timeZones.get(key),
+    setTimeZone: (key, timeZone) => {
+      if (timeZone !== "Europe/Rome" && timeZone !== "Asia/Tokyo") throw new Error(`"${timeZone}" isn't a time zone`);
+      timeZones.set(key, timeZone);
+      return timeZone;
+    },
     languageOf: (key) => languages.get(key),
     setLanguage: (key, language) => {
       languages.set(key, language);
@@ -29,6 +37,9 @@ const run = (tools: ReturnType<typeof createProfileTools>, name: string) =>
 
 const setLanguage = (tools: ReturnType<typeof createProfileTools>, language: string) =>
   tools.set_preferred_language!.execute!({ language }, {} as never);
+
+const setTimeZone = (tools: ReturnType<typeof createProfileTools>, timeZone: string) =>
+  tools.set_time_zone.execute!({ timeZone }, {} as never);
 
 describe("set_preferred_name", () => {
   test("saves the name for the person the turn is for, and nobody else", async () => {
@@ -74,5 +85,29 @@ describe("set_preferred_language", () => {
     const { description } = createProfileTools({ store: memoryStore(), key: "k", languages }).set_preferred_language!;
     expect(description).toContain("language the person you're talking to wants");
     expect(description).toContain("en, it");
+  });
+});
+
+describe("set_time_zone", () => {
+  test("is there whatever languages the instance ships", () => {
+    expect(createProfileTools({ store: memoryStore(), key: "k" }).set_time_zone).toBeDefined();
+  });
+
+  test("saves the zone for the person the turn is for, and nobody else", async () => {
+    const store = memoryStore();
+    expect(await setTimeZone(createProfileTools({ store, key: "static:alice" }), "Asia/Tokyo")).toEqual({ ok: true, timeZone: "Asia/Tokyo" });
+    expect([...store.timeZones]).toEqual([["static:alice", "Asia/Tokyo"]]);
+  });
+
+  test("a refused zone is an error for the model, with the reason", async () => {
+    const store = memoryStore();
+    expect(await setTimeZone(createProfileTools({ store, key: "static:alice" }), "Rome")).toEqual({ ok: false, error: '"Rome" isn\'t a time zone' });
+    expect(store.timeZones.size).toBe(0);
+  });
+
+  test("says when to use it and what a zone looks like", () => {
+    const { description } = createProfileTools({ store: memoryStore(), key: "k" }).set_time_zone;
+    expect(description).toContain("time zone the person you're talking to is in");
+    expect(description).toContain("Europe/Rome");
   });
 });
