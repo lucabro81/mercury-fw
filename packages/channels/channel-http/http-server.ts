@@ -35,6 +35,7 @@ import {
   type Principal,
   type Admission,
   type ChannelLinking,
+  type ChannelSettings,
 } from "@mercury-fw/channel-types";
 import { englishHttp } from "./messages.ts";
 
@@ -62,6 +63,12 @@ export type AdmitFn = (principal: Principal, hint?: string) => Promise<Admission
 /** The language the caller's client asks for (`Accept-Language`), when it says. */
 function languageHint(req: Request): string | undefined {
   const value = req.headers.get("accept-language")?.trim();
+  return value ? value : undefined;
+}
+
+/** The time zone the caller's client says it's in (`X-Time-Zone`, an IANA name), when it says; the core ignores a name that isn't a zone. */
+function timeZoneHint(req: Request): string | undefined {
+  const value = req.headers.get("x-time-zone")?.trim();
   return value ? value : undefined;
 }
 
@@ -104,8 +111,8 @@ const SSE_HEADERS = {
 function corsHeaders(origin: string): Record<string, string> {
   return {
     "access-control-allow-origin": origin,
-    "access-control-allow-methods": "GET, POST, OPTIONS",
-    "access-control-allow-headers": "content-type, authorization, accept-language",
+    "access-control-allow-methods": "GET, POST, PATCH, OPTIONS",
+    "access-control-allow-headers": "content-type, authorization, accept-language, x-time-zone",
   };
 }
 
@@ -207,6 +214,7 @@ export async function handleTurnRequest(req: Request, deps: TurnRequestDeps): Pr
   }
   const sessionKey = `${principal.id}:${conversationId}`;
   const hint = languageHint(req);
+  const zone = timeZoneHint(req);
   const language = await contentLanguage(deps.i18n, principal, hint);
 
   // Aborted when the client disconnects (see the stream's `cancel` below) so
@@ -280,6 +288,7 @@ export async function handleTurnRequest(req: Request, deps: TurnRequestDeps): Pr
             ...(opening ? { opening: true as const } : {}),
             ...(resuming ? { resumeAfterConfirm: true as const } : {}),
             ...(hint === undefined ? {} : { languageHint: hint }),
+            ...(zone === undefined ? {} : { timeZoneHint: zone }),
           },
           sink,
         );
@@ -449,9 +458,11 @@ function loginRoutes(
   };
 }
 
-/** A single read route: its `GET` handler plus the shared `OPTIONS` preflight. */
+/** A single read route: its `GET` handler plus the shared `OPTIONS` preflight, and on `/me` the `PATCH` saving a setting. */
 type ReadRoute = {
   GET: (req: Request) => Response | Promise<Response>;
+  /** Only on `/me`, when the core offers the person's settings (`PATCH /me`). */
+  PATCH?: (req: Request) => Promise<Response>;
   OPTIONS: () => Response;
 };
 
@@ -464,13 +475,15 @@ type ReadRoute = {
  * their data only; a conversation is named by its conversationId, as on
  * `/turn`, and its session key is built from the caller.
  * `json` JSON-encodes with the CORS headers merged in; `badRequest` does the
- * same for a 400.
+ * same for a 400. With `settings`, `/me` also takes a `PATCH` saving the
+ * caller's time zone (a UI's settings area), asking `authenticate` first too.
  */
 export function readRoutes(
   reads: ChannelHostReads,
   authenticate: Authenticate,
   corsOrigin = "*",
   admit?: AdmitFn,
+  settings?: ChannelSettings,
 ): Record<string, ReadRoute> {
   const cors = corsHeaders(corsOrigin);
   const json = (payload: object, status = 200): Response =>
@@ -515,12 +528,31 @@ export function readRoutes(
     ...(reads.me === undefined
       ? {}
       : {
-          "/me": route(async (_req, principal) => {
-            // Null when the core no longer admits the caller: still a name, null.
-            const me = (await reads.me!(principal)) as { name: string | null; language?: string | null } | null;
-            // An older core says no language: the reply then has none either.
-            return json({ ok: true, name: me?.name ?? null, ...(me?.language === undefined ? {} : { language: me.language }) });
-          }),
+          "/me": {
+            ...route(async (_req, principal) => {
+              // Null when the core no longer admits the caller: still a name, null.
+              const me = (await reads.me!(principal)) as { name: string | null; language?: string | null; timeZone?: string | null } | null;
+              // An older core says no language or time zone: the reply then has none either.
+              return json({
+                ok: true,
+                name: me?.name ?? null,
+                ...(me?.language === undefined ? {} : { language: me.language }),
+                ...(me?.timeZone === undefined ? {} : { timeZone: me.timeZone }),
+              });
+            }),
+            ...(settings === undefined
+              ? {}
+              : {
+                  PATCH: async (req: Request) => {
+                    const principal = await caller(req, { authenticate, ...(admit === undefined ? {} : { admit }) }, corsOrigin);
+                    if (principal instanceof Response) return principal;
+                    const body = (await req.json().catch(() => null)) as { timeZone?: unknown } | null;
+                    if (typeof body?.timeZone !== "string") return badRequest('the body must be {"timeZone": "<IANA name>"}');
+                    const saved = await settings.setTimeZone(principal, body.timeZone);
+                    return saved.ok ? json({ ok: true, timeZone: saved.value }) : badRequest(saved.error);
+                  },
+                }),
+          },
         }),
     "/health": route(async () => json({ ok: true, ...(await reads.health() as object) })),
     "/wiki/list": route(async (_req, principal) => json({ ok: true, files: await reads.wikiList(principal) })),
@@ -556,6 +588,8 @@ export type HttpServerDeps = TurnRequestDeps & {
   completeLogin?: CompleteLoginFn;
   /** Linking another account to the caller; `/link` is mounted only with it. */
   linking?: ChannelLinking;
+  /** The person's own settings; `PATCH /me` is mounted only with it. */
+  settings?: ChannelSettings;
   /** What the pages people read call the assistant. */
   assistantName?: string;
 };
@@ -589,7 +623,7 @@ export function startHttpServer(deps: HttpServerDeps): ReturnType<typeof Bun.ser
         OPTIONS: () => preflight(origin),
       },
       "/openapi.yaml": { GET: () => openApiResponse(origin), OPTIONS: () => preflight(origin) },
-      ...(deps.reads ? readRoutes(deps.reads, deps.authenticate, origin, deps.admit) : {}),
+      ...(deps.reads ? readRoutes(deps.reads, deps.authenticate, origin, deps.admit, deps.settings) : {}),
       ...(deps.completeLogin ? loginRoutes(deps.completeLogin, deps.assistantName, deps.i18n) : {}),
       ...(deps.linking ? linkRoutes({ ...deps, start: deps.linking.start, corsOrigin: origin }) : {}),
     },
