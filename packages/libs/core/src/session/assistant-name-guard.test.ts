@@ -29,7 +29,7 @@ function coreTools(): Record<string, Tool> {
   return {
     ...createWikiTools({ vaultPath, key: "static:alice", stageConfirmation: async () => ({ token: "t", summary: "s" }) as never }),
     ...createToolLogRecallTool({ sessionKey: "s", owner: "static:alice" }),
-    ...createProfileTools({ store: { nameOf: () => undefined, setName: (_k, n) => n, languageOf: () => undefined, setLanguage: (_k, l) => l }, key: "static:alice" }),
+    ...createProfileTools({ store: { nameOf: () => undefined, setName: (_k, n) => n, languageOf: () => undefined, setLanguage: (_k, l) => l, timeZoneOf: () => undefined, setTimeZone: (_k, z) => z }, key: "static:alice" }),
     ...createReadSkillTool([{ name: "jira", description: "Jira.", body: "body" }]),
     ...createPresentTool({ sessionKey: "s", store: createDisplayStore() }),
     ...createVerbatimArchiveProvider({ client: {} as never, collectionName: "c", embed: async () => [] }).sessionTools!({

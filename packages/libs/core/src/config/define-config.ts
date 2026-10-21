@@ -32,13 +32,17 @@ export type MercuryAccess = {
  * gets the language they saved, then the one their client asks for when the
  * channel passes it on (`InboundTurn.languageHint`), then `defaultLocale`
  * (English when left out). A key a language's file lacks shows as the key
- * itself.
+ * itself. `timeZone` is where the instance's people are, for the stamp on
+ * each turn (#293): it applies to whoever saved none and whose channel says
+ * none.
  */
 export type MercuryI18n = {
   /** The language of whoever hasn't picked one and whose client asks for none the instance ships; `en` or a key of `locales`. */
   defaultLocale?: string;
   /** The instance's language files, by language tag. */
   locales?: Record<string, Messages>;
+  /** The time zone of whoever saved none and whose channel says none, as its IANA name (`Europe/Rome`); the process's when left out. */
+  timeZone?: string;
 };
 
 /** The shape of a Mercury instance's composition config: the tool plugins

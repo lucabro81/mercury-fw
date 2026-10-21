@@ -129,6 +129,19 @@ describe("createI18n", () => {
     );
   });
 
+  test("the instance's time zone, as the IANA list writes it, none when left out", () => {
+    expect(createI18n({ english, timeZone: "europe/rome" }).timeZone).toBe("Europe/Rome");
+    expect(createI18n({ english }).timeZone).toBeUndefined();
+  });
+
+  test("a time zone that isn't a zone's name stops the start", () => {
+    for (const bad of ["Rome", "+02:00"]) {
+      expect(() => createI18n({ english, timeZone: bad })).toThrow(
+        `i18n.timeZone "${bad}" isn't a time zone: use its IANA name, such as "Europe/Rome"`,
+      );
+    }
+  });
+
   test("a locale file with a value that isn't text stops the start", () => {
     expect(() => createI18n({ english, locales: { it: { "core.bye": 3 as unknown as string } } })).toThrow(
       'i18n.locales.it: key "core.bye" isn\'t a string',
@@ -255,6 +268,10 @@ describe("instanceI18n", () => {
     expect(missing).toStartWith("[i18n] it: ");
     expect(missing).toContain("core.access.unknown");
     expect(missing).not.toContain("web-search.choice.once");
+  });
+
+  test("passes the instance's time zone on", () => {
+    expect(instanceI18n({}, { timeZone: "Asia/Tokyo" }).timeZone).toBe("Asia/Tokyo");
   });
 
   test("English alone without an i18n config", () => {
