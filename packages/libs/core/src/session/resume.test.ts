@@ -36,6 +36,13 @@ describe("resumeConversation", () => {
   // message of the person's after when it was written.
   // Review of #293: the stamps were added after the tail was trimmed to the
   // budget, so a resumed conversation could exceed it by a stamp per message.
+  // Review of #293: a timestamp that isn't a date threw out of the stamp and
+  // failed the whole turn; resuming is enrichment and fails soft.
+  test("a message whose timestamp isn't a date comes back without a stamp", async () => {
+    const { d } = deps({ messages: [{ role: "user", content: "verde", timestamp: "garbage" }, assistant("ok", 2)], complete: true });
+    expect(await resumeConversation(query, d, "Europe/Rome")).toEqual({ messages: [plain(user("verde")), plain(assistant("ok"))] });
+  });
+
   test("the stamps count toward the budget", async () => {
     // Each stamp is 39 characters: without counting them, both messages (180) fit 200; with them (219) the oldest pair goes.
     const tail = { messages: [user("a".repeat(50), 1), assistant("b".repeat(50), 2), user("c".repeat(40), 3), assistant("d".repeat(40), 4)], complete: false };

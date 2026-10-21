@@ -15,13 +15,13 @@ const LATELY = [0, 5 * 60_000];
 /** The weekday in `timeZone`, in Italian, now and a few minutes ago (a midnight in between). */
 function weekdays(timeZone: string): string[] {
   const format = new Intl.DateTimeFormat("it-IT", { timeZone, weekday: "long" });
-  return LATELY.map((ago) => format.format(new Date(Date.now() - ago)));
+  return [...new Set(LATELY.map((ago) => format.format(new Date(Date.now() - ago))))];
 }
 
 /** The hour in `timeZone`, now and a few minutes ago, as `HH`. */
 function hours(timeZone: string): string[] {
   const format = new Intl.DateTimeFormat("en-GB", { timeZone, hour: "2-digit", hourCycle: "h23" });
-  return LATELY.map((ago) => format.format(new Date(Date.now() - ago)));
+  return [...new Set(LATELY.map((ago) => format.format(new Date(Date.now() - ago))))];
 }
 
 /** A `set_time_zone` call saving `zone`. */

@@ -82,7 +82,10 @@ export async function resumeConversation(
       : {
           ...tail,
           messages: tail.messages.map((m) =>
-            m.role === "user" ? { ...m, content: `${formatTurnStamp(new Date(m.timestamp), timeZone)}${m.content}` } : m,
+            // A timestamp that isn't a date leaves its message unstamped, never the turn failed.
+            m.role === "user" && !Number.isNaN(Date.parse(m.timestamp))
+              ? { ...m, content: `${formatTurnStamp(new Date(m.timestamp), timeZone)}${m.content}` }
+              : m,
           ),
         };
   let kept = stamped.messages;
