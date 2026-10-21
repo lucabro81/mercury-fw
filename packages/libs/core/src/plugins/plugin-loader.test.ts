@@ -19,10 +19,10 @@ import { loadPlugins, type LoadedPlugins, type PluginLoadContext } from "./plugi
  * taking down the other plugins or the process; and activation is reported in
  * `activated` (there is no central config map to infer it from anymore).
  */
-/** A synthetic plugin, defaulting to the compatible apiVersion and to acting
- * as the person (offered to everyone, nothing logged about it). */
+/** A synthetic plugin, defaulting to the compatible apiVersion, a description
+ * and acting as the person (offered to everyone, nothing logged about it). */
 function plug(p: Partial<Plugin> & Pick<Plugin, "name">): Plugin {
-  return { apiVersion: PLUGIN_API_VERSION, actsAs: "person", ...p };
+  return { apiVersion: PLUGIN_API_VERSION, description: `what ${p.name} does`, actsAs: "person", ...p };
 }
 
 /** Every loaded plugin's prompt fragment, skills and tool bundle, in load order. */
@@ -156,6 +156,27 @@ describe("loadPlugins", () => {
     ]);
   });
 
+  it("doesn't activate a plugin with no description, a blank one, or one that isn't text, and says why", async () => {
+    const logs: string[] = [];
+    let built = false;
+    const loaded = await loadPlugins(
+      [
+        plug({ name: "jira", description: undefined as unknown as string, build: () => ((built = true), {}) }),
+        plug({ name: "bitbucket", description: "  \n" }),
+        plug({ name: "zitadel", description: 3 as unknown as string }),
+        plug({ name: "web-search" }),
+      ],
+      baseCtx({ log: (m) => logs.push(m) }),
+    );
+    expect(loaded.activated).toEqual(["web-search"]);
+    expect(built).toBe(false);
+    expect(logs).toEqual([
+      'plugin "jira" not activated: it has no description',
+      'plugin "bitbucket" not activated: it has no description',
+      'plugin "zitadel" not activated: it has no description',
+    ]);
+  });
+
   it("skips a plugin whose apiVersion is incompatible with this core — logs why, does not build it", async () => {
     const logs: string[] = [];
     let built = false;
@@ -228,6 +249,7 @@ describe("loadPlugins: whose identity each plugin acts with", () => {
     expect(loaded.plugins).toEqual([
       {
         name: "jira",
+        description: "what jira does",
         actsAs: "person",
         promptFragment: "FRAG",
         skills: [{ name: "jira", description: "d", body: "b" }],
@@ -243,8 +265,8 @@ describe("loadPlugins: whose identity each plugin acts with", () => {
     const loaded = await loadPlugins([asMercury, undeclared], baseCtx({ log: (m) => logs.push(m) }));
     expect(loaded.activated).toEqual(["admin", "other"]);
     expect(loaded.plugins).toEqual([
-      { name: "admin", actsAs: "mercury", promptFragment: "ADMIN", skills: [], bundle: { name: "admin", build: tools } },
-      { name: "other", actsAs: "mercury", skills: [{ name: "other", description: "d", body: "b" }] },
+      { name: "admin", description: "what admin does", actsAs: "mercury", promptFragment: "ADMIN", skills: [], bundle: { name: "admin", build: tools } },
+      { name: "other", description: "what other does", actsAs: "mercury", skills: [{ name: "other", description: "d", body: "b" }] },
     ]);
     expect(logs).toEqual([
       'plugin "admin" acts as Mercury itself: offered only to people holding mercury.act-as-self or mercury.act-as-self.admin, and on the terminal',

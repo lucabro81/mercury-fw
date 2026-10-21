@@ -23,7 +23,7 @@ import type { LanguageModel, Tool } from "ai";
  * plugin's declared `apiVersion` and refuses a mismatch (fail-soft). A single
  * integer, bumped only on a breaking change to the shapes in this file.
  */
-export const PLUGIN_API_VERSION = 5;
+export const PLUGIN_API_VERSION = 6;
 
 /**
  * A catalog of texts a person sees: key → text, `{param}` marking where a
@@ -375,6 +375,12 @@ export type PluginSurface = {
  * - `apiVersion`: the contract version this plugin was built against (see
  *   `PLUGIN_API_VERSION`). Mandatory; the loader refuses a mismatch.
  * - `name`: the plugin's name, what `dependsOn` and the logs refer to it by; for a CLI plugin, the binary it owns.
+ * - `description`: what the plugin lets the assistant do, in one English
+ *   sentence written for the model (`{{assistant}}` stands for its name). The
+ *   system prompt lists the plugins offered to the person with theirs, and the
+ *   model answers "what can you do?" from that list. It says what, never how:
+ *   usage instructions belong to `skills` and `systemPromptFragment`.
+ *   Mandatory; the loader refuses a plugin without one.
  * - `dependsOn`: names of plugins this one requires present. The loader loads
  *   dependencies first and skips this plugin fail-soft if any is absent or
  *   failed (see `loadPlugins`). Presence + ordering only — a dependency shares
@@ -411,6 +417,7 @@ export type PluginSurface = {
 export type Plugin = {
   apiVersion: number;
   name: string;
+  description: string;
   dependsOn?: string[];
   systemPromptFragment?: string;
   build?: (ctx: PluginRuntimeContext) => PluginRuntimeContributions;

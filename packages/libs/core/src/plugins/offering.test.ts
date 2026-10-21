@@ -2,8 +2,8 @@ import { describe, expect, test } from "bun:test";
 import type { LoadedPlugin } from "./plugin-loader.ts";
 import { ACT_AS_SELF, offeringFor } from "./offering.ts";
 
-const jira: LoadedPlugin = { name: "jira", actsAs: "person", promptFragment: "JIRA", skills: [{ name: "jira", description: "d", body: "b" }] };
-const admin: LoadedPlugin = { name: "admin", actsAs: "mercury", promptFragment: "ADMIN", skills: [] };
+const jira: LoadedPlugin = { name: "jira", description: "Reads Jira issues.", actsAs: "person", promptFragment: "JIRA", skills: [{ name: "jira", description: "d", body: "b" }] };
+const admin: LoadedPlugin = { name: "admin", description: "Manages users.", actsAs: "mercury", promptFragment: "ADMIN", skills: [] };
 const plugins = [jira, admin];
 
 /** The offering as `name:as`, `+` marking the variant that acts as Mercury beside the person's own. */
@@ -53,6 +53,20 @@ describe("offeringFor", () => {
     expect(all.skills.map((s) => s.name)).toEqual(["jira"]);
   });
 
+  test("lists each plugin offered once, with its description, and none that isn't", () => {
+    expect(offeringFor(plugins, person()).plugins).toEqual([{ name: "jira", description: "Reads Jira issues." }]);
+    // The variant acting as Mercury is the same plugin: one entry, not two.
+    expect(offeringFor(plugins, person([ACT_AS_SELF])).plugins).toEqual([
+      { name: "jira", description: "Reads Jira issues." },
+      { name: "admin", description: "Manages users." },
+    ]);
+    expect(offeringFor(plugins, person(["it"]), { jira: { roles: ["dev"] } }).plugins).toEqual([]);
+    expect(offeringFor(plugins, { roles: [], operator: true }, { admin: { roles: ["it"] } }).plugins).toEqual([
+      { name: "jira", description: "Reads Jira issues." },
+      { name: "admin", description: "Manages users." },
+    ]);
+  });
+
   test("the signature tells two offerings apart, and is the same for the same offering", () => {
     expect(offeringFor(plugins, person(["x"])).signature).toBe(offeringFor(plugins, person(["y"])).signature);
     expect(offeringFor(plugins, person()).signature).not.toBe(offeringFor(plugins, person([ACT_AS_SELF])).signature);
@@ -61,7 +75,7 @@ describe("offeringFor", () => {
 });
 
 describe("offeringFor: a plugin that acts as no one", () => {
-  const search: LoadedPlugin = { name: "web-search", actsAs: "anyone", promptFragment: "SEARCH", skills: [] };
+  const search: LoadedPlugin = { name: "web-search", description: "Searches the web.", actsAs: "anyone", promptFragment: "SEARCH", skills: [] };
 
   test("is offered to everyone, as no one, with no variant acting as Mercury", () => {
     expect(shape(offeringFor([search], person()))).toEqual(["web-search:anyone"]);

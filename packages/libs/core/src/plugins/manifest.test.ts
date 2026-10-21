@@ -15,10 +15,11 @@ describe("buildPluginManifest", () => {
     const jira: Plugin = {
       apiVersion: PLUGIN_API_VERSION,
       name: "jira",
+      description: "Reads Jira issues.",
       skills: [{ name: "jira", description: "how to jira", body: "..." }],
       build: () => ({}),
     };
-    const bitbucket: Plugin = { apiVersion: PLUGIN_API_VERSION, name: "bitbucket" };
+    const bitbucket: Plugin = { apiVersion: PLUGIN_API_VERSION, name: "bitbucket", description: "Reads pull requests." };
 
     // jira activated, bitbucket didn't; google-chat is a file-based CLI.
     const manifest = buildPluginManifest([jira, bitbucket], ["jira"], ["google-chat"], jira.skills!);

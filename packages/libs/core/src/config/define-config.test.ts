@@ -14,8 +14,8 @@ describe("defineMercuryConfig", () => {
   });
 
   test("carries the declared plugins through verbatim", () => {
-    const a = { apiVersion: 1, name: "a", cliConfig: {} };
-    const b = { apiVersion: 1, name: "b", cliConfig: {} };
+    const a = { apiVersion: 1, name: "a", description: "A.", cliConfig: {} };
+    const b = { apiVersion: 1, name: "b", description: "B.", cliConfig: {} };
     const config = defineMercuryConfig({ plugins: [a, b] });
     expect(config.plugins).toEqual([a, b]);
   });

@@ -32,29 +32,61 @@ const jiraSkills: Skill[] = [
   },
 ];
 
+/** The plugins offered, as the golden files with Jira were captured. */
+const jiraPlugins = [
+  { name: "jira", description: "Searches and reads Jira issues, and creates, transitions, assigns and comments on them." },
+];
+
 describe("buildSystemPrompt", () => {
   it("lists a loaded plugin's skill descriptor, not its body (single-user)", () => {
-    expect(buildSystemPrompt({ pluginFragments: [], skills: jiraSkills, multiUserChannel: false })).toBe(
+    expect(buildSystemPrompt({ pluginFragments: [], plugins: jiraPlugins, skills: jiraSkills, multiUserChannel: false })).toBe(
       golden("jira-on.mu-off.txt"),
     );
   });
 
   it("lists a loaded plugin's skill descriptor, not its body (multi-user)", () => {
-    expect(buildSystemPrompt({ pluginFragments: [], skills: jiraSkills, multiUserChannel: true })).toBe(
+    expect(buildSystemPrompt({ pluginFragments: [], plugins: jiraPlugins, skills: jiraSkills, multiUserChannel: true })).toBe(
       golden("jira-on.mu-on.txt"),
     );
   });
 
   it("omits the skills section entirely when no plugin contributed one (single-user)", () => {
-    expect(buildSystemPrompt({ pluginFragments: [], skills: [], multiUserChannel: false })).toBe(
+    expect(buildSystemPrompt({ pluginFragments: [], plugins: [], skills: [], multiUserChannel: false })).toBe(
       golden("jira-off.mu-off.txt"),
     );
   });
 
   it("omits the skills section entirely when no plugin contributed one (multi-user)", () => {
-    expect(buildSystemPrompt({ pluginFragments: [], skills: [], multiUserChannel: true })).toBe(
+    expect(buildSystemPrompt({ pluginFragments: [], plugins: [], skills: [], multiUserChannel: true })).toBe(
       golden("jira-off.mu-on.txt"),
     );
+  });
+});
+
+// #291: asked what it can do, the model had no list to answer from; what it
+// knew of a plugin depended on whether it needed usage instructions.
+describe("buildSystemPrompt plugins", () => {
+  const plugins = [
+    { name: "jira", description: "Reads Jira issues." },
+    { name: "web-search", description: "Searches the web." },
+  ];
+
+  it("lists the plugins offered right after the identity, each with what it does, and says to answer from the list", () => {
+    const prompt = buildSystemPrompt({ pluginFragments: ["FRAG"], plugins, skills: [], multiUserChannel: false });
+    expect(prompt.startsWith(
+      "You are Mercury, an internal assistant.\n" +
+        "Your plugins, and what each one lets you do:\n" +
+        "- jira: Reads Jira issues.\n" +
+        "- web-search: Searches the web.\n" +
+        "When asked what you can do, answer from this list: say what each plugin lets you do, not the tools behind it.\n" +
+        "FRAG\n",
+    )).toBe(true);
+  });
+
+  it("adds no plugin section when none is offered", () => {
+    const prompt = buildSystemPrompt({ pluginFragments: [], plugins: [], skills: [], multiUserChannel: false });
+    expect(prompt).not.toContain("Your plugins");
+    expect(prompt).not.toContain("When asked what you can do");
   });
 });
 
@@ -62,7 +94,7 @@ describe("buildSystemPrompt", () => {
 // existing one, and to write down command patterns; every failed search left
 // a new note under a slightly different name in curated/.
 describe("buildSystemPrompt wiki writing rules", () => {
-  const prompt = buildSystemPrompt({ pluginFragments: [], skills: [], multiUserChannel: false });
+  const prompt = buildSystemPrompt({ pluginFragments: [], plugins: [], skills: [], multiUserChannel: false });
 
   it("asks to look for an existing document and update it before creating a new one", () => {
     expect(prompt).toContain(
@@ -100,7 +132,7 @@ describe("buildSystemPrompt wiki writing rules", () => {
 // #216: the name a person wants to be called by is a setting the model saves.
 describe("buildSystemPrompt preferred name", () => {
   it("says when to save how the person wants to be called", () => {
-    expect(buildSystemPrompt({ pluginFragments: [], skills: [], multiUserChannel: false })).toContain(
+    expect(buildSystemPrompt({ pluginFragments: [], plugins: [], skills: [], multiUserChannel: false })).toContain(
       "You have access to the set_preferred_name tool.\nDO:\n- When the person tells you how they want to be called, now or in any later conversation, save it with set_preferred_name.",
     );
   });
@@ -113,7 +145,7 @@ describe("buildSystemPrompt preferred name", () => {
  * is tied to the tools and never changes with the persona.
  */
 describe("buildSystemPrompt persona", () => {
-  const base = { pluginFragments: [], skills: jiraSkills, multiUserChannel: false };
+  const base = { pluginFragments: [], plugins: jiraPlugins, skills: jiraSkills, multiUserChannel: false };
   const defaultPrompt = golden("jira-on.mu-off.txt");
   /** The default identity and tone as the model reads them, with the default name. */
   const IDENTITY = withAssistantName(DEFAULT_PERSONA_IDENTITY, "Mercury");
@@ -131,7 +163,7 @@ describe("buildSystemPrompt persona", () => {
 
   it("an empty persona leaves every golden unchanged", () => {
     expect(buildSystemPrompt({ ...base, persona: {} })).toBe(defaultPrompt);
-    expect(buildSystemPrompt({ ...base, skills: [], multiUserChannel: true, persona: {} })).toBe(
+    expect(buildSystemPrompt({ ...base, plugins: [], skills: [], multiUserChannel: true, persona: {} })).toBe(
       golden("jira-off.mu-on.txt"),
     );
   });
@@ -181,7 +213,7 @@ describe("buildSystemPrompt persona", () => {
  * is a setting of its own, and every static text refers to it.
  */
 describe("buildSystemPrompt assistant name", () => {
-  const base = { pluginFragments: [], skills: jiraSkills, multiUserChannel: false };
+  const base = { pluginFragments: [], plugins: jiraPlugins, skills: jiraSkills, multiUserChannel: false };
 
   it("puts the persona's name in the default identity and tone", () => {
     const prompt = buildSystemPrompt({ ...base, persona: { name: "Poc" } });
@@ -206,14 +238,16 @@ describe("buildSystemPrompt assistant name", () => {
     expect(prompt.endsWith("\nSign as Poc.")).toBe(true);
   });
 
-  it("substitutes the name in plugin fragments and skill descriptions", () => {
+  it("substitutes the name in plugin descriptions, fragments and skill descriptions", () => {
     const prompt = buildSystemPrompt({
       pluginFragments: ["{{assistant}} reaches Jira through jiraCommand."],
+      plugins: [{ name: "jira", description: "Lets {{assistant}} read Jira." }],
       skills: [{ name: "jira", description: "How {{assistant}} queries Jira.", body: "unused" }],
       multiUserChannel: false,
       persona: { name: "Poc" },
     });
     expect(prompt).toContain("\nPoc reaches Jira through jiraCommand.\n");
+    expect(prompt).toContain("- jira: Lets Poc read Jira.");
     expect(prompt).toContain("- jira: How Poc queries Jira.");
   });
 
@@ -229,14 +263,14 @@ describe("buildSystemPrompt assistant name", () => {
 describe("buildSystemPrompts", () => {
   it("builds both prompts with the same persona; only the shared-space one has the multi-user clause", () => {
     const persona = { identity: "You are Hermes.", tone: "Be terse." };
-    const { system, chatSystem } = buildSystemPrompts({ pluginFragments: [], skills: jiraSkills, persona });
-    expect(system).toBe(buildSystemPrompt({ pluginFragments: [], skills: jiraSkills, multiUserChannel: false, persona }));
-    expect(chatSystem).toBe(buildSystemPrompt({ pluginFragments: [], skills: jiraSkills, multiUserChannel: true, persona }));
+    const { system, chatSystem } = buildSystemPrompts({ pluginFragments: [], plugins: jiraPlugins, skills: jiraSkills, persona });
+    expect(system).toBe(buildSystemPrompt({ pluginFragments: [], plugins: jiraPlugins, skills: jiraSkills, multiUserChannel: false, persona }));
+    expect(chatSystem).toBe(buildSystemPrompt({ pluginFragments: [], plugins: jiraPlugins, skills: jiraSkills, multiUserChannel: true, persona }));
     expect(system).not.toBe(chatSystem);
   });
 
   it("without a persona both are today's goldens", () => {
-    const { system, chatSystem } = buildSystemPrompts({ pluginFragments: [], skills: jiraSkills, persona: undefined });
+    const { system, chatSystem } = buildSystemPrompts({ pluginFragments: [], plugins: jiraPlugins, skills: jiraSkills, persona: undefined });
     expect(system).toBe(golden("jira-on.mu-off.txt"));
     expect(chatSystem).toBe(golden("jira-on.mu-on.txt"));
   });
@@ -246,6 +280,6 @@ describe("buildSystemPrompts", () => {
   // stops forwarding the instance's persona.
   it("does not compile without an explicit persona", () => {
     // @ts-expect-error persona is required, even when undefined
-    buildSystemPrompts({ pluginFragments: [], skills: [] });
+    buildSystemPrompts({ pluginFragments: [], plugins: [], skills: [] });
   });
 });
