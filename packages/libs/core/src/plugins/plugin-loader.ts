@@ -47,6 +47,8 @@ export interface SessionToolBundle {
  * nothing acts as Mercury. */
 export interface LoadedPlugin {
   name: string;
+  /** What it lets the assistant do, for the model (see `Plugin.description`). */
+  description: string;
   actsAs: "person" | "mercury" | "anyone";
   promptFragment?: string;
   skills: Skill[];
@@ -205,6 +207,19 @@ export async function loadPlugins(plugins: Plugin[], ctx: PluginLoadContext): Pr
       );
       continue;
     }
+    // The type asks for it, but a plugin built without the types reaches the
+    // loader anyway: the model would have nothing to say about it.
+    if (typeof plugin.description !== "string" || plugin.description.trim() === "") {
+      ctx.log(`plugin "${plugin.name}" not activated: it has no description`);
+      continue;
+    }
+    // The prompt lists the plugins one per line: a line break inside would
+    // split this one's entry.
+    const description = plugin.description.trim();
+    if (/[\r\n]/.test(description)) {
+      ctx.log(`plugin "${plugin.name}" not activated: its description isn't one line`);
+      continue;
+    }
     // A plugin's texts are its own: a key outside its name could shadow
     // another plugin's or the core's, and the core's and the app's names
     // are taken.
@@ -238,6 +253,7 @@ export async function loadPlugins(plugins: Plugin[], ctx: PluginLoadContext): Pr
       const actsAs = plugin.actsAs === "person" || plugin.actsAs === "anyone" ? plugin.actsAs : "mercury";
       loaded.push({
         name: plugin.name,
+        description,
         actsAs,
         ...(plugin.systemPromptFragment === undefined ? {} : { promptFragment: plugin.systemPromptFragment }),
         skills: [...(plugin.skills ?? [])],

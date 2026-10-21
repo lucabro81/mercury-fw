@@ -83,7 +83,7 @@ const cmd = { binary: "data", args: [], prefix: [] };
 
 /** A minimal plugin whose `build` returns exactly the contributions given. */
 function pluginWith(contributions: PluginRuntimeContributions, extra: Partial<Plugin> = {}): Plugin {
-  return { apiVersion: PLUGIN_API_VERSION, name: "data", build: () => contributions, ...extra };
+  return { apiVersion: PLUGIN_API_VERSION, name: "data", description: "Reads data.", build: () => contributions, ...extra };
 }
 
 /** A plugin whose post-processor always returns `result`. */
@@ -175,12 +175,18 @@ describe("formatterPlugin", () => {
 
   test("a plugin without a post-processor, or without a build, gets none", () => {
     expect(formatterPlugin(pluginWith({}), () => "R").build!(ctx).postProcess).toBeUndefined();
-    expect(formatterPlugin({ apiVersion: PLUGIN_API_VERSION, name: "n" }, () => "R").build!(ctx)).toEqual({ postProcess: undefined });
+    expect(formatterPlugin({ apiVersion: PLUGIN_API_VERSION, name: "n", description: "N." }, () => "R").build!(ctx)).toEqual({ postProcess: undefined });
+  });
+
+  test("keeps the plugin's name and description", () => {
+    const wrapped = formatterPlugin(pluginWith({}), () => "R");
+    expect(wrapped.name).toBe("data");
+    expect(wrapped.description).toBe("Reads data.");
   });
 
   test("passes the runtime context through to the inner build", () => {
     let received: PluginRuntimeContext | undefined;
-    const base: Plugin = { apiVersion: PLUGIN_API_VERSION, name: "n", build: (c) => ((received = c), {}) };
+    const base: Plugin = { apiVersion: PLUGIN_API_VERSION, name: "n", description: "N.", build: (c) => ((received = c), {}) };
     formatterPlugin(base, () => "R").build!(ctx);
     expect(received).toBe(ctx);
   });

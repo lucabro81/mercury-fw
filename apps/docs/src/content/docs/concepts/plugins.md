@@ -9,8 +9,13 @@ A **plugin** gives the agent something it can do. The core knows no service: it 
 web, so every capability comes from a plugin the app declares. An agent with no plugins can talk, and nothing else.
 
 A plugin can come from npm (the [first-party ones](../../plugins/) are `@mercury-fw/plugin-*`) or be a file in your
-app, as in [Your first plugin](../../getting-started/local-plugin/). Either way it's a plain object, and it may
-contribute:
+app, as in [Your first plugin](../../getting-started/local-plugin/). Either way it's a plain object, and it always
+has a **description**: one sentence on what it lets the agent do, such as "Lists and reads Bitbucket pull requests."
+Before every conversation the model reads the descriptions of the plugins the person may use, and that list is what
+it answers from when someone asks what it can do. The description says what, never how: how to use a plugin is up to
+its fragment and its skills. Mercury doesn't load a plugin without one, and says why in the log.
+
+A plugin may also contribute:
 
 - **tools**, the functions the model can call, each with a description and the shape of its input;
 - **a prompt fragment**, a few lines the model reads before every conversation, saying what the plugin offers and

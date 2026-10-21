@@ -110,7 +110,7 @@ mercury/                       # repo root
 ├── scripts/                   # release tooling: release.ts (versions + tags), publish.ts (types + pack check + bun pm pack + npm publish), build-types.ts, check-pack.ts, workspaces.ts
 ├── packages/                  # grouped into per-role buckets; every workspace is @mercury-fw/*
 │   ├── types/
-│   │   ├── plugin-types/          # the shared Plugin contract (tools, version 5) — types + apiVersion + skill/status helpers + the texts a person sees (`Messages`, `Params`, `Translate`), imported by core and plugins
+│   │   ├── plugin-types/          # the shared Plugin contract (tools, version 6) — types + apiVersion + skill/status helpers + the texts a person sees (`Messages`, `Params`, `Translate`), imported by core and plugins
 │   │   └── channel-types/         # the shared ChannelPlugin contract (channels, version 6) — Provider/TurnSink + confirm helpers + the channel's texts (`messages`, `ctx.i18n`, `languageHint`, `FinalizeInfo.pendingNote`), imported by core and channels
 │   ├── channels/
 │   │   ├── channel-google-chat/   # Google Chat channel plugin: the registered-app transport (Pub/Sub + REST), loaded by the channel loader
@@ -160,10 +160,10 @@ packages/libs/core/
 └── src/
     ├── compose.ts            # builds the instance from the config it's given (model/tools/memory/turn pipeline); returns handleTurn + deferred start closures
     ├── model/                # Ollama provider, real context-window lookup
-    ├── session/               # Layer 1 history + summarizer + agent-turn loop
+    ├── session/               # Layer 1 history + summarizer + agent-turn loop + the system prompt (the plugins offered with their descriptions, their fragments and skill descriptors)
     ├── config/               # defineMercuryConfig + the MercuryConfig contract (plugins, channels, persona)
     ├── tools/                 # CLI executor + command parser/allowlist (cli-tool.ts) + config schema/loader/version-check
-    ├── plugins/               # generic fail-soft tool-plugin loader (plugin-loader.ts; refuses a plugin whose `messages` reach outside its name, or named `core`/`app`), what each person is offered (offering.ts: act-as-self, access.plugins) and the tools acting as Mercury for them (act-as-self.ts), the manifest
+    ├── plugins/               # generic fail-soft tool-plugin loader (plugin-loader.ts; refuses a plugin with no description, whose `messages` reach outside its name, or named `core`/`app`), what each person is offered (offering.ts: act-as-self, access.plugins, the plugins listed with their descriptions) and the tools acting as Mercury for them (act-as-self.ts), the manifest
     ├── router/
     │   ├── turn-runner.ts      # shared per-turn driver every provider funnels through, one turn at a time per session
     │   ├── session-lock.ts     # the per-session queue the turn runner and the idle sweep share

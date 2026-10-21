@@ -7,6 +7,10 @@ import { atlassianAdminPlugin } from "./index.ts";
  * allowed to make Mercury act as itself (on the terminal, for now).
  */
 describe("atlassianAdminPlugin", () => {
+  it("says what it does, for the model", () => {
+    expect(atlassianAdminPlugin.description).toBe("Looks up users in the Atlassian organization (read-only).");
+  });
+
   it("acts as Mercury, and logs nobody in", () => {
     expect(atlassianAdminPlugin.actsAs).toBe("mercury");
     expect(atlassianAdminPlugin.build!({ model: {} as never, env: {}, log: () => {} }).login).toBeUndefined();
@@ -19,6 +23,7 @@ describe("atlassianAdminPlugin's texts for the model", () => {
   it("never name Mercury", () => {
     const c = atlassianAdminPlugin.build!({ model: {} as never, env: {}, log: () => {} });
     const texts = [
+      atlassianAdminPlugin.description,
       atlassianAdminPlugin.systemPromptFragment ?? "",
       ...(atlassianAdminPlugin.skills ?? []).flatMap((s) => [s.description, s.body]),
       ...Object.values(c.sessionTools!({ sessionKey: "s", t: (key) => key, stageConfirmation: async () => "tok", stashDisplay: () => "d1", person: null, requireLogin: async () => ({ ok: false as const, error: "x" }) }, c.postProcess)).map((t) => (typeof t.description === "string" ? t.description : "")),

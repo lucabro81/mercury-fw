@@ -38,17 +38,31 @@ function personaSlot(text: string | undefined, fallback: string): string {
  * `tools` (see `src/session/agent-turn.ts` for why a prompt mentioning
  * an absent tool is a real bug, not a harmless no-op). The persona fills the
  * first and last slots (see `personaSlot`), and its name replaces the
- * placeholder everywhere, the plugins' fragments and skills included. Throws
- * on a persona name that can't stand in a prompt.
+ * placeholder everywhere, the plugins' descriptions, fragments and skills
+ * included. Throws on a persona name that can't stand in a prompt.
  */
 export function buildSystemPrompt(opts: {
   pluginFragments: string[];
+  /** The plugins offered to the person, with what each lets the assistant do. */
+  plugins: Array<{ name: string; description: string }>;
   skills: Skill[];
   multiUserChannel: boolean;
   persona?: Persona;
 }): string {
   const assistantName = assistantNameOf(opts.persona);
   const lines = [personaSlot(opts.persona?.identity, DEFAULT_PERSONA_IDENTITY)];
+  // What the assistant can do, one line per plugin offered: the list it
+  // answers "what can you do?" from. How to use each one is the business of
+  // its fragment and skills, below.
+  if (opts.plugins.length > 0) {
+    lines.push(
+      [
+        "Your plugins, and what each one lets you do:",
+        ...opts.plugins.map((p) => `- ${p.name}: ${p.description}`),
+        "When asked what you can do, answer from this list: say what each plugin lets you do, not the tools behind it.",
+      ].join("\n"),
+    );
+  }
   // Each loaded plugin's own always-on system-prompt fragment, inserted
   // verbatim in the order the composition root supplies them. A plugin that
   // failed to load contributes nothing — the fragment and the tool now come
@@ -148,6 +162,7 @@ export function buildSystemPrompt(opts: {
  */
 export function buildSystemPrompts(opts: {
   pluginFragments: string[];
+  plugins: Array<{ name: string; description: string }>;
   skills: Skill[];
   /** Required even when undefined, so a caller can't silently drop the instance's persona. */
   persona: Persona | undefined;

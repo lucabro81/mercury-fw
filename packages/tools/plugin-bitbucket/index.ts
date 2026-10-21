@@ -36,6 +36,7 @@ export function createBitbucketPlugin(deps: { runCliFn?: typeof runCli } = {}): 
   return {
     apiVersion: PLUGIN_API_VERSION,
     name: "bitbucket",
+    description: "Lists and reads Bitbucket pull requests.",
     // Every command runs as the person the turn is for, logged in to Bitbucket
     // through Mercury: they see what their own account can.
     actsAs: "person",

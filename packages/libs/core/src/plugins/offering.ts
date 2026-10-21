@@ -26,6 +26,8 @@ export type OfferedPlugin = { plugin: LoadedPlugin; as: "person" | "mercury" | "
 
 export type Offering = {
   entries: OfferedPlugin[];
+  /** The plugins offered, once each, with what each lets the assistant do. */
+  plugins: Array<{ name: string; description: string }>;
   promptFragments: string[];
   skills: Skill[];
   /** Equal for equal offerings: what the prompts built from it are memoized on. */
@@ -66,6 +68,7 @@ export function offeringFor(
   const offered = [...new Map(entries.map((e) => [e.plugin.name, e.plugin])).values()];
   return {
     entries,
+    plugins: offered.map((p) => ({ name: p.name, description: p.description })),
     promptFragments: offered.flatMap((p) => (p.promptFragment === undefined ? [] : [p.promptFragment])),
     skills: offered.flatMap((p) => p.skills),
     signature: entries.map((e) => `${e.plugin.name}:${e.as}${e.variant ? "+" : ""}`).join(","),

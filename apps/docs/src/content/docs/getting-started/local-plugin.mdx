@@ -41,6 +41,7 @@ import { z } from "zod";
 export const guestWifiPlugin: Plugin = {
   apiVersion: PLUGIN_API_VERSION,
   name: "guest-wifi",
+  description: "Tells people the name and password of the office guest Wi-Fi.",
   actsAs: "anyone",
   systemPromptFragment:
     "## Guest Wi-Fi\n{{assistant}} can look up the office guest Wi-Fi with `guest_wifi`. Use it when someone asks how to get online.",
@@ -69,6 +70,9 @@ Field by field:
 - **`apiVersion`** is the version of the contract the plugin was written for. Mercury checks it when it loads the
   plugin and skips one it can't run, saying why in the log, instead of failing later in a stranger way.
 - **`name`** is what the logs call the plugin.
+- **`description`** says, in one sentence, what the plugin lets the agent do. The model reads it before every
+  conversation, next to the other plugins' ones, and answers from that list when someone asks what it can do. It's
+  required: Mercury skips a plugin without one, saying why in the log.
 - **`actsAs`** says whose identity the tools use at the service they reach. `"anyone"` means none: there's no
   login, and everyone may use it. [People and roles](../../concepts/people/) explains the other two.
 - **`systemPromptFragment`** goes into the instructions the model reads before every conversation, so it knows the

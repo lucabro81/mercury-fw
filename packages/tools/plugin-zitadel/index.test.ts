@@ -30,6 +30,10 @@ function recording(result: CliResult = { ok: true, data: {} }) {
 }
 
 describe("zitadelPlugin", () => {
+  it("says what it does, for the model", () => {
+    expect(zitadelPlugin.description).toBe("Reads the ZITADEL identity instance: users, their project roles and linked identity providers, organizations and projects (read-only).");
+  });
+
   it("declares the compatible apiVersion and the zitadel name", () => {
     expect(zitadelPlugin.apiVersion).toBe(PLUGIN_API_VERSION);
     expect(zitadelPlugin.name).toBe("zitadel");
@@ -131,6 +135,7 @@ describe("zitadelPlugin's texts for the model", () => {
   it("never name Mercury", () => {
     const c = zitadelPlugin.build!(buildCtx);
     const texts = [
+      zitadelPlugin.description,
       zitadelPlugin.systemPromptFragment ?? "",
       ...(zitadelPlugin.skills ?? []).flatMap((s) => [s.description, s.body]),
       ...Object.values(c.sessionTools!(sctx(null), c.postProcess)).map((t) => (typeof t.description === "string" ? t.description : "")),

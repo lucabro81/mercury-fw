@@ -41,6 +41,7 @@ export function createZitadelPlugin(deps: { runCliFn?: typeof runCli } = {}): Pl
   return {
     apiVersion: PLUGIN_API_VERSION,
     name: "zitadel",
+    description: "Reads the ZITADEL identity instance: users, their project roles and linked identity providers, organizations and projects (read-only).",
     // Every command runs as the person the turn is for, logged in to ZITADEL
     // through Mercury: they read what their own account can.
     actsAs: "person",

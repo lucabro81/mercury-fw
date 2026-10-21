@@ -10,6 +10,7 @@ import { buildOfferedTools } from "./offered-tools.ts";
 function plugin(name: string, actsAs: "person" | "mercury", built: SessionToolContext[]): LoadedPlugin {
   return {
     name,
+    description: `what ${name} does`,
     actsAs,
     skills: [],
     bundle: {
@@ -29,7 +30,7 @@ function setup(roles: string[], operator = false) {
   const built: SessionToolContext[] = [];
   const logs: string[] = [];
   const logins: Array<[string, string]> = [];
-  const plugins = [plugin("jira", "person", built), plugin("admin", "mercury", built), { name: "prompt-only", actsAs: "person", skills: [] } as LoadedPlugin];
+  const plugins = [plugin("jira", "person", built), plugin("admin", "mercury", built), { name: "prompt-only", description: "Only adds to the prompt.", actsAs: "person", skills: [] } as LoadedPlugin];
   const who = { person: { key: "people:alice", roles }, operator };
   const result = buildOfferedTools(offeringFor(plugins, { roles, operator }), who, {
     context,
@@ -92,7 +93,7 @@ describe("buildOfferedTools", () => {
 
   test("no tool-contributing plugin offered: no CLI tool", () => {
     const who = { person: { key: "k", roles: [] }, operator: false };
-    const plugins = [{ name: "prompt-only", actsAs: "person", skills: [] } as LoadedPlugin];
+    const plugins = [{ name: "prompt-only", description: "Only adds to the prompt.", actsAs: "person", skills: [] } as LoadedPlugin];
     expect(buildOfferedTools(offeringFor(plugins, { roles: [], operator: false }), who, { context, requireLogin: async () => ({ ok: false, error: "" }), log: () => {} })).toEqual({
       tools: {},
       hasCliTool: false,

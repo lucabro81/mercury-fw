@@ -58,6 +58,7 @@ export function createJiraPlugin(deps: { runCliFn?: typeof runCli } = {}): Plugi
   return {
     apiVersion: PLUGIN_API_VERSION,
     name: "jira",
+    description: "Searches and reads Jira issues, and creates, transitions, assigns, comments on and deletes them.",
     // Every command runs as the person the turn is for, logged in to Jira
     // through Mercury: they see and change what their own account can.
     actsAs: "person",

@@ -228,14 +228,19 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
     offeringFor(loadedPlugins.plugins, { roles: who.person.roles, operator: who.operator }, config.access?.plugins);
 
   // The two system prompts (1:1 and shared-space) for an offering, built from
-  // the fragments and skills of the plugins it holds and the instance's
+  // the descriptions, fragments and skills of the plugins it holds and the instance's
   // persona, once per distinct offering.
   const promptsByOffering = new Map<string, { singleUser: string; multiUser: string }>();
   function systemPromptsFor(who: TurnWho): { singleUser: string; multiUser: string } {
     const offering = offeringOf(who);
     let prompts = promptsByOffering.get(offering.signature);
     if (!prompts) {
-      const built = buildSystemPrompts({ pluginFragments: offering.promptFragments, skills: offering.skills, persona: config.persona });
+      const built = buildSystemPrompts({
+        pluginFragments: offering.promptFragments,
+        plugins: offering.plugins,
+        skills: offering.skills,
+        persona: config.persona,
+      });
       prompts = { singleUser: built.system, multiUser: built.chatSystem };
       promptsByOffering.set(offering.signature, prompts);
     }

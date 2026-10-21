@@ -56,6 +56,7 @@ export function webSearchPlugin(options: WebSearchOptions, deps: { resolve?: Res
   return {
     apiVersion: PLUGIN_API_VERSION,
     name: "web-search",
+    description: "Searches the web and reads web pages, for what is current or outside what you know.",
     actsAs: "anyone",
     systemPromptFragment: FRAGMENT,
     messages: WEB_SEARCH_MESSAGES,
