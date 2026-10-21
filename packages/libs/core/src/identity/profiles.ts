@@ -1,8 +1,9 @@
 /**
  * What Mercury keeps about each person as a setting, not a note: the name to
- * call them by and the language to talk to them in, which they tell the
- * assistant in conversation (see `set_preferred_name` and
- * `set_preferred_language` in `profile-tools.ts`). Keyed by the person's key, so
+ * call them by, the language to talk to them in and the time zone they're in,
+ * which they tell the assistant in conversation (see `set_preferred_name`,
+ * `set_preferred_language` and `set_time_zone` in `profile-tools.ts`) or, for
+ * the time zone, set from a channel's settings. Keyed by the person's key, so
  * it follows the person across their conversations, and the owner when
  * accounts are linked.
  *
@@ -13,6 +14,7 @@
  */
 import { mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
+import { timeZoneName } from "../session/turn-stamp.ts";
 
 /** Where the people's settings live on the vault's volume (`vault-init.ts` keeps `.mercury/` out of its git). */
 export function profilesPath(vaultPath: string): string {
@@ -37,7 +39,7 @@ function languageError(language: string): string | undefined {
   return LANGUAGE_TAG.test(language) ? undefined : `"${language}" isn't a language tag such as "en" or "pt-br"`;
 }
 
-type Profile = { name?: string; language?: string; updatedAt: string };
+type Profile = { name?: string; language?: string; timeZone?: string; updatedAt: string };
 type ProfileFile = { version: 1; people: Record<string, Profile> };
 
 export type ProfileStore = {
@@ -49,6 +51,10 @@ export type ProfileStore = {
   languageOf: (key: string) => string | undefined;
   /** Saves the language `key` asked for and returns it as stored (trimmed, lowercase); throws on what isn't a language tag, or an unreadable file. */
   setLanguage: (key: string, language: string) => string;
+  /** The time zone `key` said they're in, or undefined when they never said. */
+  timeZoneOf: (key: string) => string | undefined;
+  /** Saves the time zone `key` is in and returns it as the IANA list writes it; throws on what isn't a zone's name, or an unreadable file. */
+  setTimeZone: (key: string, timeZone: string) => string;
 };
 
 export function createProfileStore(opts: { path: string; now?: () => Date; log?: (msg: string) => void }): ProfileStore {
@@ -142,13 +148,23 @@ export function createProfileStore(opts: { path: string; now?: () => Date; log?:
       update(key, { language: tag });
       return tag;
     },
+    timeZoneOf: (key) => {
+      fresh();
+      return people.get(key)?.timeZone;
+    },
+    setTimeZone: (key, timeZone) => {
+      const name = timeZoneName(timeZone);
+      if (name === undefined) throw new Error(`"${timeZone.trim()}" isn't a time zone such as "Europe/Rome" or "America/New_York"`);
+      update(key, { timeZone: name });
+      return name;
+    },
   };
 }
 
-/** A profile as read from the file, or undefined when it's malformed: a name or a language that isn't valid, or neither. */
+/** A profile as read from the file, or undefined when it's malformed: a name, a language or a time zone that isn't valid, or none of them. */
 function readProfile(raw: unknown): Profile | undefined {
   if (typeof raw !== "object" || raw === null) return undefined;
-  const { name, language, updatedAt } = raw as Record<string, unknown>;
+  const { name, language, timeZone, updatedAt } = raw as Record<string, unknown>;
   const profile: Profile = { updatedAt: String(updatedAt ?? "") };
   if (name !== undefined) {
     if (typeof name !== "string" || nameError(name.trim()) !== undefined) return undefined;
@@ -158,5 +174,9 @@ function readProfile(raw: unknown): Profile | undefined {
     if (typeof language !== "string" || languageError(language) !== undefined) return undefined;
     profile.language = language;
   }
-  return profile.name === undefined && profile.language === undefined ? undefined : profile;
+  if (timeZone !== undefined) {
+    if (typeof timeZone !== "string" || timeZoneName(timeZone) !== timeZone) return undefined;
+    profile.timeZone = timeZone;
+  }
+  return profile.name === undefined && profile.language === undefined && profile.timeZone === undefined ? undefined : profile;
 }
