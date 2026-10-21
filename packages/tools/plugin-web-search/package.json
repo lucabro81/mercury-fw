@@ -18,7 +18,7 @@
     "access": "public"
   },
   "peerDependencies": {
-    "@mercury-fw/plugin-types": ">=0.54.0 <1.0.0"
+    "@mercury-fw/plugin-types": ">=0.55.0 <1.0.0"
   },
   "devDependencies": {
     "@mercury-fw/plugin-types": "workspace:*",
