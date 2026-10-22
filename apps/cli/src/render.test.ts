@@ -88,9 +88,37 @@ describe("renderApp: Dockerfile", () => {
   // before bun install, and git doesn't.
   test("copies .packs/ before installing, and git ignores it with the e2e results", () => {
     const dockerfile = renderApp(HTTP).get("Dockerfile") ?? "";
-    expect(dockerfile).toContain("COPY --chown=mercury:mercury .pack[s] ./.packs/\nRUN bun install --production");
+    const packs = dockerfile.indexOf("COPY --chown=mercury:mercury .pack[s] ./.packs/\n");
+    expect(packs).toBeGreaterThan(-1);
+    expect(packs).toBeLessThan(dockerfile.indexOf("RUN bun install --production"));
     const gitignore = renderApp(HTTP).get(".gitignore") ?? "";
     expect(gitignore.split("\n")).toEqual(expect.arrayContaining([".packs/", "e2e/results/"]));
+  });
+
+  // #147: a local plugin is a workspace under plugins/. The whole folder goes
+  // in before bun install, since the workspace has to be there to resolve and
+  // a plugin's postinstall runs a script of its own; skipped when the app has
+  // none, like .packs/.
+  test("copies plugins/ before installing", () => {
+    const dockerfile = renderApp(HTTP).get("Dockerfile") ?? "";
+    expect(dockerfile).toContain("COPY --chown=mercury:mercury plugin[s] ./plugins/\nRUN bun install --production");
+  });
+
+  // #147: a workspace plugin is linked into node_modules, not installed under
+  // @mercury-fw/, so its postinstall's binaries are looked for in plugins/ too.
+  test("puts on PATH the binaries of the framework's packages and of the app's plugins", () => {
+    const dockerfile = renderApp(HTTP).get("Dockerfile") ?? "";
+    expect(dockerfile).toContain(
+      "RUN mkdir -p /app/plugins \\\n  && find /app/node_modules/@mercury-fw /app/plugins -mindepth 3 -maxdepth 3 -path '*/bin/*' -type f -exec ln -sf {} /usr/local/bin/ \\;\n",
+    );
+  });
+
+  // #147: a plugin's own node_modules, from installing on the host, stays out
+  // of the build context like the app's.
+  test("leaves every node_modules out of the build context", () => {
+    const dockerignore = renderApp(HTTP).get(".dockerignore") ?? "";
+    expect(dockerignore.split("\n")).toContain("**/node_modules");
+    expect(dockerignore.split("\n")).not.toContain("node_modules");
   });
 
   // #271: the persona is in the config, there are no persona files to copy.
@@ -169,6 +197,16 @@ describe("renderApp: mercury.config.ts", () => {
 describe("renderApp: package.json", () => {
   test("http + jira: core, formatter and the chosen packages; the tool plugin trusted for its postinstall", () => {
     expect(renderApp(HTTP_JIRA).get("package.json")).toBe(golden("http-jira.package.json"));
+  });
+
+  // #147: the app's own plugins are workspaces under plugins/, and the app
+  // runs their tests with its own.
+  test("whatever was chosen, plugins/* as workspaces and a test script", () => {
+    for (const choice of [EMPTY, HTTP_JIRA, FULL]) {
+      const pkg = JSON.parse(renderApp(choice).get("package.json") ?? "");
+      expect(pkg.workspaces).toEqual(["plugins/*"]);
+      expect(pkg.scripts.test).toBe("bun test");
+    }
   });
 
   test("nothing chosen: only the core, no trustedDependencies", () => {
@@ -334,6 +372,15 @@ describe("renderApp: README.md", () => {
     const readme = renderApp(EMPTY).get("README.md") ?? "";
     expect(readme).toContain("- `mercury.config.ts`: what the app is made of (tool plugins, channels, how their lists read) and the assistant's persona: its name, who it is and how it answers. Edit them freely.\n");
     expect(readme).not.toContain("persona/");
+  });
+
+  // #147: the layout says where the app's own plugins go, and that bun test
+  // runs theirs.
+  test("the layout puts the app's own plugins in plugins/, each a workspace", () => {
+    const readme = renderApp(EMPTY).get("README.md") ?? "";
+    expect(readme).toContain(
+      "- `plugins/`: the app's own plugins, when it has any: each one a package in a folder of its own (`plugins/<name>`, a workspace), listed in `dependencies` as `workspace:*` and declared in `mercury.config.ts`. `bun run test` runs their tests.\n",
+    );
   });
 
   test("says how to get mfw once, globally, and how to do without", () => {

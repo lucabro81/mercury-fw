@@ -13,12 +13,15 @@ WORKDIR /app
 
 # Each tool plugin downloads its pinned CLI in its postinstall (allowed by
 # package.json's trustedDependencies); the binaries go on PATH. .packs/ holds
-# local tarballs when the app installs them (mfw local-packages), and is
-# skipped when it isn't there.
+# local tarballs when the app installs them (mfw local-packages), plugins/ the
+# app's own plugins (workspaces, whose postinstall needs their whole folder),
+# and each is skipped when it isn't there.
 COPY --chown=mercury:mercury package.json bun.lock* ./
 COPY --chown=mercury:mercury .pack[s] ./.packs/
+COPY --chown=mercury:mercury plugin[s] ./plugins/
 RUN bun install --production && chown -R mercury:mercury node_modules
-RUN find /app/node_modules -path '*/@mercury-fw/*/bin/*' -type f -exec ln -sf {} /usr/local/bin/ \;
+RUN mkdir -p /app/plugins \
+  && find /app/node_modules/@mercury-fw /app/plugins -mindepth 3 -maxdepth 3 -path '*/bin/*' -type f -exec ln -sf {} /usr/local/bin/ \;
 
 COPY --chown=mercury:mercury mercury.config.ts ./
 COPY --chown=mercury:mercury locales ./locales
