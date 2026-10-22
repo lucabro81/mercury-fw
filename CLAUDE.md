@@ -89,7 +89,10 @@ rollouts are `run`s. See `apps/skill-trainer/README.md`.
 the first-party channels and tool plugins, with the framework at the CLI's own
 version and each chosen plugin at its latest on the registry, then runs
 `bun install` and commits the app to a new git repository (`finish.ts`;
-`--no-install`, `--no-git`, `--git-remote`, nothing pushed). Every other command operates an app from
+`--no-install`, `--no-git`, `--git-remote`, nothing pushed); the app's
+`package.json` declares `plugins/*` as workspaces, the place for its own
+plugins, and its `bunfig.toml` keeps Bun's hoisted linker (the isolated one
+would turn `node_modules` into links, #303). Every other command operates an app from
 inside its folder (`app/`: `start`/`stop`/`restart`, `logs`, `repl`, `shell`,
 `vault`, `memory`, `identity`, `reset`, `credentials setup|check|reset`, `google-chat set-key`, `local-packages`, `e2e`), as `docker compose` calls (or env-file writes, or a REPL session driven through `/dump` for `e2e`); `mfw` is installed
 globally (`bun add -g @mercury-fw/cli`, `mfw upgrade`); an app also gets the CLI as a

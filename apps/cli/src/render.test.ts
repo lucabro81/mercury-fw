@@ -52,6 +52,7 @@ const ALWAYS = [
   ".gitignore",
   "Dockerfile",
   "README.md",
+  "bunfig.toml",
   "docker-compose.yml",
   "locales/en.json",
   "mercury.config.ts",
@@ -88,9 +89,57 @@ describe("renderApp: Dockerfile", () => {
   // before bun install, and git doesn't.
   test("copies .packs/ before installing, and git ignores it with the e2e results", () => {
     const dockerfile = renderApp(HTTP).get("Dockerfile") ?? "";
-    expect(dockerfile).toContain("COPY --chown=mercury:mercury .pack[s] ./.packs/\nRUN bun install --production");
+    const packs = dockerfile.indexOf("COPY --chown=mercury:mercury .pack[s] ./.packs/\n");
+    expect(packs).toBeGreaterThan(-1);
+    expect(packs).toBeLessThan(dockerfile.indexOf("RUN bun install --production"));
     const gitignore = renderApp(HTTP).get(".gitignore") ?? "";
     expect(gitignore.split("\n")).toEqual(expect.arrayContaining([".packs/", "e2e/results/"]));
+  });
+
+  // #147: a local plugin is a workspace under plugins/. The whole folder goes
+  // in before bun install, since the workspace has to be there to resolve and
+  // a plugin's postinstall runs a script of its own; skipped when the app has
+  // none, like .packs/.
+  test("copies plugins/ before installing", () => {
+    const dockerfile = renderApp(HTTP).get("Dockerfile") ?? "";
+    expect(dockerfile).toContain("COPY --chown=mercury:mercury plugin[s] ./plugins/\nRUN bun install --production");
+  });
+
+  // #147: a workspace plugin is linked into node_modules, not installed under
+  // @mercury-fw/, so its postinstall's binaries are looked for in plugins/ too.
+  test("puts on PATH the binaries of the framework's packages and of the app's plugins", () => {
+    const dockerfile = renderApp(HTTP).get("Dockerfile") ?? "";
+    expect(dockerfile).toContain(
+      "RUN mkdir -p /app/plugins \\\n  && find /app/node_modules/@mercury-fw /app/plugins -mindepth 3 -maxdepth 3 -path '*/bin/*' -type f -exec ln -sf {} /usr/local/bin/ \\;\n",
+    );
+  });
+
+  // #147: a plugin's own node_modules and the binaries its postinstall wrote
+  // on the host stay out of the build context: the image installs its own.
+  test("leaves every node_modules and the plugins' downloaded binaries out of the build context", () => {
+    const lines = (renderApp(HTTP).get(".dockerignore") ?? "").split("\n");
+    expect(lines).toContain("**/node_modules");
+    expect(lines).toContain("plugins/*/bin");
+    expect(lines).not.toContain("node_modules");
+  });
+
+  // Review of #147: a plugin's downloaded binaries are install output, kept
+  // out of the repository as well as out of the image.
+  test("git ignores the binaries a plugin's postinstall writes", () => {
+    const gitignore = renderApp(HTTP).get(".gitignore") ?? "";
+    expect(gitignore.split("\n")).toContain("plugins/*/bin");
+  });
+
+  // Review of #147: with a workspaces key, Bun 1.4 installs with its isolated
+  // linker, every package under node_modules becomes a symlink into
+  // node_modules/.bun, and the binaries of the framework's CLI plugins were no
+  // longer found to go on PATH. bunfig.toml keeps the hoisted layout, so it
+  // has to reach the image before bun install.
+  test("copies bunfig.toml with the manifest, before installing", () => {
+    const dockerfile = renderApp(HTTP).get("Dockerfile") ?? "";
+    const copy = dockerfile.indexOf("COPY --chown=mercury:mercury package.json bun.lock* bunfig.toml ./\n");
+    expect(copy).toBeGreaterThan(-1);
+    expect(copy).toBeLessThan(dockerfile.indexOf("RUN bun install --production"));
   });
 
   // #271: the persona is in the config, there are no persona files to copy.
@@ -166,9 +215,31 @@ describe("renderApp: mercury.config.ts", () => {
   });
 });
 
+// Review of #147: the workspaces key would switch Bun to its isolated linker
+// (node_modules made of symlinks into node_modules/.bun); the app keeps the
+// hoisted layout its plugins were written for.
+describe("renderApp: bunfig.toml", () => {
+  test("installs with the hoisted linker, whatever was chosen", () => {
+    for (const choice of [EMPTY, HTTP_JIRA, FULL]) {
+      expect(renderApp(choice).get("bunfig.toml")).toBe('[install]\nlinker = "hoisted"\n');
+    }
+  });
+});
+
 describe("renderApp: package.json", () => {
   test("http + jira: core, formatter and the chosen packages; the tool plugin trusted for its postinstall", () => {
     expect(renderApp(HTTP_JIRA).get("package.json")).toBe(golden("http-jira.package.json"));
+  });
+
+  // #147: the app's own plugins are workspaces under plugins/, and the app
+  // runs their tests with its own. Plain `bun test` on purpose: it fails while
+  // the app has no test at all, and an app without tests is worth noticing.
+  test("whatever was chosen, plugins/* as workspaces and a test script", () => {
+    for (const choice of [EMPTY, HTTP_JIRA, FULL]) {
+      const pkg = JSON.parse(renderApp(choice).get("package.json") ?? "");
+      expect(pkg.workspaces).toEqual(["plugins/*"]);
+      expect(pkg.scripts.test).toBe("bun test");
+    }
   });
 
   test("nothing chosen: only the core, no trustedDependencies", () => {
@@ -334,6 +405,24 @@ describe("renderApp: README.md", () => {
     const readme = renderApp(EMPTY).get("README.md") ?? "";
     expect(readme).toContain("- `mercury.config.ts`: what the app is made of (tool plugins, channels, how their lists read) and the assistant's persona: its name, who it is and how it answers. Edit them freely.\n");
     expect(readme).not.toContain("persona/");
+  });
+
+  // #147: the layout says where the app's own plugins go, and that bun test
+  // runs theirs.
+  test("the layout puts the app's own plugins in plugins/, each a workspace", () => {
+    const readme = renderApp(EMPTY).get("README.md") ?? "";
+    expect(readme).toContain(
+      "- `plugins/`: the app's own plugins, when it has any: each one a package in a folder of its own (`plugins/<name>`, a workspace), listed in `dependencies` as `workspace:*` and declared in `mercury.config.ts`. `bun run test` runs their tests.\n",
+    );
+  });
+
+  // Review of #147: bunfig.toml looks optional, and removing it would switch
+  // the app to Bun's isolated linker.
+  test("the layout says what bunfig.toml is for", () => {
+    const readme = renderApp(EMPTY).get("README.md") ?? "";
+    expect(readme).toContain(
+      "- `bunfig.toml`: keeps Bun's hoisted `node_modules`, which the workspaces would otherwise turn into links the image's PATH step doesn't follow. Keep it.\n",
+    );
   });
 
   test("says how to get mfw once, globally, and how to do without", () => {

@@ -13,6 +13,7 @@ import { CATALOG, type CatalogEntry, type EnvVar } from "./catalog.ts";
 import indexTs from "../template/src/index.ts.tpl" with { type: "text" };
 import replTs from "../template/src/repl.ts.tpl" with { type: "text" };
 import tsconfigJson from "../template/tsconfig.json.tpl" with { type: "text" };
+import bunfigToml from "../template/bunfig.toml.tpl" with { type: "text" };
 import gitignore from "../template/gitignore.tpl" with { type: "text" };
 import dockerignore from "../template/dockerignore.tpl" with { type: "text" };
 import dockerfile from "../template/Dockerfile.tpl" with { type: "text" };
@@ -85,6 +86,7 @@ export function renderApp(input: RenderInput): Map<string, string> {
     [".gitignore", gitignore],
     ["Dockerfile", dockerfile],
     ["README.md", renderReadme(input.name, channels, auth, tools, directory)],
+    ["bunfig.toml", bunfigToml],
     ["docker-compose.yml", renderCompose(input.name, channels.some((c) => c.id === "http"), services)],
     ["locales/en.json", renderEnglish(tools)],
     ["mercury.config.ts", renderConfig(assistantName, input.role, channels, auth, tools, directory)],
@@ -308,7 +310,9 @@ function renderPackageJson(
     version: "0.1.0",
     type: "module",
     private: true,
-    scripts: { start: "bun src/index.ts", repl: "bun src/repl.ts", typecheck: "tsc --noEmit" },
+    // The app's own plugins, each a package of its own under plugins/.
+    workspaces: ["plugins/*"],
+    scripts: { start: "bun src/index.ts", repl: "bun src/repl.ts", typecheck: "tsc --noEmit", test: "bun test" },
     dependencies,
     // The CLI in the app itself, at the framework's version: a global `mfw`
     // hands the app's commands over to it.
@@ -418,6 +422,8 @@ ${directory ? `- Directory: ${directory.id}\n` : ""}
 - \`mercury.config.ts\`: what the app is made of (tool plugins, channels, how their lists read) and the assistant's persona: its name, who it is and how it answers. Edit them freely.
 - \`locales/\`: the texts people see, one file per language the assistant speaks. \`en.json\` overrides the English ones; add \`it.json\` (and \`it\` to \`i18n.locales\` in the config) for Italian, \`i18n.defaultLocale\` for the language people get when they haven't picked one, \`i18n.timeZone\` (an IANA name such as \`Europe/Rome\`) for the time zone of whoever saved none and whose app says none. The app's own texts (a formatter rule's) are \`app.\` keys, written in English in \`en.json\` and translated in every other file. Mercury logs at startup the keys a file is missing.
 - \`src/index.ts\`: the service (channels, crons). \`src/repl.ts\`: an interactive terminal for trying things out.
+- \`plugins/\`: the app's own plugins, when it has any: each one a package in a folder of its own (\`plugins/<name>\`, a workspace), listed in \`dependencies\` as \`workspace:*\` and declared in \`mercury.config.ts\`. \`bun run test\` runs their tests.
+- \`bunfig.toml\`: keeps Bun's hoisted \`node_modules\`, which the workspaces would otherwise turn into links the image's PATH step doesn't follow. Keep it.
 - \`.env.example\`: every variable the app reads. Copy it to \`.env\` and fill it in.
 
 ## Running it

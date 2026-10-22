@@ -49,6 +49,10 @@ mfw create my-agent --assistant-name Hermes --channels http --auth static --plug
 
 The framework packages get the CLI's own version; each plugin, channel or auth provider gets its latest version.
 
+The app's `package.json` declares `plugins/*` as workspaces, the place for the app's own plugins (each a package in
+`plugins/<name>`, which the image copies before installing), and a `test` script (`bun test`, the plugins' tests
+included); `bunfig.toml` keeps Bun's hoisted `node_modules`, which the workspaces would otherwise turn into links.
+
 ### `mfw upgrade`
 
 Installs the latest `mfw` globally when it's newer than the one running. It touches only the global `mfw`: an
