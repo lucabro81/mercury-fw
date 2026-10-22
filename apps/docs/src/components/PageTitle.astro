@@ -2,8 +2,10 @@
 /**
  * The page title, replacing Starlight's: on the home the site's name, set in
  * IBM Plex Mono Bold, shows through a field of Mercury's own source code
- * (src/lib/text-mask.ts, src/lib/char-field.ts), with Starlight's own title
- * kept for screen readers only; every other page gets Starlight's title.
+ * (src/lib/text-mask.ts, src/lib/char-field.ts). On narrow screens, where the
+ * field's characters would be too small, Starlight's own title shows instead,
+ * set like the name; on wide ones it's kept for screen readers only. Every
+ * other page gets Starlight's title.
  */
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -56,7 +58,7 @@ const field = isHome
 {
   field ? (
     <div class="mfw-title">
-      <div class="sr-only">
+      <div class="mfw-title-text">
         <DefaultPageTitle />
       </div>
       <pre
@@ -81,10 +83,46 @@ const field = isHome
   :global(:root:not([data-has-sidebar]) .content-panel:has(.mfw-title) .sl-container) {
     max-width: none;
   }
+  /* The neon around the name's letters, in the field and in the plain title. */
   .mfw-title {
+    --mfw-title-glow:
+      0 0 0.5em var(--mfw-title-color),
+      0 0 1.5em color-mix(in srgb, var(--mfw-title-color) 70%, transparent),
+      0 0 2.8em color-mix(in srgb, var(--mfw-title-color) 90%, transparent);
     container-type: inline-size;
     overflow: hidden;
     background: var(--mfw-bg);
+  }
+  .mfw-title-text {
+    padding: 1.5rem var(--sl-content-pad-x);
+  }
+  .mfw-title-text :global(h1) {
+    margin: 0;
+    font-family: var(--sl-font-mono);
+    font-weight: 700;
+    color: var(--mfw-title-color);
+    text-shadow: var(--mfw-title-glow);
+  }
+  .mfw-field {
+    display: none;
+  }
+  /* Wide screens: the field, and the title for screen readers only (as
+     Starlight's .sr-only, which can't be switched on by width). */
+  @media (min-width: 50rem) {
+    .mfw-field {
+      display: block;
+    }
+    .mfw-title-text {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border-width: 0;
+    }
   }
   /* Wider than the screen and centered, the overflow cut by the title. The
      characters are sized so the text's --mfw-cols fit a band of at most 72rem:
@@ -106,11 +144,8 @@ const field = isHome
   }
   .mfw-field :global(b) {
     font-weight: 700;
-    color: var(--mfw-accent);
-    text-shadow:
-      0 0 0.50em var(--mfw-accent),
-      0 0 1.5em color-mix(in srgb, var(--mfw-accent) 70%, transparent),
-      0 0 2.8em color-mix(in srgb, var(--mfw-accent) 90%, transparent);
+    color: var(--mfw-title-color);
+    text-shadow: var(--mfw-title-glow);
   }
   .mfw-field :global(i) {
     font-style: normal;

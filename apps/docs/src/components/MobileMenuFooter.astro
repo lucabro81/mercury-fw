@@ -1,0 +1,31 @@
+---
+/**
+ * The foot of the mobile menu, replacing Starlight's: the repository link and
+ * the theme choice. Also used by the home's menu (Header.astro).
+ */
+import ThemeSelect from "@astrojs/starlight/components/ThemeSelect.astro";
+import { REPO_URL } from "../lib/site.ts";
+---
+
+<div class="mfw-menu-footer">
+  <a href={REPO_URL}>GitHub</a>
+  <ThemeSelect />
+</div>
+
+<style>
+  .mfw-menu-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.5rem 0;
+    border-top: 1px solid var(--mfw-border);
+    font-family: var(--sl-font-mono);
+  }
+  .mfw-menu-footer a {
+    color: var(--mfw-text);
+    text-decoration: underline;
+    text-decoration-color: var(--mfw-accent);
+    text-underline-offset: 4px;
+  }
+</style>

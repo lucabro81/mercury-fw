@@ -27,6 +27,8 @@ export default defineConfig({
         Header: "./src/components/Header.astro",
         Footer: "./src/components/Footer.astro",
         PageTitle: "./src/components/PageTitle.astro",
+        Sidebar: "./src/components/Sidebar.astro",
+        MobileMenuFooter: "./src/components/MobileMenuFooter.astro",
       },
       expressiveCode: {
         themes: ["github-dark-default", "github-light-default"],

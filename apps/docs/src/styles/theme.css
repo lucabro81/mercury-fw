@@ -14,6 +14,7 @@
   --mfw-accent-low: #0b2a30;
   --mfw-border: #2a2a2a;
   --mfw-dot: #202020;
+  --mfw-title-color: #22d3ee;
 }
 
 :root[data-theme="light"] {
@@ -25,6 +26,7 @@
   --mfw-accent-low: #dcecef;
   --mfw-border: #dddddd;
   --mfw-dot: #c4c4c4;
+  --mfw-title-color: #82260e;
 }
 
 /* Starlight's variables, on our tokens. In both themes "white" is the
@@ -140,5 +142,33 @@ site-search button > kbd {
   [data-has-sidebar][data-has-toc] .main-pane {
     --sl-content-margin-inline: auto;
     width: calc(100% - var(--sl-sidebar-width));
+  }
+}
+
+/* The four sections at the top of the mobile menu, in the docs' sidebar
+   (Sidebar.astro) and in the home's menu (Header.astro). */
+.mfw-menu-sections {
+  display: flex;
+  flex-direction: column;
+  padding-bottom: 0.75rem;
+  margin-bottom: 0.25rem;
+  border-bottom: 1px solid var(--mfw-border);
+  font-family: var(--sl-font-mono);
+}
+.mfw-menu-sections a {
+  padding: 0.4rem 0;
+  color: var(--mfw-text);
+  text-decoration: none;
+}
+.mfw-menu-sections a[aria-current="page"] {
+  color: var(--mfw-accent);
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+/* Wide screens have them in the header. Starlight's md:sl-hidden can't do it:
+   it's layered, and the display above isn't. */
+@media (min-width: 50rem) {
+  .mfw-menu-sections {
+    display: none;
   }
 }
