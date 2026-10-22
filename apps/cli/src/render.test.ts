@@ -52,6 +52,7 @@ const ALWAYS = [
   ".gitignore",
   "Dockerfile",
   "README.md",
+  "bunfig.toml",
   "docker-compose.yml",
   "locales/en.json",
   "mercury.config.ts",
@@ -113,12 +114,24 @@ describe("renderApp: Dockerfile", () => {
     );
   });
 
-  // #147: a plugin's own node_modules, from installing on the host, stays out
-  // of the build context like the app's.
-  test("leaves every node_modules out of the build context", () => {
-    const dockerignore = renderApp(HTTP).get(".dockerignore") ?? "";
-    expect(dockerignore.split("\n")).toContain("**/node_modules");
-    expect(dockerignore.split("\n")).not.toContain("node_modules");
+  // #147: a plugin's own node_modules and the binaries its postinstall wrote
+  // on the host stay out of the build context: the image installs its own.
+  test("leaves every node_modules and the plugins' downloaded binaries out of the build context", () => {
+    const lines = (renderApp(HTTP).get(".dockerignore") ?? "").split("\n");
+    expect(lines).toContain("**/node_modules");
+    expect(lines).toContain("plugins/*/bin");
+    expect(lines).not.toContain("node_modules");
+  });
+
+  // Review of #147: with a workspaces key, Bun 1.4 installs with its isolated
+  // linker, every package under node_modules becomes a symlink into
+  // node_modules/.bun, and the binaries of the framework's CLI plugins were no
+  // longer found to go on PATH. bunfig.toml keeps the hoisted layout, so it
+  // has to reach the image before bun install.
+  test("copies bunfig.toml with the manifest, before installing", () => {
+    const dockerfile = renderApp(HTTP).get("Dockerfile") ?? "";
+    expect(dockerfile).toContain("COPY --chown=mercury:mercury package.json bun.lock* bunfig.toml ./\n");
+    expect(dockerfile.indexOf("bunfig.toml")).toBeLessThan(dockerfile.indexOf("RUN bun install --production"));
   });
 
   // #271: the persona is in the config, there are no persona files to copy.
@@ -191,6 +204,17 @@ describe("renderApp: mercury.config.ts", () => {
     const config = renderApp(input({ plugins: ["bitbucket"] })).get("mercury.config.ts") ?? "";
     expect(config).not.toContain("formatter");
     expect(config).not.toContain("jiraIssueLine");
+  });
+});
+
+// Review of #147: the workspaces key would switch Bun to its isolated linker
+// (node_modules made of symlinks into node_modules/.bun); the app keeps the
+// hoisted layout its plugins were written for.
+describe("renderApp: bunfig.toml", () => {
+  test("installs with the hoisted linker, whatever was chosen", () => {
+    for (const choice of [EMPTY, HTTP_JIRA, FULL]) {
+      expect(renderApp(choice).get("bunfig.toml")).toBe('[install]\nlinker = "hoisted"\n');
+    }
   });
 });
 

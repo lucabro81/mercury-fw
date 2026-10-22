@@ -13,6 +13,7 @@ import { CATALOG, type CatalogEntry, type EnvVar } from "./catalog.ts";
 import indexTs from "../template/src/index.ts.tpl" with { type: "text" };
 import replTs from "../template/src/repl.ts.tpl" with { type: "text" };
 import tsconfigJson from "../template/tsconfig.json.tpl" with { type: "text" };
+import bunfigToml from "../template/bunfig.toml.tpl" with { type: "text" };
 import gitignore from "../template/gitignore.tpl" with { type: "text" };
 import dockerignore from "../template/dockerignore.tpl" with { type: "text" };
 import dockerfile from "../template/Dockerfile.tpl" with { type: "text" };
@@ -85,6 +86,7 @@ export function renderApp(input: RenderInput): Map<string, string> {
     [".gitignore", gitignore],
     ["Dockerfile", dockerfile],
     ["README.md", renderReadme(input.name, channels, auth, tools, directory)],
+    ["bunfig.toml", bunfigToml],
     ["docker-compose.yml", renderCompose(input.name, channels.some((c) => c.id === "http"), services)],
     ["locales/en.json", renderEnglish(tools)],
     ["mercury.config.ts", renderConfig(assistantName, input.role, channels, auth, tools, directory)],

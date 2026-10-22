@@ -15,8 +15,9 @@ WORKDIR /app
 # package.json's trustedDependencies); the binaries go on PATH. .packs/ holds
 # local tarballs when the app installs them (mfw local-packages), plugins/ the
 # app's own plugins (workspaces, whose postinstall needs their whole folder),
-# and each is skipped when it isn't there.
-COPY --chown=mercury:mercury package.json bun.lock* ./
+# and each is skipped when it isn't there. bunfig.toml keeps Bun's hoisted
+# node_modules, which the workspaces would otherwise turn into symlinks.
+COPY --chown=mercury:mercury package.json bun.lock* bunfig.toml ./
 COPY --chown=mercury:mercury .pack[s] ./.packs/
 COPY --chown=mercury:mercury plugin[s] ./plugins/
 RUN bun install --production && chown -R mercury:mercury node_modules
