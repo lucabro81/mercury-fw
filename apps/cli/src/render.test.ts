@@ -5,7 +5,9 @@
  * jira, everything); the rest is checked for what depends on the selection.
  */
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { DEFAULT_PERSONA_TONE } from "@mercury-fw/core";
 import { renderApp, type RenderInput } from "./render.ts";
 
@@ -237,7 +239,20 @@ describe("renderApp: package.json", () => {
     for (const choice of [EMPTY, HTTP_JIRA, FULL]) {
       const pkg = JSON.parse(renderApp(choice).get("package.json") ?? "");
       expect(pkg.workspaces).toEqual(["plugins/*"]);
-      expect(pkg.scripts.test).toBe("bun test");
+      expect(pkg.scripts.test).toBe("bun test --pass-with-no-tests");
+    }
+  });
+
+  // Review of #147: `bun test` exits 1 when it finds no test file, so a new
+  // app, with no plugins and no tests yet, failed its own test script.
+  test("the test script passes in a new app that has no tests yet", () => {
+    const dir = mkdtempSync(join(tmpdir(), "mfw-render-test-"));
+    try {
+      const script: string = JSON.parse(renderApp(EMPTY).get("package.json") ?? "").scripts.test;
+      const run = Bun.spawnSync(script.split(" "), { cwd: dir, stdout: "ignore", stderr: "ignore" });
+      expect(run.exitCode).toBe(0);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 
@@ -412,6 +427,15 @@ describe("renderApp: README.md", () => {
     const readme = renderApp(EMPTY).get("README.md") ?? "";
     expect(readme).toContain(
       "- `plugins/`: the app's own plugins, when it has any: each one a package in a folder of its own (`plugins/<name>`, a workspace), listed in `dependencies` as `workspace:*` and declared in `mercury.config.ts`. `bun run test` runs their tests.\n",
+    );
+  });
+
+  // Review of #147: bunfig.toml looks optional, and removing it would switch
+  // the app to Bun's isolated linker.
+  test("the layout says what bunfig.toml is for", () => {
+    const readme = renderApp(EMPTY).get("README.md") ?? "";
+    expect(readme).toContain(
+      "- `bunfig.toml`: keeps Bun's hoisted `node_modules`, which the workspaces would otherwise turn into links the image's PATH step doesn't follow. Keep it.\n",
     );
   });
 

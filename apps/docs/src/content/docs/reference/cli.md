@@ -51,7 +51,7 @@ The framework packages get the CLI's own version; each plugin, channel or auth p
 
 The app's `package.json` declares `plugins/*` as workspaces, the place for the app's own plugins (each a package in
 `plugins/<name>`, which the image copies before installing), and a `test` script (`bun test`, the plugins' tests
-included); `bunfig.toml` keeps Bun's hoisted `node_modules`, which the workspaces would otherwise turn into links.
+included, passing while there are none); `bunfig.toml` keeps Bun's hoisted `node_modules`, which the workspaces would otherwise turn into links.
 
 ### `mfw upgrade`
 
