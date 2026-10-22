@@ -1,36 +1,49 @@
 ---
 /**
  * The site header, replacing Starlight's: the name, the four sections, search,
- * the theme choice and the repository. On narrow screens the sections live in
- * the sidebar menu instead.
+ * the theme choice and the repository. On narrow screens the sections, the
+ * theme and the repository move to the mobile menu: Starlight's own on pages
+ * with a sidebar, this header's on the others (the home), built the same way
+ * on a popover, which needs no JavaScript.
  */
+import { Icon } from "@astrojs/starlight/components";
 import Search from "@astrojs/starlight/components/Search.astro";
 import ThemeSelect from "@astrojs/starlight/components/ThemeSelect.astro";
 import { REPO_URL } from "../lib/site.ts";
+import MobileMenuFooter from "./MobileMenuFooter.astro";
+import Sections from "./Sections.astro";
 
 const base = import.meta.env.BASE_URL.replace(/\/$/, "");
-const sections = [
-  { label: "Getting started", href: `${base}/getting-started/first-agent/`, match: "/getting-started/" },
-  { label: "Docs", href: `${base}/concepts/what-mercury-is/`, match: /\/(concepts|reference)\// },
-  { label: "Plugins", href: `${base}/plugins/`, match: "/plugins/" },
-  { label: "Changelog", href: `${base}/changelog/`, match: "/changelog/" },
-];
-const path = Astro.url.pathname;
-const isCurrent = (match: string | RegExp) => (typeof match === "string" ? path.includes(match) : match.test(path));
+const ownMenu = !Astro.locals.starlightRoute.hasSidebar;
 ---
 
 <div class="mfw-header">
   <a href={`${base}/`} class="site-title">mercury framework</a>
   <nav aria-label="Sections" class="mfw-sections">
-    {sections.map((s) => (
-      <a href={s.href} aria-current={isCurrent(s.match) ? "page" : undefined}>{s.label}</a>
-    ))}
+    <Sections />
   </nav>
   <div class="mfw-search print:hidden"><Search /></div>
   <div class="mfw-right print:hidden">
     <ThemeSelect />
     <a href={REPO_URL} class="mfw-repo">GitHub</a>
   </div>
+  {
+    ownMenu && (
+      <>
+        <button popovertarget="mfw-menu" class="mfw-menu-button print:hidden">
+          <Icon name="bars" class="mfw-open" />
+          <Icon name="close" class="mfw-close" />
+          <span class="sr-only">Menu</span>
+        </button>
+        <div id="mfw-menu" popover class="mfw-menu">
+          <nav aria-label="Sections" class="mfw-menu-sections">
+            <Sections />
+          </nav>
+          <MobileMenuFooter />
+        </div>
+      </>
+    )
+  }
 </div>
 
 <style>
@@ -52,14 +65,14 @@ const isCurrent = (match: string | RegExp) => (typeof match === "string" ? path.
     display: none;
     gap: 1.5rem;
   }
-  .mfw-sections a,
+  .mfw-sections :global(a),
   .mfw-repo {
     color: var(--mfw-text-muted);
     text-decoration: none;
   }
-  .mfw-sections a:hover,
+  .mfw-sections :global(a:hover),
   .mfw-repo:hover,
-  .mfw-sections a[aria-current="page"] {
+  .mfw-sections :global(a[aria-current="page"]) {
     color: var(--mfw-text);
     text-decoration: underline;
     text-decoration-color: var(--mfw-accent);
@@ -70,15 +83,52 @@ const isCurrent = (match: string | RegExp) => (typeof match === "string" ? path.
     display: flex;
     justify-content: flex-end;
   }
+  /* Starlight's theme select pulls itself 0.5rem out on each side, so the gap
+     is that much wider than the space it leaves before the GitHub link. */
   .mfw-right {
     display: none;
     align-items: center;
-    gap: 1rem;
+    gap: 1.75rem;
+  }
+  /* As Starlight's menu button and sidebar pane, which it stands in for. */
+  .mfw-menu-button {
+    display: flex;
+    flex-shrink: 0;
+    border: 0;
+    border-radius: 50%;
+    width: var(--sl-menu-button-size);
+    height: var(--sl-menu-button-size);
+    padding: 0.5rem;
+    background-color: var(--sl-color-white);
+    color: var(--sl-color-black);
+    cursor: pointer;
+  }
+  .mfw-menu-button:has(~ :popover-open) :global(.mfw-open),
+  .mfw-menu-button:not(:has(~ :popover-open)) :global(.mfw-close) {
+    display: none;
+  }
+  .mfw-menu {
+    position: fixed;
+    inset: var(--sl-nav-height) 0 auto 0;
+    width: 100%;
+    max-height: calc(100dvh - var(--sl-nav-height));
+    overflow-y: auto;
+    margin: 0;
+    border: 0;
+    border-bottom: 1px solid var(--mfw-border);
+    padding: 1rem var(--sl-sidebar-pad-x);
+    background-color: var(--mfw-bg);
+    color: var(--mfw-text);
+    font-size: var(--sl-text-base);
   }
   @media (min-width: 50rem) {
     .mfw-sections,
     .mfw-right {
       display: flex;
+    }
+    .mfw-menu-button,
+    .mfw-menu {
+      display: none;
     }
     .mfw-search {
       justify-content: center;

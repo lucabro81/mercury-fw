@@ -1,0 +1,14 @@
+---
+/**
+ * The sidebar, replacing Starlight's: on narrow screens, where it's the mobile
+ * menu, the four sections come first (styled in theme.css, shared with the
+ * home's menu); then Starlight's own sidebar.
+ */
+import DefaultSidebar from "@astrojs/starlight/components/Sidebar.astro";
+import Sections from "./Sections.astro";
+---
+
+<nav aria-label="Sections" class="mfw-menu-sections">
+  <Sections />
+</nav>
+<DefaultSidebar />
