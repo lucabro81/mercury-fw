@@ -312,7 +312,7 @@ function renderPackageJson(
     private: true,
     // The app's own plugins, each a package of its own under plugins/.
     workspaces: ["plugins/*"],
-    scripts: { start: "bun src/index.ts", repl: "bun src/repl.ts", typecheck: "tsc --noEmit", test: "bun test --pass-with-no-tests" },
+    scripts: { start: "bun src/index.ts", repl: "bun src/repl.ts", typecheck: "tsc --noEmit", test: "bun test" },
     dependencies,
     // The CLI in the app itself, at the framework's version: a global `mfw`
     // hands the app's commands over to it.

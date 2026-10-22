@@ -5,9 +5,7 @@
  * jira, everything); the rest is checked for what depends on the selection.
  */
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { readFileSync } from "node:fs";
 import { DEFAULT_PERSONA_TONE } from "@mercury-fw/core";
 import { renderApp, type RenderInput } from "./render.ts";
 
@@ -234,25 +232,13 @@ describe("renderApp: package.json", () => {
   });
 
   // #147: the app's own plugins are workspaces under plugins/, and the app
-  // runs their tests with its own.
+  // runs their tests with its own. Plain `bun test` on purpose: it fails while
+  // the app has no test at all, and an app without tests is worth noticing.
   test("whatever was chosen, plugins/* as workspaces and a test script", () => {
     for (const choice of [EMPTY, HTTP_JIRA, FULL]) {
       const pkg = JSON.parse(renderApp(choice).get("package.json") ?? "");
       expect(pkg.workspaces).toEqual(["plugins/*"]);
-      expect(pkg.scripts.test).toBe("bun test --pass-with-no-tests");
-    }
-  });
-
-  // Review of #147: `bun test` exits 1 when it finds no test file, so a new
-  // app, with no plugins and no tests yet, failed its own test script.
-  test("the test script passes in a new app that has no tests yet", () => {
-    const dir = mkdtempSync(join(tmpdir(), "mfw-render-test-"));
-    try {
-      const script: string = JSON.parse(renderApp(EMPTY).get("package.json") ?? "").scripts.test;
-      const run = Bun.spawnSync(script.split(" "), { cwd: dir, stdout: "ignore", stderr: "ignore" });
-      expect(run.exitCode).toBe(0);
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
+      expect(pkg.scripts.test).toBe("bun test");
     }
   });
 

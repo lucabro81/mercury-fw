@@ -10,7 +10,7 @@
     "start": "bun src/index.ts",
     "repl": "bun src/repl.ts",
     "typecheck": "tsc --noEmit",
-    "test": "bun test --pass-with-no-tests"
+    "test": "bun test"
   },
   "dependencies": {
     "@mercury-fw/auth-static": "^0.1.0",
