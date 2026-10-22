@@ -123,6 +123,13 @@ describe("renderApp: Dockerfile", () => {
     expect(lines).not.toContain("node_modules");
   });
 
+  // Review of #147: a plugin's downloaded binaries are install output, kept
+  // out of the repository as well as out of the image.
+  test("git ignores the binaries a plugin's postinstall writes", () => {
+    const gitignore = renderApp(HTTP).get(".gitignore") ?? "";
+    expect(gitignore.split("\n")).toContain("plugins/*/bin");
+  });
+
   // Review of #147: with a workspaces key, Bun 1.4 installs with its isolated
   // linker, every package under node_modules becomes a symlink into
   // node_modules/.bun, and the binaries of the framework's CLI plugins were no
@@ -130,8 +137,9 @@ describe("renderApp: Dockerfile", () => {
   // has to reach the image before bun install.
   test("copies bunfig.toml with the manifest, before installing", () => {
     const dockerfile = renderApp(HTTP).get("Dockerfile") ?? "";
-    expect(dockerfile).toContain("COPY --chown=mercury:mercury package.json bun.lock* bunfig.toml ./\n");
-    expect(dockerfile.indexOf("bunfig.toml")).toBeLessThan(dockerfile.indexOf("RUN bun install --production"));
+    const copy = dockerfile.indexOf("COPY --chown=mercury:mercury package.json bun.lock* bunfig.toml ./\n");
+    expect(copy).toBeGreaterThan(-1);
+    expect(copy).toBeLessThan(dockerfile.indexOf("RUN bun install --production"));
   });
 
   // #271: the persona is in the config, there are no persona files to copy.

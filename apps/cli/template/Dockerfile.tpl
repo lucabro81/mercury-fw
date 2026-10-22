@@ -21,6 +21,7 @@ COPY --chown=mercury:mercury package.json bun.lock* bunfig.toml ./
 COPY --chown=mercury:mercury .pack[s] ./.packs/
 COPY --chown=mercury:mercury plugin[s] ./plugins/
 RUN bun install --production && chown -R mercury:mercury node_modules
+# plugins/ made when the app has none, or find fails on it.
 RUN mkdir -p /app/plugins \
   && find /app/node_modules/@mercury-fw /app/plugins -mindepth 3 -maxdepth 3 -path '*/bin/*' -type f -exec ln -sf {} /usr/local/bin/ \;
 

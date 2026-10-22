@@ -6,3 +6,4 @@ node_modules
 .DS_Store
 .packs/
 e2e/results/
+plugins/*/bin
