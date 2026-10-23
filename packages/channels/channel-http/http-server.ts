@@ -15,7 +15,7 @@
  * `/login/callback` is where a person's browser comes back after logging in to
  * a service a plugin acts on as them; the single-use state is its credential.
  *
- * Every route but the OpenAPI document, the login callback and the CORS
+ * Every route but the OpenAPI document, `/version`, the login callback and the CORS
  * preflights asks the injected `authenticate` (the auth provider the app declares) who is calling
  * before anything runs, and answers 401 when nobody is. A conversation belongs
  * to whoever opened it: the session key is `<principal.id>:<conversationId>`.
@@ -579,6 +579,19 @@ export function readRoutes(
   };
 }
 
+/**
+ * `GET /version`: which Mercury this is (the framework's version), for any
+ * front end to show. Nobody is asked who they are, like `/openapi.yaml`.
+ */
+function versionRoutes(version: string, corsOrigin = "*"): Record<string, ReadRoute> {
+  return {
+    "/version": {
+      GET: () => Response.json({ ok: true, version }, { headers: corsHeaders(corsOrigin) }),
+      OPTIONS: () => preflight(corsOrigin),
+    },
+  };
+}
+
 export type HttpServerDeps = TurnRequestDeps & {
   port: number;
   reads?: ChannelHostReads;
@@ -592,6 +605,8 @@ export type HttpServerDeps = TurnRequestDeps & {
   settings?: ChannelSettings;
   /** What the pages people read call the assistant. */
   assistantName?: string;
+  /** The framework's version; `/version` is mounted only with it. */
+  version?: string;
 };
 
 /** Starts the HTTP surface: `POST /turn` (4a) plus the read-only routes (4b)
@@ -623,6 +638,7 @@ export function startHttpServer(deps: HttpServerDeps): ReturnType<typeof Bun.ser
         OPTIONS: () => preflight(origin),
       },
       "/openapi.yaml": { GET: () => openApiResponse(origin), OPTIONS: () => preflight(origin) },
+      ...(deps.version === undefined ? {} : versionRoutes(deps.version, origin)),
       ...(deps.reads ? readRoutes(deps.reads, deps.authenticate, origin, deps.admit, deps.settings) : {}),
       ...(deps.completeLogin ? loginRoutes(deps.completeLogin, deps.assistantName, deps.i18n) : {}),
       ...(deps.linking ? linkRoutes({ ...deps, start: deps.linking.start, corsOrigin: origin }) : {}),

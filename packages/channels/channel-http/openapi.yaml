@@ -14,7 +14,7 @@ info:
 
     ## Authentication
 
-    Every route except this document and the `OPTIONS` preflights needs
+    Every route except this document, `/version` and the `OPTIONS` preflights needs
     `Authorization: Bearer <token>`. The app's auth provider decides what a
     valid token is (an OpenID Connect access token, a static test token); a
     missing or refused one gets `401` with `WWW-Authenticate: Bearer`, before
@@ -589,6 +589,28 @@ paths:
           content:
             text/plain:
               schema: { type: string }
+  /version:
+    get:
+      summary: Which Mercury this is
+      description: >
+        The framework's version, `major.minor.patch`, for a UI to show. Needs
+        no bearer token. Mounted when the core gives the channel its version
+        (framework 0.58 or later); on an older core the route isn't there.
+      security: []
+      responses:
+        "200":
+          description: The framework's version.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, version]
+                properties:
+                  ok: { type: boolean, const: true }
+                  version:
+                    type: string
+                    pattern: '^\d+\.\d+\.\d+$'
+                    examples: ["0.58.0"]
   /openapi.yaml:
     get:
       summary: This OpenAPI document

@@ -1008,6 +1008,52 @@ describe("startHttpServer", () => {
       server.stop(true);
     }
   });
+
+  // #310: any front end shows the framework's version, without logging in.
+  it("serves /version to anyone, without asking the auth provider", async () => {
+    let asked = 0;
+    const server = startHttpServer({
+      port: 0,
+      handleTurn: async () => {},
+      confirm: async () => null,
+      resolveConfirmation: async () => ({ status: "not-a-token", text: null }),
+      authenticate: async () => {
+        asked++;
+        return null;
+      },
+      corsOrigin: "https://ui.example",
+      version: "0.57.0",
+    });
+    try {
+      const base = `http://localhost:${server.port}`;
+      const res = await fetch(`${base}/version`);
+      expect(res.status).toBe(200);
+      expect(res.headers.get("access-control-allow-origin")).toBe("https://ui.example");
+      expect(await res.json()).toEqual({ ok: true, version: "0.57.0" });
+      const preflight = await fetch(`${base}/version`, { method: "OPTIONS" });
+      expect(preflight.status).toBe(204);
+      expect(preflight.headers.get("access-control-allow-origin")).toBe("https://ui.example");
+      expect(asked).toBe(0);
+    } finally {
+      server.stop(true);
+    }
+  });
+
+  // #310: an older core gives no version, and the surface doesn't make one up.
+  it("mounts no /version when it isn't given one", async () => {
+    const server = startHttpServer({
+      port: 0,
+      handleTurn: async () => {},
+      confirm: async () => null,
+      resolveConfirmation: async () => ({ status: "not-a-token", text: null }),
+      authenticate: refuse,
+    });
+    try {
+      expect((await fetch(`http://localhost:${server.port}/version`)).status).toBe(404);
+    } finally {
+      server.stop(true);
+    }
+  });
 });
 
 // A UI reloading a conversation reads its durable transcript back here.
