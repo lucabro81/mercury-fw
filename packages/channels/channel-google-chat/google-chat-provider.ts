@@ -126,15 +126,17 @@ function statusLine(status: CardStatus, t: Translate): string {
  * The section that carries the Stop button on a card in progress: a section of
  * its own, outside the collapsible one, so it's visible without expanding
  * anything. A click comes back as `CARD_CLICKED` with the `stop` parameter
- * (`parseChatEvent`). A card's final patch rebuilds it without this section,
- * so the button goes away with the turn.
+ * set to `turn`, the id of the turn the card belongs to (`parseChatEvent`), so
+ * a button left on an older card never stops a newer turn. A card's final
+ * patch rebuilds it without this section, so the button goes away with the
+ * turn.
  */
-function stopSection(t: Translate): ChatCardSection {
+function stopSection(t: Translate, turn: string): ChatCardSection {
   return {
     widgets: [
       {
         buttonList: {
-          buttons: [{ text: t("google-chat.stop.button"), onClick: { action: { function: "stop", parameters: [{ key: "stop", value: "1" }] } } }],
+          buttons: [{ text: t("google-chat.stop.button"), onClick: { action: { function: "stop", parameters: [{ key: "stop", value: turn }] } } }],
         },
       },
     ],
@@ -169,7 +171,7 @@ function stopSection(t: Translate): ChatCardSection {
  * nothing patches the message again, so the native toggle can never be
  * reset out from under the user again either.
  */
-function buildToolCallCard(label: string, detail: string, status: CardStatus, t: Translate): ChatCard {
+function buildToolCallCard(label: string, detail: string, status: CardStatus, t: Translate, turn: string): ChatCard {
   return {
     sections: [
       {
@@ -178,7 +180,7 @@ function buildToolCallCard(label: string, detail: string, status: CardStatus, t:
         uncollapsibleWidgetsCount: 0,
         widgets: [{ textParagraph: { text: detail } }, { textParagraph: { text: statusLine(status, t) } }],
       },
-      ...(status === "loading" ? [stopSection(t)] : []),
+      ...(status === "loading" ? [stopSection(t, turn)] : []),
     ],
   };
 }
@@ -209,12 +211,12 @@ const REASONING_TAIL_CHARS = 4000;
  * left as the last status before the turn's real answer, patched only to
  * take its Stop button away, or to say the person stopped the turn.
  */
-function buildReceivingCard(t: Translate, state: "loading" | "answered" | "stopped" = "loading"): ChatCard {
+function buildReceivingCard(t: Translate, turn: string, state: "loading" | "answered" | "stopped" = "loading"): ChatCard {
   const text = state === "stopped" ? statusLine("stopped", t) : t("google-chat.receiving.text");
   return {
     sections: [
       { header: t("google-chat.receiving.title"), widgets: [{ textParagraph: { text } }] },
-      ...(state === "loading" ? [stopSection(t)] : []),
+      ...(state === "loading" ? [stopSection(t, turn)] : []),
     ],
   };
 }
@@ -319,6 +321,8 @@ export type ParsedStopEvent = {
   isDirectMessage: boolean;
   /** As on a message (see `ParsedMessageEvent.locale`): for the reply when there's nothing to stop. */
   locale?: string;
+  /** For a click, the turn whose card carried the button: only that turn is stopped. */
+  turn?: string;
 };
 
 /** The command that stops the session's running turn. */
@@ -395,6 +399,7 @@ export function parseChatEvent(raw: unknown): ParsedMessageEvent | ParsedCardCli
       return {
         kind: "stop",
         source: "button",
+        turn: parameters.stop,
         space: event.space.name,
         sender: event.user.name,
         senderEmail: emailOf(event.user),
@@ -473,9 +478,11 @@ export type GoogleChatProviderDeps = {
 /**
  * A turn's sink, plus what the provider does once the turn has let go:
  * after a stop, `settle` makes the cards say so (the receiving card, or a
- * short message when no card in progress could); otherwise it does nothing.
+ * short message when no card in progress could); after a turn that `failed`
+ * (threw, so never reached `finalize`), it takes the receiving card's Stop
+ * button away; after an answer, it does nothing.
  */
-type StopAwareSink = TurnSink & { settle(): Promise<void> };
+type StopAwareSink = TurnSink & { settle(failed: boolean): Promise<void> };
 
 export type GoogleChatProvider = Provider & {
   stop(): Promise<void>;
@@ -503,13 +510,13 @@ export function createGoogleChatProvider(deps: GoogleChatProviderDeps): GoogleCh
   // for one user/space never blocks a different one's.
   const busySessions = new Set<string>();
   const queuedTurns = new Map<string, Array<(signal: AbortSignal) => Promise<void>>>();
-  // The running turn's abort, per session: what a stop aborts.
-  const runningTurns = new Map<string, AbortController>();
+  // The running turn, per session: its id (on its cards' Stop buttons) and the abort a stop fires.
+  const runningTurns = new Map<string, { id: string; controller: AbortController }>();
   // The turn handler `start` was given, for a turn a card click resumes.
   let activeHandleTurn: HandleTurn | undefined;
 
   /** Runs `turn` for `sessionKey` now, or after the turns already queued for it, with a signal `stopSession` aborts. */
-  async function runInSession(sessionKey: string, turn: (signal: AbortSignal) => Promise<void>): Promise<void> {
+  async function runInSession(sessionKey: string, turn: (signal: AbortSignal, turnId: string) => Promise<void>): Promise<void> {
     if (busySessions.has(sessionKey)) {
       const queue = queuedTurns.get(sessionKey) ?? [];
       queue.push(turn);
@@ -518,9 +525,10 @@ export function createGoogleChatProvider(deps: GoogleChatProviderDeps): GoogleCh
     }
     busySessions.add(sessionKey);
     const controller = new AbortController();
-    runningTurns.set(sessionKey, controller);
+    const id = crypto.randomUUID();
+    runningTurns.set(sessionKey, { id, controller });
     try {
-      await turn(controller.signal);
+      await turn(controller.signal, id);
     } finally {
       runningTurns.delete(sessionKey);
       busySessions.delete(sessionKey);
@@ -535,20 +543,22 @@ export function createGoogleChatProvider(deps: GoogleChatProviderDeps): GoogleCh
 
   /**
    * Stops `sessionKey`'s running turn and discards every turn queued behind
-   * it: they haven't sent anything yet, so they just never run. Returns
-   * whether there was a turn to stop.
+   * it: they haven't sent anything yet, so they just never run. With `turnId`
+   * (a button's), only when that's the turn running: a click on an older
+   * card stops nothing. Returns whether there was a turn to stop.
    */
-  function stopSession(sessionKey: string): boolean {
-    queuedTurns.delete(sessionKey);
+  function stopSession(sessionKey: string, turnId?: string): boolean {
     const running = runningTurns.get(sessionKey);
-    if (running === undefined || running.signal.aborted) return false;
-    running.abort();
+    if (running === undefined || running.controller.signal.aborted) return false;
+    if (turnId !== undefined && turnId !== running.id) return false;
+    queuedTurns.delete(sessionKey);
+    running.controller.abort();
     return true;
   }
 
   /**
-   * Runs one turn on `handleTurn` with the session's stop signal, then, once
-   * a stopped turn has let go, says so on its cards (`StopAwareSink.settle`).
+   * Runs one turn on `handleTurn` with the session's stop signal, then
+   * settles its cards once it has let go (`StopAwareSink.settle`).
    */
   async function runTurn(
     handleTurn: HandleTurn,
@@ -558,9 +568,11 @@ export function createGoogleChatProvider(deps: GoogleChatProviderDeps): GoogleCh
   ): Promise<void> {
     try {
       await handleTurn({ ...turn, abortSignal: signal }, sink);
-    } finally {
-      await sink.settle();
+    } catch (err) {
+      await sink.settle(true);
+      throw err;
     }
+    await sink.settle(false);
   }
 
   /** Resumes the session's turn after a confirmation whose result went back to the model (`ConfirmReply.resume`). */
@@ -574,7 +586,7 @@ export function createGoogleChatProvider(deps: GoogleChatProviderDeps): GoogleCh
   ): Promise<void> {
     const sessionKey = deriveSessionKey(space, principal.id);
     const t = await textsFor(principal, locale);
-    return runInSession(sessionKey, (signal) =>
+    return runInSession(sessionKey, (signal, turnId) =>
       runTurn(
         handleTurn,
         {
@@ -588,7 +600,7 @@ export function createGoogleChatProvider(deps: GoogleChatProviderDeps): GoogleCh
           ...(locale === undefined ? {} : { languageHint: locale }),
           ...(timeZone === undefined ? {} : { timeZoneHint: timeZone }),
         },
-        createSink(space, { user: principal.id, isDirectMessage }, t, signal),
+        createSink(space, { user: principal.id, isDirectMessage }, t, signal, turnId),
         signal,
       ),
     );
@@ -657,9 +669,15 @@ export function createGoogleChatProvider(deps: GoogleChatProviderDeps): GoogleCh
    * outside a direct message, what only they may see is sent to them alone.
    * `t` gives the cards' texts in their language. `signal` is the turn's
    * stop: once it aborted, a reasoning block cut short ends as "Stopped"
-   * rather than "Failed".
+   * rather than "Failed". `turn` is the turn's id, on its Stop buttons.
    */
-  function createSink(space: string, viewer: { user: string; isDirectMessage: boolean }, t: Translate, signal: AbortSignal): StopAwareSink {
+  function createSink(
+    space: string,
+    viewer: { user: string; isDirectMessage: boolean },
+    t: Translate,
+    signal: AbortSignal,
+    turn: string,
+  ): StopAwareSink {
     let chain: Promise<void> = Promise.resolve();
 
     function enqueue(fn: () => Promise<void>): void {
@@ -701,6 +719,8 @@ export function createGoogleChatProvider(deps: GoogleChatProviderDeps): GoogleCh
     const shownLogins = new Set<string>();
     // Whether a card already says the person stopped the turn.
     let stopShown = false;
+    // Set once the answer is on its way: a stop after it has nothing left to say.
+    let answered = false;
 
     /** Patches the receiving card no reasoning claimed, to `state`: it has nothing else that would ever take its Stop button away. */
     async function closeReceivingCard(state: "answered" | "stopped"): Promise<boolean> {
@@ -708,12 +728,12 @@ export function createGoogleChatProvider(deps: GoogleChatProviderDeps): GoogleCh
       const name = receivingCardName;
       receivingCardName = undefined;
       log(`[chat:${space}] [out] receiving card ${name}: ${state}`);
-      await updateCardFn(name, buildReceivingCard(t, state), clientDeps);
+      await updateCardFn(name, buildReceivingCard(t, turn, state), clientDeps);
       return true;
     }
     enqueue(async () => {
       log(`[chat:${space}] [out] receiving card`);
-      const sent = await sendCardFn(space, buildReceivingCard(t), clientDeps);
+      const sent = await sendCardFn(space, buildReceivingCard(t, turn), clientDeps);
       sentMessageNames.add(sent.name);
       receivingCardName = sent.name;
     });
@@ -725,7 +745,7 @@ export function createGoogleChatProvider(deps: GoogleChatProviderDeps): GoogleCh
           return;
         }
         enqueue(async () => {
-          const card = buildToolCallCard(label, detail ?? "", "loading", t);
+          const card = buildToolCallCard(label, detail ?? "", "loading", t, turn);
           log(`[chat:${space}] [out] tool card: ${label}`);
           const sent = await sendCardFn(space, card, clientDeps);
           sentMessageNames.add(sent.name);
@@ -739,7 +759,7 @@ export function createGoogleChatProvider(deps: GoogleChatProviderDeps): GoogleCh
             log(`[chat:${space}] onToolFinish for unknown toolCallId ${toolCallId}`);
             return;
           }
-          const card = buildToolCallCard(entry.label, entry.detail, outcome, t);
+          const card = buildToolCallCard(entry.label, entry.detail, outcome, t, turn);
           log(`[chat:${space}] [out] patching ${entry.name} to "${outcome}"`);
           const patched = await updateCardFn(entry.name, card, clientDeps);
           log(`[chat:${space}] [out] patched ${patched.name}`);
@@ -756,7 +776,7 @@ export function createGoogleChatProvider(deps: GoogleChatProviderDeps): GoogleCh
           entry = { name: undefined, buffer: chunk };
           reasoningCards.set(id, entry);
           enqueue(async () => {
-            const card = buildToolCallCard(t("google-chat.thinking"), "", "loading", t);
+            const card = buildToolCallCard(t("google-chat.thinking"), "", "loading", t, turn);
             if (receivingCardName !== undefined) {
               // Replace the "Status" placeholder in place instead of
               // sending a second message.
@@ -786,7 +806,7 @@ export function createGoogleChatProvider(deps: GoogleChatProviderDeps): GoogleCh
           if (entry.name === undefined) return; // shouldn't happen given enqueue's own FIFO ordering, but stays defensive
           const status = !failed ? "success" : signal.aborted ? "stopped" : "failed";
           if (status === "stopped") stopShown = true;
-          const card = buildToolCallCard(t("google-chat.thinking"), tailTruncate(entry.buffer, REASONING_TAIL_CHARS), status, t);
+          const card = buildToolCallCard(t("google-chat.thinking"), tailTruncate(entry.buffer, REASONING_TAIL_CHARS), status, t, turn);
           log(`[chat:${space}] [out] reasoning patch (${id}): status=${status} bufferLen=${entry.buffer.length}`);
           await updateCardFn(entry.name, card, clientDeps);
           reasoningCards.delete(id);
@@ -823,6 +843,7 @@ export function createGoogleChatProvider(deps: GoogleChatProviderDeps): GoogleCh
         const note = info?.pendingNote;
         const shown = note !== undefined && finalText.startsWith(note) ? finalText.slice(note.length) : finalText;
         const trimmed = shown.trim();
+        answered = true;
         enqueue(async () => {
           await closeReceivingCard("answered");
         });
@@ -834,8 +855,16 @@ export function createGoogleChatProvider(deps: GoogleChatProviderDeps): GoogleCh
         await chain;
       },
       dispose: () => {},
-      settle: async () => {
-        if (!signal.aborted) return;
+      settle: async (failed) => {
+        if (answered) return;
+        if (!signal.aborted) {
+          if (!failed) return;
+          enqueue(async () => {
+            await closeReceivingCard("answered");
+          });
+          await chain;
+          return;
+        }
         enqueue(async () => {
           if (await closeReceivingCard("stopped")) stopShown = true;
           if (stopShown) return;
@@ -882,7 +911,7 @@ export function createGoogleChatProvider(deps: GoogleChatProviderDeps): GoogleCh
     // Only the actual model turn needs serializing — the confirmation above
     // never touches SessionHistory, so it's always safe to run right
     // away regardless of whether this session is mid-turn.
-    await runInSession(sessionKey, (signal) =>
+    await runInSession(sessionKey, (signal, turnId) =>
       runTurn(
         handleTurn,
         {
@@ -895,7 +924,7 @@ export function createGoogleChatProvider(deps: GoogleChatProviderDeps): GoogleCh
           ...(event.locale === undefined ? {} : { languageHint: event.locale }),
           ...(event.timeZone === undefined ? {} : { timeZoneHint: event.timeZone }),
         },
-        createSink(event.space, { user: event.sender, isDirectMessage: event.isDirectMessage }, t, signal),
+        createSink(event.space, { user: event.sender, isDirectMessage: event.isDirectMessage }, t, signal, turnId),
         signal,
       ),
     );
@@ -910,7 +939,7 @@ export function createGoogleChatProvider(deps: GoogleChatProviderDeps): GoogleCh
    */
   async function processStopEvent(event: ParsedStopEvent): Promise<void> {
     const sessionKey = deriveSessionKey(event.space, event.sender);
-    if (stopSession(sessionKey)) {
+    if (stopSession(sessionKey, event.turn)) {
       log(`[chat:${event.space}:${event.sender}] [in] stop (${event.source})`);
       return;
     }
