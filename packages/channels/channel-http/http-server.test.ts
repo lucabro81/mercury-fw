@@ -703,6 +703,14 @@ describe("openApiResponse", () => {
     expect(doc.components.schemas.TurnRequest?.properties.resume?.description).toContain("`resume: true`");
     expect(doc.components.schemas.ConfirmResult?.properties.resume?.description).toContain("`POST /turn { resume: true, conversationId }`");
   });
+
+  // #310: the document says /version needs no token, as the route does.
+  it("describes /version as needing no token", async () => {
+    const doc = Bun.YAML.parse(await openApiResponse().text()) as {
+      paths: Record<string, { get?: { security?: unknown[] } }>;
+    };
+    expect(doc.paths["/version"]?.get?.security).toEqual([]);
+  });
 });
 
 // A browser UI on another origin (the separate custom-UI project) can only call
