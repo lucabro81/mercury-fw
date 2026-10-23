@@ -30,12 +30,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
+      # Redocly pinned to 2.69.0, as in apps/docs/scripts/api.ts: 2.70.0 writes
+      # the page's internal links as root-relative paths instead of fragments
+      # (#307). Lift both pins once a later release builds fragment links again.
       - name: Lint the OpenAPI spec
         working-directory: packages/channels/channel-http
-        run: bunx @redocly/cli@2 lint openapi.yaml
+        run: bunx @redocly/cli@2.69.0 lint openapi.yaml
       - name: Render the docs page
         working-directory: packages/channels/channel-http
-        run: bunx @redocly/cli@2 build-docs openapi.yaml -o "$GITHUB_WORKSPACE/site/index.html"
+        run: bunx @redocly/cli@2.69.0 build-docs openapi.yaml -o "$GITHUB_WORKSPACE/site/index.html"
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site

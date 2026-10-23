@@ -9,7 +9,7 @@
     "test": "bun test src",
     "test:a11y": "bunx --bun playwright test",
     "typecheck": "bunx --bun astro check",
-    "api": "cd ../../packages/channels/channel-http && bunx --bun @redocly/cli@2 build-docs openapi.yaml -o ../../../apps/docs/public/reference/http-api/index.html"
+    "api": "bun scripts/api.ts"
   },
   "dependencies": {
     "@astrojs/markdown-remark": "^7.3.3",
