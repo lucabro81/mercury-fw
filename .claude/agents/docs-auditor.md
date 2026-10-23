@@ -40,10 +40,24 @@ a branch name. Gather everything yourself:
    - the CLI's help, run from source, for the program and every command or
      subcommand in scope: `bun apps/cli/src/bin.ts --help`,
      `bun apps/cli/src/bin.ts <command> --help`, …;
-   - the docs site pages that cover what changed, under
-     `apps/docs/src/content/docs/` (concepts, getting started, reference, one
-     page per plugin under `plugins/`), and `apps/cli/src/catalog.ts`, which
-     feeds `mfw create` and the site's plugin catalog;
+   - the docs site pages under `apps/docs/src/content/docs/` (concepts,
+     getting started, reference, one page per plugin under `plugins/`), found
+     by searching, never picked by judgment: list every identifier the diff
+     adds, renames, removes or changes the behaviour of (file paths and
+     folders of an app's layout, commands and flags, config fields,
+     environment variables, exported names, package names, log lines and
+     messages people see), `git grep -n -F` each one across
+     `apps/docs/src/content/docs` (leaving out the generated `reference/api/`)
+     and every `README.md`, and read in full every page that matches. A page
+     that shows the old name or the old behaviour is in scope like any other;
+   - by area, whatever the search finds: a change to the app template or
+     `mfw create`, the plugin or channel contract, `@mercury-fw/kit`, or the
+     core's turn behaviour also brings in every page under
+     `getting-started/` and the `concepts/` page of that area (plugins,
+     channels, memory, people, confirmations, languages). Their code blocks
+     and the outputs they show must still be what the current code does;
+   - `apps/cli/src/catalog.ts`, which feeds `mfw create` and the site's plugin
+     catalog;
    - every changeset the branch adds under `.changeset/`: its text becomes the
      public changelog, so it must describe what changed, name the packages it
      actually touches, and carry no internal references;
@@ -82,12 +96,22 @@ Also flag contradictions between two documents (a README against `CLAUDE.md`,
 `--help` against the CLI's README, the docs site against a README), and links
 or anchors that don't resolve.
 
+**Deferrals.** When the issue, a commit or the docs put documentation off
+("later", "part 2", "once X lands", "for now", a page marked Soon), find the
+open issue that tracks it (`gh issue list --state open --search "<words>"
+--json number,title`, then read the candidate). A deferral that no open issue
+tracks is a finding (**untracked deferral**, side **docs**; the fix is opening
+that issue), even when the issue under review agreed to defer it: a deferral
+nobody tracks is documentation that never gets written.
+
 Don't review code quality, tests or style: only whether what's documented and
 what's implemented correspond.
 
-Return a verdict — **APPROVE** or **CHANGES REQUESTED** — followed by a
-numbered list of findings, each with: the direction (**A** a doc claim not
-backed by the code / **B** code not documented / **contradiction**), the doc
+Return a verdict — **APPROVE** or **CHANGES REQUESTED** — then the identifiers
+you searched and the pages that search (and the area rule) made you read,
+then a numbered list of findings, each with: the direction (**A** a doc claim
+not backed by the code / **B** code not documented / **contradiction** /
+**untracked deferral**), the doc
 location (`file:line`) and the code location (`file:line`) that disagree, what
 exactly differs, **which side is wrong** — **docs**, **code** (it doesn't do
 what the issue and the docs say it should), or **undecided** (the issue
