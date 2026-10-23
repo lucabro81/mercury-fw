@@ -68,9 +68,32 @@ data: {"text":"I am Mercury, an internal assistant with access to the team's wik
 Send the same `conversationId` again to continue the conversation. A wrong token gets `401` before anything runs.
 
 ```text title="Prompt for your coding agent"
-In my Mercury app with the HTTP channel and auth-static, set AUTH_STATIC_TOKENS in .env to one test user
-"alice" with token "alice-token" (without printing the rest of .env), restart with `bunx mfw start`, and send
-one message to POST localhost:4100/turn with curl, showing me the final event.
+In my Mercury app with the HTTP channel and auth-static, already set up with its model, set AUTH_STATIC_TOKENS in
+.env to one test user "alice" with token "alice-token", in the JSON shape the auth-static README shows (without
+printing the rest of .env), restart with `bunx mfw start`, and send one message with curl to POST /turn on
+localhost at the port in HTTP_SURFACE_PORT (4100 by default), with `Authorization: Bearer alice-token` and the
+JSON body {"text": "Hi"}, showing me only the final event.
+```
+
+## Adding it by hand
+
+An app created with `--channels http` has all of this already. In an existing app, `bun add
+@mercury-fw/channel-http` and an auth provider (here `@mercury-fw/auth-static`), and declare both:
+
+```ts title="mercury.config.ts"
+import { httpChannel } from "@mercury-fw/channel-http";
+import { staticAuth } from "@mercury-fw/auth-static";
+
+channels: [httpChannel],
+auth: staticAuth,
+```
+
+The channel listens inside the container, so the compose file has to publish its port on your machine. Under the
+`mercury` service in `docker-compose.yml`:
+
+```yaml title="docker-compose.yml"
+    ports:
+      - "${HTTP_SURFACE_PORT:-4100}:${HTTP_SURFACE_PORT:-4100}"
 ```
 
 ## What a chat interface needs to know

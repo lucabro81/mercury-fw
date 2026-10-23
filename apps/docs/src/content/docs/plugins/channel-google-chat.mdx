@@ -52,7 +52,7 @@ channels: [googleChatChannel],
 ```
 
 ```text title="Prompt for your coding agent"
-In my Mercury app, add the Google Chat channel: `bun add @mercury-fw/channel-google-chat`, add protobufjs to trustedDependencies in package.json, declare googleChatChannel in channels in mercury.config.ts, add GOOGLE_CHAT_PUBSUB_SUBSCRIPTION, GOOGLE_CHAT_APP_CLIENT_EMAIL and GOOGLE_CHAT_APP_PRIVATE_KEY to .env.example with empty values, and run `bun run typecheck`. Don't write any key into .env: tell me the `mfw google-chat set-key` command to run myself.
+In my Mercury app, add the Google Chat channel: `bun add @mercury-fw/channel-google-chat`, add protobufjs to trustedDependencies in package.json and run `bun install` again, declare googleChatChannel in channels in mercury.config.ts, add GOOGLE_CHAT_PUBSUB_SUBSCRIPTION, GOOGLE_CHAT_APP_CLIENT_EMAIL and GOOGLE_CHAT_APP_PRIVATE_KEY to .env.example with empty values, and run `bun run typecheck`. Don't write any key into .env: tell me the command to run myself once I have the service account's key file, `mfw google-chat set-key <key file> --subscription projects/<project>/subscriptions/<subscription>`, and to delete the key file afterwards.
 ```
 
 ## Stopping an answer
