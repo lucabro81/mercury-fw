@@ -16,8 +16,10 @@ globally, once, and type `mfw` anywhere:
 bun add -g @mercury-fw/cli
 ```
 
-Inside an app, a global `mfw` of another version hands the command over to the app's own, so the commands always
-match the app's framework. `mfw --help` lists every command, and `--help` after any of them describes it.
+Inside an app, a global `mfw` of another version hands the command over to the app's own, `--version` and `--help`
+included, so the commands always match the app's framework. It says so in one line naming both versions
+(`mfw 0.53.2: running the app's 0.58.0`): that's how `mfw --version` inside an app shows the global one is behind, and
+`mfw upgrade` is due. `mfw --help` lists every command, and `--help` after any of them describes it.
 
 ## Create and update
 

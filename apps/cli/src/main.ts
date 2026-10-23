@@ -208,12 +208,14 @@ const OWN_COMMANDS = new Set(["create", "upgrade"]);
 /** Inside an app whose own CLI (its devDependency) is installed at another
  * version than this one, as a global `mfw` can be, runs `argv` through that
  * CLI and returns its exit code: the app's commands then always match the
- * framework the app runs. `undefined` means run here: not an app command, not
- * inside an app, the app not installed yet, the same version, or already
- * handed over (`MFW_DEFERRED`). */
+ * framework the app runs. `--version` and `--help` (and a bare `mfw`) go over
+ * too, so inside an app they describe the app's CLI, and the line saying it
+ * hands over shows both versions. `undefined` means run here: one of this
+ * CLI's own commands (`create`, `upgrade`), not inside an app, the app not
+ * installed yet, the same version, or already handed over (`MFW_DEFERRED`). */
 async function handOverToAppCli(argv: string[], cwd: string, relaunch: Relaunch): Promise<number | undefined> {
   const command = argv[0];
-  if (command === undefined || command.startsWith("-") || OWN_COMMANDS.has(command)) return undefined;
+  if (command !== undefined && OWN_COMMANDS.has(command)) return undefined;
   if (process.env.MFW_DEFERRED) return undefined;
   let app: App;
   try {

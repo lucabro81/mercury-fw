@@ -774,10 +774,41 @@ describe("a global mfw inside an app with its own CLI", () => {
     process.env.MFW_SELF_UPDATED = cliVersion();
     try {
       await main(["create", join(dir, "nested"), "--yes"], { cwd: dir, relaunch });
+      await main(["create", "--help"], { cwd: dir, relaunch });
       await main(["upgrade", "--help"], { cwd: dir, relaunch });
     } finally {
       if (updated === undefined) delete process.env.MFW_SELF_UPDATED;
       else process.env.MFW_SELF_UPDATED = updated;
+    }
+    expect(relaunches).toEqual([]);
+  });
+
+  // #314: `--version` and `--help` stayed the global CLI's, so inside an app
+  // `mfw --version` showed the global version and a mismatch with the app's
+  // went unnoticed.
+  test.each([["--version"], ["-V"], ["--help"], ["-h"], []])("%p inside an app at another version: the app's CLI answers, and the line names both versions", async (...argv) => {
+    const { dir, relaunches, relaunch } = setup("0.1.0");
+    const errors = spyOn(console, "error").mockImplementation(() => {});
+    try {
+      expect(await main(argv, { cwd: dir, relaunch })).toBe(5);
+      expect(errors.mock.calls.map((c) => c[0])).toEqual([`mfw ${cliVersion()}: running the app's 0.1.0`]);
+    } finally {
+      errors.mockRestore();
+    }
+    expect(relaunches).toEqual([
+      { argv: ["bun", join(dir, "node_modules", "@mercury-fw", "cli", "src", "bin.ts"), ...argv], env: { MFW_DEFERRED: "1" } },
+    ]);
+  });
+
+  test("--version inside an app at this same version, or outside any app: answered here", async () => {
+    const { dir, relaunches, relaunch } = setup(cliVersion());
+    const out = spyOn(process.stdout, "write").mockImplementation(() => true);
+    try {
+      expect(await main(["--version"], { cwd: dir, relaunch })).toBe(0);
+      expect(await main(["--version"], { cwd: base, relaunch })).toBe(0);
+      expect(out.mock.calls.map((c) => String(c[0]))).toEqual([`${cliVersion()}\n`, `${cliVersion()}\n`]);
+    } finally {
+      out.mockRestore();
     }
     expect(relaunches).toEqual([]);
   });

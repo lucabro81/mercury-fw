@@ -36,7 +36,7 @@ bun add -g @mercury-fw/cli
 mfw create my-agent
 ```
 
-`mfw upgrade` keeps it current. Every app also lists `@mercury-fw/cli` among its devDependencies, at the framework's version, and inside an app the global `mfw` hands its commands over to that one when the two differ (it says so in one line; `mfw --version` and `mfw --help` stay the global one's), so an app's commands always match the framework it runs, whatever version is installed globally. An app not installed yet (no `bun install`) runs on the global one.
+`mfw upgrade` keeps it current. Every app also lists `@mercury-fw/cli` among its devDependencies, at the framework's version, and inside an app the global `mfw` hands its commands over to that one when the two differ, `mfw --version` and `mfw --help` included, so an app's commands always match the framework it runs, whatever version is installed globally. It says so in one line naming both versions (`mfw 0.53.2: running the app's 0.58.0`), so `mfw --version` inside an app tells you when the global one is behind and `mfw upgrade` is due. An app not installed yet (no `bun install`) runs on the global one.
 
 Without a global install: `bun create mercury-agent my-agent` creates an app, and `bunx mfw <command>` runs the app's own CLI from inside it.
 
