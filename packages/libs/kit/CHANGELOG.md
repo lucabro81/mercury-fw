@@ -1,5 +1,13 @@
 # @mercury-fw/kit
 
+## 0.58.0
+
+### Patch Changes
+
+- Updated dependencies [e3eb49d]
+  - @mercury-fw/channel-types@0.58.0
+  - @mercury-fw/plugin-types@0.58.0
+
 ## 0.57.0
 
 ### Patch Changes
