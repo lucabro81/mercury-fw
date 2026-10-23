@@ -134,7 +134,7 @@ Open [Google Auth Platform → Branding](https://console.cloud.google.com/auth/b
 3. **Contact Information**: your address. Click **Next**.
 4. Check **I agree to the Google API Services: User Data Policy**, click **Continue**, then **Create**.
 
-No scopes to add: an internal app doesn't list them.
+No scopes to add: an internal app doesn't list them. Google's own guide to this screen is [Configure the OAuth consent screen](https://developers.google.com/workspace/guides/configure-oauth-consent).
 
 ### 7. Configure the Chat app (Cloud Console)
 
@@ -142,14 +142,14 @@ Open the Chat API's configuration page for the project, `https://console.develop
 
 1. **Build this Chat app as a Google Workspace add-on**: unchecked (confirm in the dialog if it asks).
 2. **App name**: the name users search for in Chat (up to 25 characters). **Avatar URL**: an HTTPS link to a square image. **Description**: one line (up to 40 characters).
-3. **Interactive features**: enabled. Without them nobody can write to the app or click its confirmation buttons.
+3. **Interactive features**: turn on **Enable interactive features**. Without them nobody can write to the app or click its confirmation buttons.
 4. **Functionality**: check **Join spaces and group conversations**.
 5. **Connection settings**: pick **Cloud Pub/Sub** and paste the topic's full name, `projects/<PROJECT_ID>/topics/<TOPIC>`.
-6. **Visibility**: check **Make this Google Chat app available to specific people and groups in <your domain>** and enter who can use it (people or a group).
+6. **Visibility**: check **Make this Google Chat app available to specific people and groups in <your domain>** and enter who can use it: up to five people or Google Groups (a group covers everyone in it).
 7. **Logs**: check **Log errors to Logging**, so a delivery error from Chat shows up in the project's logs.
-8. **Commands**: add a command of type **Slash command**, named `/stop`, with any free **Command ID** (`1` on a new app) and a description such as "Stop the answer in progress". The channel recognises it by its name, so the id is up to you.
+8. **Commands**: click **Add a command**, pick **Slash command** as **Command type**, enter `/stop` as **Slash command name**, any free **Command ID** from 1 to 1000 (`1` on a new app) and a **Description** of up to 50 characters, such as "Stop the answer in progress". Leave **Open a dialog** unchecked, and click **Save** in the form. The channel recognises the command by its name, so the id is up to you.
 
-Click **Save**. The field names here come from Google's own Pub/Sub quickstart; Console moves things around now and then, so trust the meaning over the exact position.
+Click **Save**. These labels follow Google's own guides, which say more about each field: [Build a Google Chat app behind a firewall with Pub/Sub](https://developers.google.com/workspace/chat/quickstart/pub-sub), [Configure the Google Chat API](https://developers.google.com/workspace/chat/configure-chat-api) and [Respond to Google Chat app commands](https://developers.google.com/workspace/chat/commands). Console moves things around now and then, so trust the meaning over the exact position.
 
 ### 8. Start and try it
 

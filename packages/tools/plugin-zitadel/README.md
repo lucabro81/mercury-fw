@@ -25,6 +25,8 @@ The CLI keeps every login under `~/.config/zitadel-cli` (one folder per person, 
 - the service user the terminal runs as: the CLI asks for the instance URL and the service user's key JSON, pasted whole (hidden). `ORG_OWNER_VIEWER` on the organization is enough to read users, their project roles and their identity provider links;
 - the Native app people log in through, with `<HTTP_SURFACE_PUBLIC_URL>/login/callback` among its redirect URIs: the CLI asks for its client id.
 
+ZITADEL's guides for both: [Private key JWT for service accounts](https://zitadel.com/docs/guides/integrate/service-accounts/private-key-jwt) (the key JSON) and [Applications](https://zitadel.com/docs/guides/manage/console/applications) (the Native app).
+
 ```bash
 mfw credentials setup @mercury-fw/plugin-zitadel
 mfw credentials setup @mercury-fw/plugin-zitadel --user-app

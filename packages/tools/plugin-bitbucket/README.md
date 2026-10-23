@@ -23,6 +23,8 @@ The CLI keeps every login under `~/.config/bitbucket-cli` (one folder per person
 - the consumer the terminal runs as;
 - the consumer people log in through, with `<HTTP_SURFACE_PUBLIC_URL>/login/callback` among its callback URLs: Mercury's login link names that one, so the consumer can keep others (a local one, say).
 
+A consumer is added in the workspace's **Settings → OAuth consumers → Add consumer**, which gives its key and secret: Atlassian's guide is [Use OAuth on Bitbucket Cloud](https://support.atlassian.com/bitbucket-cloud/docs/use-oauth-on-bitbucket-cloud/).
+
 ```bash
 mfw credentials setup @mercury-fw/plugin-bitbucket
 mfw credentials setup @mercury-fw/plugin-bitbucket --user-app
