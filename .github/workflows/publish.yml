@@ -91,7 +91,9 @@ jobs:
   # The GitHub Release of each tag on the release commit, the unified
   # changelog the docs site reads (scripts/github-releases.ts). After the
   # publish, so a Release exists only for what is on npm; a rerun creates
-  # only what's missing.
+  # only what's missing. It reads the tags on the pushed commit, where
+  # scripts/release.ts puts them: a release that reached main another way
+  # gets its Releases from the script run by hand.
   releases:
     needs: publish
     runs-on: ubuntu-latest
