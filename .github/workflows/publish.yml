@@ -129,14 +129,14 @@ jobs:
   # HTTP API reference is part of the build (apps/docs/scripts/api.ts). Only
   # the build: docs.yml already checks every change to the site.
   site:
-    needs: [publish, releases]
+    needs: [check, publish, releases]
     # Normally after a run that published packages, its Releases created. A
     # dispatch from main with deploy_site rebuilds it on its own, dry run or
     # not, when a release's run didn't: a publish that failed halfway (the
     # rerun publishes nothing) or a releases job that failed.
     if: >-
       ${{ !cancelled() && (
-        (inputs.deploy_site && github.ref == 'refs/heads/main') ||
+        (inputs.deploy_site && github.ref == 'refs/heads/main' && needs.check.result == 'success') ||
         (needs.publish.result == 'success' && needs.releases.result == 'success' && needs.publish.outputs.published > 0)
       ) }}
     runs-on: ubuntu-latest

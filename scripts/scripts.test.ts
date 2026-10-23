@@ -459,11 +459,11 @@ describe("writeGithubOutput", () => {
 });
 
 describe("publishAll", () => {
-  const two = [ws("a"), ws("b"), ws("c")];
+  const three = [ws("a"), ws("b"), ws("c")];
 
   test("publishes, in order, what publishAction lets through, and counts only those", async () => {
     const published: string[] = [];
-    const count = await publishAll(two, {
+    const count = await publishAll(three, {
       decide: async (pkg) => (pkg.name === "b" ? { publish: false, reason: "already on r" } : { publish: true }),
       publishOne: (w) => published.push(w.pkg.name),
       log: () => {},
@@ -472,10 +472,26 @@ describe("publishAll", () => {
     expect(count).toBe(2);
   });
 
+  // A failed publish must stop the run before the count reaches the
+  // workflow, so the site job doesn't deploy a half-published release.
+  test("a failing publish throws, after publishing what came before it", async () => {
+    const published: string[] = [];
+    const run = publishAll(three, {
+      decide: async () => ({ publish: true }),
+      publishOne: (w) => {
+        if (w.pkg.name === "b") throw new Error("npm publish failed");
+        published.push(w.pkg.name);
+      },
+      log: () => {},
+    });
+    await expect(run).rejects.toThrow("npm publish failed");
+    expect(published).toEqual(["a"]);
+  });
+
   // The docs site deploys only when this isn't 0: a push that published
   // nothing (everything already on npm) must count 0.
   test("0 when every package is skipped", async () => {
-    const count = await publishAll(two, {
+    const count = await publishAll(three, {
       decide: async () => ({ publish: false, reason: "already on r" }),
       publishOne: () => {
         throw new Error("nothing should be published");
