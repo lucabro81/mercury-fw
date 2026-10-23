@@ -5,7 +5,9 @@
  * Redocly is pinned to 2.69.0: 2.70.0 writes the page's internal links as
  * root-relative paths (`/paths/~1turn/post`) instead of fragments
  * (`#/paths/~1turn/post`), and the site's link test fails on every one of
- * them (#307). Lift the pin once a later release builds fragment links again.
+ * them (#307). `.github/workflows/pages.yml` pins the same version for the
+ * page it publishes on its own. Lift both pins once a later release builds
+ * fragment links again.
  */
 import { join } from "node:path";
 
