@@ -91,7 +91,7 @@ words of its own, such as a status line while its tool runs, writes them in its 
 
 A plugin does nothing until the app declares it. In `mercury.config.ts`, import it and put it in `plugins`:
 
-```ts title="mercury.config.ts" ins={3,16}
+```ts title="mercury.config.ts" ins={3,15}
 import { defineMercuryConfig } from "@mercury-fw/core";
 import en from "./locales/en.json";
 import { guestWifiPlugin } from "./src/plugins/guest-wifi.ts";
@@ -181,7 +181,8 @@ and `mercury.config.ts` imports it by that name:
 import { guestWifiPlugin } from "@my-agent/plugin-guest-wifi";
 ```
 
-Run `bun install` to link it. Its tests go next to it, and the app's `bun run test` runs them with the rest:
+Run `bun install` to link it. Its tests go next to it, and the app's `bun run test` (which runs `bun test`, the
+first line it prints) runs them with the rest:
 
 ```ts title="plugins/guest-wifi/index.test.ts"
 import { describe, expect, test } from "bun:test";
