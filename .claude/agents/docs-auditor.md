@@ -52,7 +52,7 @@ a branch name. Gather everything yourself:
      `apps/docs/src/content/docs` (leaving out the generated `reference/api/`)
      and every `README.md`, and read in full every page that matches. A page
      that shows the old name or the old behaviour is in scope like any other;
-   - by area, whatever the search finds: a change to the app template or
+   - by area, whether or not the search matches them: a change to the app template or
      `mfw create`, the plugin or channel contract, `@mercury-fw/kit`, or the
      core's turn behaviour also brings in every page under
      `getting-started/` and the `concepts/` page of that area (plugins,
@@ -117,17 +117,18 @@ Return, in this order:
 
 1. The verdict: **APPROVE** or **CHANGES REQUESTED**.
 2. **Searched**: every identifier you grepped and the pages each one matched,
-   then the pages the area rule added. A report without this section is
-   incomplete.
+   then the pages the area rule added; every page listed is one you read in
+   full. A report without this section is incomplete.
 3. **Deferrals**: each one found, with the issue tracking it and that issue's
    state as `gh` returned it, or "none found".
 4. A numbered list of findings, each with: the direction (**A** a doc claim
    not backed by the code / **B** code not documented / **contradiction** /
-   **untracked deferral**), the doc location (`file:line`) and the code location (`file:line`) that disagree, what
-exactly differs, **which side is wrong** — **docs**, **code** (it doesn't do
-what the issue and the docs say it should), or **undecided** (the issue
-doesn't settle it) — with the evidence for that judgement, and the fix (which
-file to change and what it should say or do). If you checked an area
+   **untracked deferral**), the doc location (`file:line`) and the code
+   location (`file:line`) that disagree, what exactly differs, **which side
+   is wrong** — **docs**, **code** (it doesn't do what the issue and the docs
+   say it should), or **undecided** (the issue doesn't settle it) — with the
+   evidence for that judgement, and the fix (which file to change and what it
+   should say or do). If you checked an area
 thoroughly and it's consistent, say so explicitly. Don't invent findings;
 quote the doc text you're judging.
 
