@@ -32,7 +32,7 @@ on:
         type: boolean
         default: true
       deploy_site:
-        description: "Deploy the docs site even if nothing gets published (a release whose site job didn't run)"
+        description: "Deploy the docs site from main, whatever gets published (a release whose site job didn't run)"
         type: boolean
         default: false
 
@@ -130,10 +130,15 @@ jobs:
   # the build: docs.yml already checks every change to the site.
   site:
     needs: [publish, releases]
-    # A dispatch with deploy_site rebuilds it from main when a release's own
-    # run didn't (a publish that failed halfway, then published nothing on
-    # the rerun).
-    if: ${{ needs.publish.outputs.published > 0 || inputs.deploy_site }}
+    # Normally after a run that published packages, its Releases created. A
+    # dispatch from main with deploy_site rebuilds it on its own, dry run or
+    # not, when a release's run didn't: a publish that failed halfway (the
+    # rerun publishes nothing) or a releases job that failed.
+    if: >-
+      ${{ !cancelled() && (
+        (inputs.deploy_site && github.ref == 'refs/heads/main') ||
+        (needs.publish.result == 'success' && needs.releases.result == 'success' && needs.publish.outputs.published > 0)
+      ) }}
     runs-on: ubuntu-latest
     permissions:
       contents: read

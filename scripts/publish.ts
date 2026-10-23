@@ -84,6 +84,34 @@ export function writeGithubOutput(file: string | undefined, published: number): 
   if (file) appendFileSync(file, `published=${published}\n`);
 }
 
+/** What `publishAll` needs from the world: the decision for a package
+ * (`publishAction`), how to publish one, where to say what it does. */
+export type PublishAllDeps = {
+  decide: (pkg: { name: string; version: string }) => Promise<{ publish: true } | { publish: false; reason: string }>;
+  publishOne: (workspace: { dir: string; pkg: { name: string; version: string } }) => void;
+  log: (line: string) => void;
+};
+
+/** Publishes each of `workspaces`, in order, that `decide` lets through, and
+ * returns how many it published: skipped ones don't count. */
+export async function publishAll(
+  workspaces: Array<{ dir: string; pkg: { name: string; version: string } }>,
+  deps: PublishAllDeps,
+): Promise<number> {
+  let published = 0;
+  for (const w of workspaces) {
+    const action = await deps.decide(w.pkg);
+    if (!action.publish) {
+      deps.log(`skip ${w.pkg.name}@${w.pkg.version}: ${action.reason}`);
+      continue;
+    }
+    deps.log(`publish ${w.pkg.name}@${w.pkg.version}`);
+    deps.publishOne(w);
+    published++;
+  }
+  return published;
+}
+
 /** Packs the workspace in `dir` into `destination` and returns the tarball's path. */
 export function pack(dir: string, destination: string): string {
   const proc = Bun.spawnSync(["bun", "pm", "pack", "--destination", destination, "--quiet"], {
@@ -106,22 +134,17 @@ if (import.meta.main) {
   });
   const registry = (values.registry as string).replace(/\/+$/, "");
   const tarballs = mkdtempSync(join(tmpdir(), "mercury-publish-"));
-  let published = 0;
   try {
     run(["bun", "scripts/build-types.ts"]);
     run(["bun", "scripts/check-pack.ts", "--types"]);
-    for (const { dir, pkg } of publicWorkspacesInOrder()) {
-      const action = await publishAction(pkg, registry);
-      if (!action.publish) {
-        console.log(`skip ${pkg.name}@${pkg.version}: ${action.reason}`);
-        continue;
-      }
-      console.log(`publish ${pkg.name}@${pkg.version}`);
+    const published = await publishAll(publicWorkspacesInOrder(), {
+      decide: (pkg) => publishAction(pkg, registry),
       // From the tarballs' folder, outside the repo: npm would otherwise read
       // the root manifest's devEngines (Bun) and refuse to run.
-      run(publishCommand(pack(dir, tarballs), { registry, tag: values.tag, dryRun: values["dry-run"] as boolean }), tarballs);
-      published++;
-    }
+      publishOne: ({ dir }) =>
+        run(publishCommand(pack(dir, tarballs), { registry, tag: values.tag, dryRun: values["dry-run"] as boolean }), tarballs),
+      log: (line) => console.log(line),
+    });
     if (!values["dry-run"]) writeGithubOutput(process.env.GITHUB_OUTPUT, published);
   } catch (err) {
     // What's published stays published; rerunning skips it and carries on.

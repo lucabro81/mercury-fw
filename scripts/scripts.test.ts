@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { orderByDependencies, REPO_ONLY_DIRS, root, workspaces, type Workspace } from "./workspaces.ts";
 import { typesConfig } from "./build-types.ts";
-import { isPublished, publishAction, publishCommand, writeGithubOutput } from "./publish.ts";
+import { isPublished, publishAction, publishAll, publishCommand, writeGithubOutput } from "./publish.ts";
 import { comparePack, privacyProblem } from "./check-pack.ts";
 import { pendingChangesets, stageRelease } from "./release.ts";
 import { changelogSection, createReleaseCommand, parseTag, publishedOnNpm, releaseNotes, releasesToCreate } from "./github-releases.ts";
@@ -455,5 +455,33 @@ describe("writeGithubOutput", () => {
 
   test("outside GitHub Actions (no file named) it writes nothing", () => {
     expect(() => writeGithubOutput(undefined, 3)).not.toThrow();
+  });
+});
+
+describe("publishAll", () => {
+  const two = [ws("a"), ws("b"), ws("c")];
+
+  test("publishes, in order, what publishAction lets through, and counts only those", async () => {
+    const published: string[] = [];
+    const count = await publishAll(two, {
+      decide: async (pkg) => (pkg.name === "b" ? { publish: false, reason: "already on r" } : { publish: true }),
+      publishOne: (w) => published.push(w.pkg.name),
+      log: () => {},
+    });
+    expect(published).toEqual(["a", "c"]);
+    expect(count).toBe(2);
+  });
+
+  // The docs site deploys only when this isn't 0: a push that published
+  // nothing (everything already on npm) must count 0.
+  test("0 when every package is skipped", async () => {
+    const count = await publishAll(two, {
+      decide: async () => ({ publish: false, reason: "already on r" }),
+      publishOne: () => {
+        throw new Error("nothing should be published");
+      },
+      log: () => {},
+    });
+    expect(count).toBe(0);
   });
 });
