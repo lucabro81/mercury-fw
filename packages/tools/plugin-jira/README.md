@@ -28,7 +28,7 @@ plugins: [
 ],
 ```
 
-`app.jira.no-issues` is the app's own text, in `locales/en.json` (`"No matching issues."` in a new app) and translated in its other language files; `empty` can also be a plain string.
+`app.jira.no-issues` is the app's own text, in `locales/en.json` (`"No matching issues."` in an app created with Jira; add it yourself when adding the plugin to an existing app) and translated in its other language files; `empty` can also be a plain string.
 
 ## Credentials
 
