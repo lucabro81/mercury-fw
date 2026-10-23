@@ -26,7 +26,8 @@ const entries = await Promise.all(
   <p>
     The framework (core, CLI, contracts) is released as a whole and called by one version, <em>Mercury Framework x.y.z</em>.
     Plugins, channels and auth providers are released on their own, each with its own version. Both are listed here,
-    newest first.
+    newest first: the framework from 0.25.0, its first version on npm, the others from their releases after 0.59.1.
+    For their earlier versions, see each package's <code>CHANGELOG.md</code> in <a href={REPO_URL}>the repository</a>.
   </p>
 
   {entries.length === 0 ? (
