@@ -2,7 +2,7 @@
 
 Gives a [Mercury](https://github.com/lucabro81/mercury-fw) agent an HTTP surface to build a custom UI on: one conversational turn per request, streamed back as Server-Sent Events, plus confirmation and read-only routes over what the agent holds (conversations, the wiki, memory, its plugins).
 
-This version is written for version 6 of the channel contract, the one that brings the channels' texts in the person's language, and needs the framework at 0.54 or later: a core with an older contract skips it, and the log says why. `X-Time-Zone` and `PATCH /me` need the framework at 0.56 or later: an older core ignores the header and offers no `PATCH /me`.
+This version is written for version 6 of the channel contract, the one that brings the channels' texts in the person's language, and needs the framework at 0.59 or later, the first whose core gives channels its version (`GET /version`). A core with an older contract skips it, and the log says why.
 
 ```bash
 bun add @mercury-fw/channel-http
@@ -29,7 +29,7 @@ It needs an auth provider next to it, or several (`auth: [a, b]`, tried in order
 
 It's active whenever it's declared in `mercury.config.ts`'s `channels` with an auth provider; remove it there to turn the surface off. It listens on `HTTP_SURFACE_PORT` (default `4100`). Base URL `http://<host>:<port>`.
 
-**Authentication.** Every route except `GET /openapi.yaml`, `GET /login/callback` and the `OPTIONS` preflights needs `Authorization: Bearer <token>`, and the auth providers decide who the token belongs to: the first that recognizes it. A missing or refused token gets `401` with `WWW-Authenticate: Bearer` before anything runs. Then the core decides whether it talks to that person at all: someone the app's directory doesn't know gets `403` (unless the app lets unknown people in), and `503` when the directory can't be reached, both with `{ ok: false, error, reason }`, where `error` is what to tell them.
+**Authentication.** Every route except `GET /openapi.yaml`, `GET /version`, `GET /login/callback` and the `OPTIONS` preflights needs `Authorization: Bearer <token>`, and the auth providers decide who the token belongs to: the first that recognizes it. A missing or refused token gets `401` with `WWW-Authenticate: Bearer` before anything runs. Then the core decides whether it talks to that person at all: someone the app's directory doesn't know gets `403` (unless the app lets unknown people in), and `503` when the directory can't be reached, both with `{ ok: false, error, reason }`, where `error` is what to tell them.
 
 **Conversations belong to whoever opened them.** The session key is `<caller id>:<conversationId>`, so the same `conversationId` sent by someone else is a conversation of their own, and a confirmation token staged in your conversation can't be confirmed from theirs. Each authenticated caller also gets their own episodic memory and wiki area, as on Google Chat.
 
@@ -119,3 +119,7 @@ All `GET`, all JSON, all reporting state already held in-process. They need an a
 | `GET /openapi.yaml` | the OpenAPI document for this surface (`text/yaml`) |
 
 Conversation history and the conversation list are backed by the durable verbatim archive; they degrade to empty when the vector store is unreachable.
+
+## `GET /version`
+
+Which Mercury this is, for a UI to show: `{ ok: true, version }`, the framework's version as `major.minor.patch` (`"0.59.0"`), the one of `@mercury-fw/core`, not this channel's own. It needs no token.

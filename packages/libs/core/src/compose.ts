@@ -93,6 +93,7 @@ import { resolve as resolvePath } from "node:path";
 import { homedir } from "node:os";
 import type { Tool } from "ai";
 import { getSelfHealth } from "./health.ts";
+import { frameworkVersion } from "./version.ts";
 import { buildPluginManifest } from "./plugins/manifest.ts";
 
 /** A stoppable subsystem (cron, server). */
@@ -650,6 +651,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
     logins: { accept: personLogins.accept, complete: personLogins.complete },
     linking: { start: linking.start },
     assistantName,
+    frameworkVersion: frameworkVersion(),
   };
 
   /** Starts the Layer-3 idle-capture and self-review crons; returns one stopper. */

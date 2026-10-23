@@ -39,6 +39,8 @@ export type HttpProviderDeps = {
   assistantName?: string;
   /** The texts in each caller's language (`ctx.i18n`). */
   i18n?: ChannelI18n;
+  /** The framework's version, served on `/version` (`ctx.frameworkVersion`). */
+  version?: string;
 };
 
 export function createHttpProvider(deps: HttpProviderDeps): Provider & { stop(): Promise<void> } {
@@ -60,6 +62,7 @@ export function createHttpProvider(deps: HttpProviderDeps): Provider & { stop():
         ...(deps.resumeMaxChars === undefined ? {} : { resumeMaxChars: deps.resumeMaxChars }),
         ...(deps.assistantName === undefined ? {} : { assistantName: deps.assistantName }),
         ...(deps.i18n === undefined ? {} : { i18n: deps.i18n }),
+        ...(deps.version === undefined ? {} : { version: deps.version }),
       });
       deps.logins?.accept(deps.logins.callbackUrl);
     },

@@ -80,6 +80,21 @@ describe("httpChannel", () => {
     expect(accepted).toEqual([]);
   });
 
+  // #310: the version /version answers is the one the core gives the channel.
+  it("serves the framework's version the core gives it on /version", async () => {
+    const probe = Bun.serve({ port: 0, fetch: () => new Response() });
+    const port = probe.port;
+    probe.stop(true);
+    const provider = httpChannel.build(fullCtx({ env: { HTTP_SURFACE_PORT: String(port) }, frameworkVersion: "1.2.3" }))!;
+    await provider.start(async () => {});
+    try {
+      const res = await fetch(`http://localhost:${port}/version`);
+      expect(await res.json()).toEqual({ ok: true, version: "1.2.3" });
+    } finally {
+      await provider.stop?.();
+    }
+  });
+
   it("reads HTTP_SURFACE_RESUME_MAX_CHARS, and doesn't start on anything but a whole number from 0 up", () => {
     for (const ok of ["", " 0 ", "12000"]) {
       expect(httpChannel.build(fullCtx({ env: { HTTP_SURFACE_RESUME_MAX_CHARS: ok } }))).toBeDefined();

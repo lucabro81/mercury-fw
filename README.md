@@ -110,7 +110,7 @@ The first-party plugins, channels and auth providers, each with its own version:
 | [`@mercury-fw/web-search-searxng`](packages/tools/web-search-searxng) | A SearXNG instance as the web search plugin's backend; `mfw create` runs one next to the app. |
 | [`@mercury-fw/plugin-zitadel`](packages/tools/plugin-zitadel) | ZITADEL users, their project roles and identity provider links, organizations and projects through the `zitadel` CLI, read-only, as the person; and ZITADEL as the user directory. |
 | [`@mercury-fw/channel-google-chat`](packages/channels/channel-google-chat) | Google Chat, as a registered Chat app. |
-| [`@mercury-fw/channel-http`](packages/channels/channel-http) | An HTTP surface for a custom UI: streamed turns and read-only routes, for authenticated callers only. |
+| [`@mercury-fw/channel-http`](packages/channels/channel-http) | An HTTP surface for a custom UI: streamed turns and read-only routes for authenticated callers, plus the open `/version` and OpenAPI document. |
 | [`@mercury-fw/auth-oidc`](packages/auth/auth-oidc) | Who is calling the HTTP surface, from a token an OpenID Connect issuer (Zitadel, Google, Keycloak) signed. |
 | [`@mercury-fw/auth-static`](packages/auth/auth-static) | Who is calling the HTTP surface, from a fixed map of test tokens: for the test bed and e2e tests. |
 | [`@mercury-fw/directory-static`](packages/directories/directory-static) | Who the people are, their identities on each channel and their roles, from a list kept by hand. |

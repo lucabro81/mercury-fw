@@ -1,6 +1,6 @@
 /**
  * The HTTP channel plugin: an opt-in conversational HTTP surface (SSE `/turn`,
- * `/confirm`, read-only introspection routes, the OpenAPI doc) that a custom UI
+ * `/confirm`, read-only introspection routes, the OpenAPI doc, `/version`) that a custom UI
  * calls. Exported as a `ChannelPlugin` the core's channel loader consumes; it
  * does not import the app. Enabled by listing it in `mercury.config.ts` — there
  * is no runtime inert condition (unlike Google Chat's subscription): if it's
@@ -51,6 +51,7 @@ export const httpChannel: ChannelPlugin = {
       ...(ctx.settings === undefined ? {} : { settings: ctx.settings }),
       ...(resumeMaxChars === undefined ? {} : { resumeMaxChars }),
       ...(ctx.assistantName === undefined ? {} : { assistantName: ctx.assistantName }),
+      ...(ctx.frameworkVersion === undefined ? {} : { version: ctx.frameworkVersion }),
       ...(logins ? { logins: { callbackUrl: `${publicUrl}/login/callback`, accept: logins.accept, complete: logins.complete } } : {}),
     });
   },

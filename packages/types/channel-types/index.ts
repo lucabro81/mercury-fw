@@ -450,6 +450,8 @@ export type ChannelRuntimeContext = {
   settings?: ChannelSettings;
   /** The assistant's name (the app's `persona.name`), for what the channel tells people itself (a login page, a card). The core always sets it; absent on an older core. */
   assistantName?: string;
+  /** The framework's version (`major.minor.patch`), for a channel that tells people which Mercury they're talking to (HTTP's `/version`). The core always sets it; absent on an older core. */
+  frameworkVersion?: string;
 };
 
 /**
