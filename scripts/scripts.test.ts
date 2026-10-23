@@ -13,6 +13,7 @@ import { typesConfig } from "./build-types.ts";
 import { isPublished, publishAction, publishCommand } from "./publish.ts";
 import { comparePack, privacyProblem } from "./check-pack.ts";
 import { pendingChangesets, stageRelease } from "./release.ts";
+import { changelogSection, createReleaseCommand, parseTag, publishedOnNpm, releaseNotes, releasesToCreate } from "./github-releases.ts";
 
 const ws = (name: string, deps: Record<string, string> = {}, peers: Record<string, string> = {}): Workspace => ({
   dir: `/repo/${name}`,
@@ -278,4 +279,162 @@ describe("the type build", () => {
     const withoutExclusion = { ...typesConfig(true), exclude: typesConfig(true).exclude.filter((d) => !REPO_ONLY_DIRS.includes(d)) };
     expect(outside(withoutExclusion)).toContain(join(root, "apps/skill-trainer/src/contract.ts"));
   }, 30_000);
+});
+
+describe("changelogSection", () => {
+  const md = [
+    "# @mercury-fw/core",
+    "",
+    "## 0.59.1",
+    "",
+    "### Patch Changes",
+    "",
+    "- 44f2540: A fix.",
+    "",
+    "## 0.59.0",
+    "",
+    "### Minor Changes",
+    "",
+    "- 7c9a038: A feature.",
+    "",
+  ].join("\n");
+
+  test("the section of that version, without its heading, up to the next version", () => {
+    expect(changelogSection(md, "0.59.1")).toBe("### Patch Changes\n\n- 44f2540: A fix.");
+    expect(changelogSection(md, "0.59.0")).toBe("### Minor Changes\n\n- 7c9a038: A feature.");
+  });
+
+  test("null when the version has no section; 0.5.9 never matches 0.59.0", () => {
+    expect(changelogSection(md, "0.58.0")).toBeNull();
+    expect(changelogSection(md, "0.5.9")).toBeNull();
+    expect(changelogSection("## 0.59.0\n\n- x", "0.5.9")).toBeNull();
+  });
+});
+
+describe("parseTag", () => {
+  test("vX.Y.Z is the framework, <name>@<version> a package, scoped or not, anything else null", () => {
+    expect(parseTag("v0.59.1")).toEqual({ kind: "framework", name: null, version: "0.59.1" });
+    expect(parseTag("@mercury-fw/plugin-jira@0.8.0")).toEqual({ kind: "package", name: "@mercury-fw/plugin-jira", version: "0.8.0" });
+    expect(parseTag("create-mercury-agent@0.52.0")).toEqual({ kind: "package", name: "create-mercury-agent", version: "0.52.0" });
+    expect(parseTag("nightly")).toBeNull();
+  });
+});
+
+describe("releaseNotes", () => {
+  const changelogs: Record<string, string> = {
+    "@mercury-fw/core": [
+      "## 0.59.0",
+      "",
+      "### Minor Changes",
+      "",
+      "- 7c9a038: Channels get the framework's version.",
+      "",
+      "  - `ctx.frameworkVersion`, `major.minor.patch`.",
+      "",
+      "### Patch Changes",
+      "",
+      "- Updated dependencies [7c9a038]",
+      "  - @mercury-fw/channel-types@0.59.0",
+      "  - @mercury-fw/utils@0.59.0",
+      "- 1a2b3c4: The core's own fix.",
+      "  - @mercury-fw/plugin-types@0.59.0",
+      "  - @mercury-fw/cli-engine@0.59.0",
+      "",
+      "## 0.58.0",
+      "",
+      "### Patch Changes",
+      "",
+      "- @mercury-fw/plugin-types@0.58.0",
+    ].join("\n"),
+    "@mercury-fw/channel-types": ["## 0.59.0", "", "### Minor Changes", "", "- 7c9a038: Channels get the framework's version.", "", "  - `ctx.frameworkVersion`, `major.minor.patch`."].join("\n"),
+    "@mercury-fw/cli": ["## 0.59.0", "", "### Patch Changes", "", "- 9f8e7d6: A CLI fix.", "- @mercury-fw/core@0.59.0"].join("\n"),
+    "@mercury-fw/plugin-jira": ["## 0.8.0", "", "### Minor Changes", "", "- eac72fa: Jira describes itself.", "", "### Patch Changes", "", "- Updated dependencies [eac72fa]", "  - @mercury-fw/plugin-types@0.55.0"].join("\n"),
+    "@mercury-fw/plugin-bitbucket": ["## 0.3.1", "", "### Patch Changes", "", "- Updated dependencies [eac72fa]", "  - @mercury-fw/plugin-types@0.55.0"].join("\n"),
+  };
+  const ctx = {
+    fixed: ["@mercury-fw/core", "@mercury-fw/channel-types", "@mercury-fw/utils", "@mercury-fw/cli"],
+    changelog: (name: string) => changelogs[name] ?? null,
+  };
+
+  test("a framework release merges the fixed group's sections: once per entry, dependency bumps dropped, grouped by kind", () => {
+    expect(releaseNotes("v0.59.0", ctx)).toBe(
+      [
+        "### Minor Changes",
+        "",
+        "- 7c9a038: Channels get the framework's version.",
+        "",
+        "  - `ctx.frameworkVersion`, `major.minor.patch`.",
+        "",
+        "### Patch Changes",
+        "",
+        "- 1a2b3c4: The core's own fix.",
+        "- 9f8e7d6: A CLI fix.",
+      ].join("\n"),
+    );
+  });
+
+  // Guards the backfill: one changeset is a minor for some packages of the
+  // fixed group and a patch for others, and v0.56.0 listed it under both.
+  test("an entry that's a minor in one package and a patch in another appears once, under the higher kind", () => {
+    const entry = "- 1126106: Every turn carries its time.";
+    const twoKinds = {
+      fixed: ["a", "b"],
+      changelog: (name: string) =>
+        name === "a" ? `## 0.56.0\n\n### Minor Changes\n\n${entry}` : `## 0.56.0\n\n### Patch Changes\n\n${entry}\n- 2b3c4d5: Only b's.`,
+    };
+    expect(releaseNotes("v0.56.0", twoKinds)).toBe(`### Minor Changes\n\n${entry}\n\n### Patch Changes\n\n- 2b3c4d5: Only b's.`);
+  });
+
+  test("a package release is its own section, cleaned the same way", () => {
+    expect(releaseNotes("@mercury-fw/plugin-jira@0.8.0", ctx)).toBe("### Minor Changes\n\n- eac72fa: Jira describes itself.");
+  });
+
+  test("nothing left once the bumps are gone, or no section at all: says so", () => {
+    expect(releaseNotes("v0.58.0", ctx)).toBe("Dependency updates only.");
+    expect(releaseNotes("@mercury-fw/plugin-bitbucket@0.3.1", ctx)).toBe("Dependency updates only.");
+    expect(releaseNotes("v0.1.0", ctx)).toBe("Dependency updates only.");
+  });
+});
+
+describe("releasesToCreate", () => {
+  test("the tags without a Release, of a known shape: the framework's oldest first, then the packages'", () => {
+    const tags = ["v0.59.1", "@mercury-fw/plugin-jira@0.10.0", "v0.9.0", "nightly", "v0.10.0", "@mercury-fw/plugin-jira@0.8.0", "v0.58.0"];
+    expect(releasesToCreate(tags, new Set(["v0.58.0"]))).toEqual([
+      "v0.9.0",
+      "v0.10.0",
+      "v0.59.1",
+      "@mercury-fw/plugin-jira@0.8.0",
+      "@mercury-fw/plugin-jira@0.10.0",
+    ]);
+  });
+
+  test("nothing when every tag has one", () => {
+    expect(releasesToCreate(["v0.59.1"], new Set(["v0.59.1"]))).toEqual([]);
+  });
+});
+
+describe("createReleaseCommand", () => {
+  test("the framework's newest tag is Latest, any other framework tag and every package never", () => {
+    const all = ["v0.58.0", "v0.59.1", "v0.10.0", "@mercury-fw/plugin-jira@9.0.0"];
+    expect(createReleaseCommand("v0.59.1", all)).toEqual([
+      "gh", "release", "create", "v0.59.1", "--title", "Mercury Framework 0.59.1", "--notes-file", "-", "--verify-tag", "--latest",
+    ]);
+    expect(createReleaseCommand("v0.58.0", all)).toContain("--latest=false");
+    expect(createReleaseCommand("@mercury-fw/plugin-jira@9.0.0", all)).toEqual([
+      "gh", "release", "create", "@mercury-fw/plugin-jira@9.0.0", "--title", "@mercury-fw/plugin-jira 9.0.0", "--notes-file", "-", "--verify-tag", "--latest=false",
+    ]);
+  });
+});
+
+describe("publishedOnNpm", () => {
+  test("a framework tag is checked as the core's version, a package tag as itself", async () => {
+    const asked: string[] = [];
+    const published = async (name: string, version: string) => {
+      asked.push(`${name}@${version}`);
+      return name !== "@mercury-fw/plugin-jira";
+    };
+    expect(await publishedOnNpm("v0.59.1", "https://r", published)).toBe(true);
+    expect(await publishedOnNpm("@mercury-fw/plugin-jira@0.8.0", "https://r", published)).toBe(false);
+    expect(asked).toEqual(["@mercury-fw/core@0.59.1", "@mercury-fw/plugin-jira@0.8.0"]);
+  });
 });
