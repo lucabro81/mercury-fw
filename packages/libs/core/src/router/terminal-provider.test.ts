@@ -342,7 +342,7 @@ describe("createTerminalProvider", () => {
 
     const chunks: string[] = [];
     await capturedHandleInput("hi", (chunk) => chunks.push(chunk));
-    expect(chunks).toEqual(["partial ", "answer"]);
+    expect(chunks).toEqual(["partial ", "answer", "\n"]);
   });
 
   // The sink's own onStep already printed the specific instruction (command
@@ -415,6 +415,7 @@ describe("createTerminalProvider", () => {
       { chunk: "Action pending: `jira issue delete KAN-1 --confirm` — type: TOK1\n", aside: true },
       { chunk: "Ecco ", aside: false },
       { chunk: "fatto.", aside: false },
+      { chunk: "\n", aside: true },
     ]);
     expect(result).toBe("Ecco fatto.");
   });
@@ -526,7 +527,7 @@ describe("createTerminalProvider", () => {
 
     const chunks: string[] = [];
     await capturedHandleInput("hi", (chunk) => chunks.push(chunk));
-    expect(chunks).toEqual(["\x1b[2m\x1b[3mThinking…\x1b[0m\n", "\x1b[2m\x1b[3mprimo pezzo\x1b[0m"]);
+    expect(chunks).toEqual(["\x1b[2m\x1b[3mThinking…\x1b[0m\n", "\x1b[2m\x1b[3mprimo pezzo\x1b[0m", "\n"]);
   });
 
   test("subsequent onReasoningChunk calls in the same turn don't reprint the header", async () => {
@@ -556,6 +557,7 @@ describe("createTerminalProvider", () => {
       "\x1b[2m\x1b[3mThinking…\x1b[0m\n",
       "\x1b[2m\x1b[3muno\x1b[0m",
       "\x1b[2m\x1b[3mdue\x1b[0m",
+      "\n",
     ]);
   });
 
@@ -723,5 +725,100 @@ describe("createTerminalProvider", () => {
     const result = await provider.notify("some-user", "hello there");
     expect(result).toEqual({ sessionKey: "terminal" });
     expect(written).toEqual(["[notify] to some-user: hello there"]);
+  });
+
+  // Regression (#323): the turn runner logs `[turn] done` right after
+  // finalize, while the streamed answer's line was still open, so the log
+  // line landed glued to the end of the answer.
+  describe("the answer's line is closed when the answer is final, before the turn's log", () => {
+    /** Runs one turn through `handleTurn`, recording what reaches onChunk and where the log would land. */
+    async function run(handleTurn: (sink: Parameters<HandleTurn>[1], log: () => void) => Promise<void>) {
+      let capturedHandleInput!: CapturedHandleInput;
+      const provider = createTerminalProvider({
+        confirmDeps: fakeConfirmDeps(),
+        ollamaHost: "http://host",
+        ollamaModel: "model",
+        getLoadedContextLengthFn: async () => 4096,
+        startTerminalReplFn: async (handleInput) => {
+          capturedHandleInput = handleInput;
+        },
+        resolveConfirmationFn: async () => ({ status: "not-a-token" }),
+      });
+      const written: Array<{ text: string; aside: boolean }> = [];
+      await provider.start((_turn, sink) => handleTurn(sink, () => written.push({ text: "LOG", aside: false })));
+      await capturedHandleInput("hi", (chunk, opts) => written.push({ text: chunk, aside: opts?.aside === true }));
+      return written;
+    }
+
+    test("a streamed answer left open gets an aside newline from finalize, before the log", async () => {
+      const written = await run(async (sink, log) => {
+        sink.onTextChunk?.("Hi");
+        await sink.finalize("Hi");
+        log();
+      });
+      expect(written).toEqual([
+        { text: "Hi", aside: false },
+        { text: "\n", aside: true },
+        { text: "LOG", aside: false },
+      ]);
+    });
+
+    test("an answer whose last chunk already ends the line gets no second newline", async () => {
+      const written = await run(async (sink, log) => {
+        sink.onTextChunk?.("Hi\n");
+        await sink.finalize("Hi\n");
+        log();
+      });
+      expect(written).toEqual([
+        { text: "Hi\n", aside: false },
+        { text: "LOG", aside: false },
+      ]);
+    });
+
+    test("nothing streamed: finalize writes nothing", async () => {
+      const written = await run(async (sink, log) => {
+        await sink.finalize("Hi");
+        log();
+      });
+      expect(written).toEqual([{ text: "LOG", aside: false }]);
+    });
+
+    test("an aside that ended the line counts too: a tool label after the answer needs no newline", async () => {
+      const written = await run(async (sink, log) => {
+        sink.onTextChunk?.("Hi");
+        sink.onToolStart("Using guest_wifi…");
+        await sink.finalize("Hi");
+        log();
+      });
+      expect(written.map((w) => w.text)).toEqual(["Hi", "\x1b[2m\x1b[3mUsing guest_wifi…\x1b[0m\n", "LOG"]);
+    });
+  });
+
+  test("in the real REPL, the log after the answer starts on its own line, and the prompt follows it with no blank line", async () => {
+    const written: string[] = [];
+    async function* oneLine() {
+      yield "hi";
+    }
+    const provider = createTerminalProvider({
+      confirmDeps: fakeConfirmDeps(),
+      ollamaHost: "http://host",
+      ollamaModel: "model",
+      getLoadedContextLengthFn: async () => 4096,
+      startTerminalReplFn: (handleInput, _io, opts) =>
+        startTerminalRepl(
+          handleInput,
+          { input: oneLine(), output: { write: (s, o) => written.push(o?.newline === false ? s : `${s}\n`) } },
+          opts,
+        ),
+      resolveConfirmationFn: async () => ({ status: "not-a-token" }),
+    });
+    await provider.start(async (_turn, sink) => {
+      sink.onTextChunk?.("Connect to Office-Guest.");
+      await sink.finalize("Connect to Office-Guest.");
+      written.push("[turn] done\n");
+    });
+    const out = written.join("");
+    expect(out).toContain("Connect to Office-Guest.\n[turn] done\n");
+    expect(out).not.toContain("[turn] done\n\n");
   });
 });

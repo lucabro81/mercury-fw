@@ -268,6 +268,61 @@ describe("startTerminalRepl", () => {
     expect(texts[4]).toBe(PROMPT);
   });
 
+  // Regression (#323): the terminal's sink now closes the answer's line
+  // itself when the answer is final (an aside "\n"), so the turn's log line
+  // starts on a line of its own. The REPL must not close it a second time:
+  // that would leave a blank line before the prompt, or one too many before
+  // a display, a correction or an error.
+  describe("after a streamed answer whose line was already closed", () => {
+    const closed = (result: string, ...answer: string[]) =>
+      async (_input: string, onChunk: (chunk: string, opts?: { aside?: boolean }) => void) => {
+        for (const chunk of answer) onChunk(chunk);
+        onChunk("\n", { aside: true });
+        return result;
+      };
+
+    it("writes no second newline before the prompt", async () => {
+      const output = fakeOutput();
+      await startTerminalRepl(closed("Hello", "Hel", "lo"), { input: oneLine("hi"), output });
+      expect(output.calls).toEqual([
+        { text: PROMPT, newline: false },
+        { text: "Hel", newline: false },
+        { text: "lo", newline: false },
+        { text: "\n", newline: false },
+        { text: PROMPT, newline: false },
+      ]);
+    });
+
+    it("writes an appended display with one leading newline fewer, keeping one blank line before it", async () => {
+      const output = fakeOutput();
+      await startTerminalRepl(closed("Hello\n\nMER-1", "Hello"), { input: oneLine("hi"), output });
+      expect(output.calls).toEqual([
+        { text: PROMPT, newline: false },
+        { text: "Hello", newline: false },
+        { text: "\n", newline: false },
+        { text: "\nMER-1", newline: true },
+        { text: PROMPT, newline: false },
+      ]);
+    });
+
+    it("writes the correction marker with one leading newline fewer", async () => {
+      const output = fakeOutput();
+      await startTerminalRepl(closed("Salve", "Ciao"), { input: oneLine("hi"), output }, { correctedNote: () => "[corretta]" });
+      expect(output.calls).toContainEqual({ text: "\n[corretta]\n\nSalve", newline: true });
+    });
+
+    it("writes the error right away, with no blank line before it", async () => {
+      const output = fakeOutput();
+      const handleInput = async (_input: string, onChunk: (chunk: string, opts?: { aside?: boolean }) => void) => {
+        onChunk("partial");
+        onChunk("\n", { aside: true });
+        throw new Error("boom");
+      };
+      await startTerminalRepl(handleInput, { input: oneLine("hi"), output });
+      expect(output.calls.map((c) => c.text)).toEqual([PROMPT, "partial", "\n", "error: boom", PROMPT]);
+    });
+  });
+
   // Lets the caller show a live indicator (e.g. context usage, see
   // src/router/tool-log.ts's formatContextUsage) right before "> ",
   // recomputed each time since the value it reports changes turn to turn.

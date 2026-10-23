@@ -122,11 +122,18 @@ export async function startTerminalRepl(
   for await (const line of input) {
     let streamed = false;
     let streamedText = "";
+    // Whether what was streamed so far ends a line: the terminal's sink
+    // closes the answer's line itself when the answer is final, before the
+    // turn's log line, and then the REPL mustn't close it again.
+    let atLineStart = true;
     const onChunk = (chunk: string, chunkOpts?: { aside?: boolean }) => {
       streamed = true;
       if (!chunkOpts?.aside) streamedText += chunk;
+      if (chunk !== "") atLineStart = chunk.endsWith("\n");
       output.write(chunk, { newline: false });
     };
+    /** `text` without the newline it starts with when the line is already closed. */
+    const afterClosedLine = (text: string) => (atLineStart && text.startsWith("\n") ? text.slice(1) : text);
     try {
       const result = await handleInput(line, onChunk);
       if (!streamed) {
@@ -137,7 +144,9 @@ export async function startTerminalRepl(
         // finished (e.g. a display the model surfaced via `present`) — the
         // already-streamed prefix is still there, so only the new suffix
         // needs writing.
-        output.write(result.slice(streamedText.length));
+        const suffix = result.slice(streamedText.length);
+        if (suffix !== "") output.write(afterClosedLine(suffix));
+        else if (!atLineStart) output.write("");
       } else {
         // The final result no longer extends what was already streamed:
         // a plugin's post-turn guard (turn-runner.ts) rewrote the text
@@ -146,10 +155,10 @@ export async function startTerminalRepl(
         // instead of a slice computed against text that isn't there
         // anymore.
         const note = opts?.correctedNote?.() ?? CORE_MESSAGES["core.terminal.corrected"];
-        output.write(`\n\n${note}\n\n${result}`);
+        output.write(afterClosedLine(`\n\n${note}\n\n${result}`));
       }
     } catch (err) {
-      if (streamed) {
+      if (streamed && !atLineStart) {
         output.write("");
       }
       output.write(`error: ${String(err instanceof Error ? err.message : err)}`);
