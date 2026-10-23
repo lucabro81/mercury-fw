@@ -17,7 +17,7 @@
  * the registry's usual one (an `.npmrc` token). Without `--tag`, versions go
  * to `latest`, which is where the CLI looks plugins up.
  */
-import { mkdtempSync, rmSync } from "node:fs";
+import { appendFileSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
@@ -74,6 +74,14 @@ export function publishCommand(
   return cmd;
 }
 
+/** Tells the workflow how many packages were published (`published=<n>`), by
+ * appending to the file GitHub Actions names in `GITHUB_OUTPUT`; nothing
+ * outside GitHub Actions. `publish.yml` deploys the docs site only when it
+ * isn't 0. */
+export function writeGithubOutput(file: string | undefined, published: number): void {
+  if (file) appendFileSync(file, `published=${published}\n`);
+}
+
 /** Packs the workspace in `dir` into `destination` and returns the tarball's path. */
 export function pack(dir: string, destination: string): string {
   const proc = Bun.spawnSync(["bun", "pm", "pack", "--destination", destination, "--quiet"], {
@@ -96,6 +104,7 @@ if (import.meta.main) {
   });
   const registry = (values.registry as string).replace(/\/+$/, "");
   const tarballs = mkdtempSync(join(tmpdir(), "mercury-publish-"));
+  let published = 0;
   try {
     run(["bun", "scripts/build-types.ts"]);
     run(["bun", "scripts/check-pack.ts", "--types"]);
@@ -109,7 +118,9 @@ if (import.meta.main) {
       // From the tarballs' folder, outside the repo: npm would otherwise read
       // the root manifest's devEngines (Bun) and refuse to run.
       run(publishCommand(pack(dir, tarballs), { registry, tag: values.tag, dryRun: values["dry-run"] as boolean }), tarballs);
+      published++;
     }
+    if (!values["dry-run"]) writeGithubOutput(process.env.GITHUB_OUTPUT, published);
   } catch (err) {
     // What's published stays published; rerunning skips it and carries on.
     console.error(err instanceof Error ? err.message : String(err));

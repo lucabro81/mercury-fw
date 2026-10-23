@@ -5,12 +5,12 @@
  * anything to release.
  */
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { orderByDependencies, REPO_ONLY_DIRS, root, workspaces, type Workspace } from "./workspaces.ts";
 import { typesConfig } from "./build-types.ts";
-import { isPublished, publishAction, publishCommand } from "./publish.ts";
+import { isPublished, publishAction, publishCommand, writeGithubOutput } from "./publish.ts";
 import { comparePack, privacyProblem } from "./check-pack.ts";
 import { pendingChangesets, stageRelease } from "./release.ts";
 import { changelogSection, createReleaseCommand, parseTag, publishedOnNpm, releaseNotes, releasesToCreate } from "./github-releases.ts";
@@ -436,5 +436,24 @@ describe("publishedOnNpm", () => {
     expect(await publishedOnNpm("v0.59.1", "https://r", published)).toBe(true);
     expect(await publishedOnNpm("@mercury-fw/plugin-jira@0.8.0", "https://r", published)).toBe(false);
     expect(asked).toEqual(["@mercury-fw/core@0.59.1", "@mercury-fw/plugin-jira@0.8.0"]);
+  });
+});
+
+describe("writeGithubOutput", () => {
+  let dir: string;
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "gh-output-"));
+  });
+  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+
+  test("appends published=<n> to the file GitHub Actions names, after what's already there", () => {
+    const file = join(dir, "output");
+    writeFileSync(file, "earlier=1\n");
+    writeGithubOutput(file, 3);
+    expect(readFileSync(file, "utf-8")).toBe("earlier=1\npublished=3\n");
+  });
+
+  test("outside GitHub Actions (no file named) it writes nothing", () => {
+    expect(() => writeGithubOutput(undefined, 3)).not.toThrow();
   });
 });
