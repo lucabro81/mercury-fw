@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { demoteHeadings, fetchReleases, footerVersion, latestFrameworkVersion, parseReleases, releaseAnchor, type GithubRelease } from "./releases.ts";
+import { demoteHeadings, fetchReleases, footerVersion, latestFrameworkVersion, parseReleases, parseTagDates, releaseAnchor, type GithubRelease } from "./releases.ts";
 
 const release = (over: Partial<GithubRelease>): GithubRelease => ({
   tag_name: "v0.1.0",
@@ -72,6 +72,52 @@ describe("parseReleases", () => {
   test("a release with no body keeps an empty one, never null", () => {
     const [parsed] = parseReleases([release({ body: null })]);
     expect(parsed?.body).toBe("");
+  });
+});
+
+// Guards the backfill: Releases created long after their tag all carry the
+// day they were created, which dated and ordered the whole history as one day.
+describe("dates from the tags", () => {
+  test("a release is dated and ordered by its tag when the tag's date is known, by published_at otherwise", () => {
+    const tagDates = new Map([
+      ["v0.25.0", "2026-09-24T18:00:00+02:00"],
+      ["v0.30.0", "2026-09-28T10:00:00+02:00"],
+    ]);
+    const parsed = parseReleases(
+      [
+        release({ tag_name: "v0.25.0", published_at: "2026-10-23T12:00:01Z" }),
+        release({ tag_name: "v0.59.2", published_at: "2026-10-24T09:00:00Z" }),
+        release({ tag_name: "v0.30.0", published_at: "2026-10-23T12:00:00Z" }),
+      ],
+      tagDates,
+    );
+    expect(parsed.map((r) => [r.tag, r.date])).toEqual([
+      ["v0.59.2", "2026-10-24"],
+      ["v0.30.0", "2026-09-28"],
+      ["v0.25.0", "2026-09-24"],
+    ]);
+  });
+
+  test("two tags of the same commit time keep the order they were published in", () => {
+    const same = "2026-10-23T17:00:00+02:00";
+    const parsed = parseReleases(
+      [
+        release({ tag_name: "v0.59.0", published_at: "2026-10-23T12:00:00Z" }),
+        release({ tag_name: "v0.59.1", published_at: "2026-10-23T12:00:05Z" }),
+      ],
+      new Map([["v0.59.0", same], ["v0.59.1", same]]),
+    );
+    expect(parsed.map((r) => r.tag)).toEqual(["v0.59.1", "v0.59.0"]);
+  });
+
+  test("parseTagDates reads git for-each-ref's lines, skipping the ones without a date", () => {
+    const out = "v0.59.1 2026-10-23T17:31:02+02:00\n@mercury-fw/plugin-jira@0.8.0 2026-10-21T09:00:00+02:00\nbroken\n\n";
+    expect(parseTagDates(out)).toEqual(
+      new Map([
+        ["v0.59.1", "2026-10-23T17:31:02+02:00"],
+        ["@mercury-fw/plugin-jira@0.8.0", "2026-10-21T09:00:00+02:00"],
+      ]),
+    );
   });
 });
 
