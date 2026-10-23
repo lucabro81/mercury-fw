@@ -8,8 +8,8 @@ sidebar:
 A **plugin** gives the agent something it can do. The core knows no service: it doesn't know what Jira is, or the
 web, so every capability comes from a plugin the app declares. An agent with no plugins can talk, and nothing else.
 
-A plugin can come from npm (the [first-party ones](../../plugins/) are `@mercury-fw/plugin-*`) or be a file in your
-app, as in [Your first plugin](../../getting-started/local-plugin/). Either way it's a plain object, and it always
+A plugin can come from npm (the [first-party ones](../../plugins/) are `@mercury-fw/plugin-*`) or live in your app,
+as a single file or as a package of its own under `plugins/`, both in [Your first plugin](../../getting-started/local-plugin/). Either way it's a plain object, and it always
 has a **description**: one sentence on what it lets the agent do, such as "Lists and reads Bitbucket pull requests."
 Before every conversation the model reads the descriptions of the plugins the person may use, and that list is what
 it answers from when someone asks what it can do. The description says what, never how: how to use a plugin is up to
