@@ -1,5 +1,18 @@
 # @mercury-fw/core
 
+## 0.59.2
+
+### Patch Changes
+
+- f631dd5: README: a link to the package's page on Mercury's documentation site (https://lucabro81.github.io/mercury-fw/), published from this release on. The HTTP channel's README points to the HTTP API reference there, and the core's memory section to the page that explains it.
+- 3b67dd6: `mfw repl`: the turn's log line (`[turn] done …`) starts on a line of its own instead of landing glued to the end of the answer. The terminal ends the answer's line once the answer is final, and doesn't end it a second time before the prompt, a display or an error. A turn that fails or stalls halfway through an answer still logs right after the partial text.
+- Updated dependencies [f631dd5]
+  - @mercury-fw/cli-engine@0.59.2
+  - @mercury-fw/confirm-engine@0.59.2
+  - @mercury-fw/utils@0.59.2
+  - @mercury-fw/channel-types@0.59.2
+  - @mercury-fw/plugin-types@0.59.2
+
 ## 0.59.1
 
 ### Patch Changes

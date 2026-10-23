@@ -1,5 +1,14 @@
 # @mercury-fw/kit
 
+## 0.59.2
+
+### Patch Changes
+
+- f631dd5: README: a link to the package's page on Mercury's documentation site (https://lucabro81.github.io/mercury-fw/), published from this release on. The HTTP channel's README points to the HTTP API reference there, and the core's memory section to the page that explains it.
+- Updated dependencies [f631dd5]
+  - @mercury-fw/channel-types@0.59.2
+  - @mercury-fw/plugin-types@0.59.2
+
 ## 0.59.1
 
 ### Patch Changes
