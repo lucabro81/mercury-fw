@@ -41,7 +41,10 @@ jobs:
       RELEASES_REQUIRED: "1"
       CI: "true"
     steps:
+      # The whole history, for the tags that date the changelog's releases.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: "1.x"
