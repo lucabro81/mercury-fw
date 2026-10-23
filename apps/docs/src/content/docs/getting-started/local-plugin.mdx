@@ -91,8 +91,9 @@ words of its own, such as a status line while its tool runs, writes them in its 
 
 A plugin does nothing until the app declares it. In `mercury.config.ts`, import it and put it in `plugins`:
 
-```ts title="mercury.config.ts" ins={2,14}
+```ts title="mercury.config.ts" ins={3,15}
 import { defineMercuryConfig } from "@mercury-fw/core";
+import en from "./locales/en.json";
 import { guestWifiPlugin } from "./src/plugins/guest-wifi.ts";
 
 const name = "Mercury";
@@ -107,6 +108,7 @@ export default defineMercuryConfig({
   },
   plugins: [guestWifiPlugin],
   channels: [],
+  i18n: { locales: { en } },
 });
 ```
 
@@ -123,11 +125,110 @@ Then `bunx mfw restart`, and ask the agent about the Wi-Fi: [step 6 of Your firs
 shows what comes back.
 
 ```text title="Prompt for your coding agent"
-In my Mercury app, write a local plugin in src/plugins/guest-wifi.ts with @mercury-fw/kit, ai and zod: one tool,
-guest_wifi, returning the network name and password read from GUEST_WIFI_NAME and GUEST_WIFI_PASSWORD in the
-plugin's build context, contributing nothing and logging why when either is missing. Declare it in
-mercury.config.ts, add both variables to .env.example with empty values, then run `bun run typecheck`.
-Don't print the contents of .env.
+In my Mercury app, run `bun add @mercury-fw/kit ai zod`, then write a local plugin in src/plugins/guest-wifi.ts
+exporting guestWifiPlugin, typed as Plugin from @mercury-fw/kit (its fields are documented in
+node_modules/@mercury-fw/plugin-types/index.ts): apiVersion PLUGIN_API_VERSION, name "guest-wifi", a one-line
+description, actsAs "anyone", a systemPromptFragment saying when to use the tool, and one tool, guest_wifi, built
+with tool() from ai with an empty zod input, returning the network name and password that build reads from
+ctx.env.GUEST_WIFI_NAME and ctx.env.GUEST_WIFI_PASSWORD; when either is missing, build logs why with ctx.log and
+returns {}. Declare it in mercury.config.ts, add both variables to .env.example with empty values, then run
+`bun run typecheck`. Don't print the contents of .env.
+```
+
+## A package of its own
+
+One file is the smallest plugin. Once it grows (more tools, its own tests, a dependency the rest of the app
+doesn't need), it can become a package inside your app, under `plugins/`: every app is set up for it, with
+`plugins/*` declared as workspaces in its `package.json` and a Dockerfile that copies `plugins/` before installing.
+It's also the shape a plugin needs to be published one day.
+
+Move the file to `plugins/guest-wifi/index.ts`, unchanged, and give the folder a `package.json` of its own, with
+the packages the plugin is written with:
+
+```json title="plugins/guest-wifi/package.json"
+{
+  "name": "@my-agent/plugin-guest-wifi",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./index.ts" },
+  "dependencies": {
+    "@mercury-fw/kit": "^0.59.1",
+    "ai": "^7.0.152",
+    "zod": "^4.6.7"
+  }
+}
+```
+
+The name is yours to choose; a scope with the app's name keeps it apart from packages on npm. `private` keeps it
+from being published by mistake.
+
+The app then depends on it like on any package, but from its workspace. In the app's `package.json`:
+
+```json title="package.json" ins={5}
+  "dependencies": {
+    "@mercury-fw/core": "^0.59.1",
+    "@mercury-fw/kit": "^0.59.1",
+    "ai": "^7.0.152",
+    "@my-agent/plugin-guest-wifi": "workspace:*",
+    "zod": "^4.6.7"
+  },
+```
+
+and `mercury.config.ts` imports it by that name:
+
+```ts title="mercury.config.ts"
+import { guestWifiPlugin } from "@my-agent/plugin-guest-wifi";
+```
+
+Run `bun install` to link it. Its tests go next to it, and the app's `bun run test` (which runs `bun test`, the
+first line it prints) runs them with the rest:
+
+```ts title="plugins/guest-wifi/index.test.ts"
+import { describe, expect, test } from "bun:test";
+import type { PluginRuntimeContext, SessionToolContext } from "@mercury-fw/kit";
+import { guestWifiPlugin } from "./index.ts";
+
+/** The context Mercury builds a plugin with: this plugin reads only `env` and `log`. */
+function ctx(env: Record<string, string>, logs: string[] = []): PluginRuntimeContext {
+  return { model: {} as never, env, log: (line) => logs.push(line) };
+}
+
+describe("guest-wifi", () => {
+  test("without its settings it contributes no tool, and logs why", () => {
+    const logs: string[] = [];
+    expect(guestWifiPlugin.build!(ctx({}, logs))).toEqual({});
+    expect(logs).toEqual(["guest-wifi: GUEST_WIFI_NAME or GUEST_WIFI_PASSWORD is not set: no tools"]);
+  });
+
+  test("guest_wifi returns the network and the password from its settings", async () => {
+    const built = guestWifiPlugin.build!(ctx({ GUEST_WIFI_NAME: "Office-Guest", GUEST_WIFI_PASSWORD: "secret" }));
+    const tools = built.sessionTools!({} as SessionToolContext);
+    expect(await tools.guest_wifi!.execute!({}, {} as never)).toEqual({ ok: true, network: "Office-Guest", password: "secret" });
+  });
+});
+```
+
+```text
+$ bun test
+bun test v1.4.2 (744846f84)
+
+ 2 pass
+ 0 fail
+ 3 expect() calls
+Ran 2 tests across 1 file. [63.00ms]
+```
+
+`bunx mfw restart` builds the image with the package in it, and the agent answers about the Wi-Fi as before.
+
+```text title="Prompt for your coding agent"
+In my Mercury app, move the local plugin in src/plugins/guest-wifi.ts into its own workspace package,
+plugins/guest-wifi, named @my-agent/plugin-guest-wifi: the file becomes plugins/guest-wifi/index.ts, unchanged
+(move it with mv: it may not be committed yet), next to a package.json that is private, of type module, has
+"exports": { ".": "./index.ts" } and depends on @mercury-fw/kit, ai and zod at the app's versions. Add it to the app's
+dependencies as workspace:*, import it by that name in mercury.config.ts, and write index.test.ts next to it testing
+that build contributes nothing without GUEST_WIFI_NAME and GUEST_WIFI_PASSWORD and that guest_wifi returns both.
+Run bun install, `bun run typecheck` and `bun run test`.
 ```
 
 ## Where to go next

@@ -23,7 +23,7 @@ mfw credentials setup @mercury-fw/plugin-atlassian-admin
 mfw credentials check @mercury-fw/plugin-atlassian-admin
 ```
 
-The CLI asks for the organization id and for the key, which it reads without echoing it.
+The CLI asks for the organization id and for the key, which it reads without echoing it. An organization admin creates the key in admin.atlassian.com, under **Settings → API keys**, where the organization id is shown next to it: Atlassian's guide is [Manage an organization with the admin APIs](https://support.atlassian.com/organization-administration/docs/manage-an-organization-with-the-admin-apis/). The key is shown once, and it expires on the date picked when creating it (a year at most): set it up again before then.
 
 ## Who can use it
 

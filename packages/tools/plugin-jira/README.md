@@ -28,7 +28,7 @@ plugins: [
 ],
 ```
 
-`app.jira.no-issues` is the app's own text, in `locales/en.json` (`"No matching issues."` in a new app) and translated in its other language files; `empty` can also be a plain string.
+`app.jira.no-issues` is the app's own text, in `locales/en.json` (`"No matching issues."` in an app created with Jira; add it yourself when adding the plugin to an existing app) and translated in its other language files; `empty` can also be a plain string.
 
 ## Credentials
 
@@ -36,8 +36,8 @@ The plugin acts as the person: every command runs with the Jira account of whoev
 
 The CLI keeps every login under `~/.config/jira-cli` (one folder per person, next to the Service Account's), and the plugin declares that folder in its `package.json` (`mercury.cliCredentials`) with the commands that set it up. Two things are set up once, inside the app's container, pasting each credential's client id and secret when the CLI asks (the [jira CLI's README](https://github.com/lucabro81/CLI-monorepo/tree/main/crates/jira#setup) has the steps on Atlassian's side):
 
-- the **Service Account**, created by an org admin in admin.atlassian.com (Directory → Service accounts, an OAuth 2.0 credential with the `read:jira-work`, `read:jira-user`, `write:jira-work` scopes): what the terminal runs as;
-- the **3LO app** people log in through, from developer.atlassian.com (Resource-level, the same scopes, sharing enabled under Distribution), with `<HTTP_SURFACE_PUBLIC_URL>/login/callback` among its callback URLs.
+- the **Service Account**, created by an org admin in admin.atlassian.com (Directory → Service accounts, an OAuth 2.0 credential with the `read:jira-work`, `read:jira-user`, `write:jira-work` scopes; Atlassian's guide: [Create OAuth 2.0 credential for service accounts](https://support.atlassian.com/user-management/docs/create-oauth-2-0-credential-for-service-accounts/)): what the terminal runs as;
+- the **3LO app** people log in through, from developer.atlassian.com (Resource-level, the same scopes, sharing enabled under Distribution), with `<HTTP_SURFACE_PUBLIC_URL>/login/callback` among its callback URLs; Atlassian's guide: [OAuth 2.0 (3LO) apps](https://developer.atlassian.com/cloud/jira/platform/oauth-2-3lo-apps/).
 
 ```bash
 mfw credentials setup @mercury-fw/plugin-jira

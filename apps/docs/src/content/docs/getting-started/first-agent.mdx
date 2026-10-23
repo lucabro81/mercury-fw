@@ -22,13 +22,14 @@ You need three things installed:
   *embedding* model).
 
 ```bash
-ollama pull qwen3.5:9b
+ollama pull <chat-model>
 ollama pull nomic-embed-text
 ```
 
-Any chat model that supports tool calling works; `qwen3.5:9b` is the one this page was tested with, and a bigger
-model answers better if your machine can take it. The agent runs inside Docker and reaches Ollama on your machine
-at the address `host.docker.internal`, which is already the default.
+`<chat-model>` is yours to choose: any model in [Ollama's library](https://ollama.com/search?c=tools) that supports
+tool calling works, and a bigger one answers better if your machine can take it. The agent runs inside Docker and
+reaches Ollama on your machine at the address `host.docker.internal`, which is already the default; an Ollama on
+another machine works too, through `OLLAMA_HOST` (step 2).
 
 ## 1. Create the app
 
@@ -52,6 +53,9 @@ Next:
   cd /…/my-agent
   cp .env.example .env    # then fill it in
   mfw start               # bunx mfw start, without a global mfw
+
+Optional, to have mfw everywhere:
+  bun add -g @mercury-fw/cli
 ```
 
 The app is also a git repository with a first commit, so you can see every change you make from here on.
@@ -71,14 +75,14 @@ cd my-agent
 cp .env.example .env
 ```
 
-Open `.env` and fill in the chat model, the only line left empty:
+Open `.env` and fill in the chat model you pulled, the only line left empty:
 
 ```bash title=".env"
-OLLAMA_MODEL=qwen3.5:9b
+OLLAMA_MODEL=<chat-model>
 ```
 
-The other lines already point at Ollama on your machine (`OLLAMA_HOST`), at the embedding model, and at the two
-places Mercury keeps its memory. The [environment reference](../../reference/environment/) explains each one.
+The other lines already point at Ollama on your machine (`OLLAMA_HOST`; set it to `http://<host>:11434` when
+Ollama runs elsewhere), at the embedding model, and at the two places Mercury keeps its memory. The [environment reference](../../reference/environment/) explains each one.
 
 ## 3. Start it
 
@@ -106,21 +110,25 @@ bunx mfw repl
 ```
 
 A REPL is an interactive prompt: type a message, press Enter, read the answer. This is what the run above printed
-for "Hi! Who are you?" (the model's reasoning, printed in grey while it thinks, is left out):
+for "Hi! Who are you?" (the model's reasoning, printed in grey after `Thinking…`, is left out, and your model
+words its answer its own way):
 
 ```text
 [~?k tokens] > Hi! Who are you?
 [turn] start
-I'm Mercury, an internal assistant. How can I help you?
-[turn] done in 20.6s: 1 step, 0 tool calls, reasoning 258 chars, answer 55 chars, finish stop
+Thinking…
+I'm Mercury, your internal assistant. I can look up the team's wiki (conventions, docs, project status), keep personal notes for you under personal/notes/, and help you with questions about how the team works. If you want, I can also share one of your notes with the team when you explicitly ask to.
+What can I help you with?[turn] done in 8.5s: 1 step, 0 tool calls, reasoning 332 chars, answer 326 chars, finish stop
+[~2k/~262k tokens] >
 ```
 
 The `[turn]` lines are for you, not for the person chatting: how long the answer took, and how many tools the model
-called. It called none, because it has none. Press `Ctrl+D` to leave the REPL. The agent keeps running until
+called. It called none: the wiki it mentions is its own memory, which every app has, and no tool of yours is there
+yet. The prompt shows how much of the model's context the conversation fills. Press `Ctrl+D` to leave the REPL. The agent keeps running until
 `bunx mfw stop`.
 
 ```text title="Prompt for your coding agent"
-In my Mercury app, fill in .env from .env.example with OLLAMA_MODEL=qwen3.5:9b, start the app with
+In my Mercury app, fill in .env from .env.example with OLLAMA_MODEL=<chat-model>, start the app with
 `bunx mfw start`, and tell me when the containers are up. Don't print the contents of .env.
 ```
 
@@ -160,13 +168,16 @@ bunx mfw repl
 ```text
 [~?k tokens] > How do I get on the guest Wi-Fi?
 [turn] start
+Thinking…
+Using guest_wifi…
 [tool] guest_wifi({})
 [tool result] {"ok":true,"network":"Office-Guest","password":"correct-horse-battery"}
-The office guest Wi-Fi is "Office-Guest" with password "correct-horse-battery".
-[turn] done in 27.5s: 2 steps, 1 tool call, reasoning 338 chars, answer 79 chars, finish stop
+Thinking…
+Connect to the network "Office-Guest" and use the password "correct-horse-battery".[turn] done in 6.2s: 2 steps, 1 tool call, reasoning 122 chars, answer 83 chars, finish stop
 ```
 
-The `[tool]` lines show the model deciding to call `guest_wifi` and what came back, and the answer is built on it.
+`Using guest_wifi…` is the status line the person sees while the tool runs, and the `[tool]` lines show you the
+model's call and what came back: the answer is built on it.
 The password never appeared in your code, only in `.env`.
 
 ## Where to go next
