@@ -59,6 +59,14 @@ import { CORE_MESSAGES } from "../i18n/core-messages.ts";
 /** The stand-in for an answer the model didn't write, in English: what a turn with no `pendingNote` of its own uses. */
 const DEFAULT_PENDING_NOTE = CORE_MESSAGES["core.pending.note"]!;
 
+/**
+ * What the history keeps in place of an answer whose call was aborted, by the
+ * person or by the stall watchdog: the half answer never reached them, but
+ * their message stays, so whatever they say next still has its context.
+ * Model-facing, so in English.
+ */
+export const ABORTED_MARKER = "[This answer was stopped before it was finished.]";
+
 /** `""` unless `lastStep` staged a confirm-required command, in which case `note`, the stand-in for the answer. */
 function resolveEmptyText(lastStep: StepInfo | undefined, note: string): string {
   return lastStep && detectPendingConfirmation(lastStep) ? note : "";
@@ -252,6 +260,8 @@ function resumedMessages(resumed: ResumedAction): ModelMessage[] {
 /**
  * Runs one turn: records `userInput`, generates a response with the
  * given model/tools/system prompt, records the response, and returns it.
+ * A call `deps.abortSignal` aborted records `ABORTED_MARKER` instead and
+ * returns `""`: the person's message stays, the half answer doesn't.
  *
  * @param history - The conversation's `SessionHistory`; one per
  *   channel/space, never shared (see `src/index.ts`).
@@ -336,8 +346,9 @@ export async function runTurn(
     generateTextFn?: GenerateTextFn;
     streamTextFn?: StreamTextFn;
     /** When set, aborting it stops the in-flight generation — the turn ends
-     * promptly instead of running to completion (see the HTTP surface's
-     * client-disconnect cancellation). Optional; existing callers pass none. */
+     * promptly instead of running to completion. An aborted call records
+     * `ABORTED_MARKER` in place of whatever it had written, and returns `""`
+     * (or rethrows what the call threw). */
     abortSignal?: AbortSignal;
     /** Set when the turn resumes after a confirmed action: the model gets
      * that action back as a tool call and its result, after the history. */
@@ -351,6 +362,16 @@ export async function runTurn(
   },
 ): Promise<string> {
   await history.addUserMessage(userInput);
+  try {
+    return await generateAnswer(history, deps);
+  } catch (err) {
+    if (deps.abortSignal?.aborted) await history.addAssistantMessage(ABORTED_MARKER);
+    throw err;
+  }
+}
+
+/** `runTurn`'s model call, once the user's message is recorded: records the answer, or `ABORTED_MARKER` for an aborted call that returned. */
+async function generateAnswer(history: SessionHistory, deps: Parameters<typeof runTurn>[2]): Promise<string> {
   const messages: ModelMessage[] = deps.resumed
     ? [...history.getMessages(), ...resumedMessages(deps.resumed)]
     : history.getMessages();
@@ -417,6 +438,10 @@ export async function runTurn(
     }
     // Before usage: a broken stream may reject it, and how it ended matters more.
     if (finishReason !== undefined) deps.onFinish?.(finishReason, streamError);
+    if (deps.abortSignal?.aborted) {
+      await history.addAssistantMessage(ABORTED_MARKER);
+      return "";
+    }
     deps.onUsage?.((await result.usage)?.inputTokens);
 
     if (fullText.trim().length === 0) {
@@ -443,6 +468,10 @@ export async function runTurn(
   });
   deps.onUsage?.(result.usage?.inputTokens);
   if (result.finishReason !== undefined) deps.onFinish?.(result.finishReason);
+  if (deps.abortSignal?.aborted) {
+    await history.addAssistantMessage(ABORTED_MARKER);
+    return "";
+  }
 
   const text = result.text.trim().length === 0 ? resolveEmptyText(lastStep, deps.pendingNote ?? DEFAULT_PENDING_NOTE) : result.text;
   if (result.text.trim().length === 0 && text.length > 0) deps.onPendingNote?.();

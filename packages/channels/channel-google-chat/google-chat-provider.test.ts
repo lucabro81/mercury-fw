@@ -70,6 +70,8 @@ function baseDeps(overrides: Partial<GoogleChatProviderDeps> = {}): GoogleChatPr
     // createSink) — a safe default so tests that don't care about cards
     // specifically don't trigger a real HTTP call to the Chat API.
     sendCardFn: async (_space, _card) => ({ name: "spaces/X/messages/card-sent" }),
+    // An answer patches the receiving card to take its Stop button away.
+    updateCardFn: async (name) => ({ name }),
     subscriptionFn: () => fakeSubscription() as any, // default: a subscription no test drives, only used by tests not centered on message dispatch
     log: () => {},
     ...overrides,
@@ -1535,6 +1537,8 @@ describe("createGoogleChatProvider — the confirmation card after a click", () 
               },
             }),
         updateCardFn: async (name, card) => {
+          // The answer takes the receiving card's Stop button away: not the confirmation card's update.
+          if (name === "spaces/X/messages/card-sent") return { name };
           order.push("patch");
           patched.push({ name, card });
           return { name };
@@ -1728,7 +1732,22 @@ describe("createGoogleChatProvider — the person's language", () => {
       ["texts", "users/42", "it-IT"],
       ["turn", "it-IT"],
     ]);
-    expect(cards).toEqual([{ sections: [{ header: "it:google-chat.receiving.title", widgets: [{ textParagraph: { text: "it:google-chat.receiving.text" } }] }] }]);
+    expect(cards).toEqual([
+      {
+        sections: [
+          { header: "it:google-chat.receiving.title", widgets: [{ textParagraph: { text: "it:google-chat.receiving.text" } }] },
+          {
+            widgets: [
+              {
+                buttonList: {
+                  buttons: [{ text: "it:google-chat.stop.button", onClick: { action: { function: "stop", parameters: [{ key: "stop", value: expect.any(String) }] } } }],
+                },
+              },
+            ],
+          },
+        ],
+      },
+    ]);
   });
 
   test("after the core's pending note, sends only the list that follows it", async () => {
@@ -1802,5 +1821,352 @@ describe("createGoogleChatProvider — the person's time zone", () => {
     await new Promise((r) => setTimeout(r, 30));
 
     expect(turns.map((t) => t.timeZoneHint)).toEqual(["Europe/Rome", "Asia/Tokyo"]);
+  });
+});
+
+// #305: there's no Esc on Google Chat. A Stop button on the cards in progress
+// and a `/stop` command abort the session's running turn and discard what's
+// queued behind it.
+describe("parseChatEvent — stop", () => {
+  const sender = { name: "users/42", email: "luca@example.com", type: "HUMAN" };
+  const message = (fields: Record<string, unknown>) => ({
+    type: "MESSAGE",
+    message: { name: "spaces/X/messages/9", space: { name: "spaces/X" }, sender, ...fields },
+  });
+  const stop = { kind: "stop", source: "command", space: "spaces/X", sender: "users/42", senderEmail: "luca@example.com", isDirectMessage: false } as const;
+
+  test("the registered /stop slash command is a stop", () => {
+    const raw = message({
+      text: "/stop",
+      argumentText: "",
+      slashCommand: { commandId: "1" },
+      annotations: [{ type: "SLASH_COMMAND", slashCommand: { commandName: "/stop", commandId: "1", type: "INVOKE" } }],
+    });
+    expect(parseChatEvent(raw)).toEqual(stop);
+  });
+
+  test("a message reading exactly /stop is a stop, before the command is registered too", () => {
+    expect(parseChatEvent(message({ text: "  /stop " }))).toEqual(stop);
+  });
+
+  test("in a space, the text after the mention is what counts", () => {
+    expect(parseChatEvent(message({ text: "@Mercury /stop", argumentText: " /stop" }))).toEqual(stop);
+  });
+
+  test("another slash command isn't a stop", () => {
+    const raw = message({
+      text: "/help",
+      annotations: [{ type: "SLASH_COMMAND", slashCommand: { commandName: "/help", commandId: "2", type: "INVOKE" } }],
+    });
+    expect(parseChatEvent(raw)).toMatchObject({ kind: "message", text: "/help" });
+  });
+
+  test("/stop with more text, or a plain 'stop', is a message like any other", () => {
+    expect(parseChatEvent(message({ text: "/stop please" }))).toMatchObject({ kind: "message" });
+    expect(parseChatEvent(message({ text: "stop" }))).toMatchObject({ kind: "message" });
+  });
+
+  test("a click on the Stop button is a stop", () => {
+    const raw = {
+      type: "CARD_CLICKED",
+      space: { name: "spaces/X", type: "DM" },
+      user: sender,
+      message: { name: "spaces/X/messages/card" },
+      action: { actionMethodName: "stop", parameters: [{ key: "stop", value: "turn-1" }] },
+    };
+    expect(parseChatEvent(raw)).toEqual({ ...stop, source: "button", isDirectMessage: true, turn: "turn-1" });
+  });
+});
+
+describe("createGoogleChatProvider — stopping a turn", () => {
+  const tick = (ms = 10) => new Promise((r) => setTimeout(r, ms));
+
+  const slashStop = (sender = "users/42") => ({
+    type: "MESSAGE",
+    message: {
+      name: `spaces/X/messages/stop-${sender}`,
+      text: "/stop",
+      space: { name: "spaces/X" },
+      sender: { name: sender, displayName: "Luca", type: "HUMAN" },
+      annotations: [{ type: "SLASH_COMMAND", slashCommand: { commandName: "/stop", commandId: "1", type: "INVOKE" } }],
+    },
+  });
+  /** A click on the Stop button of the turn `turn` (the id its card carries). */
+  const stopClick = (turn: string, sender = "users/42") => ({
+    type: "CARD_CLICKED",
+    space: { name: "spaces/X" },
+    user: { name: sender, type: "HUMAN" },
+    message: { name: "spaces/X/messages/card0" },
+    action: { actionMethodName: "stop", parameters: [{ key: "stop", value: turn }] },
+  });
+
+  /**
+   * A provider whose turns behave as the core's do: "first" runs until its
+   * signal aborts, then ends with no answer; "boom" fails; "late" answers,
+   * then holds on until `releaseLate`; any other answers at once.
+   */
+  async function setup() {
+    const sub = fakeSubscription();
+    const started: string[] = [];
+    const signals: AbortSignal[] = [];
+    const sentMessages: string[] = [];
+    const cards: any[] = [];
+    const patches: Array<{ name: string; card: any }> = [];
+    let cardCount = 0;
+    let releaseLate!: () => void;
+    const late = new Promise<void>((r) => (releaseLate = r));
+    const provider = createGoogleChatProvider(
+      baseDeps({
+        subscriptionFn: () => sub as any,
+        sendCardFn: async (_space, card) => (cards.push(card), { name: `spaces/X/messages/card${cardCount++}` }),
+        updateCardFn: async (name, card) => (patches.push({ name, card }), { name }),
+        sendMessageFn: async (_space, text) => (sentMessages.push(text), { name: `spaces/X/messages/plain${sentMessages.length}` }),
+      }),
+    );
+    let reasoning = false;
+    await provider.start(async (turn, sink) => {
+      started.push(turn.text.split("\n").pop()!);
+      signals.push(turn.abortSignal!);
+      if (turn.text.endsWith("first")) {
+        if (reasoning) sink.onReasoningChunk?.("pensando", "r1");
+        await new Promise<void>((resolve) => turn.abortSignal!.addEventListener("abort", () => resolve()));
+        if (reasoning) sink.onReasoningEnd?.("r1", true);
+        sink.dispose();
+        return;
+      }
+      if (turn.text.endsWith("boom")) throw new Error("model down");
+      await sink.finalize(`answer to ${turn.text.split("\n").pop()}`);
+      if (turn.text.endsWith("late")) await late;
+    });
+    const emit = (data: unknown) => sub.emit("message", fakeMessage(data, []));
+    const say = (text: string, n: number) => emit(messageEvent({ messageName: `spaces/X/messages/${n}`, text }));
+    /** The turn id on the Stop button of the `i`-th card sent. */
+    const turnOn = (i: number): string =>
+      cards[i].sections.flatMap((sec: any) => sec.widgets).flatMap((w: any) => w.buttonList?.buttons ?? [])[0].onClick.action.parameters[0].value;
+    return { emit, say, started, signals, sentMessages, patches, turnOn, releaseLate, withReasoning: () => (reasoning = true) };
+  }
+
+  test("every turn gets its own abort signal", async () => {
+    const { say, signals } = await setup();
+    say("hello", 1);
+    await tick();
+    expect(signals).toHaveLength(1);
+    expect(signals[0]!.aborted).toBe(false);
+  });
+
+  test("a click on Stop aborts the running turn: no answer, the receiving card says Stopped", async () => {
+    const { say, emit, signals, sentMessages, patches, turnOn } = await setup();
+    say("first", 1);
+    await tick();
+    emit(stopClick(turnOn(0)));
+    await tick();
+
+    expect(signals[0]!.aborted).toBe(true);
+    expect(sentMessages).toEqual([]);
+    expect(patches).toHaveLength(1);
+    expect(patches[0]!.name).toBe("spaces/X/messages/card0");
+    expect(JSON.stringify(patches[0]!.card)).toContain("Stopped.");
+    expect(JSON.stringify(patches[0]!.card)).not.toContain('"function":"stop"');
+  });
+
+  test("/stop discards the messages queued behind the running turn", async () => {
+    const { say, emit, started, signals } = await setup();
+    say("first", 1);
+    await tick();
+    say("second", 2);
+    say("third", 3);
+    await tick();
+    emit(slashStop());
+    await tick(30);
+
+    expect(signals[0]!.aborted).toBe(true);
+    expect(started).toEqual(["first"]);
+  });
+
+  test("the plain /stop text works as the command does", async () => {
+    const { say, emit, signals } = await setup();
+    say("first", 1);
+    await tick();
+    emit(messageEvent({ messageName: "spaces/X/messages/2", text: "/stop" }));
+    await tick();
+    expect(signals[0]!.aborted).toBe(true);
+  });
+
+  test("after a stop, the next message runs as usual", async () => {
+    const { say, emit, started, sentMessages } = await setup();
+    say("first", 1);
+    await tick();
+    emit(slashStop());
+    await tick();
+    say("again", 2);
+    await tick();
+    expect(started).toEqual(["first", "again"]);
+    expect(sentMessages).toEqual(["answer to again"]);
+  });
+
+  test("/stop with nothing running says so, and never reaches the turn", async () => {
+    const { emit, started, sentMessages } = await setup();
+    emit(slashStop());
+    await tick();
+    expect(started).toEqual([]);
+    expect(sentMessages).toEqual(["Nothing to stop."]);
+  });
+
+  test("a Stop click with nothing running does nothing", async () => {
+    const { emit, started, sentMessages, patches } = await setup();
+    emit(stopClick("gone"));
+    await tick();
+    expect(started).toEqual([]);
+    expect(sentMessages).toEqual([]);
+    expect(patches).toEqual([]);
+  });
+
+  test("in a shared space, someone else's Stop or /stop doesn't touch the owner's turn", async () => {
+    const { say, emit, signals, sentMessages, turnOn } = await setup();
+    say("first", 1);
+    await tick();
+    emit(stopClick(turnOn(0), "users/7"));
+    emit(slashStop("users/7"));
+    await tick();
+    expect(signals[0]!.aborted).toBe(false);
+    expect(sentMessages).toEqual(["Nothing to stop."]);
+  });
+
+  test("an open reasoning card ends as Stopped, not Failed", async () => {
+    const { say, emit, withReasoning, sentMessages, patches, turnOn } = await setup();
+    withReasoning();
+    say("first", 1);
+    await tick();
+    emit(stopClick(turnOn(0)));
+    await tick();
+
+    const last = patches.at(-1)!;
+    expect(last.card.sections[0].header).toBe("Thinking… Stopped.");
+    expect(JSON.stringify(last.card)).not.toContain('"function":"stop"');
+    expect(sentMessages).toEqual([]);
+  });
+
+  // Review of #305: a button left on an older card (a turn that failed) must
+  // not stop the turn the same person has running now.
+  test("a click on an older turn's button doesn't stop the turn running now", async () => {
+    const { say, emit, signals, turnOn } = await setup();
+    say("hello", 1);
+    await tick();
+    const older = turnOn(0);
+    say("first", 2);
+    await tick();
+    emit(stopClick(older));
+    await tick();
+    expect(signals[1]!.aborted).toBe(false);
+    emit(stopClick(turnOn(1)));
+    await tick();
+    expect(signals[1]!.aborted).toBe(true);
+  });
+
+  // Review of #305: a turn that fails never reaches finalize, and its
+  // receiving card kept a live Stop button.
+  test("a turn that fails takes the Stop button off its receiving card", async () => {
+    const { say, patches, sentMessages } = await setup();
+    say("boom", 1);
+    await tick();
+    expect(patches).toHaveLength(1);
+    expect(patches[0]!.name).toBe("spaces/X/messages/card0");
+    expect(JSON.stringify(patches[0]!.card)).not.toContain('"function":"stop"');
+    expect(JSON.stringify(patches[0]!.card)).toContain("Message received…");
+    expect(sentMessages).toEqual([]);
+  });
+
+  // Review of #305: a stop landing after the answer was delivered, before the
+  // turn let go, sent "Stopped." after a real answer.
+  test("a stop after the answer was delivered says nothing more", async () => {
+    const { say, emit, sentMessages, releaseLate } = await setup();
+    say("late", 1);
+    await tick();
+    emit(slashStop());
+    await tick();
+    releaseLate();
+    await tick();
+    expect(sentMessages).toEqual(["answer to late"]);
+  });
+});
+
+describe("createSink — the Stop button", () => {
+  async function captureSink(overrides: Partial<GoogleChatProviderDeps> = {}) {
+    let capturedSink: TurnSink | undefined;
+    const sub = fakeSubscription();
+    const cards: any[] = [];
+    const patches: Array<{ name: string; card: any }> = [];
+    let n = 0;
+    const provider = createGoogleChatProvider(
+      baseDeps({
+        subscriptionFn: () => sub as any,
+        sendCardFn: async (_space, card) => (cards.push(card), { name: `spaces/X/messages/card${n++}` }),
+        updateCardFn: async (name, card) => (patches.push({ name, card }), { name }),
+        ...overrides,
+      }),
+    );
+    await provider.start(async (_turn, sink) => {
+      capturedSink = sink;
+    });
+    sub.emit("message", fakeMessage(messageEvent(), []));
+    await new Promise((r) => setTimeout(r, 20));
+    return { sink: capturedSink!, cards, patches };
+  }
+
+  /** The card's Stop button, if it has one, outside any collapsible section so it's always visible. */
+  const stopButton = (card: any) =>
+    card.sections
+      .filter((s: any) => !s.collapsible)
+      .flatMap((s: any) => s.widgets)
+      .flatMap((w: any) => w.buttonList?.buttons ?? [])
+      .find((b: any) => b.onClick?.action?.function === "stop");
+  const hasStop = (card: any) => JSON.stringify(card).includes('"function":"stop"');
+
+  test("the receiving card carries a visible Stop button", async () => {
+    const { cards } = await captureSink();
+    expect(stopButton(cards[0])).toEqual({
+      text: "Stop",
+      onClick: { action: { function: "stop", parameters: [{ key: "stop", value: expect.any(String) }] } },
+    });
+  });
+
+  test("a loading tool card and a loading reasoning card carry it, their final states don't", async () => {
+    const { sink, cards, patches } = await captureSink();
+    sink.onToolStart("Reading Jira…", "jira issue list", "tc-1");
+    sink.onReasoningChunk?.("hmm", "r1");
+    await new Promise((r) => setTimeout(r, 10));
+    expect(stopButton(cards[1])).toBeDefined(); // the tool card
+    expect(stopButton(patches[0]!.card)).toBeDefined(); // the receiving card turned into "Thinking…"
+
+    sink.onToolFinish?.("tc-1", "success");
+    sink.onReasoningEnd?.("r1", false);
+    await new Promise((r) => setTimeout(r, 10));
+    expect(hasStop(patches[1]!.card)).toBe(false);
+    expect(hasStop(patches[2]!.card)).toBe(false);
+  });
+
+  test.each(["failed", "pending"] as const)("a tool card's %s state has no Stop button", async (outcome) => {
+    const { sink, patches } = await captureSink();
+    sink.onToolStart("Reading Jira…", "jira issue list", "tc-1");
+    sink.onToolFinish?.("tc-1", outcome);
+    await new Promise((r) => setTimeout(r, 10));
+    expect(hasStop(patches[0]!.card)).toBe(false);
+  });
+
+  test("a receiving card no reasoning claimed loses its button when the answer comes, keeping its text", async () => {
+    const { sink, patches } = await captureSink();
+    await sink.finalize("done");
+    expect(patches).toHaveLength(1);
+    expect(patches[0]!.name).toBe("spaces/X/messages/card0");
+    expect(hasStop(patches[0]!.card)).toBe(false);
+    expect(JSON.stringify(patches[0]!.card)).toContain("Message received…");
+  });
+
+  test("a receiving card already turned into a reasoning card isn't patched again at the end", async () => {
+    const { sink, patches } = await captureSink();
+    sink.onReasoningChunk?.("hmm", "r1");
+    sink.onReasoningEnd?.("r1", false);
+    await sink.finalize("done");
+    expect(patches.map((p) => p.name)).toEqual(["spaces/X/messages/card0", "spaces/X/messages/card0"]);
   });
 });

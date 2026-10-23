@@ -127,7 +127,16 @@ export type InboundTurn = {
    * for the session, and `text` is ignored. With nothing kept, the turn ends
    * with no answer. */
   resumeAfterConfirm?: true;
-  /** When set, aborting it cancels the in-flight turn. Only the HTTP surface supplies one today (client disconnect); other channels leave it undefined. */
+  /**
+   * When set, aborting it cancels the turn: one still waiting never starts,
+   * and one running stops its model call. A cancelled turn isn't an answer:
+   * `finalize` is never called (an open reasoning block still gets
+   * `onReasoningEnd(id, true)`), the sink is still released with `dispose`,
+   * and the turn resolves instead of throwing. The history keeps the person's
+   * message with a marker in place of the half answer. HTTP aborts it when
+   * the client disconnects, Google Chat when the person presses Stop or sends
+   * `/stop`.
+   */
   abortSignal?: AbortSignal;
   /**
    * Set when `sessionKey` names a conversation its client reopens whenever it
