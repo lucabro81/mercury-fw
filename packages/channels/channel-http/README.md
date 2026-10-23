@@ -2,7 +2,7 @@
 
 Gives a [Mercury](https://github.com/lucabro81/mercury-fw) agent an HTTP surface to build a custom UI on: one conversational turn per request, streamed back as Server-Sent Events, plus confirmation and read-only routes over what the agent holds (conversations, the wiki, memory, its plugins).
 
-This version is written for version 6 of the channel contract, the one that brings the channels' texts in the person's language, and needs the framework at 0.54 or later: a core with an older contract skips it, and the log says why. `X-Time-Zone` and `PATCH /me` need the framework at 0.56 or later: an older core ignores the header and offers no `PATCH /me`. `GET /version` needs the framework at 0.58 or later: an older core gives the channel no version, and the route isn't there.
+This version is written for version 6 of the channel contract, the one that brings the channels' texts in the person's language, and needs the framework at 0.54 or later: a core with an older contract skips it, and the log says why. `X-Time-Zone` and `PATCH /me` need the framework at 0.56 or later: an older core ignores the header and offers no `PATCH /me`. `GET /version` needs the framework at 0.59 or later: an older core gives the channel no version, and the route isn't there.
 
 ```bash
 bun add @mercury-fw/channel-http
@@ -118,8 +118,8 @@ All `GET`, all JSON, all reporting state already held in-process. They need an a
 | `GET /memory/scroll?collection=<name>&limit=<n>&offset=<cursor>` | one page of your points in a collection kept per person (verbatim archive, episodic memory, semantic facts); `400` for any other collection |
 | `GET /openapi.yaml` | the OpenAPI document for this surface (`text/yaml`) |
 
+Conversation history and the conversation list are backed by the durable verbatim archive; they degrade to empty when the vector store is unreachable.
+
 ## `GET /version`
 
-Which Mercury this is, for a UI to show: `{ ok: true, version }`, the framework's version as `major.minor.patch` (`"0.58.0"`), the one of `@mercury-fw/core`, not this channel's own. It needs no token. It's there on a framework at 0.58 or later, the first whose core gives channels its version; on an older one the route doesn't exist (`404`).
-
-Conversation history and the conversation list are backed by the durable verbatim archive; they degrade to empty when the vector store is unreachable.
+Which Mercury this is, for a UI to show: `{ ok: true, version }`, the framework's version as `major.minor.patch` (`"0.59.0"`), the one of `@mercury-fw/core`, not this channel's own. It needs no token. It's there on a framework at 0.59 or later, the first whose core gives channels its version; on an older one the route doesn't exist (`404`).

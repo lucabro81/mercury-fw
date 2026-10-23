@@ -595,7 +595,7 @@ paths:
       description: >
         The framework's version, `major.minor.patch`, for a UI to show. Needs
         no bearer token. Mounted when the core gives the channel its version
-        (framework 0.58 or later); on an older core the route isn't there.
+        (framework 0.59 or later); on an older core the route isn't there.
       security: []
       responses:
         "200":
@@ -610,7 +610,7 @@ paths:
                   version:
                     type: string
                     pattern: '^\d+\.\d+\.\d+$'
-                    examples: ["0.58.0"]
+                    examples: ["0.59.0"]
   /openapi.yaml:
     get:
       summary: This OpenAPI document
