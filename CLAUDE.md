@@ -4,21 +4,24 @@ The plan for every unit of work lives in its GitHub issue (see Development workf
 
 ## Development workflow
 
-Every unit of work — a decision, a feature, or a bugfix — starts as a GitHub
-issue and ships through its own branch and PR. Nothing goes straight to `main`.
-This workflow is the single source of truth; the plan for a unit of work lives
-in its issue and never restates it.
+Every unit of work — a decision, a feature, or a bugfix — starts as a plan
+approved in plan mode, becomes a GitHub issue, and ships through its own branch
+and PR. Nothing goes straight to `main`. This workflow is the single source of
+truth; the plan for a unit of work lives in its issue and never restates it.
 
-1. **Issue first.** Open a GitHub issue before writing code. The decided plan
-   lives as a comment inside that issue — it's the source of truth and outlives
-   the PR.
-2. **Branch from the issue.** Create the working branch from the ticket with
+1. **Plan first.** Draft the plan and propose it in plan mode. Nothing else
+   starts, the issue included, until Luca has approved it there: an agreement
+   reached in chat is not an approved plan.
+2. **Issue with the approved plan.** Open a GitHub issue before writing code;
+   the approved plan lives inside it (in its body, or a comment) — it's the
+   source of truth and outlives the PR.
+3. **Branch from the issue.** Create the working branch from the ticket with
    GitHub's own "create a branch" feature — `gh issue develop <n> --base main
    --name feat/<n>-<slug>` — so branch and issue stay linked. Never commit to
    `main` directly.
-3. **TDD on the branch**, atomic commits, one changeset per issue; open a PR
+4. **TDD on the branch**, atomic commits, one changeset per issue; open a PR
    with `Closes #N`.
-4. **Review gate.** Before merge, run two subagents over the change, each by
+5. **Review gate.** Before merge, run two subagents over the change, each by
    its own subagent type and given only the issue number and the branch name,
    no conversation context: `cold-reviewer` (`.claude/agents/cold-reviewer.md`),
    which judges the code against the issue, and `docs-auditor`
@@ -26,9 +29,9 @@ in its issue and never restates it.
    is documented (READMEs, `CLAUDE.md`, the CLI's `--help`, the docs site, the
    changesets) and that the documentation matches the code. Resolve their
    findings in-branch and re-run both until each approves.
-5. **Merge on approval:** squash-merge (the issue auto-closes), sync `main`,
+6. **Merge on approval:** squash-merge (the issue auto-closes), sync `main`,
    delete the branch.
-6. **Close the loop.** At the end of each unit of work, update project memory
+7. **Close the loop.** At the end of each unit of work, update project memory
    with anything worth carrying to a future session, and bring `README.md` in
    line with the change whenever it affects what the README documents.
 
