@@ -28,7 +28,9 @@ a branch name. Gather everything yourself:
 1. What changed: `git fetch origin`, then `git diff origin/main...<branch> --stat`
    and `git diff origin/main...<branch>` (the local `main` may be stale). The
    issue for intent: `gh issue view <n> --json title,body,comments --jq '.title, .body, .comments[].body'`
-   (use `--json`: plain `gh issue view` can fail on this repo).
+   (use `--json`: plain `gh issue view` can fail on this repo). The working
+   tree belongs to the caller: never check out or switch a branch; read
+   another ref's files with `git show <ref>:<path>`.
 2. What's in scope: every package and app the diff touches, plus anything whose
    user-visible behaviour changed through a package it depends on (a change in
    `@mercury-fw/core` can change what every app does).
@@ -40,10 +42,24 @@ a branch name. Gather everything yourself:
    - the CLI's help, run from source, for the program and every command or
      subcommand in scope: `bun apps/cli/src/bin.ts --help`,
      `bun apps/cli/src/bin.ts <command> --help`, …;
-   - the docs site pages that cover what changed, under
-     `apps/docs/src/content/docs/` (concepts, getting started, reference, one
-     page per plugin under `plugins/`), and `apps/cli/src/catalog.ts`, which
-     feeds `mfw create` and the site's plugin catalog;
+   - the docs site pages under `apps/docs/src/content/docs/` (concepts,
+     getting started, reference, one page per plugin under `plugins/`), found
+     by searching, never picked by judgment: list every identifier the diff
+     adds, renames, removes or changes the behaviour of (file paths and
+     folders of an app's layout, commands and flags, config fields,
+     environment variables, exported names, package names, log lines and
+     messages people see), `git grep -n -F` each one across
+     `apps/docs/src/content/docs` (leaving out the generated `reference/api/`)
+     and every `README.md`, and read in full every page that matches. A page
+     that shows the old name or the old behaviour is in scope like any other;
+   - by area, whether or not the search matches them: a change to the app template or
+     `mfw create`, the plugin or channel contract, `@mercury-fw/kit`, or the
+     core's turn behaviour also brings in every page under
+     `getting-started/` and the `concepts/` page of that area (plugins,
+     channels, memory, people, confirmations, languages). Their code blocks
+     and the outputs they show must still be what the current code does;
+   - `apps/cli/src/catalog.ts`, which feeds `mfw create` and the site's plugin
+     catalog;
    - every changeset the branch adds under `.changeset/`: its text becomes the
      public changelog, so it must describe what changed, name the packages it
      actually touches, and carry no internal references;
@@ -66,8 +82,10 @@ names, examples (they must parse and do what the text says), file paths and
 names, output shown, behaviours ("refuses to load when…", "fails soft",
 "expires after…"), version or compatibility statements, and "verified live" or
 "run as written" statements (backed by something in the issue or the commits,
-otherwise flag them as unsupported). Anything stated but not implemented,
-implemented differently, or stale is a finding.
+otherwise flag them as unsupported). The branch's commit messages and the
+issue's "as built" comments are claims too: each fix or behaviour they say was
+made must be in the diff. Anything stated but not implemented, implemented
+differently, or stale is a finding.
 
 **B. Code → docs.** Walk what the diff added or changed. Every new or changed
 command, flag, config field, exported function, environment variable, default,
@@ -82,17 +100,35 @@ Also flag contradictions between two documents (a README against `CLAUDE.md`,
 `--help` against the CLI's README, the docs site against a README), and links
 or anchors that don't resolve.
 
+**Deferrals.** When the issue, a commit or the docs put documentation off
+("later", "part 2", "once X lands", "for now", a page marked Soon), find the
+issue that tracks it (`gh issue list --state open --search "<words>"
+--json number,title`, then read the candidate) and check its state with
+`gh issue view <n> --json state` — the issue under review included, whose
+state you never assume. A closed issue tracks nothing. A deferral that no
+open issue tracks is a finding (**untracked deferral**, side **docs**; the fix
+is opening that issue), even when the issue under review agreed to defer it: a
+deferral nobody tracks is documentation that never gets written.
+
 Don't review code quality, tests or style: only whether what's documented and
 what's implemented correspond.
 
-Return a verdict — **APPROVE** or **CHANGES REQUESTED** — followed by a
-numbered list of findings, each with: the direction (**A** a doc claim not
-backed by the code / **B** code not documented / **contradiction**), the doc
-location (`file:line`) and the code location (`file:line`) that disagree, what
-exactly differs, **which side is wrong** — **docs**, **code** (it doesn't do
-what the issue and the docs say it should), or **undecided** (the issue
-doesn't settle it) — with the evidence for that judgement, and the fix (which
-file to change and what it should say or do). If you checked an area
+Return, in this order:
+
+1. The verdict: **APPROVE** or **CHANGES REQUESTED**.
+2. **Searched**: every identifier you grepped and the pages each one matched,
+   then the pages the area rule added; every page listed is one you read in
+   full. A report without this section is incomplete.
+3. **Deferrals**: each one found, with the issue tracking it and that issue's
+   state as `gh` returned it, or "none found".
+4. A numbered list of findings, each with: the direction (**A** a doc claim
+   not backed by the code / **B** code not documented / **contradiction** /
+   **untracked deferral**), the doc location (`file:line`) and the code
+   location (`file:line`) that disagree, what exactly differs, **which side
+   is wrong** — **docs**, **code** (it doesn't do what the issue and the docs
+   say it should), or **undecided** (the issue doesn't settle it) — with the
+   evidence for that judgement, and the fix (which file to change and what it
+   should say or do). If you checked an area
 thoroughly and it's consistent, say so explicitly. Don't invent findings;
 quote the doc text you're judging.
 
