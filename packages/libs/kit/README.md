@@ -2,6 +2,8 @@
 
 What a [Mercury](https://github.com/lucabro81/mercury-fw) plugin author imports: the contract a tool plugin implements (`Plugin`, `PLUGIN_API_VERSION` and the types around them) and the one a channel implements (`ChannelPlugin`, `CHANNEL_API_VERSION`), in one place. It carries no runtime, so a plugin that depends on it doesn't pull the framework in.
 
+On Mercury's documentation site: [the contracts' reference](https://lucabro81.github.io/mercury-fw/reference/api/).
+
 A plugin whose CLI keeps its login in a folder under the home, reading it from there at runtime, declares that folder in its `package.json`, by default under `~/.config`:
 
 ```json

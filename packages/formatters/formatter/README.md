@@ -2,6 +2,8 @@
 
 Turns the lists a [Mercury](https://github.com/lucabro81/mercury-fw) plugin hands the user into text, applying rules the app writes in its own config. It holds no format of its own: without a rule, a kind of list isn't shown (the model still gets the data, and the log says which rule is missing).
 
+On Mercury's documentation site: [Plugins and skills](https://lucabro81.github.io/mercury-fw/concepts/plugins/).
+
 ```ts
 import { formatterPlugin, formatter } from "@mercury-fw/formatter";
 import { jiraPlugin, type JiraDisplays } from "@mercury-fw/plugin-jira";

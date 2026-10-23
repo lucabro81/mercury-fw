@@ -2,6 +2,8 @@
 
 The runtime of [Mercury](https://github.com/lucabro81/mercury-fw): it builds an agent from the config an app gives it and runs it, from the conversation loop to the channels. An app depends on it; a plugin doesn't (plugins build on [`@mercury-fw/kit`](https://www.npmjs.com/package/@mercury-fw/kit)).
 
+On Mercury's documentation site: [What Mercury is](https://lucabro81.github.io/mercury-fw/concepts/what-mercury-is/).
+
 The usual way to get it is scaffolding an app, which wires it up for you:
 
 ```bash
@@ -37,7 +39,7 @@ Qdrant being unreachable degrades memory, it doesn't stop the agent.
 
 A language model remembers nothing between one answer and the next. Every time it answers, it gets the whole conversation again as text, from the first message to the last, and reads it from scratch. That text has a size limit, the model's context window, so a long conversation can't be handed over forever as it is.
 
-Mercury keeps four things for every conversation:
+Mercury keeps four things for every conversation ([Memory](https://lucabro81.github.io/mercury-fw/concepts/memory/) on the documentation site explains them for someone new to it):
 
 - **the history**, the conversation as the model gets it, kept in memory while the conversation is active;
 - **its summary**: when the history grows past about 60,000 characters, its older part is replaced by a summary written by the model, and the conversation goes on from the summary plus the recent messages (this is called compaction);

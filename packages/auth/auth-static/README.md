@@ -2,6 +2,8 @@
 
 Tells a [Mercury](https://github.com/lucabro81/mercury-fw) agent who is calling through a fixed map from bearer token to user. It's meant for the test bed and e2e tests (two tokens, two users, and you can check that one doesn't see the other's things); for real users there's [`@mercury-fw/auth-oidc`](../auth-oidc).
 
+On Mercury's documentation site: [its page](https://lucabro81.github.io/mercury-fw/plugins/auth-static/).
+
 ```bash
 bun add @mercury-fw/auth-static
 ```

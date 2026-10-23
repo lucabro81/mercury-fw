@@ -40,7 +40,7 @@ const REPO_ONLY = [
   /(^|\/)tsconfig\.json$/,
   /^bin\//,
   /^\.turbo\//,
-  // The HTTP channel's docs build config (GitHub Pages), not needed at run time.
+  // The HTTP channel's Redocly config, read by the docs site's build, not needed at run time.
   /^redocly\.yaml$/,
   // The repo-only folders (a plugin's skill-training data), shared with the type build.
   ...REPO_ONLY_DIRS.map((dir) => new RegExp(`^${dir}/`)),

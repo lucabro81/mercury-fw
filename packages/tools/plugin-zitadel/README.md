@@ -2,6 +2,8 @@
 
 Gives a [Mercury](https://github.com/lucabro81/mercury-fw) agent read access to a [ZITADEL](https://zitadel.com) instance through the `zitadel` CLI: users (searched by email or username, or read by id), their project roles and identity provider links, organizations and projects. The pinned binary downloads when the package installs. This version is written for version 6 of the plugin contract, the one that asks every plugin for a description of what it does, and needs the framework at 0.55 or later: an older core skips it, and the log says why.
 
+On Mercury's documentation site: [its page](https://lucabro81.github.io/mercury-fw/plugins/plugin-zitadel/).
+
 ```bash
 bun add @mercury-fw/plugin-zitadel
 ```

@@ -2,6 +2,8 @@
 
 A [SearXNG](https://docs.searxng.org) instance as the search backend of [`@mercury-fw/plugin-web-search`](../plugin-web-search).
 
+On Mercury's documentation site: [the web search page](https://lucabro81.github.io/mercury-fw/plugins/plugin-web-search/).
+
 SearXNG is a metasearch engine you run yourself: it asks the search engines it's set up for and merges what they answer, so queries need no API key and go nowhere else. The backend calls its `/search` with `format=json` and hands the plugin title, URL and snippet of each result.
 
 ```ts

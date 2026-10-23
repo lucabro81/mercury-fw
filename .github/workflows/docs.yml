@@ -4,7 +4,7 @@ name: Docs site
 # its unit tests (catalog, changelog, theme contrast), the typecheck, the build,
 # and on the built site an axe audit of every kind of page in both themes plus
 # the internal links. A failure blocks the change. Publishing the site is not
-# here: it will run after a release, from publish.yml.
+# here: publish.yml does it after each release.
 
 on:
   pull_request:

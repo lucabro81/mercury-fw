@@ -2,6 +2,8 @@
 
 Gives a [Mercury](https://github.com/lucabro81/mercury-fw) agent an HTTP surface to build a custom UI on: one conversational turn per request, streamed back as Server-Sent Events, plus confirmation and read-only routes over what the agent holds (conversations, the wiki, memory, its plugins).
 
+On Mercury's documentation site: [its page](https://lucabro81.github.io/mercury-fw/plugins/channel-http/).
+
 This version is written for version 6 of the channel contract, the one that brings the channels' texts in the person's language, and needs the framework at 0.59 or later, the first whose core gives channels its version (`GET /version`). A core with an older contract skips it, and the log says why.
 
 ```bash
@@ -35,7 +37,7 @@ It's active whenever it's declared in `mercury.config.ts`'s `channels` with an a
 
 **CORS** is enabled on every response and every route answers an `OPTIONS` preflight, so a browser UI on another origin can call it. The allowed origin is `HTTP_SURFACE_CORS_ORIGIN` (default `*`: the token travels in a header, never in a cookie the browser would send on its own).
 
-The full contract is described by an **OpenAPI document**, served raw at `GET /openapi.yaml` and published as a rendered docs page on GitHub Pages (see `packages/channels/channel-http/openapi.yaml`, the single source of truth).
+The full contract is described by an **OpenAPI document**, served raw at `GET /openapi.yaml` and published as [the HTTP API reference](https://lucabro81.github.io/mercury-fw/reference/http-api/) on the documentation site (see `packages/channels/channel-http/openapi.yaml`, the single source of truth).
 
 All responses are JSON except `POST /turn`, which streams `text/event-stream`. Every JSON response is either `{ "ok": true, ... }` or, on error, `{ "ok": false, "error": "<message>" }` with HTTP `400`/`401`/`500`.
 

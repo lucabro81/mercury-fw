@@ -2,6 +2,8 @@
 
 A user directory for [Mercury](https://github.com/lucabro81/mercury-fw) that lists the people by hand: who they are, the identities the channels know them by, and their roles. For a small instance whose admin keeps the list, and for the test bed.
 
+On Mercury's documentation site: [its page](https://lucabro81.github.io/mercury-fw/plugins/directory-static/).
+
 ```bash
 bun add @mercury-fw/directory-static
 ```

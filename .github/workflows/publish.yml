@@ -9,7 +9,10 @@ name: Publish to npm
 # published and does nothing.
 #
 # Then the releases job creates the GitHub Release of each tag on the
-# release commit (scripts/github-releases.ts).
+# release commit (scripts/github-releases.ts), and the site job publishes
+# the docs site (apps/docs) on GitHub Pages, its changelog included: only
+# when packages were published, so the site always describes what is on npm.
+# One-time setup: repo Settings -> Pages -> Source = "GitHub Actions".
 #
 # No token: npm trusts this workflow as the packages' publisher (trusted
 # publishing, OIDC), configured per package with `npm trust github`; a
@@ -28,6 +31,10 @@ on:
         description: "Dry run: pack and check everything, publish nothing"
         type: boolean
         default: true
+      deploy_site:
+        description: "Deploy the docs site from main, whatever gets published (a release whose site job didn't run)"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -73,6 +80,10 @@ jobs:
     permissions:
       contents: read
       id-token: write
+    # How many packages this run published: the site job runs only after a
+    # release, never for a push that published nothing.
+    outputs:
+      published: ${{ steps.publish.outputs.published }}
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
@@ -86,6 +97,7 @@ jobs:
       - name: Install
         run: bun install --frozen-lockfile
       - name: Publish
+        id: publish
         run: bun scripts/publish.ts
 
   # The GitHub Release of each tag on the release commit, the unified
@@ -111,3 +123,51 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: bun scripts/github-releases.ts
+
+  # The docs site on GitHub Pages, built from the release commit after its
+  # Releases exist, so the changelog and the footer's version show it. The
+  # HTTP API reference is part of the build (apps/docs/scripts/api.ts). Only
+  # the build: docs.yml already checks every change to the site.
+  site:
+    needs: [check, publish, releases]
+    # Normally after a run that published packages, its Releases created. A
+    # dispatch from main with deploy_site rebuilds it on its own, dry run or
+    # not, when a release's run didn't: a publish that failed halfway (the
+    # rerun publishes nothing) or a releases job that failed.
+    if: >-
+      ${{ !cancelled() && (
+        (inputs.deploy_site && github.ref == 'refs/heads/main' && needs.check.result == 'success') ||
+        (needs.publish.result == 'success' && needs.releases.result == 'success' && needs.publish.outputs.published > 0)
+      ) }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      # The whole history, for the tags that date the changelog's releases.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.x"
+      - name: Install
+        run: bun install --frozen-lockfile
+      - name: Build the site
+        working-directory: apps/docs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASES_REQUIRED: "1"
+        run: bun run build
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: apps/docs/dist
+      - id: deployment
+        uses: actions/deploy-pages@v4

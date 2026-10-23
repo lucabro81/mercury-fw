@@ -2,6 +2,8 @@
 
 Puts a [Mercury](https://github.com/lucabro81/mercury-fw) agent on Google Chat as a registered Chat app: it receives messages through a Pub/Sub subscription and replies through the Chat API, with status cards while it works and a button for the actions that need confirmation.
 
+On Mercury's documentation site: [its page](https://lucabro81.github.io/mercury-fw/plugins/channel-google-chat/).
+
 ```bash
 bun add @mercury-fw/channel-google-chat
 ```

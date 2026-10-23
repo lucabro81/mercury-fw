@@ -2,6 +2,8 @@
 
 `mfw`, the command-line tool of [Mercury](https://github.com/lucabro81/mercury-fw): it creates an app, then runs it. Every command except `create` works from inside an app, meaning its folder or any folder under it (the one holding `mercury.config.ts`), and wraps the `docker compose` calls that app needs, so you don't have to remember them; each section below says which calls those are. New commands get documented here as they're added.
 
+On Mercury's documentation site: [the `mfw` reference](https://lucabro81.github.io/mercury-fw/reference/cli/).
+
 ## Table of contents
 
 - [Getting it](#getting-it)
