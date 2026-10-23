@@ -117,8 +117,8 @@ words its answer its own way):
 [~?k tokens] > Hi! Who are you?
 [turn] start
 Thinking…
-I'm Mercury, your internal assistant. I can look up the team's wiki (conventions, docs, project status), keep personal notes for you under personal/notes/, and help you with questions about how the team works. If you want, I can also share one of your notes with the team when you explicitly ask to.
-What can I help you with?[turn] done in 8.5s: 1 step, 0 tool calls, reasoning 332 chars, answer 326 chars, finish stop
+I'm Mercury, an internal assistant for your team. I can search and read the shared wiki, keep personal notes for you, and help with questions about team conventions, project status, and workflows.
+[turn] done in 7.1s: 1 step, 0 tool calls, reasoning 232 chars, answer 196 chars, finish stop
 [~2k/~262k tokens] >
 ```
 
@@ -173,7 +173,12 @@ Using guest_wifi…
 [tool] guest_wifi({})
 [tool result] {"ok":true,"network":"Office-Guest","password":"correct-horse-battery"}
 Thinking…
-Connect to the network "Office-Guest" and use the password "correct-horse-battery".[turn] done in 6.2s: 2 steps, 1 tool call, reasoning 122 chars, answer 83 chars, finish stop
+Guest Wi-Fi:
+- Network: Office-Guest
+- Password: correct-horse-battery
+
+Just connect to "Office-Guest" and enter the password and you should be online.
+[turn] done in 15.9s: 2 steps, 1 tool call, reasoning 147 chars, answer 151 chars, finish stop
 ```
 
 `Using guest_wifi…` is the status line the person sees while the tool runs, and the `[tool]` lines show you the
