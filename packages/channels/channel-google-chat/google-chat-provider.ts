@@ -509,7 +509,7 @@ export function createGoogleChatProvider(deps: GoogleChatProviderDeps): GoogleCh
   // concurrently. Scoped by sessionKey only (not global), so a slow turn
   // for one user/space never blocks a different one's.
   const busySessions = new Set<string>();
-  const queuedTurns = new Map<string, Array<(signal: AbortSignal) => Promise<void>>>();
+  const queuedTurns = new Map<string, Array<(signal: AbortSignal, turnId: string) => Promise<void>>>();
   // The running turn, per session: its id (on its cards' Stop buttons) and the abort a stop fires.
   const runningTurns = new Map<string, { id: string; controller: AbortController }>();
   // The turn handler `start` was given, for a turn a card click resumes.
