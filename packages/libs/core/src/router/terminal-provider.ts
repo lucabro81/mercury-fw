@@ -100,11 +100,19 @@ export function createTerminalProvider(deps: TerminalProviderDeps): Provider {
           const reasoningIdsStarted = new Set<string>();
           // Everything but the answer text is an aside: printed as it comes,
           // but not part of the answer the REPL compares with the result.
-          const aside = (chunk: string) => onChunk(chunk, { aside: true });
+          // Whether the last thing written this turn left its line open: the
+          // answer streams with no newline at the end, and the turn's log
+          // line follows finalize, so finalize closes it.
+          let lineOpen = false;
+          const write = (chunk: string, opts?: { aside: true }) => {
+            if (chunk !== "") lineOpen = !chunk.endsWith("\n");
+            onChunk(chunk, opts);
+          };
+          const aside = (chunk: string) => write(chunk, { aside: true });
           const dim = (label: string) => aside(`\x1b[2m\x1b[3m${label}\x1b[0m\n`);
           const sink: TurnSink = {
             onToolStart: dim,
-            onTextChunk: (chunk) => onChunk(chunk),
+            onTextChunk: (chunk) => write(chunk),
             // Only ever fires for a model that actually supports Ollama's
             // extended thinking (see src/index.ts's OLLAMA_THINK) — a
             // non-reasoning model means this is simply never called, so
@@ -140,6 +148,7 @@ export function createTerminalProvider(deps: TerminalProviderDeps): Provider {
             finalize: async (text, info) => {
               finalText = text;
               pendingNote = info?.pendingNote;
+              if (lineOpen) aside("\n");
             },
             dispose: () => {},
           };
