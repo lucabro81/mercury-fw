@@ -172,7 +172,7 @@
         "typescript": "^6.0.3",
       },
       "peerDependencies": {
-        "@mercury-fw/channel-types": ">=0.54.0 <1.0.0",
+        "@mercury-fw/channel-types": ">=0.59.0 <1.0.0",
       },
     },
     "packages/config/typescript-config": {

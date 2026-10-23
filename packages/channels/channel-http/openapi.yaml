@@ -594,8 +594,7 @@ paths:
       summary: Which Mercury this is
       description: >
         The framework's version, `major.minor.patch`, for a UI to show. Needs
-        no bearer token. Mounted when the core gives the channel its version
-        (framework 0.59 or later); on an older core the route isn't there.
+        no bearer token.
       security: []
       responses:
         "200":
