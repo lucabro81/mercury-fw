@@ -2,6 +2,8 @@
 
 Tells a [Mercury](https://github.com/lucabro81/mercury-fw) agent who is calling by verifying the bearer token an OpenID Connect issuer gave them. Zitadel, Google, Keycloak and the rest work the same way: which one is only configuration.
 
+On Mercury's documentation site: [its page](https://lucabro81.github.io/mercury-fw/plugins/auth-oidc/).
+
 ```bash
 bun add @mercury-fw/auth-oidc
 ```

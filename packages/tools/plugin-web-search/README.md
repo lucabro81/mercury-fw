@@ -2,6 +2,8 @@
 
 Lets the assistant search the web and read the pages it finds, reading a page only on a host someone allowed.
 
+On Mercury's documentation site: [its page](https://lucabro81.github.io/mercury-fw/plugins/plugin-web-search/).
+
 ## Using it
 
 The plugin doesn't search by itself: it takes a backend, a package of its own that turns a query into results ([`@mercury-fw/web-search-searxng`](../web-search-searxng) for a SearXNG instance, the one `mfw create` sets up next to the app).

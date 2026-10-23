@@ -2,6 +2,8 @@
 
 Gives a [Mercury](https://github.com/lucabro81/mercury-fw) agent Jira, through the `jira` CLI: searching with JQL, reading an issue and its transitions, finding people and projects, creating issues, moving and assigning them, commenting (mentions included), and deleting one (only after the user confirms it with the token Mercury hands back). The pinned `jira` binary downloads when the package installs, so nothing else needs installing. This version is written for version 6 of the plugin contract, the one that asks every plugin for a description of what it does, and needs the framework at 0.55 or later: an older core skips it, and the log says why.
 
+On Mercury's documentation site: [its page](https://lucabro81.github.io/mercury-fw/plugins/plugin-jira/).
+
 ```bash
 bun add @mercury-fw/plugin-jira
 ```

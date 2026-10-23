@@ -2,6 +2,8 @@
 
 Lets a [Mercury](https://github.com/lucabro81/mercury-fw) agent look up users in an Atlassian organization, through the `atlassian-admin` CLI (read-only). The pinned binary downloads when the package installs. This version is written for version 6 of the plugin contract, the one that asks every plugin for a description of what it does, and needs the framework at 0.55 or later: an older core skips it, and the log says why.
 
+On Mercury's documentation site: [its page](https://lucabro81.github.io/mercury-fw/plugins/plugin-atlassian-admin/).
+
 ```bash
 bun add @mercury-fw/plugin-atlassian-admin
 ```

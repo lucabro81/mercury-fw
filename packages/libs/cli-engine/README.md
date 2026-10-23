@@ -2,6 +2,8 @@
 
 For [Mercury](https://github.com/lucabro81/mercury-fw) plugins that work through a command-line tool: it turns the command line the model writes into an argv array of its own (never a shell), runs it only when it matches the plugin's allowlist, and stages the commands the allowlist marks as needing confirmation behind a one-time token instead of running them.
 
+On Mercury's documentation site: [Plugins and skills](https://lucabro81.github.io/mercury-fw/concepts/plugins/).
+
 The allowlist is a JSON file the plugin ships and validates when it loads:
 
 ```json

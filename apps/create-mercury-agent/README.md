@@ -2,6 +2,8 @@
 
 Scaffolds a [Mercury](https://github.com/lucabro81/mercury-fw) app:
 
+On Mercury's documentation site: [Your first agent](https://lucabro81.github.io/mercury-fw/getting-started/first-agent/).
+
 ```bash
 bun create mercury-agent my-agent
 ```

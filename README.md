@@ -2,6 +2,8 @@
 
 Mercury is a framework for building your own agent on Bun and the Vercel AI SDK: you declare what the agent is made of in one config file, and the framework runs everything around it, from the conversation loop to the channels it talks through.
 
+The documentation, from a first agent to the reference, is at [lucabro81.github.io/mercury-fw](https://lucabro81.github.io/mercury-fw/).
+
 - [How it works](#how-it-works)
 - [Quick start](#quick-start)
 - [Composing an app](#composing-an-app)

@@ -2,6 +2,8 @@
 
 Gives a [Mercury](https://github.com/lucabro81/mercury-fw) agent read-only access to Bitbucket pull requests (listing them, reading one), through the `bitbucket` CLI. The pinned binary downloads when the package installs. This version is written for version 6 of the plugin contract, the one that asks every plugin for a description of what it does, and needs the framework at 0.55 or later: an older core skips it, and the log says why.
 
+On Mercury's documentation site: [its page](https://lucabro81.github.io/mercury-fw/plugins/plugin-bitbucket/).
+
 ```bash
 bun add @mercury-fw/plugin-bitbucket
 ```
