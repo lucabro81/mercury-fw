@@ -31,6 +31,10 @@ on:
         description: "Dry run: pack and check everything, publish nothing"
         type: boolean
         default: true
+      deploy_site:
+        description: "Deploy the docs site even if nothing gets published (a release whose site job didn't run)"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -126,7 +130,10 @@ jobs:
   # the build: docs.yml already checks every change to the site.
   site:
     needs: [publish, releases]
-    if: ${{ needs.publish.outputs.published > 0 }}
+    # A dispatch with deploy_site rebuilds it from main when a release's own
+    # run didn't (a publish that failed halfway, then published nothing on
+    # the rerun).
+    if: ${{ needs.publish.outputs.published > 0 || inputs.deploy_site }}
     runs-on: ubuntu-latest
     permissions:
       contents: read

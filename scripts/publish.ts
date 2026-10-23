@@ -15,7 +15,9 @@
  * no token). Never `changeset publish` or `npm publish` on the folder: both
  * leave `workspace:*` in the published manifests. Locally, authentication is
  * the registry's usual one (an `.npmrc` token). Without `--tag`, versions go
- * to `latest`, which is where the CLI looks plugins up.
+ * to `latest`, which is where the CLI looks plugins up. In GitHub Actions it
+ * also writes how many packages it published (`published=<n>`) to
+ * `$GITHUB_OUTPUT`: `publish.yml` deploys the docs site only when it isn't 0.
  */
 import { appendFileSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";

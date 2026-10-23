@@ -153,8 +153,8 @@ function preflight(origin: string): Response {
 
 /**
  * Serves the OpenAPI document that describes this surface — the single source
- * of truth in this package's `openapi.yaml`, also rendered as the GitHub Pages
- * API docs. Served raw as `text/yaml` (no YAML parser needed at runtime); most
+ * of truth in this package's `openapi.yaml`, also rendered as the docs site's
+ * HTTP API reference. Served raw as `text/yaml` (no YAML parser needed at runtime); most
  * tooling (Redoc, Swagger UI, Postman) reads YAML directly.
  */
 export function openApiResponse(corsOrigin = "*"): Response {
