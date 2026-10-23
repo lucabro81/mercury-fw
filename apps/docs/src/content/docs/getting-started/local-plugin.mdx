@@ -125,11 +125,14 @@ Then `bunx mfw restart`, and ask the agent about the Wi-Fi: [step 6 of Your firs
 shows what comes back.
 
 ```text title="Prompt for your coding agent"
-In my Mercury app, write a local plugin in src/plugins/guest-wifi.ts with @mercury-fw/kit, ai and zod: one tool,
-guest_wifi, returning the network name and password read from GUEST_WIFI_NAME and GUEST_WIFI_PASSWORD in the
-plugin's build context, contributing nothing and logging why when either is missing. Declare it in
-mercury.config.ts, add both variables to .env.example with empty values, then run `bun run typecheck`.
-Don't print the contents of .env.
+In my Mercury app, run `bun add @mercury-fw/kit ai zod`, then write a local plugin in src/plugins/guest-wifi.ts
+exporting guestWifiPlugin, typed as Plugin from @mercury-fw/kit (its fields are documented in
+node_modules/@mercury-fw/plugin-types/index.ts): apiVersion PLUGIN_API_VERSION, name "guest-wifi", a one-line
+description, actsAs "anyone", a systemPromptFragment saying when to use the tool, and one tool, guest_wifi, built
+with tool() from ai with an empty zod input, returning the network name and password that build reads from
+ctx.env.GUEST_WIFI_NAME and ctx.env.GUEST_WIFI_PASSWORD; when either is missing, build logs why with ctx.log and
+returns {}. Declare it in mercury.config.ts, add both variables to .env.example with empty values, then run
+`bun run typecheck`. Don't print the contents of .env.
 ```
 
 ## A package of its own
@@ -219,8 +222,9 @@ Ran 2 tests across 1 file. [63.00ms]
 
 ```text title="Prompt for your coding agent"
 In my Mercury app, move the local plugin in src/plugins/guest-wifi.ts into its own workspace package,
-plugins/guest-wifi, named @my-agent/plugin-guest-wifi: index.ts unchanged, a package.json that is private, of type
-module, exports ./index.ts and depends on @mercury-fw/kit, ai and zod at the app's versions. Add it to the app's
+plugins/guest-wifi, named @my-agent/plugin-guest-wifi: the file becomes plugins/guest-wifi/index.ts, unchanged
+(move it with mv: it may not be committed yet), next to a package.json that is private, of type module, has
+"exports": { ".": "./index.ts" } and depends on @mercury-fw/kit, ai and zod at the app's versions. Add it to the app's
 dependencies as workspace:*, import it by that name in mercury.config.ts, and write index.test.ts next to it testing
 that build contributes nothing without GUEST_WIFI_NAME and GUEST_WIFI_PASSWORD and that guest_wifi returns both.
 Run bun install, `bun run typecheck` and `bun run test`.
