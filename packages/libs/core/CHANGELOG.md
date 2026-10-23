@@ -1,5 +1,20 @@
 # @mercury-fw/core
 
+## 0.59.0
+
+### Minor Changes
+
+- 7c9a038: - Channels get the framework's version on their runtime context (`ctx.frameworkVersion`, `major.minor.patch`), for a channel that tells people which Mercury they're talking to.
+
+### Patch Changes
+
+- Updated dependencies [7c9a038]
+  - @mercury-fw/channel-types@0.59.0
+  - @mercury-fw/confirm-engine@0.59.0
+  - @mercury-fw/plugin-types@0.59.0
+  - @mercury-fw/cli-engine@0.59.0
+  - @mercury-fw/utils@0.59.0
+
 ## 0.58.0
 
 ### Minor Changes

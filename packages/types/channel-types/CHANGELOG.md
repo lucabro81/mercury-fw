@@ -1,5 +1,15 @@
 # @mercury-fw/channel-types
 
+## 0.59.0
+
+### Minor Changes
+
+- 7c9a038: - Channels get the framework's version on their runtime context (`ctx.frameworkVersion`, `major.minor.patch`), for a channel that tells people which Mercury they're talking to.
+
+### Patch Changes
+
+- @mercury-fw/plugin-types@0.59.0
+
 ## 0.58.0
 
 ### Minor Changes

@@ -1,5 +1,12 @@
 # @mercury-fw/channel-http
 
+## 0.13.0
+
+### Minor Changes
+
+- 7c9a038: - `GET /version` answers the framework's version (`{ ok: true, version: "0.59.0" }`) with no token, for a UI to show which Mercury it's talking to.
+  - The channel now needs the framework at 0.59 or later (peer range `>=0.59.0 <1.0.0`), the first whose core gives channels its version.
+
 ## 0.12.0
 
 ### Minor Changes
