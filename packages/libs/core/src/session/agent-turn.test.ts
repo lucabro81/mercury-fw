@@ -1,5 +1,5 @@
 import { describe, it, expect } from "bun:test";
-import { runTurn, buildGenerateTextParams, buildStreamTextParams } from "./agent-turn.ts";
+import { runTurn, buildGenerateTextParams, buildStreamTextParams, ABORTED_MARKER } from "./agent-turn.ts";
 import { CORE_MESSAGES } from "../i18n/core-messages.ts";
 
 /** The stand-in for an answer the model didn't write, in English. */
@@ -1006,5 +1006,116 @@ describe("runTurn — resumed after a confirmation", () => {
 
     const result = seen[seen.length - 1] as { content: Array<{ output: unknown }> };
     expect(result.content[0]?.output).toEqual({ type: "json", value: null });
+  });
+});
+
+// Regression for #242: an aborted call (the person stopped it, or the stall
+// watchdog fired) used to leave its half answer in the history, so the next
+// turn saw an answer the person never received.
+describe("runTurn — an aborted call", () => {
+  it("records the aborted marker instead of the half answer, on the streaming path", async () => {
+    const ac = new AbortController();
+    async function* fakeStream() {
+      yield { type: "text-delta", id: "1", text: "half an ans" };
+      ac.abort();
+      yield { type: "abort" };
+    }
+    const history = createSessionHistory(neverSummarize);
+    const text = await runTurn(history, "hi", {
+      model: "fake-model" as never,
+      tools: {},
+      system: SYSTEM,
+      streamTextFn: async () => ({ stream: fakeStream() }),
+      onTextChunk: () => {},
+      abortSignal: ac.signal,
+    });
+    expect(text).toBe("");
+    expect(history.getMessages()).toEqual([
+      { role: "user", content: "hi" },
+      { role: "assistant", content: ABORTED_MARKER },
+    ]);
+  });
+
+  it("records the aborted marker instead of the half answer, on the non-streaming path", async () => {
+    const ac = new AbortController();
+    const history = createSessionHistory(neverSummarize);
+    const text = await runTurn(history, "hi", {
+      model: "fake-model" as never,
+      tools: {},
+      system: SYSTEM,
+      generateTextFn: async () => {
+        ac.abort();
+        return { text: "half an ans" };
+      },
+      abortSignal: ac.signal,
+    });
+    expect(text).toBe("");
+    expect(history.getMessages()).toEqual([
+      { role: "user", content: "hi" },
+      { role: "assistant", content: ABORTED_MARKER },
+    ]);
+  });
+
+  it("records the marker, and still throws, when the aborted stream throws", async () => {
+    const ac = new AbortController();
+    async function* fakeStream() {
+      yield { type: "text-delta", id: "1", text: "half" };
+      ac.abort();
+      throw new Error("aborted");
+    }
+    const history = createSessionHistory(neverSummarize);
+    await expect(
+      runTurn(history, "hi", {
+        model: "fake-model" as never,
+        tools: {},
+        system: SYSTEM,
+        streamTextFn: async () => ({ stream: fakeStream() }),
+        onTextChunk: () => {},
+        abortSignal: ac.signal,
+      }),
+    ).rejects.toThrow("aborted");
+    expect(history.getMessages()).toEqual([
+      { role: "user", content: "hi" },
+      { role: "assistant", content: ABORTED_MARKER },
+    ]);
+  });
+
+  it("leaves a stream that throws without an abort as it was", async () => {
+    async function* fakeStream() {
+      yield { type: "text-delta", id: "1", text: "half" };
+      throw new Error("broken");
+    }
+    const history = createSessionHistory(neverSummarize);
+    await expect(
+      runTurn(history, "hi", {
+        model: "fake-model" as never,
+        tools: {},
+        system: SYSTEM,
+        streamTextFn: async () => ({ stream: fakeStream() }),
+        onTextChunk: () => {},
+        abortSignal: new AbortController().signal,
+      }),
+    ).rejects.toThrow("broken");
+    expect(history.getMessages()).toEqual([{ role: "user", content: "hi" }]);
+  });
+
+  it("doesn't report the pending note for an aborted call", async () => {
+    const ac = new AbortController();
+    let noted = false;
+    await runTurn(createSessionHistory(neverSummarize), "hi", {
+      model: "fake-model" as never,
+      tools: {},
+      system: SYSTEM,
+      generateTextFn: async (params: { onStepEnd?: (step: StepInfo) => void }) => {
+        params.onStepEnd?.(PENDING_CONFIRMATION_STEP);
+        ac.abort();
+        return { text: "" };
+      },
+      abortSignal: ac.signal,
+      onPendingNote: () => {
+        noted = true;
+      },
+    });
+    expect(noted).toBe(false);
   });
 });

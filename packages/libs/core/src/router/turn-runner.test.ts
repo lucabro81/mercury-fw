@@ -1838,7 +1838,7 @@ describe("createTurnRunner: turn log", () => {
       abort.abort();
       throw new Error("aborted");
     });
-    await expect(runner(baseTurn({ logPrefix: "[p] ", abortSignal: abort.signal }), baseSink())).rejects.toThrow();
+    await runner(baseTurn({ logPrefix: "[p] ", abortSignal: abort.signal }), baseSink());
     expect(lines).toEqual(["[p] [turn] start", "[p] [turn] cancelled after 0.0s"]);
     expect(stoppedCount()).toBe(1);
   });
@@ -2004,7 +2004,7 @@ describe("createTurnRunner: stall watchdog", () => {
         return hangs(deps.abortSignal);
       },
     });
-    await expect(runner(baseTurn({ principal: verified("u1"), abortSignal: controller.signal }), streaming())).rejects.toThrow("aborted");
+    await runner(baseTurn({ principal: verified("u1"), abortSignal: controller.signal }), streaming());
     expect(lines.at(-1)).toMatch(/\[turn\] cancelled after/);
   });
 
@@ -2096,7 +2096,7 @@ describe("createTurnRunner: stall watchdog", () => {
         return hangs(deps.abortSignal);
       },
     });
-    await expect(runner(baseTurn({ principal: verified("u1"), abortSignal: controller.signal }), streaming())).rejects.toThrow("aborted");
+    await runner(baseTurn({ principal: verified("u1"), abortSignal: controller.signal }), streaming());
     expect(lines.at(-1)).toMatch(/\[turn\] cancelled after/);
   });
 });
@@ -2445,5 +2445,79 @@ describe("createTurnRunner: the turn's time", () => {
     const { runner, calls } = setup({ stamp: false });
     await runner(baseTurn({ principal: verified("u1") }), baseSink());
     expect(calls).toEqual(["hello"]);
+  });
+});
+
+// A turn the person stops (#305) isn't an answer: the AI SDK doesn't throw on
+// abort, it returns what it had, and that half answer used to be finalized,
+// run through the guards and archived as if the turn had ended (#242).
+describe("createTurnRunner: a turn the person cancels", () => {
+  function setup(run: (signal: AbortSignal | undefined) => Promise<string>) {
+    const lines: string[] = [];
+    const ran: string[] = [];
+    const runner = createTurnRunner({
+      model: {} as any,
+      systemPrompts: { singleUser: "s", multiUser: "m" },
+      buildTools: () => ({}),
+      getOrCreateHistory: () => fakeHistory(),
+      trackSession: () => void ran.push("track"),
+      registerCaptureCallback: () => {},
+      maybeCapture: async () => void ran.push("capture"),
+      processToolCorrections: async () => {},
+      logStep: () => {},
+      logTurnFn: (line) => lines.push(line),
+      heartbeat: () => () => {},
+      captureVerbatim: async () => void ran.push("verbatim"),
+      postTurnGuards: [
+        {
+          statusLabel: () => "Checking…",
+          statusId: "guard-1",
+          shouldRun: () => true,
+          run: async (text) => {
+            ran.push("guard");
+            return { text, outcome: "success" };
+          },
+        },
+      ],
+      runTurnFn: async (_h, _t, deps) => run(deps.abortSignal),
+    });
+    return { runner, lines, ran };
+  }
+
+  test("when the model call returns what it had: nothing is finalized, guarded or archived, and the sink is released", async () => {
+    const controller = new AbortController();
+    const { runner, lines, ran } = setup(async () => {
+      controller.abort();
+      return "";
+    });
+    const sink = baseSink();
+    await runner(baseTurn({ principal: verified("u1"), logPrefix: "[p] ", abortSignal: controller.signal }), sink);
+    expect(sink.finalized).toEqual([]);
+    expect(sink.disposed).toBe(true);
+    expect(ran.filter((r) => r !== "track")).toEqual([]);
+    expect(lines.at(-1)).toMatch(/^\[p\] \[turn\] cancelled after [\d.]+s$/);
+  });
+
+  test("when the model call throws: it resolves, nothing is finalized, the sink is released", async () => {
+    const controller = new AbortController();
+    const { runner, lines, ran } = setup(async () => {
+      controller.abort();
+      throw new Error("aborted");
+    });
+    const sink = baseSink();
+    await runner(baseTurn({ principal: verified("u1"), abortSignal: controller.signal }), sink);
+    expect(sink.finalized).toEqual([]);
+    expect(sink.disposed).toBe(true);
+    expect(ran.filter((r) => r !== "track")).toEqual([]);
+    expect(lines.at(-1)).toMatch(/\[turn\] cancelled after/);
+  });
+
+  test("a signal that never aborts leaves the turn as it was", async () => {
+    const { runner, ran } = setup(async () => "the answer");
+    const sink = baseSink();
+    await runner(baseTurn({ principal: verified("u1"), abortSignal: new AbortController().signal }), sink);
+    expect(sink.finalized).toEqual(["the answer"]);
+    expect(ran).toContain("guard");
+    expect(ran).toContain("verbatim");
   });
 });

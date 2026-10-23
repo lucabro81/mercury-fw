@@ -541,6 +541,12 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
       // The AI SDK doesn't throw when its signal aborts: the stream ends and
       // the call returns what it had. A stall is a failure all the same.
       if (stalled && !turn.abortSignal?.aborted) throw new Error(stallMessage(stallMs));
+      // The person stopped it: what the call had isn't an answer, so nothing
+      // is guarded, delivered or archived.
+      if (turn.abortSignal?.aborted) {
+        logTurn(`${turn.logPrefix}[turn] cancelled after ${seconds()}s`);
+        return;
+      }
       const cut = finishFailure(finish);
       if (cut !== undefined) throw new Error(cut);
 
@@ -595,17 +601,18 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
         `${turn.logPrefix}[turn] done in ${seconds()}s: ${count(steps.length, "step")}, ${count(toolCalls, "tool call")}, reasoning ${reasoningChars} chars, answer ${answerLength(assistantText, answerChars)} chars${finish ? `, finish ${finish.reason}` : ""}`,
       );
     } catch (err) {
-      // A client that went away is a cancel, even if the watchdog fired meanwhile.
+      // A turn its channel cancelled is a cancel, even if the watchdog fired meanwhile.
       if (stalled && !turn.abortSignal?.aborted) {
         const message = stallMessage(stallMs);
         logTurn(`${turn.logPrefix}[turn] stalled after ${seconds()}s: ${message}`);
         throw err instanceof Error && err.message === message ? err : new Error(message);
       }
-      logTurn(
-        turn.abortSignal?.aborted
-          ? `${turn.logPrefix}[turn] cancelled after ${seconds()}s`
-          : `${turn.logPrefix}[turn] failed after ${seconds()}s: ${err instanceof Error ? err.message : String(err)}`,
-      );
+      // A cancel isn't a failure: the channel that asked for it knows.
+      if (turn.abortSignal?.aborted) {
+        logTurn(`${turn.logPrefix}[turn] cancelled after ${seconds()}s`);
+        return;
+      }
+      logTurn(`${turn.logPrefix}[turn] failed after ${seconds()}s: ${err instanceof Error ? err.message : String(err)}`);
       throw err;
     } finally {
       watchdog.stop();
