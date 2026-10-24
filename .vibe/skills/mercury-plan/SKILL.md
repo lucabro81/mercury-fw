@@ -39,7 +39,7 @@ codice. Quali edge case coprire. Come si runnano (`bun test` nel package
 specifico, `bun run typecheck`, ecc.).
 
 ### 6. Documentazione
-Cosa va aggiornato: README del package, root README, `CLAUDE.md`/`AGENTS.md`,
+Cosa va aggiornato: README del package, root README, `AGENTS.md`,
 `--help` del CLI, docs site, changeset. Elenca ogni file di doc impattato.
 
 ### 7. Rischi e note

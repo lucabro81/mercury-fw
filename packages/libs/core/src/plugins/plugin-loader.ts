@@ -11,7 +11,7 @@
  *  - a plugin that fails — its `build()` throws — degrades as a single unit:
  *    none of its contributions land, the failure is
  *    logged with detail, and every other plugin and the process itself carry
- *    on. This is the CLAUDE.md lesson made structural: one plugin's bad tick
+ *    on. This is the AGENTS.md lesson made structural: one plugin's bad tick
  *    never takes down the rest.
  *
  * The contract types (`Plugin`, `SessionToolContext`, `CliPostProcessor`,
