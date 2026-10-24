@@ -9,9 +9,9 @@
  *   the release commit); `--backfill-framework` takes every `vX.Y.Z` tag
  *   instead, for the releases made before this script existed.
  * - A framework release (`vX.Y.Z`) merges that version's sections from every
- *   package in the Changesets `fixed` group; a plugin, channel or auth
- *   provider (`<name>@<version>`) gets its own section. Dependency bumps are
- *   left out.
+ *   package in the Changesets `fixed` group, whose own `<name>@<version>`
+ *   tags get no Release; a plugin, channel or auth provider gets its own
+ *   section. Dependency bumps are left out.
  * - Only a version on npm gets a Release, and a tag that already has one is
  *   skipped, so a rerun creates only what's missing.
  * - The newest framework release is Latest; older framework releases and
@@ -123,15 +123,17 @@ export function releaseNotes(tag: string, ctx: NotesContext): string {
 }
 
 /** The tags of `tags` with no Release in `existing`, of a known shape: the
- * framework's oldest first, then the packages' by name and version. */
-export function releasesToCreate(tags: string[], existing: Set<string>): string[] {
+ * framework's oldest first, then the packages' by name and version. A
+ * package of the `fixed` group gets none of its own: Changesets tags it
+ * too, and the framework's Release already merges its section. */
+export function releasesToCreate(tags: string[], existing: Set<string>, fixed: string[]): string[] {
   const parsed = tags
     .filter((t) => !existing.has(t))
     .map((t) => ({ tag: t, p: parseTag(t) }))
     .filter((x): x is { tag: string; p: ParsedTag } => x.p !== null);
   const framework = parsed.filter((x) => x.p.kind === "framework").sort((a, b) => Bun.semver.order(a.p.version, b.p.version));
   const packages = parsed
-    .filter((x) => x.p.kind === "package")
+    .filter((x) => x.p.kind === "package" && !fixed.includes(x.p.name!))
     .sort((a, b) => a.p.name!.localeCompare(b.p.name!) || Bun.semver.order(a.p.version, b.p.version));
   return [...framework, ...packages].map((x) => x.tag);
 }
@@ -188,7 +190,7 @@ if (import.meta.main) {
     },
   };
 
-  const todo = releasesToCreate(candidates, existing);
+  const todo = releasesToCreate(candidates, existing, ctx.fixed);
   if (todo.length === 0) console.log("No Release to create.");
   for (const tag of todo) {
     if (!(await publishedOnNpm(tag, registry))) {

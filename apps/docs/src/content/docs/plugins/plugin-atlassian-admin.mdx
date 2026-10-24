@@ -29,10 +29,6 @@ mfw credentials setup @mercury-fw/plugin-atlassian-admin
 mfw credentials check @mercury-fw/plugin-atlassian-admin
 ```
 
-```text title="Prompt for your coding agent"
-In my Mercury app, add @mercury-fw/plugin-atlassian-admin: install it, list it in trustedDependencies in package.json and run `bun install` again so its CLI downloads, declare atlassianAdminPlugin in mercury.config.ts, and run `bun run typecheck`. Then tell me the `mfw credentials setup` command to run myself, since it asks for the organization's key.
-```
-
 ## Who can use it
 
 The key belongs to the organization, and through it anyone could look up any account, email included. So the plugin

@@ -60,11 +60,6 @@ Optional, to have mfw everywhere:
 
 The app is also a git repository with a first commit, so you can see every change you make from here on.
 
-```text title="Prompt for your coding agent"
-Create a new Mercury agent app in a folder called my-agent with `bun create mercury-agent my-agent --yes`,
-then show me the files it wrote and what each one is for.
-```
-
 ## 2. Point it at your model
 
 The settings that change from one machine to the next, and every secret, live in a file called `.env`, which is
@@ -126,11 +121,6 @@ The `[turn]` lines are for you, not for the person chatting: how long the answer
 called. It called none: the wiki it mentions is its own memory, which every app has, and no tool of yours is there
 yet. The prompt shows how much of the model's context the conversation fills. Press `Ctrl+D` to leave the REPL. The agent keeps running until
 `bunx mfw stop`.
-
-```text title="Prompt for your coding agent"
-In my Mercury app, fill in .env from .env.example with OLLAMA_MODEL=<chat-model>, start the app with
-`bunx mfw start`, and tell me when the containers are up. Don't print the contents of .env.
-```
 
 ## 5. Give it a tool
 

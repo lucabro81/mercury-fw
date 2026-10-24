@@ -110,6 +110,21 @@ describe("dates from the tags", () => {
     expect(parsed.map((r) => r.tag)).toEqual(["v0.59.1", "v0.59.0"]);
   });
 
+  // Regression (#327): a release's tags share one commit, and the framework's
+  // Release, created first, sorted below its own plugins'.
+  test("on a shared tag time the framework's release comes first, whatever order the Releases were created in", () => {
+    const same = "2026-10-24T00:50:00+02:00";
+    const parsed = parseReleases(
+      [
+        release({ tag_name: "v0.59.2", published_at: "2026-10-23T22:58:00Z" }),
+        release({ tag_name: "@mercury-fw/plugin-jira@0.8.1", published_at: "2026-10-23T22:58:05Z" }),
+        release({ tag_name: "@mercury-fw/auth-oidc@0.2.1", published_at: "2026-10-23T22:58:10Z" }),
+      ],
+      new Map([["v0.59.2", same], ["@mercury-fw/plugin-jira@0.8.1", same], ["@mercury-fw/auth-oidc@0.2.1", same]]),
+    );
+    expect(parsed.map((r) => r.tag)).toEqual(["v0.59.2", "@mercury-fw/auth-oidc@0.2.1", "@mercury-fw/plugin-jira@0.8.1"]);
+  });
+
   test("parseTagDates reads git for-each-ref's lines, skipping the ones without a date", () => {
     const out = "v0.59.1 2026-10-23T17:31:02+02:00\n@mercury-fw/plugin-jira@0.8.0 2026-10-21T09:00:00+02:00\nbroken\n\n";
     expect(parseTagDates(out)).toEqual(

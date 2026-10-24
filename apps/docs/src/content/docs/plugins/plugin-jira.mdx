@@ -43,10 +43,6 @@ An app created with `mfw create --plugins jira` has everything below already. By
 
 3. Set `JIRA_SITE_URL` in `.env`. Without it the plugin doesn't load, and the log says so.
 
-```text title="Prompt for your coding agent"
-In my Mercury app, add @mercury-fw/plugin-jira: install it with the formatter (`bun add @mercury-fw/plugin-jira @mercury-fw/formatter`), list @mercury-fw/plugin-jira in trustedDependencies in package.json and run `bun install` again so its CLI downloads, declare it in mercury.config.ts wrapped in formatterPlugin with an issue-list rule showing key, status, summary and url, whose text for an empty list is t("app.jira.no-issues"), adding that key to locales/en.json with the text "No matching issues.", add JIRA_SITE_URL (my site, https://<site>.atlassian.net) to .env.example, and run `bun run typecheck`. Then list the `mfw credentials` commands I have to run myself, since they ask for secrets. Don't print the contents of .env.
-```
-
 ## Logins
 
 The plugin acts as the person (`actsAs: "person"`): every command runs with the Jira account of whoever the agent
