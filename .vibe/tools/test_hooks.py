@@ -659,6 +659,43 @@ def main():
            run_hook(CS, "bash", "git commit -m x -- packages/libs/core/src/x.ts > log.txt", feat_repo), "warn")
     git(feat_repo, "reset", "-q")
 
+    # --- suggest_changeset: a git add earlier in the command stages its files (round 11, S1) ---
+    # x.ts is tracked in feat_repo with an unstaged modification and
+    # nothing is staged: the commit's file set must include what the
+    # same command's `git add` would stage.
+    expect("git add <pkg file> && git commit warns",
+           run_hook(CS, "bash", "git add packages/libs/core/src/x.ts && git commit -m x", feat_repo), "warn")
+    expect("git add -A && git commit warns",
+           run_hook(CS, "bash", "git add -A && git commit -m x", feat_repo), "warn")
+    expect("git add . && git commit warns",
+           run_hook(CS, "bash", "git add . && git commit -m x", feat_repo), "warn")
+    expect("git add -n (dry-run) stages nothing: commit silent",
+           run_hook(CS, "bash", "git add -n packages/libs/core/src/x.ts && git commit -m x", feat_repo), "silent")
+    expect("git add <non-pkg file> && git commit silent",
+           run_hook(CS, "bash", "git add README.md && git commit -m x", feat_repo), "silent")
+    expect("cd <repo> && git add <pkg file> && git commit warns",
+           run_hook(CS, "bash", f"cd {feat_repo} && git add packages/libs/core/src/x.ts && git commit -m x", main_repo), "warn")
+    expect("git -C <repo> add <pkg file> && git -C <repo> commit warns",
+           run_hook(CS, "bash", f"git -C {feat_repo} add packages/libs/core/src/x.ts && git -C {feat_repo} commit -m x", main_repo), "warn")
+    write("packages/libs/core/src/new.ts", "export const n = 1;\n")
+    expect("git add <untracked pkg file> && git commit warns",
+           run_hook(CS, "bash", "git add packages/libs/core/src/new.ts && git commit -m x", feat_repo), "warn")
+    os.remove(os.path.join(feat_repo, "packages/libs/core/src/new.ts"))
+
+    # --- suggest_changeset: a pathspec commit includes only its pathspecs (round 11, S3) ---
+    # x.ts is modified-unstaged in feat_repo: a commit whose pathspec is
+    # README.md includes no package code, so it stays silent.
+    expect("pathspec commit includes only its pathspecs -> silent",
+           run_hook(CS, "bash", "git commit -m x -- README.md", feat_repo), "silent")
+
+    # --- block_commit_on_main: git switch --create / -C (round 11) ---
+    expect("git switch --create master + commit denied",
+           run_hook(BCM, "bash", "git switch --create master && git commit -m x", feat_repo), "deny")
+    expect("git switch -C master + commit denied",
+           run_hook(BCM, "bash", "git switch -C master && git commit -m x", feat_repo), "deny")
+    expect("git switch --create <feat> + commit allowed",
+           run_hook(BCM, "bash", "git switch --create feat/x && git commit -m x", feat_repo), "silent")
+
 # --- suggest_test_after_ts (post_tool shape) ---
     def run_ts(tool_name, file_path, status="success"):
         payload = json.dumps({

@@ -31,10 +31,10 @@ match = "re:(bash|process\\.start)"
 command = "SCRIPT=$(git rev-parse --show-toplevel 2>/dev/null)/.vibe/tools/suggest_changeset.py; if test -f \"$SCRIPT\"; then python3 \"$SCRIPT\"; fi"
 description = "Warn when committing code without a changeset"
 
-# 4. Remind to run tests and typecheck after editing .ts files
+# 4. Remind to run tests and typecheck after editing non-test .ts files
 [[hooks]]
 name = "suggest-test-after-ts-edit"
 type = "post_tool"
 match = "re:(edit|write_file)"
 command = "SCRIPT=$(git rev-parse --show-toplevel 2>/dev/null)/.vibe/tools/suggest_test_after_ts.py; if test -f \"$SCRIPT\"; then python3 \"$SCRIPT\"; fi"
-description = "After editing a .ts file, remind to run typecheck and tests"
+description = "After editing a non-test .ts file, remind to run typecheck and tests"

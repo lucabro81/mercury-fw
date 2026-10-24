@@ -51,7 +51,7 @@ rules are enforced automatically when working in Vibe:
 - **Hooks** (`.vibe/hooks.toml` + `.vibe/tools/`) — guard-rails that run on
   tool calls: block commits on `main`, block `rm -rf`, warn when committing
   code without a changeset, remind to run typecheck + tests after editing
-  `.ts` files. Pushes to `main` are not blocked — releases are supervised
+  non-test `.ts` files. Pushes to `main` are not blocked — releases are supervised
   by Luca. Their behavior is covered by `.vibe/tools/test_hooks.py`
   (`python3 .vibe/tools/test_hooks.py`).
 - **Agent profiles** (`.vibe/agents/`) — `cold-reviewer.toml` and

@@ -107,16 +107,17 @@ SWITCH_RE = re.compile(
 )
 
 # A branch-creating checkout/switch (`git checkout -b <name>`,
-# `git switch -c <name>`, `git checkout --orphan <name>`) as a standalone
-# command: the command switches to the branch it creates (an unborn one
-# for --orphan), so it marks or un-marks like a literal switch. Group 2
-# is the option, group 3 the branch name (attached or separate).
+# `git switch -c <name>` / `--create`, `git switch -C <name>`,
+# `git checkout --orphan <name>`) as a standalone command: the command
+# switches to the branch it creates (an unborn one for --orphan), so it
+# marks or un-marks like a literal switch. Group 2 is the option, group 3
+# the branch name (attached or separate).
 CREATE_RE = re.compile(
     PREFIX +
     r"git\s+" + GIT_OPTS +
     r"(?:checkout|switch)\s+"
     + OPTIONS +
-    r"(-b|-B|-c|--orphan)\s*"
+    r"(-b|-B|-c|-C|--create|--force-create|--orphan)\s*"
     r"(\"[^\"]*\"|'[^']*'|\S+)"
 )
 

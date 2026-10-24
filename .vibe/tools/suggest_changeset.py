@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """Hook pre_tool: warn when a commit is missing a changeset.
 
-Checks the files the commit would include — the staged ones, plus tracked
-unstaged modifications when the commit uses -a/--all or a pathspec — and
-warns if they touch a published workspace without a changeset. Repo
-tooling (.vibe/, scripts/, .github/, docs site, test bed) does not require
-a changeset.
+Checks the files the commit would include — the staged ones, the files a
+`git add` earlier in the same command would stage, plus tracked unstaged
+modifications when the commit uses -a/--all (the whole tree) or a
+pathspec (only the files matching it) — and warns if they touch a
+published workspace without a changeset. Repo tooling (.vibe/,
+scripts/, .github/, docs site, test bed) does not require a changeset.
 
 The commit's target directory is tracked through `cd` segments and the
 commit's own `git -C <path>` (with ~ and $VAR expansion), so the warning
@@ -87,6 +88,17 @@ COMMIT_ARGS_RE = re.compile(
     PREFIX +
     r"git\s+" + GIT_OPTS +
     r"commit(?![\w-])"
+    r"((?:[^|&;\"']|\"[^\"]*\"|'[^']*')*)",
+    re.S,
+)
+
+# `git add` as a standalone command (git add, git -C <path> add, git
+# --no-pager add), anchored at segment start like COMMIT_ARGS_RE. Group 1
+# captures the git global options, group 2 the add's arguments.
+ADD_ARGS_RE = re.compile(
+    PREFIX +
+    r"git\s+" + GIT_OPTS +
+    r"add(?![\w-])"
     r"((?:[^|&;\"']|\"[^\"]*\"|'[^']*')*)",
     re.S,
 )
@@ -280,14 +292,24 @@ def git(cwd, *args):
     ).stdout.strip()
 
 
+def repo_root(directory):
+    """The git root of directory, or directory itself when it is not a repo."""
+    out = git(directory, "rev-parse", "--show-toplevel")
+    return os.path.normpath(out) if out else os.path.normpath(directory)
+
+
 def commit_target(command, directory):
-    """The first `git commit` standalone command: its arguments and the
-    directory it commits in, or None.
+    """The first `git commit` standalone command: its arguments, the
+    directory it commits in, and the files earlier `git add` segments in
+    the same scope would stage, or None.
 
     `directory` is the scope's working directory: a `cd` segment moves it
     for the rest of the scope (a `cd` inside a bash -c wrapper stays
-    inside the wrapper), and the commit's own `git -C <path>` overrides it.
+    inside the wrapper), and a segment's own `git -C <path>` overrides
+    it. A `git add` before the commit stages its pathspecs — or the
+    whole tree for -A/--all/-u/--update; a --dry-run add stages nothing.
     """
+    adds = []  # (directory, (whole_tree, pathspecs))
     for segment in split_segments(command):
         wrapped = WRAPPER_RE.match(segment)
         if wrapped:
@@ -309,9 +331,21 @@ def commit_target(command, directory):
             else:
                 directory = resolve_path(target.strip("\"'"), directory)
             continue
+        m = ADD_ARGS_RE.match(segment)
+        if m:
+            parsed = parse_add_args(m.group(2))
+            if parsed is not None:  # None = --dry-run: stages nothing
+                adds.append((git_target_dir(segment, directory), parsed))
+            continue
         m = COMMIT_ARGS_RE.match(segment)
         if m:
-            return m.group(2), git_target_dir(segment, directory)
+            target_dir = git_target_dir(segment, directory)
+            added = set()
+            root = repo_root(target_dir)
+            for add_dir, (whole_tree, pathspecs) in adds:
+                if repo_root(add_dir) == root:
+                    added |= add_files(add_dir, whole_tree, pathspecs)
+            return m.group(2), target_dir, added
     return None
 
 
@@ -321,17 +355,77 @@ def commit_target(command, directory):
 REDIRECT_RE = re.compile(r"([&]?\d*>+|&\d*>?|<)(.*)")
 
 
-def includes_unstaged(segment):
-    """True when the commit will also include tracked unstaged modifications.
-
-    That is the case for `git commit -a`/`--all` (flag -a, also inside
-    clusters like -am) and for commits with a pathspec
-    (`git commit -m msg -- file.ts`). Redirect tokens are not pathspecs.
-    """
+def parse_add_args(args):
+    """A `git add`'s arguments: None when the add stages nothing
+    (--dry-run), else (whole_tree, pathspecs)."""
     try:
-        tokens = shlex.split(segment)
+        tokens = shlex.split(args)
     except ValueError:
-        tokens = segment.split()
+        tokens = args.split()
+    whole_tree = False
+    pathspecs = []
+    i = 0
+    while i < len(tokens):
+        token = tokens[i]
+        if token == "--":
+            pathspecs.extend(tokens[i + 1:])
+            break
+        if token in ("-n", "--dry-run"):
+            return None
+        if token in ("-A", "--all", "-u", "--update"):
+            whole_tree = True
+            i += 1
+            continue
+        if token.startswith("--pathspec-from-file"):
+            # the paths come from a file: treat the add as whole-tree
+            whole_tree = True
+            i += 2 if "=" not in token else 1
+            continue
+        if token.startswith("--"):
+            i += 1
+            continue
+        if token.startswith("-") and len(token) > 1:
+            # a short option cluster; only -n matters and is handled above
+            i += 1
+            continue
+        pathspecs.append(token)
+        i += 1
+    return whole_tree, pathspecs
+
+
+def add_files(directory, whole_tree, pathspecs):
+    """The files a `git add` would stage: the tracked modifications and
+    the untracked files matching its pathspecs (the whole tree for
+    -A/--all/-u/--update)."""
+    files = set()
+    if whole_tree:
+        for f in git(directory, "diff", "--name-only").split("\n"):
+            if f:
+                files.add(f)
+        for f in git(directory, "ls-files", "--others", "--exclude-standard").split("\n"):
+            if f:
+                files.add(f)
+        return files
+    for path in pathspecs:
+        for f in git(directory, "diff", "--name-only", "--", path).split("\n"):
+            if f:
+                files.add(f)
+        for f in git(directory, "ls-files", "--others", "--exclude-standard", "--", path).split("\n"):
+            if f:
+                files.add(f)
+    return files
+
+
+def commit_scope(args):
+    """What a commit includes beyond the staged set: ('all', None) for
+    -a/--all (the whole tree) or --pathspec-from-file, ('paths',
+    [pathspecs]) for a pathspec commit, ('none', None) otherwise.
+    Redirect tokens are not pathspecs."""
+    try:
+        tokens = shlex.split(args)
+    except ValueError:
+        tokens = args.split()
+    pathspecs = []
     i = 0
     while i < len(tokens):
         token = tokens[i]
@@ -344,15 +438,15 @@ def includes_unstaged(segment):
         if token.startswith("--pathspec-from-file"):
             # the commit takes the paths listed in the file, working-tree
             # contents included
-            return True
+            return "all", None
         if token in VALUE_OPTIONS:
             i += 2
             continue
         if token in ("-a", "--all"):
-            return True
+            return "all", None
         if token == "--":
-            # everything after -- is a pathspec
-            return i + 1 < len(tokens)
+            pathspecs.extend(tokens[i + 1:])
+            break
         if token.startswith("--"):
             i += 1
             continue
@@ -362,7 +456,7 @@ def includes_unstaged(segment):
             while j < len(flags):
                 letter = flags[j]
                 if letter == "a":
-                    return True
+                    return "all", None
                 if letter in SHORT_VALUE_OPTIONS:
                     if j < len(flags) - 1:
                         # the rest of the cluster is the option's value
@@ -376,9 +470,11 @@ def includes_unstaged(segment):
                 j += 1
             i += 1
             continue
-        # A token that is not an option is a pathspec
-        return True
-    return False
+        pathspecs.append(token)
+        i += 1
+    if pathspecs:
+        return "paths", pathspecs
+    return "none", None
 
 
 def main():
@@ -391,21 +487,27 @@ def main():
     found = commit_target(command, os.path.abspath(data.get("cwd", ".")))
     if found is None:
         sys.exit(0)
-    args, target_dir = found
+    args, target_dir, added = found
 
     try:
+        scope, pathspecs = commit_scope(args)
+
         files = set()
         for f in git(target_dir, "diff", "--cached", "--name-only").split("\n"):
             if f:
                 files.add(f)
-
-        if includes_unstaged(args):
+        files |= added
+        if scope == "all":
             for f in git(target_dir, "diff", "--name-only").split("\n"):
+                if f:
+                    files.add(f)
+        elif scope == "paths":
+            for f in git(target_dir, "diff", "--name-only", "--", *pathspecs).split("\n"):
                 if f:
                     files.add(f)
 
         # Only published workspaces require a changeset; .md files are
-        # documentation and do not bump the version
+        # out of scope (the hook's scope is code changes)
         relevant = [
             f for f in files
             if f.startswith(CHANGESET_REQUIRED_PREFIXES)
@@ -423,9 +525,13 @@ def main():
         for f in git(target_dir, "diff", "--cached", "--name-only", ".changeset/").split("\n"):
             if f:
                 changeset_files.add(f)
-        if includes_unstaged(args):
+        if scope == "all":
             for f in git(target_dir, "diff", "--name-only", ".changeset/").split("\n"):
                 if f:
+                    changeset_files.add(f)
+        elif scope == "paths":
+            for f in git(target_dir, "diff", "--name-only", "--", *pathspecs).split("\n"):
+                if f and f.startswith(".changeset/"):
                     changeset_files.add(f)
 
         # ...or the last commit already carried one
