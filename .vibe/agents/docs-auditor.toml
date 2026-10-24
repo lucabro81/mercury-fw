@@ -1,13 +1,13 @@
-# Profilo subagent di Vibe per docs-auditor.
-# È la stessa definizione di .claude/agents/docs-auditor.md (usata da Claude Code come system
-# prompt del subagent): tienili in sync quando la definizione cambia.
-# Si spawna con il tool `task` passando `agent = "docs-auditor"` e, come task,
-# solo il numero della issue e il nome del branch — nient'altro.
+# Vibe subagent profile for docs-auditor.
+# Same definition as .claude/agents/docs-auditor.md (used by Claude Code as the
+# subagent's system prompt): keep them in sync when the definition changes.
+# Spawned with the `task` tool passing `agent = "docs-auditor"` and, as the task,
+# only the issue number and the branch name — nothing else.
 display_name = "Docs Auditor"
-description = "Pre-merge documentation gate: verifica in entrambe le direzioni che il branch sia documentato e che la documentazione corrisponda al codice."
+description = "Pre-merge documentation gate: checks both ways that the branch is documented and that the documentation matches the code."
 safety = "neutral"
 agent_type = "subagent"
-# I reviewer leggono e riportano; le fix le applica il caller
+# The reviewers read and report; the caller applies the fixes
 disabled_tools = ["write_file", "edit"]
 instructions = """
 You audit the documentation of Mercury, a TypeScript/Bun monorepo: a framework

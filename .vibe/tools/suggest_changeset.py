@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Hook pre_tool: avvisa se manca un changeset prima di git commit.
+"""Hook pre_tool: warn when a commit is missing a changeset.
 
-Controlla i file che il commit includerebbe — quelli staged, più le
-modifiche tracciate non staged quando il commit usa -a/--all o un pathspec —
-e avvisa se toccano un workspace pubblicato senza un changeset. Tooling di
-repo (.vibe/, scripts/, .github/, docs site, test bed) non richiede changeset.
+Checks the files the commit would include — the staged ones, plus tracked
+unstaged modifications when the commit uses -a/--all or a pathspec — and
+warns if they touch a published workspace without a changeset. Repo
+tooling (.vibe/, scripts/, .github/, docs site, test bed) does not require
+a changeset.
 """
 import json
 import re
@@ -12,20 +13,21 @@ import shlex
 import subprocess
 import sys
 
-# Il tool bash nel payload degli hook arriva come "bash" (forma breve,
-# documentata negli esempi) o come "file_system.bash" (forma qualificata
-# inviata dall'Unified Harness di Vibe): entrambi sono il tool bash.
-BASH_TOOL_NAMES = ("bash", "file_system.bash")
+# The bash tool in the hook payload arrives as "bash" (short form,
+# documented in the examples), as "file_system.bash" or "process.start"
+# (qualified forms sent by Vibe's Unified Harness): all of them are the
+# bash tool.
+BASH_TOOL_NAMES = ("bash", "file_system.bash", "process.start")
 
-# Solo le modifiche a questi workspace (quelli pubblicati su npm) richiedono
-# un changeset.
+# Only changes to these workspaces (the ones published on npm) require
+# a changeset.
 CHANGESET_REQUIRED_PREFIXES = ("packages/", "apps/cli/", "apps/create-mercury-agent/")
 
-# Eccezioni private dentro i prefissi sopra: non sono pubblicate su npm
-# (l'elenco è in scripts/check-pack.ts), quindi non richiedono changeset.
+# Private exceptions inside the prefixes above: not published on npm
+# (the list is in scripts/check-pack.ts), so they do not require a changeset.
 CHANGESET_EXCLUDED_PREFIXES = ("packages/config/",)
 
-# Opzioni di `git commit` che consumano il token successivo
+# `git commit` options that consume the next token
 VALUE_OPTIONS = {
     "-m", "-F", "-t", "-C", "-c",
     "--message", "--file", "--template", "--author",
@@ -40,16 +42,16 @@ def git(cwd, *args):
 
 
 def commit_segment(command):
-    """La parte del comando dopo `git commit`, o None se non c'è un commit."""
+    """The part of the command after `git commit`, or None when there is no commit."""
     m = re.search(r"\bgit\s+commit\b([^|&;]*)", command)
     return m.group(1) if m else None
 
 
 def includes_unstaged(segment):
-    """True se il commit includerà anche modifiche tracciate non staged.
+    """True when the commit will also include tracked unstaged modifications.
 
-    È il caso di `git commit -a`/`--all` (flag -a, anche in cluster come
-    -am) e dei commit con pathspec (`git commit -m msg -- file.ts`).
+    That is the case for `git commit -a`/`--all` (flag -a, also in clusters
+    like -am) and for commits with a pathspec (`git commit -m msg -- file.ts`).
     """
     try:
         tokens = shlex.split(segment)
@@ -66,7 +68,7 @@ def includes_unstaged(segment):
                 return True
             i += 1
             continue
-        # Un token che non è un'opzione è un pathspec
+        # A token that is not an option is a pathspec
         return True
     return False
 
@@ -95,8 +97,8 @@ def main():
                 if f:
                     files.add(f)
 
-        # Solo i workspace pubblicati richiedono un changeset; i .md sono
-        # documentazione e non bumpano versione
+        # Only published workspaces require a changeset; .md files are
+        # documentation and do not bump the version
         relevant = [
             f for f in files
             if f.startswith(CHANGESET_REQUIRED_PREFIXES)
@@ -106,7 +108,7 @@ def main():
         if not relevant:
             sys.exit(0)
 
-        # Un changeset già presente (staged, non staged o nell'ultimo commit) copre
+        # A changeset already present (staged, unstaged or in the last commit) covers
         changeset_status = git(cwd, "status", "--porcelain", ".changeset/")
         last_commit = git(cwd, "log", "-1", "--pretty=%s")
 
@@ -121,8 +123,8 @@ def main():
                 "system_message": (
                     "⚠️  This commit modifies code without a changeset. "
                     "The Mercury workflow requires a changeset for every relevant change. "
-                    "Esegui `bun run changeset` prima di committare, o includi il changeset "
-                    "in questo commit. See skill mercury-release."
+                    "Run `bun run changeset` before committing, or include the changeset "
+                    "in this commit. See skill mercury-tdd."
                 ),
             }))
             sys.exit(0)

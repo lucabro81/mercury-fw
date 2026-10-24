@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""Hook pre_tool: blocca rm -rf e varianti pericolose.
+"""Hook pre_tool: block rm -rf and dangerous variants.
 
-Riconosce la combinazione ricorsivo+force sia in flag combinati (-rf, -fr,
--Rvf, in qualsiasi ordine e caso) sia in flag separati (rm -r -f), e anche
-quando le opzioni vengono dopo il percorso (rm dir -rf, permutazione GNU).
-`git rm` non è bloccato: è l'alternativa sicura per i file tracciati.
+Recognizes the recursive+force combination both in combined flags (-rf,
+-fr, -Rvf, in any order and case) and in separate flags (rm -r -f), and
+also when the options come after the path (rm dir -rf, GNU permutation).
+`git rm` is not blocked: it is the safe alternative for tracked files.
 
-Controlla solo le invocazioni di `rm` come comando (all'inizio di un segmento
-di comando, dopo ;, &&, ||, |, \n), non le sottostringhe in echo, grep, ecc.
-Gestisce prefissi env-assignment generici (FOO=1 rm -rf).
+Only `rm` invocations as a command are checked (at the start of a command
+segment, after ;, &&, ||, |, \n), not substrings inside echo, grep, etc.
+Handles generic env-assignment prefixes (FOO=1 rm -rf).
 """
 import json
 import re
@@ -16,17 +16,18 @@ import sys
 
 SEPARATORS = r"&&|\|\||;|\||\n"
 
-# Il tool bash nel payload degli hook arriva come "bash" (forma breve,
-# documentata negli esempi) o come "file_system.bash" (forma qualificata
-# inviata dall'Unified Harness di Vibe): entrambi sono il tool bash.
-BASH_TOOL_NAMES = ("bash", "file_system.bash")
+# The bash tool in the hook payload arrives as "bash" (short form,
+# documented in the examples), as "file_system.bash" or "process.start"
+# (qualified forms sent by Vibe's Unified Harness): all of them are the
+# bash tool.
+BASH_TOOL_NAMES = ("bash", "file_system.bash", "process.start")
 
 
 def segment_has_dangerous_rm(segment):
-    """True se il segmento di comando contiene `rm` con flag ricorsivo+force.
+    """True when the command segment contains `rm` with recursive+force flags.
 
-    Gestisce prefissi: sudo, env, command, xargs, env-assignment (FOO=1).
-    `git rm` è escluso strutturalmente (il regex non matcha `git rm`).
+    Handles prefixes: sudo, env, command, xargs, env-assignment (FOO=1).
+    `git rm` is excluded structurally (the regex does not match `git rm`).
     """
     m = re.match(
         r"\s*(?:sudo\s+|env\s+|command\s+|xargs\s+)*"
@@ -55,7 +56,7 @@ def segment_has_dangerous_rm(segment):
 
 
 def is_dangerous_rm(command):
-    """True se qualche segmento di comando contiene un rm -rf pericoloso."""
+    """True when some command segment contains a dangerous rm -rf."""
     segments = re.split(SEPARATORS, command)
     return any(segment_has_dangerous_rm(seg) for seg in segments)
 

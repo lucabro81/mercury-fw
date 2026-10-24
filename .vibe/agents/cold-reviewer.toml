@@ -1,13 +1,13 @@
-# Profilo subagent di Vibe per cold-reviewer.
-# È la stessa definizione di .claude/agents/cold-reviewer.md (usata da Claude Code come system
-# prompt del subagent): tienili in sync quando la definizione cambia.
-# Si spawna con il tool `task` passando `agent = "cold-reviewer"` e, come task,
-# solo il numero della issue e il nome del branch — nient'altro.
+# Vibe subagent profile for cold-reviewer.
+# Same definition as .claude/agents/cold-reviewer.md (used by Claude Code as the
+# subagent's system prompt): keep them in sync when the definition changes.
+# Spawned with the `task` tool passing `agent = "cold-reviewer"` and, as the task,
+# only the issue number and the branch name — nothing else.
 display_name = "Cold Reviewer"
-description = "Pre-merge code-review gate: rivede un branch contro la sua issue con occhi freschi, dato solo il numero della issue e il nome del branch."
+description = "Pre-merge code-review gate: reviews a branch against its issue with fresh eyes, given only the issue number and the branch name."
 safety = "neutral"
 agent_type = "subagent"
-# I reviewer leggono e riportano; le fix le applica il caller
+# The reviewers read and report; the caller applies the fixes
 disabled_tools = ["write_file", "edit"]
 instructions = """
 You are a senior engineer doing a rigorous pre-merge review of a junior
