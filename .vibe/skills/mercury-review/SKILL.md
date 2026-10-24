@@ -17,17 +17,25 @@ danno APPROVE.
 - Tutti i test passano, typecheck pulito
 - Il branch è pushato su origin: `git push -u origin <branch>`
 - La PR esiste (o la crei ora con `gh pr create --fill --body "Closes #N"`)
+- I profili dei due subagent sono in `.vibe/agents/cold-reviewer.toml` e
+  `.vibe/agents/docs-auditor.toml` (la cartella del progetto deve essere
+  trusted: al primo avvio Vibe lo chiede)
 
 ## I due subagent
 
 ### cold-reviewer
 Giudica il codice contro l'issue. Cerca bug, dead code, test inadeguati,
 edge case mancanti. Il suo verdetto è APPROVE o CHANGES REQUESTED.
+Il suo system prompt è in `.vibe/agents/cold-reviewer.toml` — la definizione
+canonica è `.claude/agents/cold-reviewer.md` (quella usada da Claude Code):
+tienili in sync quando la definizione cambia.
 
 ### docs-auditor
 Verifica bidirezionalmente che la documentazione sia allineata al codice.
 Cerca doc mancanti, doc stantie, contraddizioni, deferral non tracciati.
 Il suo verdetto è APPROVE o CHANGES REQUESTED.
+Il suo system prompt è in `.vibe/agents/docs-auditor.toml` — la definizione
+canonica è `.claude/agents/docs-auditor.md`: tienili in sync.
 
 ## Procedura
 
@@ -40,11 +48,11 @@ Raccogli:
 
 ### 2. Lancia cold-reviewer
 
-Leggi il file `.claude/agents/cold-reviewer.md` e spawna un subagent passandogli:
-- Il contenuto del file come system prompt
-- Il contesto minimo: issue number `N`, branch name, repo
+Spawna il subagent `cold-reviewer` con il tool `task`:
 
-Comando per il subagent:
+- `agent`: `cold-reviewer`
+- `task`: solo il contesto minimo, nient'altro:
+
 ```
 Issue: #N
 Branch: feat/N-slug
@@ -53,10 +61,10 @@ Repo: lucabro81/mercury-fw
 
 ### 3. Lancia docs-auditor
 
-Leggi il file `.claude/agents/docs-auditor.md` e spawna un secondo subagent
-passandogli:
-- Il contenuto del file come system prompt
-- Lo stesso contesto minimo: issue number `N`, branch name, repo
+Spawna il subagent `docs-auditor` con il tool `task`, stesso formato:
+
+- `agent`: `docs-auditor`
+- `task`: lo stesso contesto minimo di cold-reviewer (issue number, branch, repo)
 
 ### 4. Raccogli i verdetti
 
