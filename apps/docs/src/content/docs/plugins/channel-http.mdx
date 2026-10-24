@@ -67,15 +67,6 @@ data: {"text":"I am Mercury, an internal assistant with access to the team's wik
 
 Send the same `conversationId` again to continue the conversation. A wrong token gets `401` before anything runs.
 
-```text title="Prompt for your coding agent"
-In my Mercury app with the HTTP channel and auth-static, already set up with its model, set AUTH_STATIC_TOKENS in
-.env (replacing its line if there is one) to one test user "alice" with token "alice-token", in the JSON shape the
-auth-static README shows (without printing the rest of .env), start it with `bunx mfw start`, and send one message
-with curl to POST /turn on localhost at the port in HTTP_SURFACE_PORT (4100 by default), with
-`Authorization: Bearer alice-token` and the JSON body {"text": "Hi"}. The answer is a stream of server-sent events:
-read it with `curl -N` and show me only the final event.
-```
-
 ## Adding it by hand
 
 An app created with `--channels http` has all of this already. In an existing app, `bun add
