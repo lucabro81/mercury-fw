@@ -1,5 +1,8 @@
 # Mercury workflow hooks — guard-rail automatici per il workflow di sviluppo.
 # Vedi AGENTS.md per il workflow completo.
+#
+# Nota: Vibe esegue i comandi degli hook nella cwd della sessione. Avviare
+# Vibe dalla root del repo, così i path relativi .vibe/tools/... risolvono.
 
 # 1. Blocca commit diretti su main/master
 [[hooks]]
