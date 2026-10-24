@@ -52,7 +52,8 @@ rules are enforced automatically when working in Vibe:
   tool calls: block commits on `main`, block `rm -rf`, warn when committing
   code without a changeset, remind to run typecheck + tests after editing
   `.ts` files. Pushes to `main` are not blocked — releases are supervised
-  by Luca.
+  by Luca. Their behavior is covered by `.vibe/tools/test_hooks.py`
+  (`python3 .vibe/tools/test_hooks.py`).
 - **Agent profiles** (`.vibe/agents/`) — `cold-reviewer.toml` and
   `docs-auditor.toml`, the Vibe-native equivalents of the `.claude/agents/*.md`
   subagents, spawnable via Vibe's `task` tool. Keep them in sync with the

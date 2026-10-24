@@ -21,21 +21,30 @@ SEPARATORS = r"&&|\|\||;|\||\n"
 # bash tool.
 BASH_TOOL_NAMES = ("bash", "file_system.bash", "process.start")
 
+# A command prefix: optional sudo and env assignments (FOO=1).
+PREFIX = r"\s*(?:sudo\s+)?(?:\w+=(?:\"[^\"]*\"|'[^']*'|\S+)\s+)*"
+
 # A commit as a standalone command: git commit, git -C <path> commit,
 # bash -c 'git commit ...', sudo git commit, FOO=1 git commit.
 COMMIT_RE = re.compile(
-    r"\s*(?:sudo\s+)?(?:\w+=(?:\"[^\"]*\"|'[^']*'|\S+)\s+)*"
+    PREFIX +
     r"(?:git\s+(?:-C\s+(?:\"[^\"]*\"|'[^']*'|\S+)\s+)?commit\b"
     r"|bash\s+-c\s+['\"].*?git\s+commit\b)",
     re.S,
 )
 
-# A switch to the local main/master branch. The lookahead after the
-# branch name rejects longer names (mainline, main-x, main/x) while
-# accepting any separator or the end of the string after it.
+# A switch to the local main/master branch as a standalone command:
+# git checkout/switch main, or the same inside bash -c '...'. The
+# lookahead after the branch name rejects longer names (mainline,
+# main-x, main/x) while accepting any separator or the end of the string.
 SWITCH_RE = re.compile(
-    r"\bgit\s+(?:checkout|switch)\s+(?:-\S+\s+)*"
+    PREFIX +
+    r"(?:git\s+(?:checkout|switch)\s+(?:-\S+\s+)*"
     r"(?:main|master|refs/heads/(?:main|master))(?![/\w-])"
+    r"|bash\s+-c\s+['\"].*?"
+    r"git\s+(?:checkout|switch)\s+(?:-\S+\s+)*"
+    r"(?:main|master|refs/heads/(?:main|master))(?![/\w-]))",
+    re.S,
 )
 
 
@@ -51,21 +60,17 @@ def find_commit_segments(command):
 def commit_lands_on_main(command):
     """True if a switch to main/master happens before a commit, in command order.
 
-    Segments run left to right, so a checkout/switch to main/master in an
-    earlier segment means a later commit lands on main. A switch after the
-    commit (e.g. `git commit -m x && git checkout main`) is fine, and a
-    "checkout main" inside a commit message does not count.
+    Segments run left to right, so a checkout/switch to main/master as a
+    standalone command in an earlier segment means a later commit lands on
+    main. A switch after the commit (e.g. `git commit -m x && git checkout
+    main`) is fine, and a "checkout main" inside another command's arguments
+    (echo, grep, a commit message) does not count.
     """
     switched = False
     for segment in re.split(SEPARATORS, command):
-        switch = SWITCH_RE.search(segment)
-        commit = COMMIT_RE.match(segment)
-        if switch and commit:
-            if switch.start() < commit.start():
-                return True
-        elif switch:
+        if SWITCH_RE.match(segment):
             switched = True
-        elif commit and switched:
+        elif COMMIT_RE.match(segment) and switched:
             return True
     return False
 

@@ -12,6 +12,7 @@ Handles generic env-assignment prefixes (FOO=1 rm -rf).
 """
 import json
 import re
+import shlex
 import sys
 
 SEPARATORS = r"&&|\|\||;|\||\n"
@@ -37,8 +38,12 @@ def segment_has_dangerous_rm(segment):
     if not m:
         return False
     rest = segment[m.end():]
+    try:
+        tokens = shlex.split(rest)
+    except ValueError:
+        tokens = rest.split()
     recursive = force = False
-    for token in rest.split():
+    for token in tokens:
         if token == "--":
             break
         if token.startswith("--"):

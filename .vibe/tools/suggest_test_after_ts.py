@@ -38,7 +38,7 @@ def main():
         "decision": "allow",
         "hook_specific_output": {
             "additional_context": (
-                f"\n\n📝 TypeScript file modified: `{file_path}`{package_hint}\n"
+                f"\n\nTypeScript file modified: `{file_path}`{package_hint}\n"
                 f"After the changes, remember to run:\n"
                 f"  • `bun run typecheck` — verify types\n"
                 f"  • `bun test` — run the package tests\n"

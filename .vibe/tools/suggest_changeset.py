@@ -13,6 +13,8 @@ import shlex
 import subprocess
 import sys
 
+SEPARATORS = r"&&|\|\||;|\||\n"
+
 # The bash tool in the hook payload arrives as "bash" (short form,
 # documented in the examples), as "file_system.bash" or "process.start"
 # (qualified forms sent by Vibe's Unified Harness): all of them are the
@@ -27,12 +29,29 @@ CHANGESET_REQUIRED_PREFIXES = ("packages/", "apps/cli/", "apps/create-mercury-ag
 # (the list is in scripts/check-pack.ts), so they do not require a changeset.
 CHANGESET_EXCLUDED_PREFIXES = ("packages/config/",)
 
+# `git commit` as a standalone command (git commit, git -C <path> commit,
+# bash -c '...'), anchored at segment start so a "git commit" inside
+# another command's arguments (echo "git commit", grep 'git commit')
+# does not count. Group 1 captures the commit's arguments.
+COMMIT_ARGS_RE = re.compile(
+    r"\s*(?:sudo\s+)?(?:\w+=(?:\"[^\"]*\"|'[^']*'|\S+)\s+)*"
+    r"(?:git\s+(?:-C\s+(?:\"[^\"]*\"|'[^']*'|\S+)\s+)?commit\b"
+    r"|bash\s+-c\s+['\"].*?git\s+commit\b)"
+    r"([^|&;]*)",
+    re.S,
+)
+
 # `git commit` options that consume the next token
 VALUE_OPTIONS = {
     "-m", "-F", "-t", "-C", "-c",
     "--message", "--file", "--template", "--author",
     "--cleanup", "--fixup", "--squash",
 }
+
+# Short options of `git commit` that take a value: attached to the rest of
+# the cluster (-mx), or as the next token when they are the cluster's last
+# letter (-m x, -pm x)
+SHORT_VALUE_OPTIONS = frozenset("mFtCcSu")
 
 
 def git(cwd, *args):
@@ -42,16 +61,20 @@ def git(cwd, *args):
 
 
 def commit_segment(command):
-    """The part of the command after `git commit`, or None when there is no commit."""
-    m = re.search(r"\bgit\s+commit\b([^|&;]*)", command)
-    return m.group(1) if m else None
+    """The arguments of the first `git commit` standalone command, or None."""
+    for segment in re.split(SEPARATORS, command):
+        m = COMMIT_ARGS_RE.match(segment)
+        if m:
+            return m.group(1)
+    return None
 
 
 def includes_unstaged(segment):
     """True when the commit will also include tracked unstaged modifications.
 
-    That is the case for `git commit -a`/`--all` (flag -a, also in clusters
-    like -am) and for commits with a pathspec (`git commit -m msg -- file.ts`).
+    That is the case for `git commit -a`/`--all` (flag -a, also inside
+    clusters like -am) and for commits with a pathspec
+    (`git commit -m msg -- file.ts`).
     """
     try:
         tokens = shlex.split(segment)
@@ -63,9 +86,29 @@ def includes_unstaged(segment):
         if token in VALUE_OPTIONS:
             i += 2
             continue
-        if token.startswith("-"):
-            if token in ("-a", "--all") or re.fullmatch(r"-[a-zA-Z]*a[a-zA-Z]*", token):
-                return True
+        if token in ("-a", "--all"):
+            return True
+        if token == "--":
+            # everything after -- is a pathspec
+            return i + 1 < len(tokens)
+        if token.startswith("--"):
+            i += 1
+            continue
+        if token.startswith("-") and len(token) > 1:
+            flags = token[1:]
+            j = 0
+            while j < len(flags):
+                letter = flags[j]
+                if letter == "a":
+                    return True
+                if letter in SHORT_VALUE_OPTIONS:
+                    if j < len(flags) - 1:
+                        # the rest of the cluster is the option's value
+                        break
+                    # the value is the next token
+                    i += 1
+                    break
+                j += 1
             i += 1
             continue
         # A token that is not an option is a pathspec
@@ -121,7 +164,7 @@ def main():
             print(json.dumps({
                 "decision": "allow",
                 "system_message": (
-                    "⚠️  This commit modifies code without a changeset. "
+                    "This commit modifies code without a changeset. "
                     "The Mercury workflow requires a changeset for every relevant change. "
                     "Run `bun run changeset` before committing, or include the changeset "
                     "in this commit. See skill mercury-tdd."
