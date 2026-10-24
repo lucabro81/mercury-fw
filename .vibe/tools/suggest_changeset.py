@@ -12,9 +12,18 @@ import shlex
 import subprocess
 import sys
 
+# Il tool bash nel payload degli hook arriva come "bash" (forma breve,
+# documentata negli esempi) o come "file_system.bash" (forma qualificata
+# inviata dall'Unified Harness di Vibe): entrambi sono il tool bash.
+BASH_TOOL_NAMES = ("bash", "file_system.bash")
+
 # Solo le modifiche a questi workspace (quelli pubblicati su npm) richiedono
 # un changeset.
 CHANGESET_REQUIRED_PREFIXES = ("packages/", "apps/cli/", "apps/create-mercury-agent/")
+
+# Eccezioni private dentro i prefissi sopra: non sono pubblicate su npm
+# (l'elenco è in scripts/check-pack.ts), quindi non richiedono changeset.
+CHANGESET_EXCLUDED_PREFIXES = ("packages/config/",)
 
 # Opzioni di `git commit` che consumano il token successivo
 VALUE_OPTIONS = {
@@ -65,7 +74,7 @@ def includes_unstaged(segment):
 def main():
     data = json.load(sys.stdin)
     tool_name = data.get("tool_name", "")
-    if tool_name != "bash":
+    if tool_name not in BASH_TOOL_NAMES:
         sys.exit(0)
 
     command = data.get("tool_input", {}).get("command", "")
@@ -91,6 +100,7 @@ def main():
         relevant = [
             f for f in files
             if f.startswith(CHANGESET_REQUIRED_PREFIXES)
+            and not f.startswith(CHANGESET_EXCLUDED_PREFIXES)
             and not f.endswith(".md")
         ]
         if not relevant:

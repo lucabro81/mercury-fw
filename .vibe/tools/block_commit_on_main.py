@@ -13,6 +13,11 @@ import sys
 
 SEPARATORS = r"&&|\|\||;|\||\n"
 
+# Il tool bash nel payload degli hook arriva come "bash" (forma breve,
+# documentata negli esempi) o come "file_system.bash" (forma qualificata
+# inviata dall'Unified Harness di Vibe): entrambi sono il tool bash.
+BASH_TOOL_NAMES = ("bash", "file_system.bash")
+
 
 def find_commit_segments(command):
     """Tutti i segmenti che contengono `git commit` come comando proprio."""
@@ -38,7 +43,7 @@ def switches_to_main(command):
 def main():
     data = json.load(sys.stdin)
     tool_name = data.get("tool_name", "")
-    if tool_name != "bash":
+    if tool_name not in BASH_TOOL_NAMES:
         sys.exit(0)
 
     command = data.get("tool_input", {}).get("command", "")
