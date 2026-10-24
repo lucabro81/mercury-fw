@@ -38,10 +38,11 @@ Verifica il changeset creato:
 cat .changeset/<nome-file>.md
 ```
 
-Committa il changeset:
+Committa il changeset e salva il suo testo per la PR:
 ```bash
 git add .changeset/
 git commit -m "chore: add changeset for #N"
+CHANGESET_BODY=$(tail -n +5 .changeset/<nome-file>.md)
 ```
 
 ### 2. Esegui il release
@@ -74,7 +75,7 @@ Assicurati che la PR abbia:
 ```bash
 gh pr edit --body "Closes #N
 
-$(cat .changeset/<nome-file>.md | tail -n +4)"
+$CHANGESET_BODY"
 ```
 
 ### 5. Istruzioni per il merge (per Luca)

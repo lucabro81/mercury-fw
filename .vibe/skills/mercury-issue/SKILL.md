@@ -28,7 +28,7 @@ gh issue create \
 ```
 
 Il corpo dell'issue deve contenere il plan completo, formattato in Markdown.
-Aggiungi una riga in cima: `> Plan approvato da @lucabro81 in plan mode.`
+Aggiungi una riga in cima: `> Plan approved by @lucabro81 in plan mode.`
 
 ### 2. Crea il branch dall'issue
 
