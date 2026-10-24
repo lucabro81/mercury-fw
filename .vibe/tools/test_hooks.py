@@ -135,6 +135,10 @@ def main():
            run_hook(BCM, "bash", "git commit -m x && git checkout main && git commit -m y", feat_repo), "deny")
     expect("bash -c 'git checkout main && git commit' denied",
            run_hook(BCM, "bash", "bash -c 'git checkout main && git commit -m x'", feat_repo), "deny")
+    expect("sh -c 'git commit' on main denied",
+           run_hook(BCM, "bash", "sh -c 'git commit -m x'", main_repo), "deny")
+    expect("sh -c 'git checkout main && git commit' denied",
+           run_hook(BCM, "bash", "sh -c 'git checkout main && git commit -m x'", feat_repo), "deny")
 
     # --- block_commit_on_main: mentions inside other commands don't count ---
     expect("'git checkout main' inside a commit message allowed",
@@ -210,6 +214,40 @@ def main():
     expect("git checkout main -- <path> then a real switch still denied",
            run_hook(BCM, "bash", "git checkout main -- file.ts && git checkout main && git commit -m x", feat_repo), "deny")
 
+    # --- block_commit_on_main: separators inside quotes ---
+    # A separator inside a quoted section does not split the command:
+    # text in a message or an echo is not a switch, a wrapper's inner
+    # command line is split the same way, and a cd inside a wrapper does
+    # not leak to the segments after it.
+    expect("echo mentioning a switch after a semicolon, then a commit -> allowed",
+           run_hook(BCM, "bash", 'echo "a; git checkout main" && git commit -m x', feat_repo), "silent")
+    expect("commit message mentioning a switch, then a real commit -> allowed",
+           run_hook(BCM, "bash", 'git commit -m "msg; git checkout main" && git commit -m b', feat_repo), "silent")
+    expect("commit message mentioning a switch with && -> allowed",
+           run_hook(BCM, "bash", 'git commit -m "msg && git checkout main" && git commit -m b', feat_repo), "silent")
+    expect("commit on main inside a wrapper with a quoted && -> denied",
+           run_hook(BCM, "bash", "bash -c 'echo \"a && b\"; git commit -m x'", main_repo), "deny")
+    expect("echo mentioning a switch inside a wrapper -> allowed",
+           run_hook(BCM, "bash", "bash -c 'echo \"a; git checkout main\" && git commit -m x'", feat_repo), "silent")
+    expect("a cd inside a wrapper does not leak to the next segment",
+           run_hook(BCM, "bash", f"bash -c 'cd {main_repo}; git status' && git commit -m x", feat_repo), "silent")
+    expect("a cd inside a wrapper still scopes the wrapper's own commit",
+           run_hook(BCM, "bash", f"bash -c 'cd {main_repo}; git commit -m x'", feat_repo), "deny")
+
+    # --- block_commit_on_main: a switch marks its own directory, not every commit ---
+    expect("switch to main in a main checkout (cd), commit in a feat checkout allowed",
+           run_hook(BCM, "bash", f"cd {main_repo} && git checkout main && cd {feat_repo} && git commit -m x", feat_repo), "silent")
+    expect("switch to main in a main checkout (cd), git -C feat commit allowed",
+           run_hook(BCM, "bash", f"cd {main_repo} && git checkout main && git -C {feat_repo} commit -m x", feat_repo), "silent")
+    expect("git -C feat checkout main then git -C feat commit denied",
+           run_hook(BCM, "bash", f"git -C {feat_repo} checkout main && git -C {feat_repo} commit -m x", main_repo), "deny")
+    expect("git -C main checkout main then git -C main commit denied",
+           run_hook(BCM, "bash", f"git -C {main_repo} checkout main && git -C {main_repo} commit -m x", feat_repo), "deny")
+    expect("switch to main then commit from a subdirectory still denied",
+           run_hook(BCM, "bash", f"cd {feat_repo} && git checkout main && cd {feat_repo}/packages && git commit -m x", main_repo), "deny")
+    expect("switch to main, away from a subdirectory, commit allowed",
+           run_hook(BCM, "bash", f"cd {feat_repo} && git checkout main && cd {feat_repo}/packages && git checkout feat/331-test && git commit -m x", main_repo), "silent")
+
     # --- block_rm_rf ---
     expect("rm -rf denied", run_hook(RM, "bash", "rm -rf /tmp/x", feat_repo), "deny")
     expect("process.start: rm -rf denied", run_hook(RM, "process.start", "rm -rf /tmp/x", feat_repo), "deny")
@@ -234,6 +272,19 @@ def main():
            run_hook(RM, "bash", "bash -c 'rm -r -f dir'", feat_repo), "deny")
     expect("bash -c 'git rm -rf ...' allowed",
            run_hook(RM, "bash", "bash -c 'git rm -rf file'", feat_repo), "silent")
+
+    # --- block_rm_rf: separators inside quotes ---
+    # A separator inside a quoted section does not split the command, and
+    # a wrapper's inner command line is split the same way: text in an
+    # echo is not an rm, a quoted path still counts as an argument.
+    expect("echo mentioning rm -rf after a semicolon -> allowed",
+           run_hook(RM, "bash", 'echo "a; rm -rf /tmp/x"', feat_repo), "silent")
+    expect("echo mentioning rm -rf inside a wrapper -> allowed",
+           run_hook(RM, "bash", "bash -c 'echo \"rm -rf x\"; ls'", feat_repo), "silent")
+    expect("quoted path with a semicolon still denied",
+           run_hook(RM, "bash", 'rm -rf "my; dir"', feat_repo), "deny")
+    expect("rm -rf inside a wrapper after a quoted semicolon -> denied",
+           run_hook(RM, "bash", "bash -c 'echo \"a; b\"; rm -rf /tmp/x'", feat_repo), "deny")
 
     # --- suggest_changeset: warning scope ---
     write("packages/libs/core/src/x.ts", "export const x = 1;\n")
@@ -347,7 +398,54 @@ def main():
            run_hook(CS, "bash", "bash -c 'git commit -m x'", feat_repo), "warn")
     git(feat_repo, "reset", "-q")
 
-    # --- suggest_test_after_ts (post_tool shape) ---
+    # --- suggest_changeset: quoted arguments and separators inside quotes ---
+    # A quoted message is one argument: a separator inside it neither
+    # truncates the capture into a bogus pathspec nor splits the command,
+    # and a bash -c wrapper's inner command line is split the same way.
+    git(feat_repo, "checkout", "--", ".changeset/new-one.md")  # drop the leftover mod
+    expect("quoted message with a semicolon: nothing staged -> silent",
+           run_hook(CS, "bash", 'git commit -m "a b;c"', feat_repo), "silent")
+    expect("bash -c quoted message: nothing staged -> silent",
+           run_hook(CS, "bash", "bash -c 'git commit -m \"two words\"'", feat_repo), "silent")
+    expect("-S with a separate -m: nothing staged -> silent",
+           run_hook(CS, "bash", "git commit -S -m x", feat_repo), "silent")
+    expect("-u with a separate -m: nothing staged -> silent",
+           run_hook(CS, "bash", "git commit -u -m x", feat_repo), "silent")
+    expect("pathspec after a semicolon in the message -> warns",
+           run_hook(CS, "bash", 'git commit -m "fix; stuff" -- packages/libs/core/src/x.ts', feat_repo), "warn")
+    expect("pathspec after && in the message -> warns",
+           run_hook(CS, "bash", 'git commit -m "fix && stuff" -- packages/libs/core/src/x.ts', feat_repo), "warn")
+
+    git(feat_repo, "add", "packages/libs/core/src/x.ts")
+    expect("echo mentioning a commit after a semicolon, staged code -> silent",
+           run_hook(CS, "bash", 'echo "a; git commit -m x"', feat_repo), "silent")
+    expect("sh -c 'git commit -m x' with staged code -> warns",
+           run_hook(CS, "bash", "sh -c 'git commit -m x'", feat_repo), "warn")
+    expect("bash -c quoted message with staged code -> warns",
+           run_hook(CS, "bash", "bash -c 'git commit -m \"two words\"'", feat_repo), "warn")
+    expect("commit inside a wrapper after a quoted && -> warns",
+           run_hook(CS, "bash", "bash -c 'echo \"a && b\"; git commit -m x'", feat_repo), "warn")
+    expect("control: plain commit with staged code -> warns",
+           run_hook(CS, "bash", "git commit -m x", feat_repo), "warn")
+
+    # A bash -c wrapper with a quoted message must not misread the message
+    # words as pathspecs: with staged code and an unstaged tracked changeset
+    # the warning fires (the plain commit includes neither).
+    git(feat_repo, "reset", "-q")
+    write(".changeset/quoted-msg.md", "---\n'@mercury-fw/core': patch\n---\n\nquoted\n")
+    git(feat_repo, "add", ".changeset/quoted-msg.md")
+    git(feat_repo, "commit", "-q", "-m", "chore: add changeset")
+    git(feat_repo, "commit", "-q", "--allow-empty", "-m", "code")
+    write(".changeset/quoted-msg.md", "---\n'@mercury-fw/core': minor\n---\n\nquoted\n")  # unstaged, tracked
+    write("packages/libs/core/src/x.ts", "export const x = 10;\n")
+    git(feat_repo, "add", "packages/libs/core/src/x.ts")
+    expect("bash -c quoted message, staged code + unstaged changeset -> warns",
+           run_hook(CS, "bash", "bash -c 'git commit -m \"two words\"'", feat_repo), "warn")
+    expect("control: plain commit, staged code + unstaged changeset -> warns",
+           run_hook(CS, "bash", "git commit -m x", feat_repo), "warn")
+    git(feat_repo, "reset", "-q")
+
+# --- suggest_test_after_ts (post_tool shape) ---
     def run_ts(tool_name, file_path, status="success"):
         payload = json.dumps({
             "tool_name": tool_name,

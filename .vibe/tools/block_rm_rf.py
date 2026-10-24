@@ -7,15 +7,16 @@ also when the options come after the path (rm dir -rf, GNU permutation).
 `git rm` is not blocked: it is the safe alternative for tracked files.
 
 Only `rm` invocations as a command are checked (at the start of a command
-segment, after ;, &&, ||, |, \n), not substrings inside echo, grep, etc.
-Handles generic env-assignment prefixes (FOO=1 rm -rf).
+segment, after ;, &&, ||, |, \n — outside quotes, so text inside a quoted
+argument is not a command), not substrings inside echo, grep, etc.
+Handles generic env-assignment prefixes (FOO=1 rm -rf). A
+`bash -c '...'` / `sh -c '...'` wrapper is unwrapped and its inner command
+line is checked the same way.
 """
 import json
 import re
 import shlex
 import sys
-
-SEPARATORS = r"&&|\|\||;|\||\n"
 
 # The bash tool in the hook payload arrives as "bash" (short form,
 # documented in the examples), as "file_system.bash" or "process.start"
@@ -23,24 +24,69 @@ SEPARATORS = r"&&|\|\||;|\||\n"
 # bash tool.
 BASH_TOOL_NAMES = ("bash", "file_system.bash", "process.start")
 
+# A command prefix: sudo/env/command/xargs wrappers and env assignments.
+PREFIX = r"\s*(?:sudo\s+|env\s+|command\s+|xargs\s+)*" \
+         r"(?:\w+=(?:\"[^\"]*\"|'[^']*'|\S+)\s+)*"
 
 # `rm` as a standalone command — with sudo/env/command/xargs prefixes and
-# env assignments — or the first `rm` inside bash -c '...' / sh -c '...'
-# that is not `git rm`.
-RM_RE = re.compile(
-    r"\s*(?:sudo\s+|env\s+|command\s+|xargs\s+)*"
-    r"(?:\w+=(?:\"[^\"]*\"|'[^']*'|\S+)\s+)*"
-    r"(?:rm\b"
-    r"|(?:bash|sh)\s+-c\s+['\"].*?(?<!git )\brm\b)"
+# env assignments. `git rm` is excluded structurally: the regex is anchored
+# at the segment start, so it does not match `git rm`.
+RM_RE = re.compile(PREFIX + r"rm\b")
+
+# A bash -c '...' / sh -c '...' wrapper: the segment stands for its inner
+# command line, which is checked in place of the segment (group 1 is the
+# single-quoted, group 2 the double-quoted inner command).
+WRAPPER_RE = re.compile(
+    PREFIX + r"(?:bash|sh)\s+-c\s+(?:'([^']*)'|\"([^\"]*)\")"
 )
+
+
+def split_segments(command):
+    """Split a command line on separators (&&, ||, ;, |, newline).
+
+    A separator inside a quoted section does not split: the shell parses
+    it as part of a word, not as a command separator.
+    """
+    segments = []
+    current = []
+    quote = None
+    i = 0
+    while i < len(command):
+        ch = command[i]
+        if quote is not None:
+            current.append(ch)
+            if ch == quote:
+                quote = None
+            i += 1
+        elif ch == "\"" or ch == "'":
+            quote = ch
+            current.append(ch)
+            i += 1
+        elif command.startswith("&&", i) or command.startswith("||", i):
+            segments.append("".join(current))
+            current = []
+            i += 2
+        elif ch == ";" or ch == "|" or ch == "\n":
+            segments.append("".join(current))
+            current = []
+            i += 1
+        else:
+            current.append(ch)
+            i += 1
+    segments.append("".join(current))
+    return segments
+
+
+def wrapper_inner(match):
+    """The inner command line of a WRAPPER_RE match."""
+    return match.group(1) if match.group(1) is not None else match.group(2)
 
 
 def segment_has_dangerous_rm(segment):
     """True when the command segment contains `rm` with recursive+force flags.
 
-    Handles prefixes: sudo, env, command, xargs, env-assignment (FOO=1),
-    and the bash -c '...' / sh -c '...' wrapping forms. `git rm` is
-    excluded structurally (the regex does not match `git rm`).
+    Handles prefixes: sudo, env, command, xargs, env-assignment (FOO=1).
+    `git rm` is excluded structurally (the regex does not match `git rm`).
     """
     m = RM_RE.match(segment)
     if not m:
@@ -70,8 +116,15 @@ def segment_has_dangerous_rm(segment):
 
 def is_dangerous_rm(command):
     """True when some command segment contains a dangerous rm -rf."""
-    segments = re.split(SEPARATORS, command)
-    return any(segment_has_dangerous_rm(seg) for seg in segments)
+    for segment in split_segments(command):
+        wrapped = WRAPPER_RE.match(segment)
+        if wrapped:
+            if is_dangerous_rm(wrapper_inner(wrapped)):
+                return True
+            continue
+        if segment_has_dangerous_rm(segment):
+            return True
+    return False
 
 
 def main():

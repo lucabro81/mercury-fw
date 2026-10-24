@@ -6,14 +6,16 @@ unstaged modifications when the commit uses -a/--all or a pathspec — and
 warns if they touch a published workspace without a changeset. Repo
 tooling (.vibe/, scripts/, .github/, docs site, test bed) does not require
 a changeset.
+
+The command line is split on separators outside quotes, so a message
+containing a separator is one argument; a `bash -c '...'` / `sh -c '...'`
+wrapper is unwrapped and its inner command line is analyzed the same way.
 """
 import json
 import re
 import shlex
 import subprocess
 import sys
-
-SEPARATORS = r"&&|\|\||;|\||\n"
 
 # The bash tool in the hook payload arrives as "bash" (short form,
 # documented in the examples), as "file_system.bash" or "process.start"
@@ -29,16 +31,27 @@ CHANGESET_REQUIRED_PREFIXES = ("packages/", "apps/cli/", "apps/create-mercury-ag
 # (the list is in scripts/check-pack.ts), so they do not require a changeset.
 CHANGESET_EXCLUDED_PREFIXES = ("packages/config/",)
 
-# `git commit` as a standalone command (git commit, git -C <path> commit,
-# bash -c '...'), anchored at segment start so a "git commit" inside
-# another command's arguments (echo "git commit", grep 'git commit')
-# does not count. Group 1 captures the commit's arguments.
+# A command prefix: sudo/env/command/xargs wrappers and env assignments.
+PREFIX = r"\s*(?:(?:sudo|env|command|xargs)\s+)*(?:\w+=(?:\"[^\"]*\"|'[^']*'|\S+)\s+)*"
+
+# `git commit` as a standalone command (git commit, git -C <path> commit),
+# anchored at segment start so a "git commit" inside another command's
+# arguments (echo "git commit", grep 'git commit') does not count. Group 1
+# captures the commit's arguments; quoted sections are captured whole, so a
+# message containing a separator (`git commit -m "a b;c"`) is one argument,
+# not a truncated capture misread as a pathspec.
 COMMIT_ARGS_RE = re.compile(
-    r"\s*(?:(?:sudo|env|command|xargs)\s+)*(?:\w+=(?:\"[^\"]*\"|'[^']*'|\S+)\s+)*"
-    r"(?:git\s+(?:-C\s+(?:\"[^\"]*\"|'[^']*'|\S+)\s+)?commit\b"
-    r"|bash\s+-c\s+['\"].*?git\s+commit\b)"
-    r"([^|&;]*)",
+    PREFIX +
+    r"git\s+(?:-C\s+(?:\"[^\"]*\"|'[^']*'|\S+)\s+)?commit\b"
+    r"((?:[^|&;\"']|\"[^\"]*\"|'[^']*')*)",
     re.S,
+)
+
+# A bash -c '...' / sh -c '...' wrapper: the segment stands for its inner
+# command line, which is analyzed in place of the segment (group 1 is the
+# single-quoted, group 2 the double-quoted inner command).
+WRAPPER_RE = re.compile(
+    PREFIX + r"(?:bash|sh)\s+-c\s+(?:'([^']*)'|\"([^\"]*)\")"
 )
 
 # `git commit` options that consume the next token
@@ -51,7 +64,53 @@ VALUE_OPTIONS = {
 # Short options of `git commit` that take a value: attached to the rest of
 # the cluster (-mx), or as the next token when they are the cluster's last
 # letter (-m x, -pm x)
-SHORT_VALUE_OPTIONS = frozenset("mFtCcSu")
+SHORT_VALUE_OPTIONS = frozenset("mFtCc")
+
+# Short options whose value is optional and only ever attached to the
+# cluster (-S<keyid>, -u<mode>): a standalone -S/-u is complete on its own
+# and never consumes the next token.
+SHORT_OPTIONAL_VALUE_OPTIONS = frozenset("Su")
+
+
+def split_segments(command):
+    """Split a command line on separators (&&, ||, ;, |, newline).
+
+    A separator inside a quoted section does not split: the shell parses
+    it as part of a word, not as a command separator.
+    """
+    segments = []
+    current = []
+    quote = None
+    i = 0
+    while i < len(command):
+        ch = command[i]
+        if quote is not None:
+            current.append(ch)
+            if ch == quote:
+                quote = None
+            i += 1
+        elif ch == "\"" or ch == "'":
+            quote = ch
+            current.append(ch)
+            i += 1
+        elif command.startswith("&&", i) or command.startswith("||", i):
+            segments.append("".join(current))
+            current = []
+            i += 2
+        elif ch == ";" or ch == "|" or ch == "\n":
+            segments.append("".join(current))
+            current = []
+            i += 1
+        else:
+            current.append(ch)
+            i += 1
+    segments.append("".join(current))
+    return segments
+
+
+def wrapper_inner(match):
+    """The inner command line of a WRAPPER_RE match."""
+    return match.group(1) if match.group(1) is not None else match.group(2)
 
 
 def git(cwd, *args):
@@ -62,7 +121,13 @@ def git(cwd, *args):
 
 def commit_segment(command):
     """The arguments of the first `git commit` standalone command, or None."""
-    for segment in re.split(SEPARATORS, command):
+    for segment in split_segments(command):
+        wrapped = WRAPPER_RE.match(segment)
+        if wrapped:
+            args = commit_segment(wrapper_inner(wrapped))
+            if args is not None:
+                return args
+            continue
         m = COMMIT_ARGS_RE.match(segment)
         if m:
             return m.group(1)
@@ -111,6 +176,9 @@ def includes_unstaged(segment):
                         break
                     # the value is the next token
                     i += 1
+                    break
+                if letter in SHORT_OPTIONAL_VALUE_OPTIONS:
+                    # the value, if any, is the rest of the cluster
                     break
                 j += 1
             i += 1
