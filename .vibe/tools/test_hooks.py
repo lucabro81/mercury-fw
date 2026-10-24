@@ -222,9 +222,9 @@ def main():
 
     # --- block_commit_on_main: switch-away resets a previous switch to main ---
     expect("switch to main then away then commit allowed",
-           run_hook(BCM, "bash", "git checkout main && git checkout feat/x && git commit -m x", feat_repo), "silent")
+           run_hook(BCM, "bash", "git checkout main && git checkout feat/331-test && git commit -m x", feat_repo), "silent")
     expect("switch main then away (switch) then commit allowed",
-           run_hook(BCM, "bash", "git switch main && git switch feat/x && git commit -m x", feat_repo), "silent")
+           run_hook(BCM, "bash", "git switch main && git switch feat/331-test && git commit -m x", feat_repo), "silent")
     expect("pathspec restore is not a switch away: commit still denied",
            run_hook(BCM, "bash", "git checkout main && git checkout feat/x -- file.ts && git commit -m x", feat_repo), "deny")
 
@@ -519,6 +519,144 @@ def main():
            run_hook(CS, "bash", "bash -c 'git commit -m \"two words\"'", feat_repo), "warn")
     expect("control: plain commit, staged code + unstaged changeset -> warns",
            run_hook(CS, "bash", "git commit -m x", feat_repo), "warn")
+    git(feat_repo, "reset", "-q")
+
+    # --- block_commit_on_main: a pathspec restore is not a switch away (round 10) ---
+    # `git checkout .`, `git checkout HEAD`, `git checkout @` and
+    # `git checkout <path>` restore paths and stay on the branch: they
+    # must not un-mark a previous switch to main.
+    expect("switch to main then 'checkout .' + commit still denied",
+           run_hook(BCM, "bash", "git checkout main && git checkout . && git commit -m x", feat_repo), "deny")
+    expect("switch to main then 'checkout HEAD' + commit still denied",
+           run_hook(BCM, "bash", "git checkout main && git checkout HEAD && git commit -m x", feat_repo), "deny")
+    expect("switch to main then 'checkout @' + commit still denied",
+           run_hook(BCM, "bash", "git checkout main && git checkout @ && git commit -m x", feat_repo), "deny")
+    expect("switch to main then 'checkout <path>' + commit still denied",
+           run_hook(BCM, "bash", "git checkout main && git checkout README.md && git commit -m x", feat_repo), "deny")
+    expect("switch to main then 'checkout main:<path>' + commit still denied",
+           run_hook(BCM, "bash", "git checkout main && git checkout main:README.md && git commit -m x", feat_repo), "deny")
+
+    # --- block_commit_on_main: revision targets detach, --orphan creates (round 10) ---
+    # A target that resolves to a commit (main~1, a tag, a sha) detaches
+    # HEAD — it is not a switch to main. `git checkout --orphan <name>`
+    # switches to an unborn branch. `git checkout -b <name>` creates and
+    # switches.
+    git(prev_repo, "checkout", "-q", "main")
+    git(prev_repo, "commit", "-q", "--allow-empty", "-m", "second on main")
+    git(prev_repo, "checkout", "-q", "feat/second")
+    expect("checkout main~1 (detached) + commit allowed",
+           run_hook(BCM, "bash", "git checkout main~1 && git commit -m x", prev_repo), "silent")
+    expect("checkout main~1 then back to main + commit denied",
+           run_hook(BCM, "bash", "git checkout main~1 && git checkout main && git commit -m x", prev_repo), "deny")
+    expect("switch to main then 'checkout --orphan <new>' + commit allowed",
+           run_hook(BCM, "bash", "git checkout main && git checkout --orphan newbr && git commit -m x", feat_repo), "silent")
+    expect("switch to main then 'checkout -b <new>' + commit allowed",
+           run_hook(BCM, "bash", "git checkout main && git checkout -b feat/new && git commit -m x", feat_repo), "silent")
+    expect("checkout -b main + commit denied",
+           run_hook(BCM, "bash", "git checkout -b main && git commit -m x", feat_repo), "deny")
+
+    # --- block_commit_on_main: git global options before the subcommand (round 10) ---
+    expect("git --no-pager commit on main denied",
+           run_hook(BCM, "bash", "git --no-pager commit -m x", main_repo), "deny")
+    expect("git -p commit on main denied",
+           run_hook(BCM, "bash", "git -p commit -m x", main_repo), "deny")
+    expect("git -c foo.bar=1 commit on main denied",
+           run_hook(BCM, "bash", "git -c foo.bar=1 commit -m x", main_repo), "deny")
+    expect("git --paginate=always commit on main denied",
+           run_hook(BCM, "bash", "git --paginate=always commit -m x", main_repo), "deny")
+    expect("git -C <main> -c foo.bar=1 commit denied",
+           run_hook(BCM, "bash", f"git -C {main_repo} -c foo.bar=1 commit -m x", feat_repo), "deny")
+    expect("git -C<main> commit denied (attached -C)",
+           run_hook(BCM, "bash", f"git -C{main_repo} commit -m x", feat_repo), "deny")
+    expect("git --no-pager checkout main && git commit denied",
+           run_hook(BCM, "bash", "git --no-pager checkout main && git commit -m x", feat_repo), "deny")
+    expect("git -c foo.bar=1 checkout - && git commit judged on the current branch",
+           run_hook(BCM, "bash", "git -c foo.bar=1 checkout - && git commit -m x", feat_repo), "silent")
+
+    # --- block_commit_on_main: wrapper and subshell variants (round 10) ---
+    expect("bash -lc 'git commit' on main denied",
+           run_hook(BCM, "bash", "bash -lc 'git commit -m x'", main_repo), "deny")
+    expect("bash -l -c 'git commit' on main denied",
+           run_hook(BCM, "bash", "bash -l -c 'git commit -m x'", main_repo), "deny")
+    expect("/bin/bash -c 'git commit' on main denied",
+           run_hook(BCM, "bash", "/bin/bash -c 'git commit -m x'", main_repo), "deny")
+    expect("env -i bash -c 'git commit' on main denied",
+           run_hook(BCM, "bash", "env -i bash -c 'git commit -m x'", main_repo), "deny")
+    expect("(git commit) subshell on main denied",
+           run_hook(BCM, "bash", "(git commit -m x)", main_repo), "deny")
+    expect("echo $(git commit) command substitution on main denied",
+           run_hook(BCM, "bash", "echo $(git commit -m x)", main_repo), "deny")
+    expect("bash -lc 'git checkout main && git commit' denied",
+           run_hook(BCM, "bash", "bash -lc 'git checkout main && git commit -m x'", feat_repo), "deny")
+    expect("(git checkout main && git commit) subshell denied",
+           run_hook(BCM, "bash", "(git checkout main && git commit -m x)", feat_repo), "deny")
+    expect("echo $(git checkout main) && git commit denied",
+           run_hook(BCM, "bash", "echo $(git checkout main) && git commit -m x", feat_repo), "deny")
+    expect("nested wrapper: bash -c 'bash -c ...' denied",
+           run_hook(BCM, "bash", "bash -c 'bash -c \"git commit -m x\"'", main_repo), "deny")
+
+    # --- block_rm_rf: abbreviated long options, wrapper and subshell variants (round 10) ---
+    expect("rm --rec --for denied (GNU abbreviations)",
+           run_hook(RM, "bash", "rm --rec --for dir", feat_repo), "deny")
+    expect("rm --r --f denied (GNU abbreviations)",
+           run_hook(RM, "bash", "rm --r --f dir", feat_repo), "deny")
+    expect("rm --recursive --for denied (mixed abbreviation)",
+           run_hook(RM, "bash", "rm --recursive --for dir", feat_repo), "deny")
+    expect("rm --recur alone allowed (no force)",
+           run_hook(RM, "bash", "rm --recur dir", feat_repo), "silent")
+    expect("rm --for alone allowed (no recursive)",
+           run_hook(RM, "bash", "rm --for file", feat_repo), "silent")
+    expect("bash -lc 'rm -rf ...' denied",
+           run_hook(RM, "bash", "bash -lc 'rm -rf /tmp/x'", feat_repo), "deny")
+    expect("/bin/bash -c 'rm -rf ...' denied",
+           run_hook(RM, "bash", "/bin/bash -c 'rm -rf /tmp/x'", feat_repo), "deny")
+    expect("env -i bash -c 'rm -rf ...' denied",
+           run_hook(RM, "bash", "env -i bash -c 'rm -rf /tmp/x'", feat_repo), "deny")
+    expect("(rm -rf ...) subshell denied",
+           run_hook(RM, "bash", "(rm -rf /tmp/x)", feat_repo), "deny")
+    expect("echo $(rm -rf ...) command substitution denied",
+           run_hook(RM, "bash", "echo $(rm -rf /tmp/x)", feat_repo), "deny")
+
+    # --- suggest_changeset: git global options, wrappers, subshells (round 10) ---
+    expect("git --no-pager commit with staged code warns",
+           run_hook(CS, "bash", "git --no-pager commit -m x", cs_repo), "warn")
+    expect("git -c foo.bar=1 commit with staged code warns",
+           run_hook(CS, "bash", "git -c foo.bar=1 commit -m x", cs_repo), "warn")
+    expect("git -C<repo> commit with staged code warns (attached -C)",
+           run_hook(CS, "bash", f"git -C{cs_repo} commit -m x", feat_repo), "warn")
+    expect("bash -lc 'git commit' with staged code warns",
+           run_hook(CS, "bash", "bash -lc 'git commit -m x'", cs_repo), "warn")
+    expect("(git commit) subshell with staged code warns",
+           run_hook(CS, "bash", "(git commit -m x)", cs_repo), "warn")
+    expect("echo $(git commit) with staged code warns",
+           run_hook(CS, "bash", "echo $(git commit -m x)", cs_repo), "warn")
+
+    # --- suggest_changeset: redirect tokens are not pathspecs (round 10) ---
+    # x.ts is tracked in feat_repo with an unstaged modification, and a
+    # staged README.md is not a published workspace: a plain commit
+    # touches neither, so it stays silent — and redirect tokens must not
+    # be read as a pathspec that pulls the unstaged modification in.
+    git(feat_repo, "checkout", "--", ".changeset/quoted-msg.md")  # no unstaged changeset
+    write("README.md", "# r\n")
+    git(feat_repo, "add", "README.md")
+    expect("plain commit with only a staged README -> silent",
+           run_hook(CS, "bash", "git commit -m x", feat_repo), "silent")
+    expect("commit > log: redirect is not a pathspec -> silent",
+           run_hook(CS, "bash", "git commit -m x > log.txt", feat_repo), "silent")
+    expect("commit >> log: redirect is not a pathspec -> silent",
+           run_hook(CS, "bash", "git commit -m x >> log.txt", feat_repo), "silent")
+    expect("commit 2> log: redirect is not a pathspec -> silent",
+           run_hook(CS, "bash", "git commit -m x 2> log.txt", feat_repo), "silent")
+    expect("commit 2>&1: redirect is not a pathspec -> silent",
+           run_hook(CS, "bash", "git commit -m x 2>&1", feat_repo), "silent")
+    expect("commit < in: redirect is not a pathspec -> silent",
+           run_hook(CS, "bash", "git commit -m x < in.txt", feat_repo), "silent")
+    expect("commit >log (attached target): redirect is not a pathspec -> silent",
+           run_hook(CS, "bash", "git commit -m x >log.txt", feat_repo), "silent")
+    expect("commit -am x > log still warns (-a includes unstaged)",
+           run_hook(CS, "bash", "git commit -am x > log.txt", feat_repo), "warn")
+    expect("commit with pathspec > log still warns",
+           run_hook(CS, "bash", "git commit -m x -- packages/libs/core/src/x.ts > log.txt", feat_repo), "warn")
     git(feat_repo, "reset", "-q")
 
 # --- suggest_test_after_ts (post_tool shape) ---

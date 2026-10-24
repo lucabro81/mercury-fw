@@ -73,20 +73,26 @@ Wait for both subagents to complete. Read their reports:
 
 For each finding in the reports:
 
-- **cold-reviewer finding (code)**: fix it yourself in the branch, unless it
-  is severe or hides a decision that belongs to Luca. In that case, bring the
-  finding to Luca and wait for his decision.
+- **Classify it** (S1–S4, see below). The reviewer proposes a class; you may
+  re-classify with a written reason in the final report.
+- **S1/S2 (blocking)**: fix it yourself in the branch, unless it is severe or
+  hides a decision that belongs to Luca. In that case, bring the finding to
+  Luca and wait for his decision.
+- **S3**: fix it in the same round, with a regression test.
+- **S4**: defer it: open a tech-debt issue, link it in the PR, and note the
+  deferral in the report.
 - **docs-auditor finding (documentation)**: fix it directly. If the finding
   indicates the **code** is wrong (direction A: doc claim not backed by code),
-  apply the same rules as cold-reviewer findings.
+  apply the same classification and rules as cold-reviewer findings.
 - **"undecided" finding**: decide from the issue's intent when clear enough,
   otherwise ask Luca.
 
-After fixing all findings:
+After fixing:
 1. Commit the fixes: `git add -A && git commit -m "fix(review): address review findings"`
 2. Push: `git push`
-3. **Re-launch both subagents** (go back to step 2)
-4. Repeat until both return APPROVE
+3. **Re-run only the reviewers whose domain changed** (see below) — go back
+   to step 2 for each
+4. Apply the exit conditions below: the loop always ends
 
 ### 6. Final report
 
@@ -101,8 +107,65 @@ When both return APPROVE, tell the user:
 - **Never give the subagents context beyond issue number and branch name.**
   Their value is in fresh eyes.
 - **Do not skip the review gate**, not even for "small changes".
+- **The reviewers are read-only.** They never commit, push, rebase or modify
+  any file; the caller applies every finding and checks `git status` after
+  each round.
 - If a subagent finds a serious architectural problem, escalate to Luca before
   fixing.
+
+## Severity classes
+
+Every finding is classified into one of four classes. The reviewer proposes
+a class for each finding; the caller may re-classify with a written reason
+in the final report.
+
+| Class | Meaning | Effect |
+|---|---|---|
+| S1 | Fail-open on a common, innocent command of the workflow: a commit on main, an `rm -rf`, a commit that should carry a changeset slips through | Blocks the merge |
+| S2 | Over-block: a legitimate workflow command is refused (a commit on a feature branch blocked, the reviewers' read-only contract broken) | Blocks the merge |
+| S3 | Inaccuracy in the safe direction: over-warning, false positives, imprecise state that causes no harm | Fix in the same round with a regression test, or defer with a tracked issue |
+| S4 | Cosmetic, marginal robustness, or outside the threat model | Defer with a tracked tech-debt issue; never blocks |
+
+A finding that restates a limitation already documented as accepted (the
+hooks' "not a sandbox" docstring, a linked tech-debt issue) is not a
+finding: it is a deferral.
+
+## Exit conditions
+
+The review always ends. The loop is bounded by:
+
+- **Fix-or-defer.** A round with no S1/S2 closes when every S3/S4 finding
+  is either fixed with a regression test or deferred in a tracked issue
+  linked in the PR.
+- **Verification round.** After a round that had only S3/S4, re-run each
+  reviewer whose domain changed (see below) once. If it finds only S3/S4
+  again, apply fix-or-defer and close: the review ends. Severity may not
+  rise without blocking: an S1/S2 in a verification round reopens the loop.
+- **Blocking cap.** At most 3 consecutive rounds with at least one S1/S2.
+  A 4th consecutive blocking round stops the loop: the caller writes an
+  escalation report for Luca — residual findings with their classes, what
+  each round fixed, the hypothesis on the underlying problem, and the
+  options (redesign, narrow the scope, accept the risk, defer) — and waits
+  for his decision. The loop does not resume without it.
+- **Absolute cap.** At most 5 rounds total from the adoption of this grid,
+  whatever the classes. Same escalation as above.
+
+## Re-running a reviewer
+
+Re-run a reviewer only when files in its domain changed since its last
+verdict: cold-reviewer for code and tests, docs-auditor for docs, skills,
+agent definitions and changesets. A reviewer that APPROVEd is not re-run
+for changes outside its domain.
+
+## Threat model for the hooks
+
+The `.vibe/tools/` hooks are a guard-rail for an honest but fallible agent,
+not a sandbox: they analyze the command line textually, so a deliberately
+hostile command can route around them (an alias, a renamed binary,
+`git --git-dir=<foreign repo>`, editing `.git` directly). They exist to
+catch the common accidents of the Mercury workflow — a commit on main, an
+`rm -rf`, a commit that should carry a changeset — not to stop an
+adversary. Findings outside this model are S4 deferrals, not blockers.
 
 ## After the review
 
