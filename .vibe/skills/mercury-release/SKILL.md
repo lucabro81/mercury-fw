@@ -42,7 +42,7 @@ Committa il changeset e salva il suo testo per la PR:
 ```bash
 git add .changeset/
 git commit -m "chore: add changeset for #N"
-CHANGESET_BODY=$(tail -n +5 .changeset/<nome-file>.md)
+CHANGESET_BODY=$(awk 'f{print} /^---$/{c++; f=(c==2)}' .changeset/<nome-file>.md | sed '/./,$!d')
 ```
 
 ### 2. Esegui il release
