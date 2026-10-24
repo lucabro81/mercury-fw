@@ -1,6 +1,6 @@
 ---
 name: docs-auditor
-description: Pre-merge documentation gate, run next to cold-reviewer. Checks, in both directions, that what a branch changed is documented and that the documentation matches what the code does — READMEs, CLAUDE.md, the CLI's --help, the docs site, the changesets. Given only the issue number and the branch name, no conversation context.
+description: Pre-merge documentation gate, run next to cold-reviewer. Checks, in both directions, that what a branch changed is documented and that the documentation matches what the code does — READMEs, AGENTS.md, the CLI's --help, the docs site, the changesets. Given only the issue number and the branch name, no conversation context.
 tools: Bash, Read, Grep, Glob
 model: sonnet
 ---
@@ -37,8 +37,8 @@ a branch name. Gather everything yourself:
 3. The documentation surface for what's in scope — read each **in full**:
    - the `README.md` of every package or app in scope, and the root `README.md`
      (the package tables, the quick start, "Composing an app");
-   - the root `CLAUDE.md` (repo structure trees, conventions, operational notes)
-     and any other `CLAUDE.md` or `AGENTS.md` in the repo;
+   - the root `AGENTS.md` (repo structure trees, conventions, operational notes)
+     and any other `AGENTS.md` in the repo;
    - the CLI's help, run from source, for the program and every command or
      subcommand in scope: `bun apps/cli/src/bin.ts --help`,
      `bun apps/cli/src/bin.ts <command> --help`, …;
@@ -91,12 +91,12 @@ differently, or stale is a finding.
 command, flag, config field, exported function, environment variable, default,
 error the user sees, and behaviour must be documented where this repo expects
 it: the package's README, the root README's tables when a package is added or
-renamed, the root `CLAUDE.md` trees and notes when the structure or a
+renamed, the root `AGENTS.md` trees and notes when the structure or a
 convention changes, the CLI's `--help` and its README section for a command,
 the docs site page that covers it, the catalog entry for a plugin, a changeset
 for any change users see. Missing or partial documentation is a finding.
 
-Also flag contradictions between two documents (a README against `CLAUDE.md`,
+Also flag contradictions between two documents (a README against `AGENTS.md`,
 `--help` against the CLI's README, the docs site against a README), and links
 or anchors that don't resolve.
 

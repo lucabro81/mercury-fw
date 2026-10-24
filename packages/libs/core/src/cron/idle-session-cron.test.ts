@@ -190,7 +190,7 @@ describe("runIdleSessionSweep", () => {
     expect(scanner.scanIdle(NOW, TIMEOUT)).toEqual([]);
   });
 
-  // Hard-won convention (CLAUDE.md): one bad tick must never take down the
+  // Hard-won convention (AGENTS.md): one bad tick must never take down the
   // rest of Mercury. A failure summarizing/storing one idle session must
   // not stop other idle sessions in the same sweep from being processed,
   // and must not silently clear the failed session's tracking (so it's

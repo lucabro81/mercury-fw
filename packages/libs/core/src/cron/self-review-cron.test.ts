@@ -77,7 +77,7 @@ describe("runSelfReviewTick", () => {
     expect(contradictionCalls).toBe(1);
   });
 
-  // Hard-won convention (CLAUDE.md): one bad tick must never take down the
+  // Hard-won convention (AGENTS.md): one bad tick must never take down the
   // rest of Mercury. Here that means one sub-pass failing must not block
   // the other two in the same run.
   it("a failure in one sub-pass doesn't stop the others from running, and gets logged", async () => {

@@ -1,0 +1,46 @@
+# Mercury workflow hooks — guard-rail automatici per il workflow di sviluppo.
+# Vedi AGENTS.md per il workflow completo.
+#
+# I path dei comandi sono assoluti (git rev-parse --show-toplevel) e protetti
+# da un test condizionale: se la cwd non è dentro questo repo, gli hook
+# falliscono in modo aperto (non bloccano le tool call).
+
+# 1. Blocca commit diretti su main/master
+[[hooks]]
+name = "block-commit-on-main"
+type = "pre_tool"
+match = "bash"
+command = "ROOT=$(git rev-parse --show-toplevel 2>/dev/null) && test -f \"$ROOT/.vibe/hooks.toml\" && python3 \"$ROOT/.vibe/tools/block_commit_on_main.py\" || true"
+description = "Blocca git commit sul branch main: si committa solo su feat/<N>-<slug>"
+
+# 2. Blocca push verso main/master
+[[hooks]]
+name = "block-push-to-main"
+type = "pre_tool"
+match = "bash"
+command = "ROOT=$(git rev-parse --show-toplevel 2>/dev/null) && test -f \"$ROOT/.vibe/hooks.toml\" && python3 \"$ROOT/.vibe/tools/block_push_to_main.py\" || true"
+description = "Blocca git push verso main: si pusha solo da branch feature, poi PR"
+
+# 3. Blocca rm -rf e varianti
+[[hooks]]
+name = "block-rm-rf"
+type = "pre_tool"
+match = "bash"
+command = "ROOT=$(git rev-parse --show-toplevel 2>/dev/null) && test -f \"$ROOT/.vibe/hooks.toml\" && python3 \"$ROOT/.vibe/tools/block_rm_rf.py\" || true"
+description = "Blocca rm -rf: usare git rm per file tracciati"
+
+# 4. Avvisa se manca un changeset prima del commit
+[[hooks]]
+name = "suggest-changeset"
+type = "pre_tool"
+match = "bash"
+command = "ROOT=$(git rev-parse --show-toplevel 2>/dev/null) && test -f \"$ROOT/.vibe/hooks.toml\" && python3 \"$ROOT/.vibe/tools/suggest_changeset.py\" || true"
+description = "Avvisa se si committa codice senza un changeset"
+
+# 5. Suggerisce test e typecheck dopo modifiche a file .ts
+[[hooks]]
+name = "suggest-test-after-ts-edit"
+type = "post_tool"
+match = "re:(edit|write_file)"
+command = "ROOT=$(git rev-parse --show-toplevel 2>/dev/null) && test -f \"$ROOT/.vibe/hooks.toml\" && python3 \"$ROOT/.vibe/tools/suggest_test_after_ts.py\" || true"
+description = "Dopo una modifica a un file .ts, ricorda di runnare typecheck e test"
