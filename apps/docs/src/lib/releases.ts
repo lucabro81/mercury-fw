@@ -63,12 +63,17 @@ function toRelease(raw: GithubRelease, tagDates: Map<string, string>): Release |
 /**
  * Published releases with a known tag shape, newest first. `tagDates` maps a
  * tag to its date (ISO 8601, as `parseTagDates` reads them); a release whose
- * tag isn't there goes by `published_at`, which also breaks ties.
+ * tag isn't there goes by `published_at`. On the same time the framework's
+ * release comes first, then `published_at` decides.
  */
 export function parseReleases(raw: GithubRelease[], tagDates: Map<string, string> = new Map()): Release[] {
   const time = (r: GithubRelease) => Date.parse(when(r, tagDates)) || 0;
   const published = (r: GithubRelease) => Date.parse(r.published_at ?? "") || 0;
-  const byTime = raw.filter((r) => !r.draft).sort((a, b) => time(b) - time(a) || published(b) - published(a));
+  // A release's tags share one commit: the framework's leads them.
+  const framework = (r: GithubRelease) => (FRAMEWORK_TAG.test(r.tag_name) ? 1 : 0);
+  const byTime = raw
+    .filter((r) => !r.draft)
+    .sort((a, b) => time(b) - time(a) || framework(b) - framework(a) || published(b) - published(a));
   return byTime.map((r) => toRelease(r, tagDates)).filter((r): r is Release => r !== null);
 }
 

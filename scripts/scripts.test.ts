@@ -399,7 +399,7 @@ describe("releaseNotes", () => {
 describe("releasesToCreate", () => {
   test("the tags without a Release, of a known shape: the framework's oldest first, then the packages'", () => {
     const tags = ["v0.59.1", "@mercury-fw/plugin-jira@0.10.0", "v0.9.0", "nightly", "v0.10.0", "@mercury-fw/plugin-jira@0.8.0", "v0.58.0"];
-    expect(releasesToCreate(tags, new Set(["v0.58.0"]))).toEqual([
+    expect(releasesToCreate(tags, new Set(["v0.58.0"]), [])).toEqual([
       "v0.9.0",
       "v0.10.0",
       "v0.59.1",
@@ -409,7 +409,18 @@ describe("releasesToCreate", () => {
   });
 
   test("nothing when every tag has one", () => {
-    expect(releasesToCreate(["v0.59.1"], new Set(["v0.59.1"]))).toEqual([]);
+    expect(releasesToCreate(["v0.59.1"], new Set(["v0.59.1"]), [])).toEqual([]);
+  });
+
+  // Regression (#327): Changesets tags every package of the fixed group too
+  // (@mercury-fw/core@0.59.2…), and each of those got a Release repeating
+  // the framework's one.
+  test("a package of the fixed group gets no Release of its own: the framework's covers it", () => {
+    const head = ["v0.59.2", "@mercury-fw/core@0.59.2", "create-mercury-agent@0.59.2", "@mercury-fw/plugin-jira@0.8.1"];
+    expect(releasesToCreate(head, new Set(), ["@mercury-fw/core", "create-mercury-agent"])).toEqual([
+      "v0.59.2",
+      "@mercury-fw/plugin-jira@0.8.1",
+    ]);
   });
 });
 
