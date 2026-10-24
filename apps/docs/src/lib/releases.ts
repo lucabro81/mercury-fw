@@ -2,9 +2,10 @@
  * The unified changelog: the repository's GitHub Releases, one per published
  * tag (`vX.Y.Z` for the framework, `<package>@<version>` for a plugin, channel
  * or auth provider), read at build time. The site is built after a release, so
- * what it shows is what is on npm. A release is dated by its git tag when the
- * build can read it: the Releases of the tags made before Releases existed
- * were all created on one day, long after the tags.
+ * what it shows is what is on npm. Releases are ordered by the commit their
+ * tag points to when the build can read it: the Releases of the tags made
+ * before Releases existed were all created on one day, long after the tags,
+ * and a release's tags all point to its release commit.
  */
 
 /** The fields of a GitHub Release (REST API) this module reads. */
@@ -26,8 +27,6 @@ export type Release = {
   /** The package's name, `null` for a framework release. */
   package: string | null;
   version: string;
-  /** `YYYY-MM-DD`. */
-  date: string;
   /** Markdown, as the release carries it. */
   body: string;
   url: string;
@@ -38,53 +37,58 @@ export type Release = {
 const FRAMEWORK_TAG = /^v(\d+\.\d+\.\d+.*)$/;
 const PACKAGE_TAG = /^((?:@[^/@]+\/)?[^/@]+)@(\d+\.\d+\.\d+.*)$/;
 
-/** When `raw` happened: its tag's date when known (`tagDates`), else when it was published. */
-function when(raw: GithubRelease, tagDates: Map<string, string>): string {
-  return tagDates.get(raw.tag_name) ?? raw.published_at ?? "";
+/** When `raw` happened: its tag's commit time when known (`tagTimes`), else when it was published. */
+function when(raw: GithubRelease, tagTimes: Map<string, string>): string {
+  return tagTimes.get(raw.tag_name) ?? raw.published_at ?? "";
 }
 
 /** Reads one release, or `null` when its tag is neither shape. */
-function toRelease(raw: GithubRelease, tagDates: Map<string, string>): Release | null {
-  const date = when(raw, tagDates).slice(0, 10);
+function toRelease(raw: GithubRelease): Release | null {
   const body = raw.body ?? "";
   const framework = FRAMEWORK_TAG.exec(raw.tag_name);
   if (framework) {
     const version = framework[1]!;
-    return { tag: raw.tag_name, kind: "framework", title: `Mercury Framework ${version}`, package: null, version, date, body, url: raw.html_url, prerelease: raw.prerelease };
+    return { tag: raw.tag_name, kind: "framework", title: `Mercury Framework ${version}`, package: null, version, body, url: raw.html_url, prerelease: raw.prerelease };
   }
   const pkg = PACKAGE_TAG.exec(raw.tag_name);
   if (pkg) {
     const [, name, version] = pkg as unknown as [string, string, string];
-    return { tag: raw.tag_name, kind: "package", title: `${name} ${version}`, package: name, version, date, body, url: raw.html_url, prerelease: raw.prerelease };
+    return { tag: raw.tag_name, kind: "package", title: `${name} ${version}`, package: name, version, body, url: raw.html_url, prerelease: raw.prerelease };
   }
   return null;
 }
 
 /**
- * Published releases with a known tag shape, newest first. `tagDates` maps a
- * tag to its date (ISO 8601, as `parseTagDates` reads them); a release whose
- * tag isn't there goes by `published_at`. On the same time the framework's
- * release comes first, then `published_at` decides.
+ * Published releases with a known tag shape, newest first. `tagTimes` maps a
+ * tag to the time of the commit it points to (ISO 8601, as `parseTagTimes`
+ * reads them); a release whose tag isn't there goes by `published_at`. The
+ * releases of one commit come framework first, then the packages by name.
  */
-export function parseReleases(raw: GithubRelease[], tagDates: Map<string, string> = new Map()): Release[] {
-  const time = (r: GithubRelease) => Date.parse(when(r, tagDates)) || 0;
+export function parseReleases(raw: GithubRelease[], tagTimes: Map<string, string> = new Map()): Release[] {
+  const time = (r: GithubRelease) => Date.parse(when(r, tagTimes)) || 0;
   const published = (r: GithubRelease) => Date.parse(r.published_at ?? "") || 0;
-  // A release's tags share one commit: the framework's leads them.
-  const framework = (r: GithubRelease) => (FRAMEWORK_TAG.test(r.tag_name) ? 1 : 0);
-  const byTime = raw
+  const releases = raw
     .filter((r) => !r.draft)
-    .sort((a, b) => time(b) - time(a) || framework(b) - framework(a) || published(b) - published(a));
-  return byTime.map((r) => toRelease(r, tagDates)).filter((r): r is Release => r !== null);
+    .map((r) => ({ raw: r, release: toRelease(r) }))
+    .filter((x): x is { raw: GithubRelease; release: Release } => x.release !== null);
+  releases.sort(
+    (a, b) =>
+      time(b.raw) - time(a.raw) ||
+      (a.release.kind === b.release.kind ? 0 : a.release.kind === "framework" ? -1 : 1) ||
+      (a.release.package ?? "").localeCompare(b.release.package ?? "") ||
+      published(b.raw) - published(a.raw),
+  );
+  return releases.map((x) => x.release);
 }
 
-/** The tags' dates from `git for-each-ref refs/tags --format='%(refname:short) %(creatordate:iso-strict)'`. */
-export function parseTagDates(output: string): Map<string, string> {
-  const dates = new Map<string, string>();
+/** The tags' commit times from `git for-each-ref`, one `<tag> <time>` per line (`readTagTimes` in site.ts). */
+export function parseTagTimes(output: string): Map<string, string> {
+  const times = new Map<string, string>();
   for (const line of output.split("\n")) {
-    const [tag, date] = line.trim().split(" ");
-    if (tag && date) dates.set(tag, date);
+    const [tag, time] = line.trim().split(" ");
+    if (tag && time) times.set(tag, time);
   }
-  return dates;
+  return times;
 }
 
 /** The newest framework version among `releases` (newest first), pre-releases left out, or `null`. */
@@ -130,8 +134,8 @@ export type FetchReleasesDeps = {
   token: string | undefined;
   /** Throw on a failure instead of returning no releases: for a build about to be published. */
   required?: boolean;
-  /** Each tag's date (`parseTagDates`), which dates a release before its `published_at`. */
-  tagDates?: Map<string, string>;
+  /** Each tag's commit time (`parseTagTimes`), which orders a release before its `published_at`. */
+  tagTimes?: Map<string, string>;
 };
 
 /**
@@ -158,5 +162,5 @@ export async function fetchReleases(repo: string, deps: FetchReleasesDeps): Prom
     console.warn(`[docs] releases not read: ${reason}`);
     return [];
   }
-  return parseReleases(all, deps.tagDates);
+  return parseReleases(all, deps.tagTimes);
 }

@@ -41,7 +41,7 @@ jobs:
       RELEASES_REQUIRED: "1"
       CI: "true"
     steps:
-      # The whole history, for the tags that date the changelog's releases.
+      # The whole history, for the tags that order the changelog's releases.
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
