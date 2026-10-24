@@ -7,27 +7,29 @@ quando le opzioni vengono dopo il percorso (rm dir -rf, permutazione GNU).
 `git rm` non è bloccato: è l'alternativa sicura per i file tracciati.
 
 Controlla solo le invocazioni di `rm` come comando (all'inizio di un segmento
-di comando, dopo ;, &&, ||, |), non le sottostringhe in echo, grep, ecc.
+di comando, dopo ;, &&, ||, |, \n), non le sottostringhe in echo, grep, ecc.
+Gestisce prefissi env-assignment generici (FOO=1 rm -rf).
 """
 import json
 import re
 import sys
 
-
-def is_git_rm(segment, rm_start):
-    """True se l'occorrenza di `rm` in `rm_start` è il comando `git rm`."""
-    prefix = segment[max(0, rm_start - 10):rm_start]
-    return re.search(r"(?:sudo\s+)?git\s+$", prefix) is not None
+SEPARATORS = r"&&|\|\||;|\||\n"
 
 
 def segment_has_dangerous_rm(segment):
     """True se il segmento di comando inizia con `rm` (non `git rm`) e ha
     sia il flag ricorsivo che force."""
-    # Match rm all'inizio del segmento, opzionalmente preceduto da sudo/env
-    m = re.match(r"^(?:sudo\s+|env\s+\w+=\S+\s+)*rm\b", segment.strip())
+    m = re.match(
+        r"\s*(?:sudo\s+)?(?:\w+=(?:\"[^\"]*\"|'[^']*'|\S+)\s+)*rm\b",
+        segment,
+    )
     if not m:
         return False
-    if is_git_rm(segment, m.start()):
+    # Escludi git rm (strutturalmente non matchato dal regex sopra, ma per
+    # sicurezza verifichiamo che non ci sia `git` prima di `rm`)
+    prefix = segment[:m.start()].strip()
+    if re.search(r"\bgit\s*$", prefix):
         return False
     rest = segment[m.end():]
     recursive = force = False
@@ -50,7 +52,7 @@ def segment_has_dangerous_rm(segment):
 
 def is_dangerous_rm(command):
     """True se qualche segmento di comando contiene un rm -rf pericoloso."""
-    segments = re.split(r"&&|\|\||;|\|", command)
+    segments = re.split(SEPARATORS, command)
     return any(segment_has_dangerous_rm(seg) for seg in segments)
 
 
