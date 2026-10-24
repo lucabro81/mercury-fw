@@ -637,18 +637,21 @@ describe("mfw create with a newer CLI on the registry", () => {
     expect(calls.map((c) => c.env.NPM_CONFIG_REGISTRY)).toEqual([newerRegistry.url.origin, newerRegistry.url.origin]);
   });
 
+  // Regression (#316): this test, the next one and the handover one below ran create with its real
+  // `bun install` from npm, which ran past the 5s timeout on a slow registry
+  // or a just-published release; what they check needs no install.
   test("once relaunched (MFW_SELF_UPDATED set), it doesn't relaunch again: it creates the app", async () => {
     process.env.MFW_SELF_UPDATED = NEWER;
     const dir = join(base, "demo");
     const { calls, relaunch } = fakeRelaunch();
-    expect(await main(["create", dir, "--yes"], { relaunch })).toBe(0);
+    expect(await main(["create", dir, "--no-install", "--no-git", "--yes"], { relaunch })).toBe(0);
     expect(calls).toEqual([]);
     expect(existsSync(join(dir, "package.json"))).toBe(true);
   });
 
   test("an unreachable registry is only a warning: an app with no plugins is still created", async () => {
     const dir = join(base, "demo");
-    const result = await runWith("http://127.0.0.1:9", "create", dir, "--yes");
+    const result = await runWith("http://127.0.0.1:9", "create", dir, "--no-install", "--no-git", "--yes");
     expect(result.code).toBe(0);
     expect(result.stderr).toContain("couldn't check for a newer mfw: Can't reach http://127.0.0.1:9");
     expect(existsSync(join(dir, "package.json"))).toBe(true);
@@ -773,7 +776,7 @@ describe("a global mfw inside an app with its own CLI", () => {
     const updated = process.env.MFW_SELF_UPDATED;
     process.env.MFW_SELF_UPDATED = cliVersion();
     try {
-      await main(["create", join(dir, "nested"), "--yes"], { cwd: dir, relaunch });
+      await main(["create", join(dir, "nested"), "--no-install", "--no-git", "--yes"], { cwd: dir, relaunch });
       await main(["create", "--help"], { cwd: dir, relaunch });
       await main(["upgrade", "--help"], { cwd: dir, relaunch });
     } finally {
