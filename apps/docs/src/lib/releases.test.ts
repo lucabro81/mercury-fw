@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { demoteHeadings, fetchReleases, footerVersion, latestFrameworkVersion, parseReleases, parseTagDates, releaseAnchor, type GithubRelease } from "./releases.ts";
+import { demoteHeadings, fetchReleases, footerVersion, latestFrameworkVersion, parseReleases, parseTagTimes, releaseAnchor, type GithubRelease } from "./releases.ts";
 
 const release = (over: Partial<GithubRelease>): GithubRelease => ({
   tag_name: "v0.1.0",
@@ -25,7 +25,6 @@ describe("parseReleases", () => {
         title: "Mercury Framework 0.52.0",
         package: null,
         version: "0.52.0",
-        date: "2026-10-17",
         body: "- Web search",
         url: "https://github.com/lucabro81/mercury-fw/releases/tag/v0.1.0",
         prerelease: false,
@@ -36,7 +35,6 @@ describe("parseReleases", () => {
         title: "@mercury-fw/plugin-jira 0.6.5",
         package: "@mercury-fw/plugin-jira",
         version: "0.6.5",
-        date: "2026-10-16",
         body: "- Fix",
         url: "https://github.com/lucabro81/mercury-fw/releases/tag/v0.1.0",
         prerelease: false,
@@ -76,10 +74,10 @@ describe("parseReleases", () => {
 });
 
 // Guards the backfill: Releases created long after their tag all carry the
-// day they were created, which dated and ordered the whole history as one day.
-describe("dates from the tags", () => {
-  test("a release is dated and ordered by its tag when the tag's date is known, by published_at otherwise", () => {
-    const tagDates = new Map([
+// day they were created, which ordered the whole history as one day.
+describe("the order, from the tags' commits", () => {
+  test("a release is ordered by its tag's commit when known, by published_at otherwise", () => {
+    const tagTimes = new Map([
       ["v0.25.0", "2026-09-24T18:00:00+02:00"],
       ["v0.30.0", "2026-09-28T10:00:00+02:00"],
     ]);
@@ -89,13 +87,9 @@ describe("dates from the tags", () => {
         release({ tag_name: "v0.59.2", published_at: "2026-10-24T09:00:00Z" }),
         release({ tag_name: "v0.30.0", published_at: "2026-10-23T12:00:00Z" }),
       ],
-      tagDates,
+      tagTimes,
     );
-    expect(parsed.map((r) => [r.tag, r.date])).toEqual([
-      ["v0.59.2", "2026-10-24"],
-      ["v0.30.0", "2026-09-28"],
-      ["v0.25.0", "2026-09-24"],
-    ]);
+    expect(parsed.map((r) => r.tag)).toEqual(["v0.59.2", "v0.30.0", "v0.25.0"]);
   });
 
   test("two tags of the same commit time keep the order they were published in", () => {
@@ -125,9 +119,9 @@ describe("dates from the tags", () => {
     expect(parsed.map((r) => r.tag)).toEqual(["v0.59.2", "@mercury-fw/auth-oidc@0.2.1", "@mercury-fw/plugin-jira@0.8.1"]);
   });
 
-  test("parseTagDates reads git for-each-ref's lines, skipping the ones without a date", () => {
+  test("parseTagTimes reads git for-each-ref's lines, skipping the ones without a time", () => {
     const out = "v0.59.1 2026-10-23T17:31:02+02:00\n@mercury-fw/plugin-jira@0.8.0 2026-10-21T09:00:00+02:00\nbroken\n\n";
-    expect(parseTagDates(out)).toEqual(
+    expect(parseTagTimes(out)).toEqual(
       new Map([
         ["v0.59.1", "2026-10-23T17:31:02+02:00"],
         ["@mercury-fw/plugin-jira@0.8.0", "2026-10-21T09:00:00+02:00"],

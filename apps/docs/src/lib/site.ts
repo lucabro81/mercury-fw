@@ -3,7 +3,7 @@
  * version these pages describe. Read once per build and shared by every page.
  */
 import { execFileSync } from "node:child_process";
-import { fetchReleases, footerVersion, parseTagDates, type Release } from "./releases.ts";
+import { fetchReleases, footerVersion, parseTagTimes, type Release } from "./releases.ts";
 import corePackage from "../../../../packages/libs/core/package.json" with { type: "json" };
 
 export const REPO = "lucabro81/mercury-fw";
@@ -11,15 +11,22 @@ export const REPO_URL = `https://github.com/${REPO}`;
 
 let releases: Promise<Release[]> | undefined;
 
-/** Each tag's date, from the git of the repository the build runs in; none
- * when git can't read them (a checkout without tags dates releases by
- * `published_at`). */
-function tagDates(): Map<string, string> {
+/**
+ * Each tag's time, as the time of the commit it points to: an annotated tag
+ * (what `changeset tag` writes) carries its own date, a lightweight one (the
+ * framework's `vX.Y.Z`) its commit's, and a release's tags all point to its
+ * release commit. Read from the git of `cwd` (the build's own folder by
+ * default); none when git can't read them.
+ */
+export function readTagTimes(cwd?: string): Map<string, string> {
   try {
-    const out = execFileSync("git", ["for-each-ref", "refs/tags", "--format=%(refname:short) %(creatordate:iso-strict)"], {
+    const format = "%(refname:short) %(if)%(*objectname)%(then)%(*committerdate:iso-strict)%(else)%(committerdate:iso-strict)%(end)";
+    const out = execFileSync("git", ["for-each-ref", "refs/tags", `--format=${format}`], {
+      cwd,
       encoding: "utf-8",
+      stdio: ["ignore", "pipe", "ignore"],
     });
-    return parseTagDates(out);
+    return parseTagTimes(out);
   } catch {
     return new Map();
   }
@@ -31,7 +38,7 @@ export function getReleases(): Promise<Release[]> {
     fetch,
     token: process.env.GITHUB_TOKEN,
     required: process.env.RELEASES_REQUIRED === "1",
-    tagDates: tagDates(),
+    tagTimes: readTagTimes(),
   });
   return releases;
 }
