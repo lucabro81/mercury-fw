@@ -1,6 +1,6 @@
 ---
 name: mercury-tdd
-description: Load when working on a Mercury branch (feat/<N>-<slug>) after the issue has been created. Enforces TDD: write the failing test first, then implement, then refactor. Atomic commits, one changeset per issue.
+description: Load when working on a Mercury branch (feat/<N>-<slug>) after the issue has been created. Enforces TDD — write the failing test first, then implement, then refactor. Atomic commits, one changeset per issue.
 user-invocable: true
 ---
 

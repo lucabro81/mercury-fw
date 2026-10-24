@@ -14,7 +14,7 @@ def main():
     if status != "success":
         sys.exit(0)
 
-    file_path = data.get("tool_input", {}).get("file_path", "")
+    file_path = data.get("tool_input", {}).get("file_path") or data.get("tool_input", {}).get("path", "")
     if not file_path.endswith(".ts"):
         sys.exit(0)
     if file_path.endswith(".test.ts"):
