@@ -38,11 +38,11 @@ def main():
         "decision": "allow",
         "hook_specific_output": {
             "additional_context": (
-                f"\n\n📝 File TypeScript modificato: `{file_path}`{package_hint}\n"
-                f"Dopo le modifiche, ricorda di eseguire:\n"
-                f"  • `bun run typecheck` — verifica i tipi\n"
-                f"  • `bun test` — esegui i test del package\n"
-                f"  • Se il file è in un package, esegui i test da dentro quel package"
+                f"\n\n📝 TypeScript file modified: `{file_path}`{package_hint}\n"
+                f"After the changes, remember to run:\n"
+                f"  • `bun run typecheck` — verify types\n"
+                f"  • `bun test` — run the package tests\n"
+                f"  • If the file is in a package, run tests from inside that package"
             ),
         },
     }))

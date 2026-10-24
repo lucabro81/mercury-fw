@@ -1,111 +1,80 @@
 ---
 name: mercury-release
-description: Load after both review-gate subagents (cold-reviewer and docs-auditor) have returned APPROVE. Creates the changeset, runs the release, pushes with tags, and prepares the PR for squash-merge.
+description: Load after the PR has been squash-merged and main is synced. Runs the release on main — version bump, tags, push — and verifies the GitHub Release and docs site deploy. Supervised by Luca.
 user-invocable: true
 ---
 
-# Mercury Release — Fase 6: Changeset, Release e Merge
+# Mercury Release — Phase 6: Post-Merge Release on Main
 
-Questa skill si usa dopo che entrambi i subagent di review hanno dato APPROVE.
-Si occupa di: changeset, version bump, tag, push, PR, e le istruzioni per il merge.
+This skill is used **after** the PR has been squash-merged and `main` is
+synced locally. It runs the release on `main` — version bump, tags, push —
+and verifies the downstream CI (GitHub Release, docs site).
 
-## Prerequisiti
+The changeset was already created and committed on the branch (in
+`mercury-tdd`), reviewed by the gate, and merged into `main` with the PR.
 
-- Entrambi i subagent (cold-reviewer e docs-auditor) hanno dato APPROVE
-- Sei sul branch `feat/<N>-<slug>`
-- Tutti i test passano, typecheck pulito
-- Il branch è pushato su origin e la PR esiste
+## Prerequisites
 
-## Passi
+- The PR is merged (squash-merge, issue auto-closed via `Closes #N`)
+- You are on `main`: `git checkout main`
+- `main` is synced: `git pull`
+- The changeset file exists in `.changeset/` (merged from the branch)
+- The feature branch is deleted: `git branch -d feat/<N>-<slug>`
 
-### 1. Crea il changeset
+## Steps
 
-```bash
-bun run changeset
-```
-
-Rispondi alle domande di changesets:
-- **Pacchetti impattati**: seleziona i package che il diff tocca. Per una
-  modifica al framework (core, cli, contracts, ecc.), seleziona tutti quelli
-  nel gruppo `fixed`. Per un plugin/channel/auth, seleziona solo quello.
-- **Tipo di bump**: `patch` per bugfix, `minor` per feature, `major` per
-  breaking change (mai senza un'issue dedicata).
-- **Descrizione**: testo pubblico, in inglese, senza riferimenti interni
-  (no `D-XX`, `S-XX`, no milestone). Descrive cosa cambia per l'utente.
-
-Verifica il changeset creato:
-```bash
-cat .changeset/<nome-file>.md
-```
-
-Committa il changeset e salva il suo testo per la PR:
-```bash
-git add .changeset/
-git commit -m "chore: add changeset for #N"
-CHANGESET_BODY=$(awk 'f{print} /^---$/{c++; f=(c==2)}' .changeset/<nome-file>.md | sed '/./,$!d')
-```
-
-### 2. Esegui il release
+### 1. Run the release
 
 ```bash
 bun run release
 ```
 
-Questo esegue: `changeset version`, aggiorna `bun.lock`, committa, e tagga.
+This runs: `changeset version` (consumes the changeset, bumps versions,
+updates CHANGELOGs), lockfile refresh, commit, and tags.
 
-Verifica:
+Verify:
 ```bash
-git log --oneline -5    # deve mostrare il commit di version bump
-git tag --points-at HEAD  # deve mostrare i tag creati
+git log --oneline -3    # must show the version-bump commit
+git tag --points-at HEAD  # must show the created tags
 ```
 
-### 3. Push con tag
+### 2. Push with tags
 
 ```bash
-git push origin <branch> --tags
+git push && git push --tags
 ```
 
-### 4. Aggiorna la PR
+This is the exact command `scripts/release.ts` prints. It pushes the release
+commit to `main` and all tags.
 
-Assicurati che la PR abbia:
-- Titolo descrittivo
-- Body con `Closes #N`
-- I cambiamenti descritti nel changeset
+### 3. Verify CI downstream
 
+The push triggers `.github/workflows/publish.yml`:
+
+- **publish**: builds types, packs, publishes to npm (only versions not yet
+  on the registry)
+- **releases**: creates the GitHub Release for each tag on npm
+- **site**: builds and deploys the docs site to GitHub Pages
+
+Check the pipeline:
 ```bash
-gh pr edit --body "Closes #N
-
-$CHANGESET_BODY"
+gh run list --branch main --limit 3
 ```
 
-### 5. Istruzioni per il merge (per Luca)
+### 4. Close the loop
 
-La PR è pronta. Luca deve:
-1. Verificare che CI sia verde (`.github/workflows/ci.yml`)
-2. Fare squash-merge (l'issue si chiude automaticamente con `Closes #N`)
-3. Sincronizzare `main` e cancellare il branch:
-   ```bash
-   git checkout main
-   git pull
-   git branch -d feat/<N>-<slug>
-   git push origin --delete feat/<N>-<slug>
-   ```
+Update project memory with anything worth carrying to a future session, and
+bring `README.md` in line if the change affects what it documents.
 
-### 6. Chiudi il loop
+## Rules
 
-Dopo il merge, aggiorna la memoria di progetto con ciò che vale la pena
-ricordare per sessioni future, e porta il `README.md` in linea se la modifica
-lo richiede.
+- **One changeset per issue.** Never batch.
+- **Never `changeset publish` or `npm publish`** on a workspace folder.
+- **The changeset text is public**: it is the changelog users read.
+- **The release runs on `main`, never on a feature branch.**
+- **The release is supervised by Luca.** This skill describes the mechanical
+  steps; the decision to release is always his.
 
-## Regole
+## After the release
 
-- **Un changeset per issue.** Mai batchare.
-- **Mai `changeset publish` o `npm publish`** su una cartella workspace.
-- **Il testo del changeset è pubblico**: è il changelog che gli utenti leggono.
-- **Consuma il changeset subito dopo il cambiamento** che documenta.
-- Il merge è **sempre** squash-merge, mai merge commit.
-
-## Dopo il merge
-
-L'unità di lavoro è completa. Si può iniziare una nuova unità con la skill
-`mercury-plan`.
+The unit of work is complete. Start a new unit with the `mercury-plan` skill.

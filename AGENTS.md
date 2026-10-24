@@ -45,12 +45,14 @@ The workflow above is encoded for Mistral Vibe under `.vibe/`, so the same
 rules are enforced automatically when working in Vibe:
 
 - **Skills** (`.vibe/skills/`) — one per phase, loaded on demand:
-  `mercury-plan` (phase 1), `mercury-issue` (phase 2), `mercury-tdd` (phase 4),
-  `mercury-review` (phase 5), `mercury-release` (phase 6).
+  `mercury-plan` (phase 1), `mercury-issue` (phase 2), `mercury-tdd` (phase 4,
+  includes changeset creation), `mercury-review` (phase 5),
+  `mercury-release` (phase 6, post-merge release on main).
 - **Hooks** (`.vibe/hooks.toml` + `.vibe/tools/`) — guard-rails that run on
-  every tool call: block commits/pushes to `main`, block `rm -rf`, warn when
-  committing code without a changeset, remind to run typecheck + tests after
-  editing `.ts` files.
+  tool calls: block commits on `main`, block `rm -rf`, warn when committing
+  code without a changeset, remind to run typecheck + tests after editing
+  `.ts` files. Pushes to `main` are not blocked — releases are supervised
+  by Luca.
 - **Agent profiles** (`.vibe/agents/`) — `cold-reviewer.toml` and
   `docs-auditor.toml`, the Vibe-native equivalents of the `.claude/agents/*.md`
   subagents, spawnable via Vibe's `task` tool. Keep them in sync with the

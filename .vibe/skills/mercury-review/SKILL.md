@@ -4,107 +4,106 @@ description: Load before merging a PR on Mercury. Runs the two review-gate subag
 user-invocable: true
 ---
 
-# Mercury Review — Fase 5: Review Gate
+# Mercury Review — Phase 5: Review Gate
 
-Prima di fare merge di una PR, due subagent reviewano il branch in parallelo,
-ognun con solo il numero dell'issue e il nome del branch — nessun contesto della
-conversazione. I loro verdetti sono binding: non si fa merge finché entrambi non
-danno APPROVE.
+Before merging a PR, two subagents review the branch in parallel, each with
+only the issue number and the branch name — no conversation context. Their
+verdicts are binding: no merge until both return APPROVE.
 
-## Prerequisiti
+## Prerequisites
 
-- Sei sul branch `feat/<N>-<slug>`
-- Tutti i test passano, typecheck pulito
-- Il branch è pushato su origin: `git push -u origin <branch>`
-- La PR esiste (o la crei ora con `gh pr create --fill --body "Closes #N"`)
-- I profili dei due subagent sono in `.vibe/agents/cold-reviewer.toml` e
-  `.vibe/agents/docs-auditor.toml` (la cartella del progetto deve essere
-  trusted: al primo avvio Vibe lo chiede)
+- You are on branch `feat/<N>-<slug>`
+- All tests pass, typecheck clean
+- The changeset is created and committed (created in `mercury-tdd`)
+- The branch is pushed to origin: `git push -u origin <branch>`
+- The PR exists (or create it now with `gh pr create --fill --body "Closes #N"`)
 
-## I due subagent
+## The two subagents
 
 ### cold-reviewer
-Giudica il codice contro l'issue. Cerca bug, dead code, test inadeguati,
-edge case mancanti. Il suo verdetto è APPROVE o CHANGES REQUESTED.
-Il suo system prompt è in `.vibe/agents/cold-reviewer.toml` — la definizione
-canonica è `.claude/agents/cold-reviewer.md` (quella usata da Claude Code):
-tienili in sync quando la definizione cambia.
+Judges the code against the issue. Looks for bugs, dead code, inadequate
+tests, missing edge cases. Verdict: APPROVE or CHANGES REQUESTED.
+Its definition is in `.vibe/agents/cold-reviewer.toml` — the canonical
+definition is `.claude/agents/cold-reviewer.md` (used by Claude Code):
+keep them in sync when the definition changes.
 
 ### docs-auditor
-Verifica bidirezionalmente che la documentazione sia allineata al codice.
-Cerca doc mancanti, doc stantie, contraddizioni, deferral non tracciati.
-Il suo verdetto è APPROVE o CHANGES REQUESTED.
-Il suo system prompt è in `.vibe/agents/docs-auditor.toml` — la definizione
-canonica è `.claude/agents/docs-auditor.md`: tienili in sync.
+Verifies bidirectionally that documentation matches the code. Looks for
+missing docs, stale docs, contradictions, untracked deferrals. Verdict:
+APPROVE or CHANGES REQUESTED.
+Its definition is in `.vibe/agents/docs-auditor.toml` — the canonical
+definition is `.claude/agents/docs-auditor.md`: keep them in sync.
 
-## Procedura
+## Procedure
 
-### 1. Prepara il contesto per i subagent
+### 1. Prepare context for the subagents
 
-Raccogli:
-- Numero dell'issue: `N`
-- Nome del branch: `feat/N-slug`
+Gather:
+- Issue number: `N`
+- Branch name: `feat/N-slug`
 
-### 2. Lancia cold-reviewer
+### 2. Launch cold-reviewer
 
-Spawna il subagent `cold-reviewer` con il tool `task`:
+Spawn the `cold-reviewer` subagent with the `task` tool:
 
 - `agent`: `cold-reviewer`
-- `task`: solo il contesto minimo, nient'altro:
+- `task`: only the minimal context, nothing else:
 
 ```
 Issue: #N
 Branch: feat/N-slug
 ```
 
-### 3. Lancia docs-auditor
+### 3. Launch docs-auditor
 
-Spawna il subagent `docs-auditor` con il tool `task`, stesso formato:
+Spawn the `docs-auditor` subagent with the `task` tool, same format:
 
-- `agent`: `docs-auditor`
-- `task`: lo stesso contesto minimo di cold-reviewer (issue number, branch, repo)
+```
+Issue: #N
+Branch: feat/N-slug
+```
 
-### 4. Raccogli i verdetti
+### 4. Collect verdicts
 
-Attendi che entrambi i subagent completino. Leggi i loro report:
-- Se entrambi APPROVE: procedi al passo 6
-- Se uno o entrambi CHANGES REQUESTED: procedi al passo 5
+Wait for both subagents to complete. Read their reports:
+- If both APPROVE: proceed to step 6
+- If one or both CHANGES REQUESTED: proceed to step 5
 
-### 5. Fix dei findings
+### 5. Fix findings
 
-Per ogni finding nei report:
+For each finding in the reports:
 
-- **Finding di cold-reviewer (codice)**: fixalo tu stesso nel branch, a meno
-  che non sia severo o nasconda una decisione che spetta a Luca. In quel caso,
-  porta il finding a Luca e aspetta la sua decisione.
-- **Finding di docs-auditor (documentazione)**: fixalo direttamente. Se il
-  finding indica che il **codice** è sbagliato (direzione A: doc claim non
-  supportato dal codice), applica le stesse regole di cold-reviewer.
-- **Finding "undecided"**: decidi in base all'intento dell'issue se è chiaro,
-  altrimenti chiedi a Luca.
+- **cold-reviewer finding (code)**: fix it yourself in the branch, unless it
+  is severe or hides a decision that belongs to Luca. In that case, bring the
+  finding to Luca and wait for his decision.
+- **docs-auditor finding (documentation)**: fix it directly. If the finding
+  indicates the **code** is wrong (direction A: doc claim not backed by code),
+  apply the same rules as cold-reviewer findings.
+- **"undecided" finding**: decide from the issue's intent when clear enough,
+  otherwise ask Luca.
 
-Dopo aver fixato tutti i finding:
-1. Committa le fix: `git add -A && git commit -m "fix(review): address review findings"`
-2. Pusha: `git push`
-3. **Rilancia entrambi i subagent** (torna al passo 2)
-4. Ripeti finché entrambi danno APPROVE
+After fixing all findings:
+1. Commit the fixes: `git add -A && git commit -m "fix(review): address review findings"`
+2. Push: `git push`
+3. **Re-launch both subagents** (go back to step 2)
+4. Repeat until both return APPROVE
 
-### 6. Report finale
+### 6. Final report
 
-Quando entrambi danno APPROVE, comunica all'utente:
-- I verdetti dei due subagent
-- La lista dei findings fixati (se ce ne sono stati)
-- Che la PR è pronta per il merge (ma il merge aspetta Luca)
+When both return APPROVE, tell the user:
+- The two subagents' verdicts
+- The list of findings fixed (if any)
+- That the PR is ready for merge (but the merge waits for Luca)
 
-## Regole
+## Rules
 
-- **Mai fare merge senza APPROVE di entrambi.**
-- **Mai dare contesto ai subagent oltre a issue number e branch name.**
-  Il loro valore è negli occhi freschi.
-- **Non saltare la review gate**, nemmeno per "piccole modifiche".
-- Se un subagent trova un problema architetturale grave, escala a Luca prima
-  di fixare.
+- **Never merge without APPROVE from both.**
+- **Never give the subagents context beyond issue number and branch name.**
+  Their value is in fresh eyes.
+- **Do not skip the review gate**, not even for "small changes".
+- If a subagent finds a serious architectural problem, escalate to Luca before
+  fixing.
 
-## Dopo la review
+## After the review
 
-Carica la skill `mercury-release` per changeset, release e merge.
+Load the `mercury-release` skill for the post-merge release on main.

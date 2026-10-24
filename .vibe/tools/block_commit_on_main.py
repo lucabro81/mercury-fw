@@ -61,8 +61,8 @@ def main():
     if switches_to_main(command):
         print(json.dumps({
             "decision": "deny",
-            "reason": "Il comando switcha a main/master prima di committare. "
-                      "Il workflow Mercury richiede: branch feat/<N>-<slug>. Vedi skill mercury-issue.",
+            "reason": "The command switches to main/master before committing. "
+                      "The Mercury workflow requires: branch feat/<N>-<slug>. See skill mercury-issue.",
         }))
         sys.exit(0)
 
@@ -77,9 +77,9 @@ def main():
     if branch in ("main", "master"):
         print(json.dumps({
             "decision": "deny",
-            "reason": f"Commit diretto su '{branch}' bloccato. "
-                      "Il workflow Mercury richiede: branch feat/<N>-<slug> da una issue approvata. "
-                      "Vedi skill mercury-issue.",
+            "reason": f"Direct commit on '{branch}' blocked. "
+                      "Il workflow Mercury richiede: branch feat/<N>-<slug> from an approved issue. "
+                      "See skill mercury-issue.",
         }))
         sys.exit(0)
 

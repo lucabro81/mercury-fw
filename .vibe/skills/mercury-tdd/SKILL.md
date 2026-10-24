@@ -4,99 +4,125 @@ description: Load when working on a Mercury branch (feat/<N>-<slug>) after the i
 user-invocable: true
 ---
 
-# Mercury TDD — Fase 4: Sviluppo sul Branch
+# Mercury TDD — Phase 4: Development on the Branch
 
-Questa skill guida il lavoro di sviluppo sul branch `feat/<N>-<slug>`, applicando
-TDD (Test-Driven Development) e commit atomici.
+This skill guides development work on branch `feat/<N>-<slug>`, applying
+TDD (Test-Driven Development) and atomic commits.
 
-## Prerequisiti
+## Prerequisites
 
-- Sei sul branch `feat/<N>-<slug>` (verifica con `git branch --show-current`)
-- L'issue `#N` esiste e contiene il plan approvato
-- Il working tree è pulito o contiene solo modifiche intenzionali
+- You are on branch `feat/<N>-<slug>` (verify with `git branch --show-current`)
+- Issue `#N` exists and contains the approved plan
+- The working tree is clean or contains only intentional changes
 
-## Ciclo TDD
+## TDD cycle
 
-Per ogni unità di lavoro nel plan:
+For each unit of work in the plan:
 
-### 1. RED — Scrivi il test che fallisce
+### 1. RED — Write the failing test
 
-- Identifica il package impattato (es. `packages/libs/core`, `apps/cli`)
-- Scrivi il test nel file di test corrispondente (co-locato con il codice:
+- Identify the impacted package (e.g. `packages/libs/core`, `apps/cli`)
+- Write the test in the corresponding test file (co-located with the code:
   `src/foo.ts` → `src/foo.test.ts`)
-- Il test deve:
-  - Descrivere il comportamento atteso in modo specifico
-  - Coprire edge case e limit case, non solo il happy path
-  - Usare `bun:test` (`import { describe, it, expect } from 'bun:test'`)
-- Esegui il test e **verifica che fallisca** per il motivo giusto:
+- The test must:
+  - Describe the expected behavior specifically
+  - Cover edge cases and limit cases, not just the happy path
+  - Use `bun:test` (`import { describe, it, expect } from 'bun:test'`)
+- Run the test and **verify it fails** for the right reason:
   ```bash
   cd <package-dir> && bun test <test-file>
   ```
-- Committa il test:
+- Commit the test:
   ```bash
   git add <test-file>
-  git commit -m "test(<scope>): <descrizione del test>"
+  git commit -m "test(<scope>): <test description>"
   ```
 
-### 2. GREEN — Implementa il minimo per far passare il test
+### 2. GREEN — Implement the minimum to pass the test
 
-- Scrivi il codice minimo necessario a far passare il test
-- Non ottimizzare, non aggiungere feature non richieste
-- Esegui il test: deve passare
-- Esegui tutti i test del package per verificare che non abbia rotto nulla:
+- Write the minimum code needed to make the test pass
+- Do not optimize, do not add unrequested features
+- Run the test: it must pass
+- Run all tests in the package to verify nothing broke:
   ```bash
   cd <package-dir> && bun test
   ```
-- Committa l'implementazione:
+- Commit the implementation:
   ```bash
   git add <source-files>
-  git commit -m "feat(<scope>): <descrizione dell'implementazione>"
+  git commit -m "feat(<scope>): <implementation description>"
   ```
 
-### 3. REFACTOR — Migliora il codice
+### 3. REFACTOR — Improve the code
 
-- Refactorizza mantenendo i test verdi
-- Rimuovi duplicazioni, migliora nomi, semplifica
-- Esegui test e typecheck dopo ogni modifica
-- Committa il refactor (se c'è qualcosa di significativo):
+- Refactor while keeping tests green
+- Remove duplication, improve names, simplify
+- Run tests and typecheck after each change
+- Commit the refactor (if significant):
   ```bash
-  git commit -m "refactor(<scope>): <descrizione>"
+  git commit -m "refactor(<scope>): <description>"
   ```
 
-## Regole per i commit
+## Commit rules
 
-- **Atomici**: un commit = un cambiamento logico. Non mescolare test e
-  implementazione nello stesso commit (a meno che non sia un refactor minimo).
-- **Messaggio**: segue Conventional Commits: `type(scope): description`
+- **Atomic**: one commit = one logical change. Do not mix test and
+  implementation in the same commit (unless it's a minimal refactor).
+- **Message**: follows Conventional Commits: `type(scope): description`
   - `type`: `feat`, `fix`, `test`, `refactor`, `docs`, `chore`
-  - `scope`: il package o l'area (es. `core`, `cli`, `plugin-jira`)
-- **No commit su main**: l'hook lo blocca, ma verifica sempre il branch corrente.
+  - `scope`: the package or area (e.g. `core`, `cli`, `plugin-jira`)
+- **Never commit on main**: the hook blocks it, but always verify the current branch.
 
-## Prima di ogni push
+## Before every push
 
 ```bash
-# Typecheck del package modificato
+# Typecheck the modified package
 cd <package-dir> && bun run typecheck
 
-# Tutti i test del package
+# All tests in the package
 cd <package-dir> && bun test
 
-# Se il cambiamento tocca più package, typecheck a livello di repo
+# If the change touches multiple packages, typecheck at repo level
 bun run typecheck
 ```
 
-## Quando hai finito
+## Create the changeset
 
-- Tutti i test passano
-- Typecheck pulito
-- Ogni commit è atomico e ha un messaggio significativo
-- Il branch è pronto per la review gate
+Before moving to the review gate, create the changeset so the reviewers can
+audit it (its text becomes the public changelog):
 
-Carica la skill `mercury-review` per procedere.
+```bash
+bun run changeset
+```
 
-## Per i bugfix
+Answer the changesets prompts:
+- **Impacted packages**: select the packages the diff touches. For a framework
+  change (core, cli, contracts, etc.), select all in the `fixed` group. For a
+  plugin/channel/auth, select only that one.
+- **Bump type**: `patch` for bugfix, `minor` for feature, `major` for breaking
+  change (never without a dedicated issue).
+- **Description**: public text, in English, no internal references (no `D-XX`,
+  `S-XX`, no milestone). Describe what changes for the user.
 
-Anche i bugfix seguono TDD:
-1. Scrivi un test che riproduce il bug (fallisce)
-2. Fixia il bug (test passa)
-3. Verifica che non abbia regressioni
+Verify and commit the changeset:
+```bash
+cat .changeset/<file-name>.md
+git add .changeset/
+git commit -m "chore: add changeset for #N"
+```
+
+## When you are done
+
+- All tests pass
+- Typecheck clean
+- Every commit is atomic with a meaningful message
+- The changeset is created and committed
+- The branch is ready for the review gate
+
+Load the `mercury-review` skill to proceed.
+
+## For bugfixes
+
+Bugfixes also follow TDD:
+1. Write a test that reproduces the bug (fails)
+2. Fix the bug (test passes)
+3. Verify no regressions

@@ -4,62 +4,62 @@ description: Load when starting a new unit of work on the Mercury framework — 
 user-invocable: true
 ---
 
-# Mercury Plan — Fase 1: Stesura del Plan
+# Mercury Plan — Phase 1: Drafting the Plan
 
-Ogni unità di lavoro su Mercury inizia con un plan scritto, proposto a Luca in plan
-mode, e approvato da lui prima che si apra qualsiasi issue o si tocchi codice.
+Every unit of work on Mercury starts with a written plan, proposed to Luca in
+plan mode, and approved by him before any issue is opened or code is touched.
 
-## Il tuo ruolo
+## Your role
 
-Aiuta l'utente a strutturare un plan chiaro, atomico e verificabile. Non scrivere
-codice. Non creare issue. Non fare commit. Il tuo output è un documento di plan.
+Help the user structure a clear, atomic, verifiable plan. Do not write code.
+Do not create issues. Do not commit. Your output is a plan document.
 
-## Struttura del plan
+## Plan structure
 
-Il plan deve contenere queste sezioni, in questo ordine:
+The plan must contain these sections, in this order:
 
-### 1. Titolo
-Una riga, massimo 80 caratteri. Descrive il risultato, non l'implementazione.
+### 1. Title
+One line, maximum 80 characters. Describes the outcome, not the implementation.
 
-### 2. Contesto
-Perché questo lavoro serve. Qual è il problema o l'opportunità? Collega a issue
-esistenti se pertinenti (`#N`).
+### 2. Context
+Why this work is needed. What is the problem or opportunity? Link to existing
+issues if relevant (`#N`).
 
-### 3. Cosa cambia
-Elenco puntato di cosa verrà modificato, aggiunto o rimosso. Sii specifico sui
-file e le aree del repo (es. `packages/libs/core/src/session/`, `apps/cli/src/`).
+### 3. What changes
+Bullet list of what will be modified, added, or removed. Be specific about
+files and repo areas (e.g. `packages/libs/core/src/session/`, `apps/cli/src/`).
 
-### 4. Approccio tecnico
-Come verrà implementato. Quali pattern esistenti seguire. Quali decisioni di
-design sono già state prese e quali restano aperte.
+### 4. Technical approach
+How it will be implemented. Which existing patterns to follow. Which design
+decisions are already made and which remain open.
 
-### 5. Test
-Come si verifica che funzioni. Per TDD: quali test verranno scritti prima del
-codice. Quali edge case coprire. Come si runnano (`bun test` nel package
-specifico, `bun run typecheck`, ecc.).
+### 5. Tests
+How to verify it works. For TDD: which tests will be written before the code.
+Which edge cases to cover. How to run them (`bun test` in the specific package,
+`bun run typecheck`, etc.).
 
-### 6. Documentazione
-Cosa va aggiornato: README del package, root README, `AGENTS.md`,
-`--help` del CLI, docs site, changeset. Elenca ogni file di doc impattato.
+### 6. Documentation
+What needs updating: package README, root README, `AGENTS.md`,
+CLI `--help`, docs site, changeset. List every impacted doc file.
 
-### 7. Rischi e note
-Cosa potrebbe andare storto. Dipendenze esterne. Compatibilità. Aspetti che
-Luca deve sapere prima di approvare.
+### 7. Risks and notes
+What could go wrong. External dependencies. Compatibility. Aspects Luca
+should know before approving.
 
-## Regole
+## Rules
 
-- **Atomico**: un plan = un changeset. Se il lavoro si spezza in più unità
-  indipendenti, dilla a Luca e dividilo.
-- **Verificabile**: ogni punto del test deve essere eseguibile e dare un
-  risultato binario (passa/fail).
-- **Nessun codice nel plan**: pseudo-codice al massimo, ma preferisci descrizioni.
-- **Linguaggio**: il plan è in italiano se l'utente scrive in italiano, in inglese
-  se scrive in inglese. Il corpo dell'issue sarà in inglese (è la lingua del repo).
+- **Atomic**: one plan = one changeset. If the work breaks into multiple
+  independent units, tell Luca and split it.
+- **Verifiable**: every test point must be executable and give a binary
+  result (pass/fail).
+- **No code in the plan**: pseudo-code at most, but prefer descriptions.
+- **Language**: the plan is in the same language the user writes in.
+  The issue body will be in English (it is the repo's language).
 
 ## Output
 
-Alla fine, presenta il plan all'utente e chiedi:
-> "Questo è il plan. Vuoi che lo modifichi, o lo proponi a Luca per l'approvazione?"
+At the end, present the plan to the user and ask:
+> "This is the plan. Do you want to modify it, or propose it to Luca for approval?"
 
-Non procedere oltre finché Luca non approva. Un accordo in chat non è un plan
-approvato.
+Do not proceed further until Luca approves. An agreement in chat is not an
+approved plan.

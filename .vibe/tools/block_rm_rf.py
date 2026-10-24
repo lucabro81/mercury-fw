@@ -71,7 +71,7 @@ def main():
     if is_dangerous_rm(command):
         print(json.dumps({
             "decision": "deny",
-            "reason": "Comando rm -rf bloccato. Usa git rm per file tracciati, o verifica il path manualmente.",
+            "reason": "rm -rf blocked. Use git rm for tracked files, or verify the path manually.",
         }))
         sys.exit(0)
 

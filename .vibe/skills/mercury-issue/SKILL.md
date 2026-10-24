@@ -4,59 +4,59 @@ description: Load after Luca has approved a plan in plan mode. Creates the GitHu
 user-invocable: true
 ---
 
-# Mercury Issue — Fase 2: Issue e Branch
+# Mercury Issue — Phase 2: Issue and Branch
 
-Questa skill si usa **solo dopo** che Luca ha approvato il plan in plan mode.
-Un accordo in chat non è un'approvazione — deve essere esplicito.
+This skill is used **only after** Luca has approved the plan in plan mode.
+An agreement in chat is not an approval — it must be explicit.
 
-## Prerequisiti
+## Prerequisites
 
-Prima di procedere, verifica che:
-1. Il plan è stato approvato da Luca (l'utente deve confermarlo esplicitamente)
-2. Sei sul branch `main` e il working tree è pulito: `git status --porcelain`
-3. `main` è aggiornato: `git fetch origin && git status`
+Before proceeding, verify that:
+1. The plan has been approved by Luca (the user must confirm explicitly)
+2. You are on the `main` branch and the working tree is clean: `git status --porcelain`
+3. `main` is up to date: `git fetch origin && git status`
 
-## Passi
+## Steps
 
-### 1. Crea l'issue
+### 1. Create the issue
 
 ```bash
 gh issue create \
-  --title "<titolo del plan>" \
-  --body "<corpo del plan approvato>" \
+  --title "<plan title>" \
+  --body "<approved plan body>" \
   --repo lucabro81/mercury-fw
 ```
 
-Il corpo dell'issue deve contenere il plan completo, formattato in Markdown.
-Aggiungi una riga in cima: `> Plan approved by @lucabro81 in plan mode.`
+The issue body must contain the full plan, formatted in Markdown.
+Add a line at the top: `> Plan approved by @lucabro81 in plan mode.`
 
-### 2. Crea il branch dall'issue
+### 2. Create the branch from the issue
 
 ```bash
 gh issue develop <N> --base main --name feat/<N>-<slug> --repo lucabro81/mercury-fw
 ```
 
-Dove `<N>` è il numero dell'issue appena creata e `<slug>` è una versione
-kebab-case del titolo (max 40 caratteri).
+Where `<N>` is the number of the issue just created and `<slug>` is a
+kebab-case version of the title (max 40 characters).
 
-### 3. Verifica
+### 3. Verify
 
 ```bash
-git branch --show-current   # deve mostrare feat/<N>-<slug>
-git log --oneline -1        # deve puntare a main
+git branch --show-current   # must show feat/<N>-<slug>
+git log --oneline -1        # must point to main
 ```
 
 ### 4. Report
 
-Comunica all'utente:
-- Numero dell'issue: `#N`
-- URL dell'issue
-- Nome del branch: `feat/<N>-<slug>`
-- Prossimo passo: caricare la skill `mercury-tdd` per iniziare il lavoro TDD
+Tell the user:
+- Issue number: `#N`
+- Issue URL
+- Branch name: `feat/<N>-<slug>`
+- Next step: load the `mercury-tdd` skill to start TDD work
 
-## Regole
+## Rules
 
-- Non fare commit su `main` mai. Il branch è l'unico posto dove si committa.
-- Il branch name segue sempre `feat/<N>-<slug>`.
-- Se l'issue esiste già (es. l'utente la ha creata a mano), salta il passo 1 e
-  vai diretto al passo 2 con il numero issue esistente.
+- Never commit to `main`. The branch is the only place to commit.
+- The branch name always follows `feat/<N>-<slug>`.
+- If the issue already exists (e.g. the user created it manually), skip step 1
+  and go directly to step 2 with the existing issue number.

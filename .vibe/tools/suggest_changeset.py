@@ -119,10 +119,10 @@ def main():
             print(json.dumps({
                 "decision": "allow",
                 "system_message": (
-                    "⚠️  Questo commit modifica codice senza un changeset. "
-                    "Il workflow Mercury richiede un changeset per ogni change rilevante. "
+                    "⚠️  This commit modifies code without a changeset. "
+                    "The Mercury workflow requires a changeset for every relevant change. "
                     "Esegui `bun run changeset` prima di committare, o includi il changeset "
-                    "in questo commit. Vedi skill mercury-release."
+                    "in questo commit. See skill mercury-release."
                 ),
             }))
             sys.exit(0)
