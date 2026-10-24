@@ -637,7 +637,7 @@ describe("mfw create with a newer CLI on the registry", () => {
     expect(calls.map((c) => c.env.NPM_CONFIG_REGISTRY)).toEqual([newerRegistry.url.origin, newerRegistry.url.origin]);
   });
 
-  // Regression (#316): this test and the two below ran create with its real
+  // Regression (#316): this test, the next one and the handover one below ran create with its real
   // `bun install` from npm, which ran past the 5s timeout on a slow registry
   // or a just-published release; what they check needs no install.
   test("once relaunched (MFW_SELF_UPDATED set), it doesn't relaunch again: it creates the app", async () => {
