@@ -7,11 +7,17 @@ warns if they touch a published workspace without a changeset. Repo
 tooling (.vibe/, scripts/, .github/, docs site, test bed) does not require
 a changeset.
 
+The commit's target directory is tracked through `cd` segments and the
+commit's own `git -C <path>` (with ~ and $VAR expansion), so the warning
+reflects the repository the commit lands in, not the shell's current
+directory.
+
 The command line is split on separators outside quotes, so a message
 containing a separator is one argument; a `bash -c '...'` / `sh -c '...'`
 wrapper is unwrapped and its inner command line is analyzed the same way.
 """
 import json
+import os
 import re
 import shlex
 import subprocess
@@ -37,12 +43,14 @@ PREFIX = r"\s*(?:(?:sudo|env|command|xargs)\s+)*(?:\w+=(?:\"[^\"]*\"|'[^']*'|\S+
 # `git commit` as a standalone command (git commit, git -C <path> commit),
 # anchored at segment start so a "git commit" inside another command's
 # arguments (echo "git commit", grep 'git commit') does not count. Group 1
-# captures the commit's arguments; quoted sections are captured whole, so a
-# message containing a separator (`git commit -m "a b;c"`) is one argument,
-# not a truncated capture misread as a pathspec.
+# captures the commit's `git -C` target, group 2 the commit's arguments;
+# quoted sections are captured whole, so a message containing a separator
+# (`git commit -m "a b;c"`) is one argument, not a truncated capture
+# misread as a pathspec. The lookahead after `commit` keeps plumbing
+# subcommands (commit-tree, commit-graph) from counting as one.
 COMMIT_ARGS_RE = re.compile(
     PREFIX +
-    r"git\s+(?:-C\s+(?:\"[^\"]*\"|'[^']*'|\S+)\s+)?commit\b"
+    r"git\s+(?:-C\s+(\"[^\"]*\"|'[^']*'|\S+)\s+)?commit(?![\w-])"
     r"((?:[^|&;\"']|\"[^\"]*\"|'[^']*')*)",
     re.S,
 )
@@ -53,6 +61,11 @@ COMMIT_ARGS_RE = re.compile(
 WRAPPER_RE = re.compile(
     PREFIX + r"(?:bash|sh)\s+-c\s+(?:'([^']*)'|\"([^\"]*)\")"
 )
+
+# A cd that changes the working directory for the rest of the command
+# line: `cd <path>` as a standalone segment (a bare `cd` goes home). The
+# target path is captured in group 1.
+CD_RE = re.compile(r"\s*cd\b\s*(?:(\"[^\"]*\"|'[^']*'|\S+)\s*)?$")
 
 # `git commit` options that consume the next token
 VALUE_OPTIONS = {
@@ -113,24 +126,49 @@ def wrapper_inner(match):
     return match.group(1) if match.group(1) is not None else match.group(2)
 
 
+def resolve_path(path, base):
+    """Resolve a path against base, expanding ~ and environment variables."""
+    path = os.path.expandvars(os.path.expanduser(path))
+    if not os.path.isabs(path):
+        path = os.path.join(base, path)
+    return os.path.normpath(path)
+
+
 def git(cwd, *args):
     return subprocess.run(
         ["git", *args], capture_output=True, text=True, cwd=cwd,
     ).stdout.strip()
 
 
-def commit_segment(command):
-    """The arguments of the first `git commit` standalone command, or None."""
+def commit_target(command, directory):
+    """The first `git commit` standalone command: its arguments and the
+    directory it commits in, or None.
+
+    `directory` is the scope's working directory: a `cd` segment moves it
+    for the rest of the scope (a `cd` inside a bash -c wrapper stays
+    inside the wrapper), and the commit's own `git -C <path>` overrides it.
+    """
     for segment in split_segments(command):
         wrapped = WRAPPER_RE.match(segment)
         if wrapped:
-            args = commit_segment(wrapper_inner(wrapped))
-            if args is not None:
-                return args
+            found = commit_target(wrapper_inner(wrapped), directory)
+            if found is not None:
+                return found
+            continue
+        cd = CD_RE.match(segment)
+        if cd:
+            target = cd.group(1)
+            if target is None:
+                directory = os.path.expanduser("~")
+            else:
+                directory = resolve_path(target.strip("\"'"), directory)
             continue
         m = COMMIT_ARGS_RE.match(segment)
         if m:
-            return m.group(1)
+            target_dir = directory
+            if m.group(1) is not None:
+                target_dir = resolve_path(m.group(1).strip("\"'"), directory)
+            return m.group(2), target_dir
     return None
 
 
@@ -195,20 +233,19 @@ def main():
         sys.exit(0)
 
     command = data.get("tool_input", {}).get("command", "")
-    segment = commit_segment(command)
-    if segment is None:
+    found = commit_target(command, os.path.abspath(data.get("cwd", ".")))
+    if found is None:
         sys.exit(0)
-
-    cwd = data.get("cwd", ".")
+    args, target_dir = found
 
     try:
         files = set()
-        for f in git(cwd, "diff", "--cached", "--name-only").split("\n"):
+        for f in git(target_dir, "diff", "--cached", "--name-only").split("\n"):
             if f:
                 files.add(f)
 
-        if includes_unstaged(segment):
-            for f in git(cwd, "diff", "--name-only").split("\n"):
+        if includes_unstaged(args):
+            for f in git(target_dir, "diff", "--name-only").split("\n"):
                 if f:
                     files.add(f)
 
@@ -228,16 +265,16 @@ def main():
         # unstaged modifications. An untracked changeset file is included
         # by no commit form, so it does not count.
         changeset_files = set()
-        for f in git(cwd, "diff", "--cached", "--name-only", ".changeset/").split("\n"):
+        for f in git(target_dir, "diff", "--cached", "--name-only", ".changeset/").split("\n"):
             if f:
                 changeset_files.add(f)
-        if includes_unstaged(segment):
-            for f in git(cwd, "diff", "--name-only", ".changeset/").split("\n"):
+        if includes_unstaged(args):
+            for f in git(target_dir, "diff", "--name-only", ".changeset/").split("\n"):
                 if f:
                     changeset_files.add(f)
 
         # ...or the last commit already carried one
-        last_commit_files = git(cwd, "diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD")
+        last_commit_files = git(target_dir, "diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD")
         has_changeset = bool(changeset_files) or any(
             f.startswith(".changeset/") for f in last_commit_files.split("\n") if f
         )

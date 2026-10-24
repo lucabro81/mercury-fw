@@ -2,9 +2,11 @@
 """Functional tests for the .vibe hook scripts.
 
 Runs each hook against real git repos in a temp dir and asserts the
-decision for a battery of commands: branch detection, switch ordering,
-`git -C` targets, separator variants, `rm -rf` flag permutations, the
-changeset warning scope, tool-name coverage, and the hooks.toml wiring.
+decision for a battery of commands: branch detection, switch ordering
+(including the previous-branch shorthands), `git -C` targets, separator
+variants, `rm -rf` flag permutations, the changeset warning scope
+(including the commit's target directory), tool-name coverage, and the
+hooks.toml wiring.
 
 Usage: python3 .vibe/tools/test_hooks.py
 Exits non-zero when any case fails.
@@ -99,6 +101,20 @@ def main():
     subprocess.run(["git", "init", "-q", "-b", "feat/331-test", feat_repo], check=True, capture_output=True)
     git(feat_repo, "commit", "-q", "--allow-empty", "-m", "init")
 
+    prev_repo = os.path.join(fix, "prev-repo")
+    subprocess.run(["git", "init", "-q", "-b", "main", prev_repo], check=True, capture_output=True)
+    git(prev_repo, "commit", "-q", "--allow-empty", "-m", "init")
+    git(prev_repo, "checkout", "-q", "-b", "feat/prev")
+
+    cs_repo = os.path.join(fix, "cs-repo")
+    subprocess.run(["git", "init", "-q", "-b", "feat/cs", cs_repo], check=True, capture_output=True)
+    git(cs_repo, "commit", "-q", "--allow-empty", "-m", "init")
+    cs_pkg = os.path.join(cs_repo, "packages/libs/core/src")
+    os.makedirs(cs_pkg, exist_ok=True)
+    with open(os.path.join(cs_pkg, "x.ts"), "w") as f:
+        f.write("export const x = 1;\n")
+    git(cs_repo, "add", "packages/libs/core/src/x.ts")
+
     pkg_dir = os.path.join(feat_repo, "packages/libs/core/src")
     os.makedirs(pkg_dir, exist_ok=True)
 
@@ -117,6 +133,10 @@ def main():
            run_hook(BCM, "bash", "sudo git commit -m x", main_repo), "deny")
     expect("FOO=1 git commit on main denied",
            run_hook(BCM, "bash", "FOO=1 git commit -m x", main_repo), "deny")
+    expect("git commit-tree on main allowed (not a branch commit)",
+           run_hook(BCM, "bash", "git commit-tree -m x", main_repo), "silent")
+    expect("git commit-graph on main allowed (not a branch commit)",
+           run_hook(BCM, "bash", "git commit-graph write", main_repo), "silent")
 
     # --- block_commit_on_main: switch before/after commit, separators ---
     expect("switch to main before commit denied",
@@ -207,6 +227,41 @@ def main():
            run_hook(BCM, "bash", "git switch main && git switch feat/x && git commit -m x", feat_repo), "silent")
     expect("pathspec restore is not a switch away: commit still denied",
            run_hook(BCM, "bash", "git checkout main && git checkout feat/x -- file.ts && git commit -m x", feat_repo), "deny")
+
+    # --- block_commit_on_main: switches to a previous branch (checkout - / @{-N}) ---
+    # The shorthand resolves the way git resolves it at execution time,
+    # against the checkout history the command implies so far: a switch
+    # earlier in the same command line moves @{-N}.
+    expect("checkout - (previous is main) + commit denied",
+           run_hook(BCM, "bash", "git checkout - && git commit -m x", prev_repo), "deny")
+    expect("git switch - (previous is main) + commit denied",
+           run_hook(BCM, "bash", "git switch - && git commit -m x", prev_repo), "deny")
+    expect("checkout @{-1} (previous is main) + commit denied",
+           run_hook(BCM, "bash", "git checkout @{-1} && git commit -m x", prev_repo), "deny")
+    expect("checkout - then a real switch to main + commit denied",
+           run_hook(BCM, "bash", "git checkout - && git checkout main && git commit -m x", prev_repo), "deny")
+    expect("checkout main then checkout - (back to feat) + commit allowed",
+           run_hook(BCM, "bash", "git checkout main && git checkout - && git commit -m x", prev_repo), "silent")
+    expect("bash -c 'checkout - && commit' with previous main denied",
+           run_hook(BCM, "bash", "bash -c 'git checkout - && git commit -m x'", prev_repo), "deny")
+    expect("checkout -b <new> + commit allowed (not the previous-branch shorthand)",
+           run_hook(BCM, "bash", "git checkout -b feat/new && git commit -m x", prev_repo), "silent")
+    expect("checkout - -- <path> restores paths, it does not switch: commit still denied",
+           run_hook(BCM, "bash", "git checkout main && git checkout - -- file.ts && git commit -m x", prev_repo), "deny")
+    git(prev_repo, "checkout", "-q", "-b", "feat/second")
+    # on feat/second: @{-1} is feat/prev, @{-2} is main
+    expect("checkout - (previous is a feature branch) + commit allowed",
+           run_hook(BCM, "bash", "git checkout - && git commit -m x", prev_repo), "silent")
+    expect("checkout @{-2} (main) + commit denied",
+           run_hook(BCM, "bash", "git checkout @{-2} && git commit -m x", prev_repo), "deny")
+    expect("checkout @{-2} then checkout - (back to feat) + commit allowed",
+           run_hook(BCM, "bash", "git checkout @{-2} && git checkout - && git commit -m x", prev_repo), "silent")
+    expect("git -C <repo> checkout @{-2} (main) && git -C <repo> commit denied",
+           run_hook(BCM, "bash", f"git -C {prev_repo} checkout @{{-2}} && git -C {prev_repo} commit -m x", feat_repo), "deny")
+    expect("checkout - with no previous branch: commit judged on the current branch (feat)",
+           run_hook(BCM, "bash", "git checkout - && git commit -m x", feat_repo), "silent")
+    expect("checkout - with no previous branch on main: direct commit still denied",
+           run_hook(BCM, "bash", "git checkout - && git commit -m x", main_repo), "deny")
 
     # --- block_commit_on_main: the pathspec form is not a branch switch ---
     expect("git checkout main -- <path> is not a switch",
@@ -303,6 +358,8 @@ def main():
           "mercury-tdd" in msg and "mercury-release" not in msg, msg)
     check("changeset warning is English and emoji-free",
           "Esegui" not in msg and "⚠" not in msg and not any(c in msg for c in "àèéìòù"), msg)
+    expect("git commit-tree with staged code -> silent (not a branch commit)",
+           run_hook(CS, "bash", "git commit-tree -m x", feat_repo), "silent")
 
     git(feat_repo, "reset", "-q")
     write(".vibe/note.py", "# x\n")
@@ -396,6 +453,25 @@ def main():
            run_hook(CS, "bash", "printf 'git commit\\n'", feat_repo), "silent")
     expect("bash -c 'git commit -m x' still warns",
            run_hook(CS, "bash", "bash -c 'git commit -m x'", feat_repo), "warn")
+    git(feat_repo, "reset", "-q")
+
+    # --- suggest_changeset: the commit's target directory (git -C, cd) ---
+    # The warning reflects the repository the commit lands in, not the
+    # shell's current directory: `git -C <path>` and a preceding `cd`
+    # (also inside a wrapper) move the commit's target.
+    expect("git -C <repo with staged code> commit warns (target repo, not cwd)",
+           run_hook(CS, "bash", f"git -C {cs_repo} commit -m x", feat_repo), "warn")
+    expect("cd <repo with staged code> && git commit warns",
+           run_hook(CS, "bash", f"cd {cs_repo} && git commit -m x", feat_repo), "warn")
+    expect("bash -c 'cd <repo> && git commit' warns",
+           run_hook(CS, "bash", f"bash -c 'cd {cs_repo} && git commit -m x'", feat_repo), "warn")
+    expect("relative git -C to a repo with staged code warns",
+           run_hook(CS, "bash", f"git -C {os.path.relpath(cs_repo, feat_repo)} commit -m x", feat_repo), "warn")
+    git(feat_repo, "add", "packages/libs/core/src/x.ts")
+    expect("git -C <clean repo> commit with staged code in cwd -> silent",
+           run_hook(CS, "bash", f"git -C {main_repo} commit -m x", feat_repo), "silent")
+    expect("cd <clean repo> && git commit with staged code in cwd -> silent",
+           run_hook(CS, "bash", f"cd {main_repo} && git commit -m x", feat_repo), "silent")
     git(feat_repo, "reset", "-q")
 
     # --- suggest_changeset: quoted arguments and separators inside quotes ---

@@ -18,6 +18,12 @@ command line is analyzed in the same scope: a switch inside it marks the
 repository for commits after the wrapper too, while a `cd` inside it
 stays inside — the wrapper's shell does not change the caller's
 directory.
+
+A switch to a previous branch (`git checkout -`, `git switch -`,
+`git checkout @{-2}`) is resolved the way git resolves it at execution
+time — against the checkout history the command implies so far, because
+a switch earlier in the same command line moves `@{-N}` — and marks or
+un-marks its target directory like a literal switch.
 """
 import json
 import os
@@ -38,21 +44,22 @@ PREFIX = r"\s*(?:(?:sudo|env|command|xargs)\s+)*(?:\w+=(?:\"[^\"]*\"|'[^']*'|\S+
 OPTIONS = r"(?:-(?!-)\S+\s+)*"
 
 # A commit as a standalone command: git commit, git -C <path> commit,
-# env git commit, FOO=1 git commit.
+# env git commit, FOO=1 git commit. The lookahead after `commit` keeps
+# plumbing subcommands (commit-tree, commit-graph) from counting as one.
 COMMIT_RE = re.compile(
-    PREFIX + r"git\s+(?:-C\s+(?:\"[^\"]*\"|'[^']*'|\S+)\s+)?commit\b"
+    PREFIX + r"git\s+(?:-C\s+(?:\"[^\"]*\"|'[^']*'|\S+)\s+)?commit(?![\w-])"
 )
 
 # A switch to the local main/master branch as a standalone command:
 # git checkout/switch main, git -C <path> checkout main. The lookaheads
 # after the branch name reject longer names (mainline, main-x, main/x)
 # and the pathspec form (`git checkout main -- <paths>` restores paths,
-# it does not switch).
+# it does not switch). Group 1 captures the branch.
 SWITCH_RE = re.compile(
     PREFIX +
     r"git\s+(?:-C\s+(?:\"[^\"]*\"|'[^']*'|\S+)\s+)?(?:checkout|switch)\s+"
     + OPTIONS +
-    r"(?:main|master|refs/heads/(?:main|master))(?![/\w-])(?!\s*--)"
+    r"((?:main|master)|refs/heads/(?:main|master))(?![/\w-])(?!\s*--)"
 )
 
 # A switch to any other branch as a standalone command: un-marks a
@@ -67,6 +74,19 @@ SWITCH_AWAY_RE = re.compile(
     r"(?!-)"
     r"(\"[^\"]*\"|'[^']*'|\S+)"
     r"(?![/\w-])(?!\s*--)"
+)
+
+# A switch to a previous branch as a standalone command: the previous-
+# checkout shorthand (`git checkout -`, `git switch -`) and its numbered
+# form (`git checkout @{-2}`). Group 1 captures the target. The pathspec
+# form (`git checkout - -- <paths>` restores paths, it does not switch)
+# is excluded, and so are option clusters: the shorthand is a bare `-`,
+# never `-b` or `--`.
+PREV_SWITCH_RE = re.compile(
+    PREFIX +
+    r"git\s+(?:-C\s+(?:\"[^\"]*\"|'[^']*'|\S+)\s+)?(?:checkout|switch)\s+"
+    + OPTIONS +
+    r"(-|@\{-\d+\})(?![\w-])(?!\s*--)"
 )
 
 # A cd that changes the working directory for the rest of the command
@@ -171,7 +191,73 @@ def current_branch(directory):
         return ""
 
 
-def run_command_line(command, directory, switched_to_main):
+def branch_history(root):
+    """The checkout history `@{-N}` resolves against, read live.
+
+    `prevs[0]` is what `@{-1}` stands for — the position before the most
+    recent checkout — `prevs[1]` the one before that, and so on: the
+    "from" side of git's `checkout: moving from X to Y` reflog entries,
+    newest first. A previous position that was a detached HEAD is
+    recorded as its commit id, which never names main/master.
+    """
+    current = current_branch(root)
+    if not current:
+        # a detached HEAD: record the commit id, like the reflog does
+        try:
+            current = subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                capture_output=True, text=True, cwd=root,
+            ).stdout.strip()
+        except Exception:
+            current = ""
+    prevs = []
+    try:
+        log = subprocess.run(
+            ["git", "reflog", "show", "HEAD", "--format=%gs"],
+            capture_output=True, text=True, cwd=root,
+        ).stdout
+        for line in log.splitlines():
+            marker = "checkout: moving from "
+            if not line.startswith(marker):
+                continue
+            source, sep, _target = line[len(marker):].partition(" to ")
+            if sep and source:
+                prevs.append(source)
+    except Exception:
+        pass
+    return {"current": current, "prevs": prevs}
+
+
+def sim_state(sim, root):
+    """A git root's checkout history after the segments processed so far."""
+    if root not in sim:
+        sim[root] = branch_history(root)
+    return sim[root]
+
+
+def apply_switch(sim, root, branch):
+    """Record a switch to `branch` in a root's simulated checkout history."""
+    state = sim_state(sim, root)
+    state["prevs"] = [state["current"]] + state["prevs"]
+    state["current"] = branch
+
+
+def previous_branch(sim, root, target):
+    """The branch a previous-branch switch target resolves to, or ''.
+
+    A switch earlier in the same command line moves `@{-N}`, so the live
+    reflog alone would answer for the wrong point in the command: the
+    history the segments so far imply is used instead.
+    """
+    if target == "-":
+        n = 1
+    else:
+        n = int(re.fullmatch(r"@\{-(\d+)\}", target).group(1))
+    prevs = sim_state(sim, root)["prevs"]
+    return prevs[n - 1] if n <= len(prevs) else ""
+
+
+def run_command_line(command, directory, switched_to_main, sim):
     """Analyze one shell scope; return the deny payload, or None.
 
     `directory` is the scope's working directory: a `cd` inside a
@@ -179,11 +265,14 @@ def run_command_line(command, directory, switched_to_main):
     recursion scopes it), while a switch marks a git root in
     `switched_to_main`, which is shared across scopes — a switch inside a
     wrapper still decides what a commit after the wrapper lands on.
+    `sim` holds each git root's checkout history as the command implies
+    it so far (shared across scopes the same way); it resolves
+    previous-branch switch targets.
     """
     for segment in split_segments(command):
         wrapped = WRAPPER_RE.match(segment)
         if wrapped:
-            payload = run_command_line(wrapper_inner(wrapped), directory, switched_to_main)
+            payload = run_command_line(wrapper_inner(wrapped), directory, switched_to_main, sim)
             if payload:
                 return payload
             continue
@@ -217,11 +306,28 @@ def run_command_line(command, directory, switched_to_main):
                               "from an approved issue. See skill mercury-issue.",
                 }
             continue
-        if SWITCH_RE.match(segment):
-            switched_to_main.add(repo_root(switch_target_dir(segment, directory)))
+        switch = SWITCH_RE.match(segment)
+        if switch:
+            root = repo_root(switch_target_dir(segment, directory))
+            switched_to_main.add(root)
+            apply_switch(sim, root, switch.group(1).removeprefix("refs/heads/"))
             continue
-        if SWITCH_AWAY_RE.match(segment):
-            switched_to_main.discard(repo_root(switch_target_dir(segment, directory)))
+        prev = PREV_SWITCH_RE.match(segment)
+        if prev:
+            root = repo_root(switch_target_dir(segment, directory))
+            branch = previous_branch(sim, root, prev.group(1))
+            if branch:
+                apply_switch(sim, root, branch)
+                if branch in ("main", "master"):
+                    switched_to_main.add(root)
+                else:
+                    switched_to_main.discard(root)
+            continue
+        away = SWITCH_AWAY_RE.match(segment)
+        if away:
+            root = repo_root(switch_target_dir(segment, directory))
+            switched_to_main.discard(root)
+            apply_switch(sim, root, away.group(1).strip("\"'").removeprefix("refs/heads/"))
             continue
     return None
 
@@ -233,7 +339,7 @@ def main():
         sys.exit(0)
 
     command = data.get("tool_input", {}).get("command", "")
-    payload = run_command_line(command, os.path.abspath(data.get("cwd", ".")), set())
+    payload = run_command_line(command, os.path.abspath(data.get("cwd", ".")), set(), {})
     if payload:
         print(json.dumps(payload))
     sys.exit(0)
