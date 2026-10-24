@@ -134,7 +134,7 @@ mercury/                       # repo root
 ├── README.md
 ├── turbo.json
 ├── .changeset/                # repo-level release state
-├── .vibe/                     # Vibe workflow tooling — skills, hooks, agent profiles (see below)
+├── .vibe/                     # Vibe workflow tooling — skills, hooks, agent profiles (in Development workflow)
 ├── scripts/                   # release tooling: release.ts (versions + tags), publish.ts (types + pack check + bun pm pack + npm publish), github-releases.ts (a GitHub Release per published tag), build-types.ts, check-pack.ts, workspaces.ts
 ├── packages/                  # grouped into per-role buckets; every workspace is @mercury-fw/*
 │   ├── types/

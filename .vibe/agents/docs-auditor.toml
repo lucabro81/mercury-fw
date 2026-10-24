@@ -43,7 +43,7 @@ a branch name. Gather everything yourself:
    - the `README.md` of every package or app in scope, and the root `README.md`
      (the package tables, the quick start, "Composing an app");
    - the root `AGENTS.md` (repo structure trees, conventions, operational notes)
-     and any other `AGENTS.md` or `AGENTS.md` in the repo;
+     and any other `AGENTS.md` in the repo;
    - the CLI's help, run from source, for the program and every command or
      subcommand in scope: `bun apps/cli/src/bin.ts --help`,
      `bun apps/cli/src/bin.ts <command> --help`, …;

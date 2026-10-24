@@ -27,7 +27,7 @@ danno APPROVE.
 Giudica il codice contro l'issue. Cerca bug, dead code, test inadeguati,
 edge case mancanti. Il suo verdetto è APPROVE o CHANGES REQUESTED.
 Il suo system prompt è in `.vibe/agents/cold-reviewer.toml` — la definizione
-canonica è `.claude/agents/cold-reviewer.md` (quella usada da Claude Code):
+canonica è `.claude/agents/cold-reviewer.md` (quella usata da Claude Code):
 tienili in sync quando la definizione cambia.
 
 ### docs-auditor
@@ -44,7 +44,6 @@ canonica è `.claude/agents/docs-auditor.md`: tienili in sync.
 Raccogli:
 - Numero dell'issue: `N`
 - Nome del branch: `feat/N-slug`
-- Repo: `lucabro81/mercury-fw`
 
 ### 2. Lancia cold-reviewer
 
@@ -56,7 +55,6 @@ Spawna il subagent `cold-reviewer` con il tool `task`:
 ```
 Issue: #N
 Branch: feat/N-slug
-Repo: lucabro81/mercury-fw
 ```
 
 ### 3. Lancia docs-auditor
