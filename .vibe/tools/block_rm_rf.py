@@ -16,6 +16,11 @@ import sys
 
 SEPARATORS = r"&&|\|\||;|\||\n"
 
+# Il tool bash nel payload degli hook arriva come "bash" (forma breve,
+# documentata negli esempi) o come "file_system.bash" (forma qualificata
+# inviata dall'Unified Harness di Vibe): entrambi sono il tool bash.
+BASH_TOOL_NAMES = ("bash", "file_system.bash")
+
 
 def segment_has_dangerous_rm(segment):
     """True se il segmento di comando inizia con `rm` (non `git rm`) e ha
@@ -59,7 +64,7 @@ def is_dangerous_rm(command):
 def main():
     data = json.load(sys.stdin)
     tool_name = data.get("tool_name", "")
-    if tool_name != "bash":
+    if tool_name not in BASH_TOOL_NAMES:
         sys.exit(0)
 
     command = data.get("tool_input", {}).get("command", "")
