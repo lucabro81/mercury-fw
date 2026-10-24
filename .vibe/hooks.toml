@@ -9,7 +9,7 @@
 [[hooks]]
 name = "block-commit-on-main"
 type = "pre_tool"
-match = "bash"
+match = "re:(bash|process\\.start)"
 command = "ROOT=$(git rev-parse --show-toplevel 2>/dev/null) && test -f \"$ROOT/.vibe/hooks.toml\" && python3 \"$ROOT/.vibe/tools/block_commit_on_main.py\" || true"
 description = "Blocca git commit sul branch main: si committa solo su feat/<N>-<slug>"
 
@@ -17,7 +17,7 @@ description = "Blocca git commit sul branch main: si committa solo su feat/<N>-<
 [[hooks]]
 name = "block-push-to-main"
 type = "pre_tool"
-match = "bash"
+match = "re:(bash|process\\.start)"
 command = "ROOT=$(git rev-parse --show-toplevel 2>/dev/null) && test -f \"$ROOT/.vibe/hooks.toml\" && python3 \"$ROOT/.vibe/tools/block_push_to_main.py\" || true"
 description = "Blocca git push verso main: si pusha solo da branch feature, poi PR"
 
@@ -25,7 +25,7 @@ description = "Blocca git push verso main: si pusha solo da branch feature, poi 
 [[hooks]]
 name = "block-rm-rf"
 type = "pre_tool"
-match = "bash"
+match = "re:(bash|process\\.start)"
 command = "ROOT=$(git rev-parse --show-toplevel 2>/dev/null) && test -f \"$ROOT/.vibe/hooks.toml\" && python3 \"$ROOT/.vibe/tools/block_rm_rf.py\" || true"
 description = "Blocca rm -rf: usare git rm per file tracciati"
 
@@ -33,7 +33,7 @@ description = "Blocca rm -rf: usare git rm per file tracciati"
 [[hooks]]
 name = "suggest-changeset"
 type = "pre_tool"
-match = "bash"
+match = "re:(bash|process\\.start)"
 command = "ROOT=$(git rev-parse --show-toplevel 2>/dev/null) && test -f \"$ROOT/.vibe/hooks.toml\" && python3 \"$ROOT/.vibe/tools/suggest_changeset.py\" || true"
 description = "Avvisa se si committa codice senza un changeset"
 

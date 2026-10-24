@@ -49,9 +49,9 @@ def push_targets(rest):
 
 
 def switches_to_main(command):
-    """True se il comando contiene git checkout/switch verso main/master."""
+    """True se il comando contiene git checkout/switch verso main/master locale."""
     return re.search(
-        r"\bgit\s+(?:checkout|switch)\s+(?:\S+\s+)*?(?:main|master)\b",
+        r"\bgit\s+(?:checkout|switch)\s+(?:-\S+\s+)*(?:(?:main|master)|refs/heads/(?:main|master))\b(?:\s|$)",
         command,
     ) is not None
 
@@ -86,8 +86,8 @@ def main():
         sys.exit(0)
 
     for rest in push_rests:
-        # --all e --mirror pushano ogni branch locale, main compreso
-        if re.search(r"--all\b|--mirror\b", rest):
+        # --all, --mirror e --branches pushano ogni branch locale, main compreso
+        if re.search(r"--all\b|--mirror\b|--branches\b", rest):
             deny("Push con --all/--mirror bloccato: pusherebbe anche main. "
                  "Il workflow Mercury richiede PR + review gate. Vedi skill mercury-review.")
 

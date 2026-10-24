@@ -20,11 +20,17 @@ BASH_TOOL_NAMES = ("bash", "file_system.bash")
 
 
 def find_commit_segments(command):
-    """Tutti i segmenti che contengono `git commit` come comando proprio."""
+    """Tutti i segmenti che contengono `git commit` come comando proprio.
+
+    Gestisce: git commit, git -C <path> commit, bash -c 'git commit ...',
+    sudo git commit, FOO=1 git commit.
+    """
     segments = []
     for segment in re.split(SEPARATORS, command):
         m = re.match(
-            r"\s*(?:sudo\s+)?(?:\w+=(?:\"[^\"]*\"|'[^']*'|\S+)\s+)*git\s+commit\b",
+            r"\s*(?:sudo\s+)?(?:\w+=(?:\"[^\"]*\"|'[^']*'|\S+)\s+)*"
+            r"(?:git\s+(?:-C\s+\S+\s+)?commit\b"
+            r"|bash\s+-c\s+['\"].*?git\s+commit\b)",
             segment, re.S,
         )
         if m:
@@ -33,9 +39,9 @@ def find_commit_segments(command):
 
 
 def switches_to_main(command):
-    """True se il comando contiene git checkout/switch verso main/master."""
+    """True se il comando contiene git checkout/switch verso main/master locale."""
     return re.search(
-        r"\bgit\s+(?:checkout|switch)\s+(?:\S+\s+)*?(?:main|master)\b",
+        r"\bgit\s+(?:checkout|switch)\s+(?:-\S+\s+)*(?:(?:main|master)|refs/heads/(?:main|master))\b(?:\s|$)",
         command,
     ) is not None
 

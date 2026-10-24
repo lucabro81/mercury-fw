@@ -23,18 +23,17 @@ BASH_TOOL_NAMES = ("bash", "file_system.bash")
 
 
 def segment_has_dangerous_rm(segment):
-    """True se il segmento di comando inizia con `rm` (non `git rm`) e ha
-    sia il flag ricorsivo che force."""
+    """True se il segmento di comando contiene `rm` con flag ricorsivo+force.
+
+    Gestisce prefissi: sudo, env, command, xargs, env-assignment (FOO=1).
+    `git rm` è escluso strutturalmente (il regex non matcha `git rm`).
+    """
     m = re.match(
-        r"\s*(?:sudo\s+)?(?:\w+=(?:\"[^\"]*\"|'[^']*'|\S+)\s+)*rm\b",
+        r"\s*(?:sudo\s+|env\s+|command\s+|xargs\s+)*"
+        r"(?:\w+=(?:\"[^\"]*\"|'[^']*'|\S+)\s+)*rm\b",
         segment,
     )
     if not m:
-        return False
-    # Escludi git rm (strutturalmente non matchato dal regex sopra, ma per
-    # sicurezza verifichiamo che non ci sia `git` prima di `rm`)
-    prefix = segment[:m.start()].strip()
-    if re.search(r"\bgit\s*$", prefix):
         return False
     rest = segment[m.end():]
     recursive = force = False
