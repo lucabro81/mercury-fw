@@ -24,17 +24,25 @@ SEPARATORS = r"&&|\|\||;|\||\n"
 BASH_TOOL_NAMES = ("bash", "file_system.bash", "process.start")
 
 
+# `rm` as a standalone command — with sudo/env/command/xargs prefixes and
+# env assignments — or the first `rm` inside bash -c '...' / sh -c '...'
+# that is not `git rm`.
+RM_RE = re.compile(
+    r"\s*(?:sudo\s+|env\s+|command\s+|xargs\s+)*"
+    r"(?:\w+=(?:\"[^\"]*\"|'[^']*'|\S+)\s+)*"
+    r"(?:rm\b"
+    r"|(?:bash|sh)\s+-c\s+['\"].*?(?<!git )\brm\b)"
+)
+
+
 def segment_has_dangerous_rm(segment):
     """True when the command segment contains `rm` with recursive+force flags.
 
-    Handles prefixes: sudo, env, command, xargs, env-assignment (FOO=1).
-    `git rm` is excluded structurally (the regex does not match `git rm`).
+    Handles prefixes: sudo, env, command, xargs, env-assignment (FOO=1),
+    and the bash -c '...' / sh -c '...' wrapping forms. `git rm` is
+    excluded structurally (the regex does not match `git rm`).
     """
-    m = re.match(
-        r"\s*(?:sudo\s+|env\s+|command\s+|xargs\s+)*"
-        r"(?:\w+=(?:\"[^\"]*\"|'[^']*'|\S+)\s+)*rm\b",
-        segment,
-    )
+    m = RM_RE.match(segment)
     if not m:
         return False
     rest = segment[m.end():]

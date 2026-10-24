@@ -34,7 +34,7 @@ CHANGESET_EXCLUDED_PREFIXES = ("packages/config/",)
 # another command's arguments (echo "git commit", grep 'git commit')
 # does not count. Group 1 captures the commit's arguments.
 COMMIT_ARGS_RE = re.compile(
-    r"\s*(?:sudo\s+)?(?:\w+=(?:\"[^\"]*\"|'[^']*'|\S+)\s+)*"
+    r"\s*(?:(?:sudo|env|command|xargs)\s+)*(?:\w+=(?:\"[^\"]*\"|'[^']*'|\S+)\s+)*"
     r"(?:git\s+(?:-C\s+(?:\"[^\"]*\"|'[^']*'|\S+)\s+)?commit\b"
     r"|bash\s+-c\s+['\"].*?git\s+commit\b)"
     r"([^|&;]*)",
@@ -45,7 +45,7 @@ COMMIT_ARGS_RE = re.compile(
 VALUE_OPTIONS = {
     "-m", "-F", "-t", "-C", "-c",
     "--message", "--file", "--template", "--author",
-    "--cleanup", "--fixup", "--squash",
+    "--cleanup", "--fixup", "--squash", "--trailer", "--date",
 }
 
 # Short options of `git commit` that take a value: attached to the rest of
@@ -83,6 +83,10 @@ def includes_unstaged(segment):
     i = 0
     while i < len(tokens):
         token = tokens[i]
+        if token.startswith("--pathspec-from-file"):
+            # the commit takes the paths listed in the file, working-tree
+            # contents included
+            return True
         if token in VALUE_OPTIONS:
             i += 2
             continue
@@ -151,13 +155,23 @@ def main():
         if not relevant:
             sys.exit(0)
 
-        # A changeset already present (staged, unstaged or in the last commit) covers
-        changeset_status = git(cwd, "status", "--porcelain", ".changeset/")
-        last_commit = git(cwd, "log", "-1", "--pretty=%s")
+        # A changeset the commit would include covers: staged changeset
+        # files, plus tracked unstaged ones when the commit includes
+        # unstaged modifications. An untracked changeset file is included
+        # by no commit form, so it does not count.
+        changeset_files = set()
+        for f in git(cwd, "diff", "--cached", "--name-only", ".changeset/").split("\n"):
+            if f:
+                changeset_files.add(f)
+        if includes_unstaged(segment):
+            for f in git(cwd, "diff", "--name-only", ".changeset/").split("\n"):
+                if f:
+                    changeset_files.add(f)
 
-        has_changeset = (
-            bool(changeset_status)
-            or "changeset" in last_commit.lower()
+        # ...or the last commit already carried one
+        last_commit_files = git(cwd, "diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD")
+        has_changeset = bool(changeset_files) or any(
+            f.startswith(".changeset/") for f in last_commit_files.split("\n") if f
         )
 
         if not has_changeset:

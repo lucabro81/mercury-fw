@@ -11,6 +11,7 @@ Exits non-zero when any case fails.
 """
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -173,6 +174,42 @@ def main():
           "workflow Mercury richiede" not in reason and not any(c in reason for c in "àèéìòù"),
           reason)
 
+    # --- block_commit_on_main: wrapper prefixes (env/command/xargs) ---
+    expect("env git commit on main denied",
+           run_hook(BCM, "bash", "env git commit -m x", main_repo), "deny")
+    expect("command git commit on main denied",
+           run_hook(BCM, "bash", "command git commit -m x", main_repo), "deny")
+    expect("env git checkout main && git commit denied",
+           run_hook(BCM, "bash", "env git checkout main && git commit -m x", feat_repo), "deny")
+
+    # --- block_commit_on_main: cd tracking and path expansion ---
+    expect("cd <main checkout> && git commit denied",
+           run_hook(BCM, "bash", f"cd {main_repo} && git commit -m x", feat_repo), "deny")
+    expect("cd <main> && cd <feat> && git commit allowed",
+           run_hook(BCM, "bash", f"cd {main_repo} && cd {feat_repo} && git commit -m x", feat_repo), "silent")
+    expect("cd into a feat subdir && git commit allowed",
+           run_hook(BCM, "bash", f"cd {feat_repo}/packages && git commit -m x", feat_repo), "silent")
+    expect("bash -c 'cd <main> && git commit' denied",
+           run_hook(BCM, "bash", f"bash -c 'cd {main_repo} && git commit -m x'", feat_repo), "deny")
+    os.environ["HOOKTEST_MAIN"] = main_repo
+    expect("git -C $VAR commit denied (env var expansion)",
+           run_hook(BCM, "bash", "git -C $HOOKTEST_MAIN commit -m x", feat_repo), "deny")
+    del os.environ["HOOKTEST_MAIN"]
+
+    # --- block_commit_on_main: switch-away resets a previous switch to main ---
+    expect("switch to main then away then commit allowed",
+           run_hook(BCM, "bash", "git checkout main && git checkout feat/x && git commit -m x", feat_repo), "silent")
+    expect("switch main then away (switch) then commit allowed",
+           run_hook(BCM, "bash", "git switch main && git switch feat/x && git commit -m x", feat_repo), "silent")
+    expect("pathspec restore is not a switch away: commit still denied",
+           run_hook(BCM, "bash", "git checkout main && git checkout feat/x -- file.ts && git commit -m x", feat_repo), "deny")
+
+    # --- block_commit_on_main: the pathspec form is not a branch switch ---
+    expect("git checkout main -- <path> is not a switch",
+           run_hook(BCM, "bash", "git checkout main -- file.ts && git commit -m x", feat_repo), "silent")
+    expect("git checkout main -- <path> then a real switch still denied",
+           run_hook(BCM, "bash", "git checkout main -- file.ts && git checkout main && git commit -m x", feat_repo), "deny")
+
     # --- block_rm_rf ---
     expect("rm -rf denied", run_hook(RM, "bash", "rm -rf /tmp/x", feat_repo), "deny")
     expect("process.start: rm -rf denied", run_hook(RM, "process.start", "rm -rf /tmp/x", feat_repo), "deny")
@@ -189,6 +226,14 @@ def main():
            run_hook(RM, "bash", "rm -r 'my -f file'", feat_repo), "silent")
     expect("quoted filename with -rf inside allowed",
            run_hook(RM, "bash", 'rm -r "a -rf b"', feat_repo), "silent")
+    expect("bash -c 'rm -rf ...' denied",
+           run_hook(RM, "bash", "bash -c 'rm -rf /tmp/x'", feat_repo), "deny")
+    expect("sh -c 'rm -rf ...' denied",
+           run_hook(RM, "bash", "sh -c 'rm -rf /tmp/x'", feat_repo), "deny")
+    expect("bash -c 'rm -r -f dir' denied",
+           run_hook(RM, "bash", "bash -c 'rm -r -f dir'", feat_repo), "deny")
+    expect("bash -c 'git rm -rf ...' allowed",
+           run_hook(RM, "bash", "bash -c 'git rm -rf file'", feat_repo), "silent")
 
     # --- suggest_changeset: warning scope ---
     write("packages/libs/core/src/x.ts", "export const x = 1;\n")
@@ -199,6 +244,8 @@ def main():
            run_hook(CS, "process.start", "git commit -m x", feat_repo), "warn")
     expect("file_system.bash: changeset warning fires",
            run_hook(CS, "file_system.bash", "git commit -m x", feat_repo), "warn")
+    expect("env git commit with staged code warns",
+           run_hook(CS, "bash", "env git commit -m x", feat_repo), "warn")
 
     msg = (run_hook_raw(CS, "bash", "git commit -m x", feat_repo) or {}).get("system_message", "")
     check("changeset warning points at mercury-tdd",
@@ -253,6 +300,38 @@ def main():
            run_hook(CS, "bash", "git commit -pm x", feat_repo), "silent")
     expect("commit -ma: bundled value option",
            run_hook(CS, "bash", "git commit -ma", feat_repo), "silent")
+    expect("commit --trailer <v>: value is not a pathspec",
+           run_hook(CS, "bash", 'git commit --trailer "foo=bar" -m x', feat_repo), "silent")
+    expect("commit --date <v>: value is not a pathspec",
+           run_hook(CS, "bash", 'git commit --date "2020-01-01" -m x', feat_repo), "silent")
+    expect("commit --pathspec-from-file=<f> counts as a pathspec commit",
+           run_hook(CS, "bash", "git commit --pathspec-from-file=paths.txt -m x", feat_repo), "warn")
+    expect("commit --pathspec-from-file <f> counts as a pathspec commit",
+           run_hook(CS, "bash", "git commit --pathspec-from-file paths.txt -m x", feat_repo), "warn")
+
+    # --- suggest_changeset: the last-commit heuristic uses files, not the subject ---
+    git(feat_repo, "commit", "-q", "--allow-empty", "-m", "docs: explain the changeset flow")
+    git(feat_repo, "add", "packages/libs/core/src/x.ts")
+    expect("last commit mentioning 'changeset' without a changeset file does not silence",
+           run_hook(CS, "bash", "git commit -m x", feat_repo), "warn")
+
+    # --- suggest_changeset: a changeset counts only when the commit includes it ---
+    git(feat_repo, "reset", "-q")
+    write(".changeset/new-one.md", "---\n'@mercury-fw/core': patch\n---\n\nfix\n")
+    write("packages/libs/core/src/x.ts", "export const x = 5;\n")
+    git(feat_repo, "add", "packages/libs/core/src/x.ts")
+    expect("untracked changeset does not silence the warning",
+           run_hook(CS, "bash", "git commit -m x", feat_repo), "warn")
+    git(feat_repo, "add", ".changeset/new-one.md")
+    git(feat_repo, "commit", "-q", "-m", "chore: add changeset")
+    git(feat_repo, "commit", "-q", "--allow-empty", "-m", "code")
+    write(".changeset/new-one.md", "---\n'@mercury-fw/core': patch\n---\n\nfix v2\n")
+    write("packages/libs/core/src/x.ts", "export const x = 6;\n")
+    git(feat_repo, "add", "packages/libs/core/src/x.ts")
+    expect("unstaged tracked changeset not included by a plain commit -> warns",
+           run_hook(CS, "bash", "git commit -m x", feat_repo), "warn")
+    expect("unstaged tracked changeset included by -am -> silent",
+           run_hook(CS, "bash", "git commit -am x", feat_repo), "silent")
 
     # --- suggest_changeset: 'git commit' inside other commands doesn't count ---
     git(feat_repo, "reset", "-q")
@@ -308,6 +387,45 @@ def main():
     p = subprocess.run(["sh", "-c", rm_hook["command"]], input=payload, capture_output=True, text=True, cwd=fix)
     check("hooks.toml command fails open outside the repo",
           p.returncode == 0 and not p.stdout.strip(), p.stdout + p.stderr)
+    foreign = os.path.join(fix, "foreign-repo")
+    subprocess.run(["git", "init", "-q", "-b", "main", foreign], check=True, capture_output=True)
+    os.makedirs(os.path.join(foreign, ".vibe"), exist_ok=True)
+    with open(os.path.join(foreign, ".vibe", "hooks.toml"), "w") as f:
+        f.write("# a foreign Vibe project's hooks\n")
+    p = subprocess.run(["sh", "-c", rm_hook["command"]], input=payload, capture_output=True, text=True, cwd=foreign)
+    check("hooks.toml command fails open in a foreign Vibe project",
+          p.returncode == 0 and not p.stdout.strip(), p.stdout + p.stderr)
+    p = subprocess.run(["sh", "-c", rm_hook["command"]], input="not json", capture_output=True, text=True, cwd=REPO)
+    check("hooks.toml command surfaces an in-repo hook crash",
+          p.returncode != 0, f"rc={p.returncode}")
+
+    # --- hooks.toml match patterns vs Vibe's fullmatch + candidate names ---
+    # Vibe's Unified Harness fullmatches a re: pattern against candidate
+    # names: the qualified name, the leaf, the underscore-joined name and
+    # the model-facing alias.
+    MODEL_ALIASES = {
+        "file_system.bash": "bash",
+        "file_system.search_replace": "edit",
+        "file_system.write_file": "write_file",
+    }
+
+    def candidates(qualified):
+        leaf = qualified.split(".")[-1]
+        return {qualified, leaf, qualified.replace(".", "_"), MODEL_ALIASES.get(qualified, leaf)}
+
+    def match_fires(pattern, qualified):
+        rx = re.compile(pattern[len("re:"):])
+        return any(rx.fullmatch(c) for c in candidates(qualified))
+
+    bash_match = next(h["match"] for h in hooks if h["name"] == "block-rm-rf")
+    for tool in ("bash", "file_system.bash", "process.start"):
+        check(f"bash match fires for {tool}", match_fires(bash_match, tool))
+    for tool in ("read_file", "file_system.read_file", "edit"):
+        check(f"bash match does not fire for {tool}", not match_fires(bash_match, tool))
+    edit_match = next(h["match"] for h in hooks if h["name"] == "suggest-test-after-ts-edit")
+    for tool in ("edit", "write_file", "file_system.search_replace", "file_system.write_file"):
+        check(f"edit match fires for {tool}", match_fires(edit_match, tool))
+    check("edit match does not fire for bash", not match_fires(edit_match, "bash"))
 
     print()
     print(f"{cases - len(failures)}/{cases} passed")

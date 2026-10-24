@@ -2,16 +2,17 @@
 # See AGENTS.md for the full workflow.
 #
 # Command paths are absolute (git rev-parse --show-toplevel) and guarded by
-# a conditional test: outside this repo the hooks exit silently (fail open);
-# inside the repo a hook crash surfaces as a warning instead of disappearing.
-# The hooks' behavior is covered by .vibe/tools/test_hooks.py.
+# a test for the script itself: outside this repo (or in a foreign Vibe
+# project) the hooks exit silently (fail open); inside the repo a hook crash
+# surfaces as a warning instead of disappearing. The hooks' behavior is
+# covered by .vibe/tools/test_hooks.py.
 
 # 1. Block direct commits on main/master
 [[hooks]]
 name = "block-commit-on-main"
 type = "pre_tool"
 match = "re:(bash|process\\.start)"
-command = "if ROOT=$(git rev-parse --show-toplevel 2>/dev/null) && test -f \"$ROOT/.vibe/hooks.toml\"; then python3 \"$ROOT/.vibe/tools/block_commit_on_main.py\"; fi"
+command = "SCRIPT=$(git rev-parse --show-toplevel 2>/dev/null)/.vibe/tools/block_commit_on_main.py; if test -f \"$SCRIPT\"; then python3 \"$SCRIPT\"; fi"
 description = "Block git commit on main: only commit on feat/<N>-<slug>"
 
 # 2. Block rm -rf and variants
@@ -19,7 +20,7 @@ description = "Block git commit on main: only commit on feat/<N>-<slug>"
 name = "block-rm-rf"
 type = "pre_tool"
 match = "re:(bash|process\\.start)"
-command = "if ROOT=$(git rev-parse --show-toplevel 2>/dev/null) && test -f \"$ROOT/.vibe/hooks.toml\"; then python3 \"$ROOT/.vibe/tools/block_rm_rf.py\"; fi"
+command = "SCRIPT=$(git rev-parse --show-toplevel 2>/dev/null)/.vibe/tools/block_rm_rf.py; if test -f \"$SCRIPT\"; then python3 \"$SCRIPT\"; fi"
 description = "Block rm -rf: use git rm for tracked files"
 
 # 3. Warn when committing code without a changeset
@@ -27,7 +28,7 @@ description = "Block rm -rf: use git rm for tracked files"
 name = "suggest-changeset"
 type = "pre_tool"
 match = "re:(bash|process\\.start)"
-command = "if ROOT=$(git rev-parse --show-toplevel 2>/dev/null) && test -f \"$ROOT/.vibe/hooks.toml\"; then python3 \"$ROOT/.vibe/tools/suggest_changeset.py\"; fi"
+command = "SCRIPT=$(git rev-parse --show-toplevel 2>/dev/null)/.vibe/tools/suggest_changeset.py; if test -f \"$SCRIPT\"; then python3 \"$SCRIPT\"; fi"
 description = "Warn when committing code without a changeset"
 
 # 4. Remind to run tests and typecheck after editing .ts files
@@ -35,5 +36,5 @@ description = "Warn when committing code without a changeset"
 name = "suggest-test-after-ts-edit"
 type = "post_tool"
 match = "re:(edit|write_file)"
-command = "if ROOT=$(git rev-parse --show-toplevel 2>/dev/null) && test -f \"$ROOT/.vibe/hooks.toml\"; then python3 \"$ROOT/.vibe/tools/suggest_test_after_ts.py\"; fi"
+command = "SCRIPT=$(git rev-parse --show-toplevel 2>/dev/null)/.vibe/tools/suggest_test_after_ts.py; if test -f \"$SCRIPT\"; then python3 \"$SCRIPT\"; fi"
 description = "After editing a .ts file, remind to run typecheck and tests"
