@@ -26,7 +26,7 @@ def main():
     if "packages" in parts:
         idx = parts.index("packages")
         if idx + 2 < len(parts):
-            package_hint = f" in `{parts[idx+1]}/{parts[idx+2]}`"
+            package_hint = f" in `{parts[idx]}/{parts[idx+1]}/{parts[idx+2]}`"
 
     print(json.dumps({
         "decision": "allow",
