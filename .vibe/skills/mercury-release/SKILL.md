@@ -62,7 +62,7 @@ git tag --points-at HEAD  # deve mostrare i tag creati
 ### 3. Push con tag
 
 ```bash
-git push origin <branch> --follow-tags
+git push origin <branch> --tags
 ```
 
 ### 4. Aggiorna la PR
