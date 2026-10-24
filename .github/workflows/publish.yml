@@ -17,7 +17,7 @@ name: Publish to npm
 # No token: npm trusts this workflow as the packages' publisher (trusted
 # publishing, OIDC), configured per package with `npm trust github`; a
 # brand-new package needs its first version published by hand before that
-# (see the Versioning section of CLAUDE.md).
+# (see the Versioning section of AGENTS.md).
 
 on:
   push:
