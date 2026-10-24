@@ -83,12 +83,12 @@ export function parseReleases(raw: GithubRelease[], tagTimes: Map<string, string
 
 /** The tags' commit times from `git for-each-ref`, one `<tag> <time>` per line (`readTagTimes` in site.ts). */
 export function parseTagTimes(output: string): Map<string, string> {
-  const dates = new Map<string, string>();
+  const times = new Map<string, string>();
   for (const line of output.split("\n")) {
-    const [tag, date] = line.trim().split(" ");
-    if (tag && date) dates.set(tag, date);
+    const [tag, time] = line.trim().split(" ");
+    if (tag && time) times.set(tag, time);
   }
-  return dates;
+  return times;
 }
 
 /** The newest framework version among `releases` (newest first), pre-releases left out, or `null`. */
