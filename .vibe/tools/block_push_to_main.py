@@ -18,7 +18,10 @@ def push_segment(command):
     shell), non come sottostringa di un altro comando o di una stringa.
     """
     for segment in re.split(r"&&|\|\||;|\|", command):
-        m = re.match(r"\s*(?:sudo\s+)?git\s+push\b(.*)", segment, re.S)
+        m = re.match(
+            r"\s*(?:sudo\s+)?(?:\w+=(?:\"[^\"]*\"|'[^']*'|\S+)\s+)*git\s+push\b(.*)",
+            segment, re.S,
+        )
         if m:
             return m.group(1)
     return None

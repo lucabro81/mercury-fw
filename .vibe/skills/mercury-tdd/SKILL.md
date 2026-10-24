@@ -6,7 +6,7 @@ user-invocable: true
 
 # Mercury TDD — Fase 4: Sviluppo sul Branch
 
-Questa skill guida il lavoro di sviluppo sul branch `feat/<N>-<slug>`, aplicando
+Questa skill guida il lavoro di sviluppo sul branch `feat/<N>-<slug>`, applicando
 TDD (Test-Driven Development) e commit atomici.
 
 ## Prerequisiti
@@ -43,7 +43,7 @@ Per ogni unità di lavoro nel plan:
 - Scrivi il codice minimo necessario a far passare il test
 - Non ottimizzare, non aggiungere feature non richieste
 - Esegui il test: deve passare
-- Esegui tutti i test del package per verificare che non haya rotto nulla:
+- Esegui tutti i test del package per verificare che non abbia rotto nulla:
   ```bash
   cd <package-dir> && bun test
   ```
@@ -75,7 +75,7 @@ Per ogni unità di lavoro nel plan:
 ## Prima di ogni push
 
 ```bash
-# Typecheck del package modifié
+# Typecheck del package modificato
 cd <package-dir> && bun run typecheck
 
 # Tutti i test del package
@@ -99,4 +99,4 @@ Carica la skill `mercury-review` per procedere.
 Anche i bugfix seguono TDD:
 1. Scrivi un test che riproduce il bug (fallisce)
 2. Fixia il bug (test passa)
-3. Verifica che non haya regressioni
+3. Verifica che non abbia regressioni

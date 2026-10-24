@@ -7,7 +7,7 @@ user-invocable: true
 # Mercury Plan — Fase 1: Stesura del Plan
 
 Ogni unità di lavoro su Mercury inizia con un plan scritto, proposto a Luca in plan
-mode, e approvato da lui prima che si apra qualquer issue o si tocchi codice.
+mode, e approvato da lui prima che si apra qualsiasi issue o si tocchi codice.
 
 ## Il tuo ruolo
 
