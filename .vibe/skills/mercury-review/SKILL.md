@@ -1,14 +1,14 @@
 ---
 name: mercury-review
-description: Load before merging a PR on Mercury. Runs the two review-gate subagents (cold-reviewer and docs-auditor) with only the issue number and branch name, collects their verdicts, fixes findings in-branch, and re-runs until both APPROVE.
+description: Load before merging a PR on Mercury. Runs the two review-gate subagents (cold-reviewer and docs-auditor) with only the issue number, branch name and review scope, collects their verdicts, fixes findings in-branch, and re-runs until both APPROVE.
 user-invocable: true
 ---
 
 # Mercury Review — Phase 5: Review Gate
 
 Before merging a PR, two subagents review the branch in parallel, each with
-only the issue number and the branch name — no conversation context. Their
-verdicts are binding: no merge until both return APPROVE.
+only the issue number, the branch name and the review scope — no conversation
+context. Their verdicts are binding: no merge until both return APPROVE.
 
 ## Prerequisites
 
@@ -34,6 +34,44 @@ APPROVE or CHANGES REQUESTED.
 Its definition is in `.vibe/agents/docs-auditor.toml` — the canonical
 definition is `.claude/agents/docs-auditor.md`: keep them in sync.
 
+## Review scope
+
+Each reviewer's verdict is scoped: the full branch on its first round on
+the branch, the delta since its last round afterwards. The scope is part
+of the spawn message, computed by `.vibe/tools/review_scope.py` (covered
+by `.vibe/tools/test_review_scope.py`):
+
+```
+Issue: #N
+Branch: feat/N-slug
+Scope: delta since <sha> — files: <f1>, <f2>, ...
+```
+
+`Scope: full branch` on a reviewer's first round; afterwards `<sha>` is
+the HEAD the reviewer last returned a verdict on (the caller records it
+per reviewer after each round) and the file list is
+`git diff --name-only <sha>..HEAD`. An empty delta prints
+`Scope: no changes`: the reviewer is not re-run.
+
+Verdict rules by scope:
+
+- S1/S2 block anywhere, delta or not.
+- S3/S4 inside the delta follow the severity grid: fix with a regression
+  test or defer with a tracked issue.
+- S3/S4 outside the delta (files the reviewer's last round already
+  covered and that did not change) are not findings: record them as out
+  of scope and defer them — never re-litigate them.
+- A new file in the delta gets a full review of the file.
+- docs-auditor's scope is the delta files plus the documentation
+  surfaces that describe them (README, AGENTS.md, the CLI's `--help`,
+  the docs site, the changesets): its "the code is documented" direction
+  reads documentation that did not change.
+
+The scope line carries only the file list and the sha — never the
+reviewer's previous findings. Fresh eyes stay fresh. The test suite is
+the cross-file safety net under delta scope: all tests pass remains a
+spawn prerequisite.
+
 ## Procedure
 
 ### 1. Prepare context for the subagents
@@ -41,6 +79,11 @@ definition is `.claude/agents/docs-auditor.md`: keep them in sync.
 Gather:
 - Issue number: `N`
 - Branch name: `feat/N-slug`
+- The review scope: `python3 .vibe/tools/review_scope.py` for a
+  reviewer's first round, `python3 .vibe/tools/review_scope.py --since
+  <sha>` afterwards (`<sha>` = the HEAD that reviewer last returned a
+  verdict on; record it after each round). `Scope: no changes` means
+  the reviewer is not re-run.
 
 ### 2. Launch cold-reviewer
 
@@ -52,6 +95,8 @@ Spawn the `cold-reviewer` subagent with the `task` tool:
 ```
 Issue: #N
 Branch: feat/N-slug
+Scope: full branch                          (first round of this reviewer)
+Scope: delta since <sha> — files: ...       (afterwards)
 ```
 
 ### 3. Launch docs-auditor
@@ -61,6 +106,8 @@ Spawn the `docs-auditor` subagent with the `task` tool, same format:
 ```
 Issue: #N
 Branch: feat/N-slug
+Scope: full branch                          (first round of this reviewer)
+Scope: delta since <sha> — files: ...       (afterwards)
 ```
 
 ### 4. Collect verdicts
@@ -104,7 +151,8 @@ When both return APPROVE, tell the user:
 ## Rules
 
 - **Never merge without APPROVE from both.**
-- **Never give the subagents context beyond issue number and branch name.**
+- **Never give the subagents context beyond issue number, branch name and
+  the review scope** (the file list and the sha — never previous findings).
   Their value is in fresh eyes.
 - **Do not skip the review gate**, not even for "small changes".
 - **The reviewers are read-only.** They never commit, push, rebase or modify
@@ -138,9 +186,10 @@ The review always ends. The loop is bounded by:
   is either fixed with a regression test or deferred in a tracked issue
   linked in the PR.
 - **Verification round.** After a round that had only S3/S4, re-run each
-  reviewer whose domain changed (see below) once. If it finds only S3/S4
-  again, apply fix-or-defer and close: the review ends. Severity may not
-  rise without blocking: an S1/S2 in a verification round reopens the loop.
+  reviewer whose domain changed (see below) once, scoped to the delta
+  since its last round. If it finds only S3/S4 again, apply fix-or-defer
+  and close: the review ends. Severity may not rise without blocking: an
+  S1/S2 in a verification round reopens the loop.
 - **Blocking cap.** At most 3 consecutive rounds with at least one S1/S2.
   A 4th consecutive blocking round stops the loop: the caller writes an
   escalation report for Luca — residual findings with their classes, what
@@ -155,7 +204,9 @@ The review always ends. The loop is bounded by:
 Re-run a reviewer only when files in its domain changed since its last
 verdict: cold-reviewer for code and tests, docs-auditor for docs, skills,
 agent definitions and changesets. A reviewer that APPROVEd is not re-run
-for changes outside its domain.
+for changes outside its domain. The re-run is scoped to the delta since
+its last verdict (see Review scope); a reviewer whose delta is empty is
+not re-run.
 
 ## Threat model for the hooks
 

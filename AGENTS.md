@@ -22,8 +22,10 @@ truth; the plan for a unit of work lives in its issue and never restates it.
 4. **TDD on the branch**, atomic commits, one changeset per issue; open a PR
    with `Closes #N`.
 5. **Review gate.** Before merge, run two subagents over the change, each by
-   its own subagent type and given only the issue number and the branch name,
-   no conversation context: `cold-reviewer` (`.claude/agents/cold-reviewer.md`
+   its own subagent type and given only the issue number, the branch name and
+   the review scope (the full branch on a reviewer's first round, the files
+   changed since its last round afterwards), no conversation context:
+   `cold-reviewer` (`.claude/agents/cold-reviewer.md`
    or `.vibe/agents/cold-reviewer.toml`), which judges the code against the
    issue, and `docs-auditor` (`.claude/agents/docs-auditor.md` or
    `.vibe/agents/docs-auditor.toml`), which checks both ways that what changed
@@ -54,6 +56,10 @@ rules are enforced automatically when working in Vibe:
   non-test `.ts` files. Pushes to `main` are not blocked — releases are supervised
   by Luca. Their behavior is covered by `.vibe/tools/test_hooks.py`
   (`python3 .vibe/tools/test_hooks.py`).
+- **Review scope** (`.vibe/tools/review_scope.py`) — computes the scope line
+  the review-gate subagents are spawned with
+  (`python3 .vibe/tools/review_scope.py [--since <sha>]`); covered by
+  `.vibe/tools/test_review_scope.py` (`python3 .vibe/tools/test_review_scope.py`).
 - **Agent profiles** (`.vibe/agents/`) — `cold-reviewer.toml` and
   `docs-auditor.toml`, the Vibe-native equivalents of the `.claude/agents/*.md`
   subagents, spawnable via Vibe's `task` tool. Keep them in sync with the
