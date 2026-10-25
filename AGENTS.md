@@ -40,8 +40,11 @@ truth; the plan for a unit of work lives in its issue and never restates it.
 6. **Merge on approval:** squash-merge (the issue auto-closes), sync `main`,
    delete the branch.
 7. **Close the loop.** At the end of each unit of work, update project memory
-   with anything worth carrying to a future session, and bring `README.md` in
-   line with the change whenever it affects what the README documents.
+   with anything worth carrying to a future session — in Vibe that means the
+   personal knowledge under `.vibe/plugins/mercury-memory/ai.mistral.vibe/knowledge/`
+   (not versioned; when adding an entry, drop the oldest one) — and bring
+   `README.md` in line with the change whenever it affects what the README
+   documents.
 
 Bugfixes still follow the TDD rule below: discuss the root cause first, then a
 regression test that fails before the fix and passes after.
@@ -64,6 +67,11 @@ workflow runs natively in Vibe:
   subagents, spawnable via Vibe's `task` tool. Keep them in sync with the
   `.claude/agents/*.md` files (a drift guard in
   `.vibe/tools/test_agent_profiles.py` fails when they diverge).
+- **Personal memory** (`.vibe/plugins/mercury-memory/ai.mistral.vibe/knowledge/`)
+  — Luca's project memory (Vibe knowledge); gitignored, never versioned,
+  rotated by hand (when adding an entry, drop the oldest). Keep this file lean:
+  shared, versioned conventions live here and in the skills/hooks, personal
+  memory lives there.
 
 The workflow rules (never commit on `main`, no `rm -rf`, always a changeset)
 are not enforced by local hooks: they hold by convention, through the agent's
