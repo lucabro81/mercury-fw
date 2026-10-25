@@ -122,7 +122,7 @@ check(
 # --- wire protocol: stdin event JSON -> stdout structured response --------
 def run_hook(event):
     proc = subprocess.run(
-        [sys.executable, str(TOOLS / "block-secrets.py")],
+        [sys.executable, str(TOOLS / "block_secrets.py")],
         input=json.dumps(event),
         capture_output=True,
         text=True,
@@ -159,8 +159,8 @@ if hooks_path.is_file():
         check("hooks.toml: match covers bash/read_file/edit/write_file",
               h.get("match") == "re:(bash|read_file|edit|write_file)")
         check("hooks.toml: strict (fail closed)", h.get("strict") is True)
-        check("hooks.toml: command runs block-secrets.py",
-              "block-secrets.py" in str(h.get("command", "")))
+        check("hooks.toml: command runs block_secrets.py",
+              "block_secrets.py" in str(h.get("command", "")))
 
 # --- .gitignore: personal knowledge is ignored, the rest is committable --
 def ignored(path):
