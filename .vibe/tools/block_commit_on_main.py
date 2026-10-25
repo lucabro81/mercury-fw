@@ -6,9 +6,13 @@ newlines, outside quotes) for `git commit` as a standalone command.
 Line comments are stripped first the way bash parses them (an unquoted
 `#` at a word start runs to the end of the line): a switch followed by a
 comment still switches, and a comment hides the separators and commands
-inside it. Checkout/switch subcommand options — short clusters and long
-ones like `--quiet` — are skipped before the target; a bare `--` still
-starts the pathspec form.
+inside it. A backslash at the end of a line continues the command on
+the next one (an escaped `\\` ends it instead), and a redirect is
+recognized where bash allows one: after a switch target (`git checkout
+main 2>/dev/null` really switches) or at the start of a segment
+(`2>/dev/null git commit` really commits). Checkout/switch subcommand
+options — short clusters and long ones like `--quiet` — are skipped
+before the target; a bare `--` still starts the pathspec form.
 Blocks when the branch the commit would land on is main/master. The
 commit's target directory is tracked through `cd` segments and `git -C
 <path>` (with ~ and $VAR expansion), and a checkout/switch to
@@ -91,6 +95,24 @@ GIT_C_RE = re.compile(r"(?<![\w=.-])-C\s*(?:\"([^\"]*)\"|'([^']*)'|(\S+))")
 # `--` (that starts the pathspec form).
 OPTIONS = r"(?:(?:-(?!-)\S+|--[\w-]+(?:=\S+)?)\s+)*"
 
+# A redirect token: an operator (`>`, `>>`, `<`, `<>`, `>|`, `&>`, `&>>`,
+# `2>`, `2>>`, `2>&1`, `2>&-`, `>&2`, and the here-doc/here-string forms
+# `<<`, `<<-`, `<<<`) with its optional target word, attached (`>log`) or
+# separated (`> log`), quoted or bare. Bash allows a redirect anywhere in
+# a command, so a switch target may be followed by redirects
+# (`git checkout main 2>/dev/null` really switches) and a segment may
+# start with them (`2>/dev/null git commit` really commits).
+REDIRECT_TOKEN = (
+    r"(?:&>>?|>\||<>|<<-|<<?|\d*>&|\d*>>?|\d*<&|\d*<)"
+    r"(?:\s*(?:\"[^\"]*\"|'[^']*'|[^\s;&|<>#]+))?"
+)
+
+# What may follow a switch target: redirect tokens, then the end of the
+# segment or a short option (`git checkout main -q` really switches). A
+# bare word after the target is the two-argument pathspec form, and `--
+# <paths>` restores paths: neither switches.
+SWITCH_TAIL = r"(?=\s*(?:" + REDIRECT_TOKEN + r"\s*)*(?:-(?!-)|$))"
+
 # A commit as a standalone command: git commit, git -C <path> commit,
 # git --no-pager commit, env git commit, FOO=1 git commit. The lookahead
 # after `commit` keeps plumbing subcommands (commit-tree, commit-graph)
@@ -106,15 +128,16 @@ COMMIT_RE = re.compile(
 # the pathspec form (`git checkout main -- <paths>` restores paths, it
 # does not switch). A bare word after the branch is the two-argument
 # pathspec form (`git checkout main <path>`): it restores paths and does
-# not switch either; options after the branch are fine (`git checkout
-# main -q` really switches). Group 2 captures the branch (group 1 is
-# the git global options).
+# not switch either; options and redirects after the branch are fine
+# (`git checkout main -q` and `git checkout main 2>/dev/null` really
+# switch). Group 2 captures the branch (group 1 is the git global
+# options).
 SWITCH_RE = re.compile(
     PREFIX +
     r"git\s+" + GIT_OPTS +
     r"(?:checkout|switch)\s+"
     + OPTIONS +
-    r"((?:main|master)|refs/heads/(?:main|master))(?![/\w-])(?=\s*(?:-|$))(?!\s*--)"
+    r"((?:main|master)|refs/heads/(?:main|master))(?![/\w-])" + SWITCH_TAIL + r"(?!\s*--)"
 )
 
 # A branch-creating checkout/switch (`git checkout -b <name>`,
@@ -122,13 +145,18 @@ SWITCH_RE = re.compile(
 # `git checkout --orphan <name>`) as a standalone command: the command
 # switches to the branch it creates (an unborn one for --orphan), so it
 # marks or un-marks like a literal switch. Group 2 is the option, group 3
-# the branch name (attached or separate).
+# the branch name (attached, separate, or `=`-attached to a long option).
 CREATE_RE = re.compile(
     PREFIX +
     r"git\s+" + GIT_OPTS +
     r"(?:checkout|switch)\s+"
     + OPTIONS +
-    r"(-b|-B|-c|-C|--create|--force-create|--orphan)\s*"
+    r"(-b|-B|-c|-C|--create|--force-create|--orphan)"
+    # a long option takes its value after `=` (`--force-create=main`
+    # really resets main); a short option's value is attached or
+    # separate (`-bmain`, `-b main`) — an `=` right after a short option
+    # is part of the value (`-b=main` creates a branch named `=main`)
+    r"(?:(?<=--create)=|(?<=--force-create)=|(?<=--orphan)=|\s*)"
     r"(\"[^\"]*\"|'[^']*'|\S+)"
 )
 
@@ -138,7 +166,9 @@ CREATE_RE = re.compile(
 # restores paths and changes nothing (resolved via git, see below). The
 # pathspec forms (`git checkout <target> -- <paths>` and the
 # two-argument `git checkout <target> <path>`) are excluded, as is a
-# switch to main/master itself. Group 2 captures the target.
+# switch to main/master itself; redirects after the target are fine
+# (`git checkout feat/x 2>/dev/null` really switches away). Group 2
+# captures the target.
 SWITCH_AWAY_RE = re.compile(
     PREFIX +
     r"git\s+" + GIT_OPTS +
@@ -147,7 +177,7 @@ SWITCH_AWAY_RE = re.compile(
     r"(?!(?:main|master|refs/heads/(?:main|master))(?=\s|$|--))"
     r"(?!-)"
     r"(\"[^\"]*\"|'[^']*'|\S+)"
-    r"(?=\s*(?:-|$))(?!\s*--)"
+    + SWITCH_TAIL + r"(?!\s*--)"
 )
 
 # A switch to a previous branch as a standalone command: the previous-
@@ -156,13 +186,14 @@ SWITCH_AWAY_RE = re.compile(
 # the git global options). The pathspec forms (`git checkout - -- <paths>`
 # and `git checkout - <path>` restore paths, they do not switch) are
 # excluded, and so are option clusters: the shorthand is a bare `-`,
-# never `-b` or `--`.
+# never `-b` or `--`. The target may be quoted (`git checkout "@{-1}"`
+# or `git checkout '@{-1}'` resolves like the bare form).
 PREV_SWITCH_RE = re.compile(
     PREFIX +
     r"git\s+" + GIT_OPTS +
     r"(?:checkout|switch)\s+"
     + OPTIONS +
-    r"(-|@\{-\d+\})(?![\w-])(?=\s*(?:-|$))(?!\s*--)"
+    r"[\"']?(-|@\{-\d+\})[\"']?(?![\w-])" + SWITCH_TAIL + r"(?!\s*--)"
 )
 
 # A cd that changes the working directory for the rest of the command
@@ -296,6 +327,17 @@ def split_segments(command):
             i += 1
     segments.append("".join(current))
     return segments
+
+
+def strip_leading_redirects(segment):
+    """Remove redirect tokens at the start of a segment: bash allows a
+    redirect before the command (`2>/dev/null git commit -m x` really
+    commits), so the command after them is the segment's command."""
+    while True:
+        m = re.match(r"\s*" + REDIRECT_TOKEN, segment)
+        if not m:
+            return segment
+        segment = segment[m.end():]
 
 
 def wrapper_inner(match):
@@ -518,7 +560,15 @@ def run_command_line(command, directory, switched_to_main, sim):
     previous-branch switch targets.
     """
     command = strip_comments(command)
+    # a backslash at the end of a line continues the command on the next
+    # one (`git checkout \` + newline + `main` is one command); join
+    # before splitting. An escaped backslash (`\\`) ends the command
+    # instead, so it is not joined.
+    command = re.sub(r"(?<!\\)\\\n", " ", command)
     for segment in split_segments(command):
+        # a redirect at the start of a segment (`2>/dev/null git commit`)
+        # really runs the command after it
+        segment = strip_leading_redirects(segment)
         wrapped = WRAPPER_RE.match(segment)
         if wrapped:
             payload = run_command_line(wrapper_inner(wrapped), directory, switched_to_main, sim)

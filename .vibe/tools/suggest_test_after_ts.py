@@ -3,6 +3,11 @@
 
 A reminder, not a guard-rail: it never denies a call — it only appends
 context after a successful edit of a non-test .ts file.
+
+Its threat model is the same as the other hooks': a guard-rail for an
+honest but fallible agent, not a sandbox — the analysis is textual, so
+a deliberately hostile command can route around it, and since it never
+denies a call, a hostile edit simply goes unreminded.
 """
 import json
 import sys

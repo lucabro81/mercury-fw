@@ -898,6 +898,113 @@ def main():
            run_hook(CS, "bash", "git add --update && git commit -m x", feat_repo), "warn")
     git(feat_repo, "reset", "-q")
 
+    # --- block_commit_on_main: redirects after a switch target (round 14, S1) ---
+    # Bash allows a redirect anywhere in a command: `git checkout main
+    # 2>/dev/null` really switches, so a redirect after the target does
+    # not turn the switch into a pathspec form — and a bare word (or a
+    # bare `--`) after a redirect still does (`git checkout main >log
+    # file.txt` and `git checkout main >log -- file.txt` restore paths,
+    # they do not switch).
+    expect("switch to main with >log 2>&1, then commit -> denied",
+           run_hook(BCM, "bash", "git checkout main >log 2>&1 && git commit -m x", feat_repo), "deny")
+    expect("switch to main with 2>/dev/null, then commit -> denied",
+           run_hook(BCM, "bash", "git checkout main 2>/dev/null && git commit -m x", feat_repo), "deny")
+    expect("switch to main with &>log, then commit -> denied",
+           run_hook(BCM, "bash", "git checkout main &>log && git commit -m x", feat_repo), "deny")
+    expect("git switch to main with >log, then commit -> denied",
+           run_hook(BCM, "bash", "git switch main >log && git commit -m x", feat_repo), "deny")
+    expect("switch to main piped through a redirect, then commit -> denied",
+           run_hook(BCM, "bash", "git checkout main 2>&1 | tee log && git commit -m x", feat_repo), "deny")
+    expect("switch to main with a separated redirect target, then commit -> denied",
+           run_hook(BCM, "bash", "git checkout main > log && git commit -m x", feat_repo), "deny")
+    expect("switch to main with a quoted redirect target, then commit -> denied",
+           run_hook(BCM, "bash", 'git checkout main >"my log" && git commit -m x', feat_repo), "deny")
+    expect("switch to main then away with a redirect, then commit -> allowed",
+           run_hook(BCM, "bash", "git checkout main && git checkout feat/331-test >log && git commit -m x", feat_repo), "silent")
+    expect("a bare word after a redirect is the two-argument pathspec form -> allowed",
+           run_hook(BCM, "bash", "git checkout main >log file.txt && git commit -m x", feat_repo), "silent")
+    expect("a bare -- after a redirect is the pathspec form -> allowed",
+           run_hook(BCM, "bash", "git checkout main >log -- file.txt && git commit -m x", feat_repo), "silent")
+
+    # --- block_commit_on_main: quoted previous-branch targets, = attached create values (round 14, S3) ---
+    # `git checkout "@{-1}"` resolves like the bare shorthand, and a long
+    # option takes its value after `=` (`--force-create=main` really
+    # resets main) while a short option's `=` is part of the value
+    # (`-b=main` creates a branch named `=main`).
+    qprev_repo = os.path.join(fix, "qprev-repo")
+    subprocess.run(["git", "init", "-q", "-b", "main", qprev_repo], check=True, capture_output=True)
+    git(qprev_repo, "commit", "-q", "--allow-empty", "-m", "init")
+    git(qprev_repo, "checkout", "-q", "-b", "feat/q")
+    expect("checkout \"@{-1}\" (previous is main) + commit denied",
+           run_hook(BCM, "bash", 'git checkout "@{-1}" && git commit -m x', qprev_repo), "deny")
+    expect("checkout '@{-1}' (previous is main) + commit denied",
+           run_hook(BCM, "bash", "git checkout '@{-1}' && git commit -m x", qprev_repo), "deny")
+    expect("checkout \"-\" (previous is main) + commit denied",
+           run_hook(BCM, "bash", 'git checkout "-" && git commit -m x', qprev_repo), "deny")
+    expect("checkout \"@{-1}\" with a redirect, previous is main -> denied",
+           run_hook(BCM, "bash", 'git checkout "@{-1}" 2>/dev/null && git commit -m x', qprev_repo), "deny")
+    expect("checkout \"@{-9}\" (no such previous) + commit judged on the current branch",
+           run_hook(BCM, "bash", 'git checkout "@{-9}" && git commit -m x', qprev_repo), "silent")
+    expect("control: a quoted non-shorthand target is an ordinary switch away",
+           run_hook(BCM, "bash", 'git checkout "feat/q" && git commit -m x', qprev_repo), "silent")
+    expect("git switch --force-create=main + commit denied",
+           run_hook(BCM, "bash", "git switch --force-create=main && git commit -m x", feat_repo), "deny")
+    expect("git switch --create=master + commit denied",
+           run_hook(BCM, "bash", "git switch --create=master && git commit -m x", feat_repo), "deny")
+    expect("git switch --force-create=<feat> + commit allowed",
+           run_hook(BCM, "bash", "git switch --force-create=feat/new && git commit -m x", feat_repo), "silent")
+    expect("control: -b=main creates a branch named =main (not main) -> allowed",
+           run_hook(BCM, "bash", "git checkout -b=main && git commit -m x", feat_repo), "silent")
+
+    # --- all pre_tool hooks: leading redirects and line continuations (round 14, S3) ---
+    # Bash allows a redirect before the command (`2>/dev/null git commit`
+    # really commits) and a backslash at the end of a line continues the
+    # command on the next one (`git checkout \` + newline + `main` is one
+    # command; an escaped `\\` ends it instead).
+    expect("leading 2>/dev/null: commit on main denied",
+           run_hook(BCM, "bash", "2>/dev/null git commit -m x", main_repo), "deny")
+    expect("leading >log: commit on main denied",
+           run_hook(BCM, "bash", ">log git commit -m x", main_repo), "deny")
+    expect("leading &>log: commit on main denied",
+           run_hook(BCM, "bash", "&>log git commit -m x", main_repo), "deny")
+    expect("leading redirect with a quoted target: commit on main denied",
+           run_hook(BCM, "bash", '>"my log" git commit -m x', main_repo), "deny")
+    expect("leading redirect on a switch, then commit -> denied",
+           run_hook(BCM, "bash", "2>/dev/null git checkout main && git commit -m x", feat_repo), "deny")
+    expect("continuation inside a switch, then commit -> denied",
+           run_hook(BCM, "bash", "git checkout \\\nmain && git commit -m x", feat_repo), "deny")
+    expect("continuation inside a commit on main -> denied",
+           run_hook(BCM, "bash", "git commit -m \\\nx", main_repo), "deny")
+    expect("an escaped backslash ends the command: the commit after it still runs -> denied",
+           run_hook(BCM, "bash", "echo foo\\\\\ngit commit -m x", main_repo), "deny")
+    expect("control: a continuation inside an echo is one command -> silent",
+           run_hook(BCM, "bash", "echo foo \\\nbar", feat_repo), "silent")
+    expect("leading 2>/dev/null: rm -rf denied",
+           run_hook(RM, "bash", "2>/dev/null rm -rf /tmp/x", feat_repo), "deny")
+    expect("leading >log: rm -rf denied",
+           run_hook(RM, "bash", ">log rm -rf /tmp/x", feat_repo), "deny")
+    expect("continuation splits the rm flags -> denied",
+           run_hook(RM, "bash", "rm -r \\\n-f /tmp/x", feat_repo), "deny")
+    expect("continuation splits the rm path -> denied",
+           run_hook(RM, "bash", "rm -rf \\\n/tmp/x", feat_repo), "deny")
+    expect("control: a leading redirect on an echo is not an rm -> silent",
+           run_hook(RM, "bash", "2>/dev/null echo rm -rf", feat_repo), "silent")
+    expect("control: a continuation inside an echo -> silent",
+           run_hook(RM, "bash", "echo hi \\\nthere", feat_repo), "silent")
+    expect("leading 2>/dev/null: commit with staged code warns",
+           run_hook(CS, "bash", "2>/dev/null git commit -m x", cs_repo), "warn")
+    expect("continuation inside a commit with staged code -> warns",
+           run_hook(CS, "bash", "git commit \\\n-m x", cs_repo), "warn")
+    expect("control: a leading redirect on a non-commit -> silent",
+           run_hook(CS, "bash", "2>/dev/null git status", cs_repo), "silent")
+
+    # --- every hook's docstring states its threat model (round 14, S4) ---
+    for script in (BCM, RM, CS, TS):
+        with open(os.path.join(TOOLS, script)) as f:
+            source = " ".join(f.read().split())
+        check(f"{script} docstring states its threat model",
+              "honest but fallible agent" in source and "not a sandbox" in source, script)
+
 # --- suggest_test_after_ts (post_tool shape) ---
     def run_ts(tool_name, file_path, status="success"):
         payload = json.dumps({

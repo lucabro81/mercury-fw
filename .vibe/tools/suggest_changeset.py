@@ -12,7 +12,10 @@ bed) does not require a changeset.
 
 Line comments are stripped before the analysis the way bash parses them
 (an unquoted `#` at a word start runs to the end of the line), so a
-comment cannot hide a commit or smuggle in a pathspec.
+comment cannot hide a commit or smuggle in a pathspec. A backslash at
+the end of a line continues the command on the next one (an escaped `\\`
+ends it instead), and a redirect at the start of a segment does not hide
+the command after it (`2>/dev/null git commit` really commits).
 
 The commit's target directory is tracked through `cd` segments and the
 commit's own `git -C <path>` (with ~ and $VAR expansion), so the warning
@@ -59,6 +62,17 @@ CHANGESET_EXCLUDED_PREFIXES = ("packages/config/",)
 # A command prefix: sudo/env/command/xargs wrappers (env and sudo take
 # flags, e.g. `env -i`) and env assignments.
 PREFIX = r"\s*(?:(?:sudo|env|command|xargs)(?:\s+-\w+)*\s+)*(?:\w+=(?:\"[^\"]*\"|'[^']*'|\S+)\s+)*"
+
+# A redirect token: an operator (`>`, `>>`, `<`, `<>`, `>|`, `&>`, `&>>`,
+# `2>`, `2>>`, `2>&1`, `2>&-`, `>&2`, and the here-doc/here-string forms
+# `<<`, `<<-`, `<<<`) with its optional target word, attached (`>log`) or
+# separated (`> log`), quoted or bare. Bash allows a redirect before the
+# command, so a segment may start with them (`2>/dev/null git commit`
+# really commits).
+REDIRECT_TOKEN = (
+    r"(?:&>>?|>\||<>|<<-|<<?|\d*>&|\d*>>?|\d*<&|\d*<)"
+    r"(?:\s*(?:\"[^\"]*\"|'[^']*'|[^\s;&|<>#]+))?"
+)
 
 # Git global options between `git` and the subcommand: -C <path> (also
 # attached, -C<path>), -c <name>=<value>, short globals (-p) and long
@@ -260,6 +274,17 @@ def split_segments(command):
     return segments
 
 
+def strip_leading_redirects(segment):
+    """Remove redirect tokens at the start of a segment: bash allows a
+    redirect before the command (`2>/dev/null git commit` really
+    commits), so the command after them is the segment's command."""
+    while True:
+        m = re.match(r"\s*" + REDIRECT_TOKEN, segment)
+        if not m:
+            return segment
+        segment = segment[m.end():]
+
+
 def wrapper_inner(match):
     """The inner command line of a WRAPPER_RE match."""
     return match.group(1) if match.group(1) is not None else match.group(2)
@@ -388,7 +413,15 @@ def commit_target(command, directory, adds=None):
     if adds is None:
         adds = []  # (directory, (kind, pathspecs))
     command = strip_comments(command)
+    # a backslash at the end of a line continues the command on the next
+    # one (`git commit \` + newline + `-m x` is one command); join before
+    # splitting. An escaped backslash (`\\`) ends the command instead, so
+    # it is not joined.
+    command = re.sub(r"(?<!\\)\\\n", " ", command)
     for segment in split_segments(command):
+        # a redirect at the start of a segment (`2>/dev/null git commit`)
+        # really runs the command after it
+        segment = strip_leading_redirects(segment)
         wrapped = WRAPPER_RE.match(segment)
         if wrapped:
             found = commit_target(wrapper_inner(wrapped), directory, adds)

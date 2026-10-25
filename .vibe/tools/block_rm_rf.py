@@ -13,7 +13,10 @@ segment, after ;, &&, ||, |, &, \n — outside quotes, so text inside a quoted
 argument is not a command), not substrings inside echo, grep, etc.
 Line comments are stripped first the way bash parses them (an unquoted
 `#` at a word start runs to the end of the line), so a comment hiding a
-separator does not expose the command after it.
+separator does not expose the command after it. A backslash at the end
+of a line continues the command on the next one (an escaped `\\` ends
+it instead), and a redirect at the start of a segment does not hide the
+command after it (`2>/dev/null rm -rf ...` really runs the rm).
 Handles generic env-assignment prefixes (FOO=1 rm -rf). A
 `bash -c '...'` / `sh -c '...'` wrapper (with flags or an absolute path,
 e.g. `bash -lc`, `/bin/bash -c`) is unwrapped and its inner command
@@ -41,6 +44,17 @@ BASH_TOOL_NAMES = ("bash", "file_system.bash", "process.start")
 # flags, e.g. `env -i`) and env assignments.
 PREFIX = r"\s*(?:(?:sudo|env|command|xargs)(?:\s+-\w+)*\s+)*" \
          r"(?:\w+=(?:\"[^\"]*\"|'[^']*'|\S+)\s+)*"
+
+# A redirect token: an operator (`>`, `>>`, `<`, `<>`, `>|`, `&>`, `&>>`,
+# `2>`, `2>>`, `2>&1`, `2>&-`, `>&2`, and the here-doc/here-string forms
+# `<<`, `<<-`, `<<<`) with its optional target word, attached (`>log`) or
+# separated (`> log`), quoted or bare. Bash allows a redirect before the
+# command, so a segment may start with them (`2>/dev/null rm -rf ...`
+# really runs the rm).
+REDIRECT_TOKEN = (
+    r"(?:&>>?|>\||<>|<<-|<<?|\d*>&|\d*>>?|\d*<&|\d*<)"
+    r"(?:\s*(?:\"[^\"]*\"|'[^']*'|[^\s;&|<>#]+))?"
+)
 
 # `rm` as a standalone command — with sudo/env/command/xargs prefixes and
 # env assignments. `git rm` is excluded structurally: the regex is anchored
@@ -175,6 +189,17 @@ def split_segments(command):
     return segments
 
 
+def strip_leading_redirects(segment):
+    """Remove redirect tokens at the start of a segment: bash allows a
+    redirect before the command (`2>/dev/null rm -rf ...` really runs
+    the rm), so the command after them is the segment's command."""
+    while True:
+        m = re.match(r"\s*" + REDIRECT_TOKEN, segment)
+        if not m:
+            return segment
+        segment = segment[m.end():]
+
+
 def wrapper_inner(match):
     """The inner command line of a WRAPPER_RE match."""
     return match.group(1) if match.group(1) is not None else match.group(2)
@@ -287,7 +312,15 @@ def segment_has_dangerous_rm(segment):
 def is_dangerous_rm(command):
     """True when some command segment contains a dangerous rm -rf."""
     command = strip_comments(command)
+    # a backslash at the end of a line continues the command on the next
+    # one (`rm -r \` + newline + `-f dir` is one command); join before
+    # splitting. An escaped backslash (`\\`) ends the command instead, so
+    # it is not joined.
+    command = re.sub(r"(?<!\\)\\\n", " ", command)
     for segment in split_segments(command):
+        # a redirect at the start of a segment (`2>/dev/null rm -rf ...`)
+        # really runs the command after it
+        segment = strip_leading_redirects(segment)
         wrapped = WRAPPER_RE.match(segment)
         if wrapped:
             if is_dangerous_rm(wrapper_inner(wrapped)):
