@@ -11,7 +11,8 @@ scripts/, .github/, docs site, test bed) does not require a changeset.
 The commit's target directory is tracked through `cd` segments and the
 commit's own `git -C <path>` (with ~ and $VAR expansion), so the warning
 reflects the repository the commit lands in, not the shell's current
-directory.
+directory. Git queries run from that repository's root, so a commit
+issued from a subdirectory is analyzed the same as one from the root.
 
 The command line is split on separators outside quotes, so a message
 containing a separator is one argument; a `bash -c '...'` / `sh -c '...'`
@@ -139,12 +140,14 @@ SHORT_OPTIONAL_VALUE_OPTIONS = frozenset("Su")
 
 
 def split_segments(command):
-    """Split a command line on separators (&&, ||, ;, |, newline).
+    """Split a command line on separators (&&, ||, ;, |, &, newline).
 
     A separator inside a quoted section or inside a ( ... ) / $( ... )
     subshell does not split: the shell parses it as part of the
     subshell's command line, not as a command separator of the outer
-    line.
+    line. A bare `&` backgrounds the command before it, so the rest of
+    the line is a new command; the `&` of a redirect (`&>`, `2>&1`) is
+    not a separator.
     """
     segments = []
     current = []
@@ -166,6 +169,11 @@ def split_segments(command):
             segments.append("".join(current))
             current = []
             i += 2
+        elif depth == 0 and ch == "&" and not command.startswith("&>", i) \
+                and (i == 0 or command[i - 1] != ">"):
+            segments.append("".join(current))
+            current = []
+            i += 1
         elif depth == 0 and (ch == ";" or ch == "|" or ch == "\n"):
             segments.append("".join(current))
             current = []
@@ -298,7 +306,7 @@ def repo_root(directory):
     return os.path.normpath(out) if out else os.path.normpath(directory)
 
 
-def commit_target(command, directory):
+def commit_target(command, directory, adds=None):
     """The first `git commit` standalone command: its arguments, the
     directory it commits in, and the files earlier `git add` segments in
     the same scope would stage, or None.
@@ -308,17 +316,22 @@ def commit_target(command, directory):
     inside the wrapper), and a segment's own `git -C <path>` overrides
     it. A `git add` before the commit stages its pathspecs — or the
     whole tree for -A/--all/-u/--update; a --dry-run add stages nothing.
+    `adds` is the list of `git add`s earlier in the same scope, shared
+    with the wrapper and subshell recursions: an add inside a `bash -c`
+    wrapper or a `( ... )` subshell stages into the same index, so it
+    counts for a commit after it too.
     """
-    adds = []  # (directory, (whole_tree, pathspecs))
+    if adds is None:
+        adds = []  # (directory, (whole_tree, pathspecs))
     for segment in split_segments(command):
         wrapped = WRAPPER_RE.match(segment)
         if wrapped:
-            found = commit_target(wrapper_inner(wrapped), directory)
+            found = commit_target(wrapper_inner(wrapped), directory, adds)
             if found is not None:
                 return found
         for span in subshell_spans(segment):
             # a subshell executes its inner command line in this scope
-            found = commit_target(span, directory)
+            found = commit_target(span, directory, adds)
             if found is not None:
                 return found
         if wrapped:
@@ -344,7 +357,7 @@ def commit_target(command, directory):
             root = repo_root(target_dir)
             for add_dir, (whole_tree, pathspecs) in adds:
                 if repo_root(add_dir) == root:
-                    added |= add_files(add_dir, whole_tree, pathspecs)
+                    added |= add_files(root, whole_tree, root_pathspecs(add_dir, root, pathspecs))
             return m.group(2), target_dir, added
     return None
 
@@ -391,6 +404,26 @@ def parse_add_args(args):
         pathspecs.append(token)
         i += 1
     return whole_tree, pathspecs
+
+
+def root_pathspecs(directory, root, pathspecs):
+    """Pathspecs rewritten as seen from the repo root: git resolves a
+    pathspec against the working directory it is given, so one written
+    in a subdirectory is prefixed with that subdirectory's
+    root-relative path. Magic pathspecs (:...) and root-relative ones
+    (/) are left alone."""
+    # realpath: git reports the toplevel symlink-resolved (/private/var/...)
+    # while the shell's cwd may be the unresolved path (/var/...)
+    prefix = os.path.relpath(os.path.realpath(directory), os.path.realpath(root))
+    if prefix == ".":
+        return list(pathspecs)
+    out = []
+    for path in pathspecs:
+        if path.startswith(":") or path.startswith("/"):
+            out.append(path)
+        else:
+            out.append(os.path.normpath(os.path.join(prefix, path)))
+    return out
 
 
 def add_files(directory, whole_tree, pathspecs):
@@ -491,18 +524,26 @@ def main():
 
     try:
         scope, pathspecs = commit_scope(args)
+        # Git queries run from the repository root: `git diff` prints
+        # root-relative paths from any directory, but a pathspec is
+        # working-directory-relative (`.changeset/` from a subdirectory
+        # fails) and `git ls-files` prints working-directory-relative
+        # paths — so the pathspecs are rewritten to root-relative form
+        # and every query runs from the root.
+        root = repo_root(target_dir)
+        pathspecs = root_pathspecs(target_dir, root, pathspecs or [])
 
         files = set()
-        for f in git(target_dir, "diff", "--cached", "--name-only").split("\n"):
+        for f in git(root, "diff", "--cached", "--name-only").split("\n"):
             if f:
                 files.add(f)
         files |= added
         if scope == "all":
-            for f in git(target_dir, "diff", "--name-only").split("\n"):
+            for f in git(root, "diff", "--name-only").split("\n"):
                 if f:
                     files.add(f)
         elif scope == "paths":
-            for f in git(target_dir, "diff", "--name-only", "--", *pathspecs).split("\n"):
+            for f in git(root, "diff", "--name-only", "--", *pathspecs).split("\n"):
                 if f:
                     files.add(f)
 
@@ -518,24 +559,27 @@ def main():
             sys.exit(0)
 
         # A changeset the commit would include covers: staged changeset
-        # files, plus tracked unstaged ones when the commit includes
-        # unstaged modifications. An untracked changeset file is included
-        # by no commit form, so it does not count.
+        # files, the ones the command's own `git add` would stage, plus
+        # tracked unstaged ones when the commit includes unstaged
+        # modifications. An untracked changeset file is included by no
+        # commit form, so it does not count.
         changeset_files = set()
-        for f in git(target_dir, "diff", "--cached", "--name-only", ".changeset/").split("\n"):
+        for f in git(root, "diff", "--cached", "--name-only", ".changeset/").split("\n"):
             if f:
                 changeset_files.add(f)
         if scope == "all":
-            for f in git(target_dir, "diff", "--name-only", ".changeset/").split("\n"):
+            for f in git(root, "diff", "--name-only", ".changeset/").split("\n"):
                 if f:
                     changeset_files.add(f)
         elif scope == "paths":
-            for f in git(target_dir, "diff", "--name-only", "--", *pathspecs).split("\n"):
+            for f in git(root, "diff", "--name-only", "--", *pathspecs).split("\n"):
                 if f and f.startswith(".changeset/"):
                     changeset_files.add(f)
+        # a changeset staged by the command's own `git add` is included too
+        changeset_files |= {f for f in added if f.startswith(".changeset/")}
 
         # ...or the last commit already carried one
-        last_commit_files = git(target_dir, "diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD")
+        last_commit_files = git(root, "diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD")
         has_changeset = bool(changeset_files) or any(
             f.startswith(".changeset/") for f in last_commit_files.split("\n") if f
         )

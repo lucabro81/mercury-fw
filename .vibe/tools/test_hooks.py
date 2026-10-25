@@ -696,6 +696,90 @@ def main():
     expect("git switch --create <feat> + commit allowed",
            run_hook(BCM, "bash", "git switch --create feat/x && git commit -m x", feat_repo), "silent")
 
+    # --- block_commit_on_main: the two-argument pathspec form is not a switch (round 12, S2+S1) ---
+    # `git checkout <target> <path>` (no `--`) restores paths from <target> and
+    # does not switch: a switch requires no bare word after the target. Options
+    # after the target are fine — `git checkout main -q` really switches.
+    expect("git checkout main <path> is not a switch + commit allowed",
+           run_hook(BCM, "bash", "git checkout main file.txt && git commit -m x", feat_repo), "silent")
+    git(feat_repo, "branch", "feat/x")
+    expect("switch to main then 'checkout feat/x <path>' + commit still denied",
+           run_hook(BCM, "bash", "git checkout main && git checkout feat/x file.txt && git commit -m x", feat_repo), "deny")
+    git(feat_repo, "branch", "-D", "feat/x")
+    # a fresh repo keeps prev_repo's checkout history untouched
+    dash_repo = os.path.join(fix, "dash-repo")
+    subprocess.run(["git", "init", "-q", "-b", "main", dash_repo], check=True, capture_output=True)
+    git(dash_repo, "commit", "-q", "--allow-empty", "-m", "init")
+    git(dash_repo, "checkout", "-q", "-b", "feat/dash")
+    git(dash_repo, "checkout", "-q", "main")
+    expect("git checkout - <path> restores paths (no switch back) + commit on main denied",
+           run_hook(BCM, "bash", "git checkout - file.txt && git commit -m x", dash_repo), "deny")
+    expect("git switch main <path> is not a switch + commit allowed",
+           run_hook(BCM, "bash", "git switch main file.txt && git commit -m x", feat_repo), "silent")
+    expect("control: git checkout main -q (option after the target) really switches",
+           run_hook(BCM, "bash", "git checkout main -q && git commit -m x", feat_repo), "deny")
+
+    # --- suggest_changeset: a changeset staged by the command's own git add counts (round 12) ---
+    # x.ts is tracked in feat_repo with an unstaged modification and nothing
+    # is staged: the commit's file set includes what the same command's
+    # `git add` stages — changeset files included.
+    write(".changeset/addtest.md", "---\n'@mercury-fw/core': patch\n---\n\naddtest\n")
+    expect("git add -A (changeset included) && git commit silent",
+           run_hook(CS, "bash", "git add -A && git commit -m x", feat_repo), "silent")
+    expect("git add <changeset> <pkg file> && git commit silent",
+           run_hook(CS, "bash", "git add .changeset/addtest.md packages/libs/core/src/x.ts && git commit -m x", feat_repo), "silent")
+    expect("control: git add -n (dry-run) stages no changeset -> warns",
+           run_hook(CS, "bash", "git add -n .changeset/addtest.md && git commit -am x", feat_repo), "warn")
+    os.remove(os.path.join(feat_repo, ".changeset/addtest.md"))
+
+    # --- suggest_changeset: a git add inside a wrapper/subshell stages for an outer commit (round 12) ---
+    expect("bash -c 'git add <pkg file>' && git commit warns",
+           run_hook(CS, "bash", "bash -c 'git add packages/libs/core/src/x.ts' && git commit -m x", feat_repo), "warn")
+    expect("(git add <pkg file>) && git commit warns",
+           run_hook(CS, "bash", "(git add packages/libs/core/src/x.ts) && git commit -m x", feat_repo), "warn")
+    expect("control: bash -c 'git add <pkg file> && git commit' warns",
+           run_hook(CS, "bash", "bash -c 'git add packages/libs/core/src/x.ts && git commit -m x'", feat_repo), "warn")
+
+    # --- suggest_changeset: git queries run from the repo root (round 12) ---
+    # A commit from a subdirectory: `git diff` prints root-relative paths from
+    # anywhere, but a `.changeset/` pathspec is working-directory-relative and
+    # `git ls-files` prints working-directory-relative paths — so every query
+    # runs from the repository root, with pathspecs rewritten to root-relative
+    # form.
+    write(".changeset/subdir.md", "---\n'@mercury-fw/core': patch\n---\n\nsubdir\n")
+    git(feat_repo, "add", ".changeset/subdir.md", "packages/libs/core/src/x.ts")
+    expect("commit from a subdir with a staged changeset -> silent",
+           run_hook(CS, "bash", "cd packages/libs/core/src && git commit -m x", feat_repo), "silent")
+    git(feat_repo, "reset", "-q")
+    os.remove(os.path.join(feat_repo, ".changeset/subdir.md"))
+    git(feat_repo, "add", "packages/libs/core/src/x.ts")
+    expect("control: commit from a subdir without a changeset -> warns",
+           run_hook(CS, "bash", "cd packages/libs/core/src && git commit -m x", feat_repo), "warn")
+    git(feat_repo, "reset", "-q")
+    write(".changeset/subdir2.md", "---\n'@mercury-fw/core': patch\n---\n\nsubdir2\n")
+    expect("git add from a subdir stages root-relative paths -> silent",
+           run_hook(CS, "bash", "cd packages/libs/core/src && git add x.ts ../../../../.changeset/subdir2.md && git commit -m x", feat_repo), "silent")
+    os.remove(os.path.join(feat_repo, ".changeset/subdir2.md"))
+
+    # --- all hooks: a bare & separates commands (round 12) ---
+    # `cmd & cmd2` backgrounds cmd and runs cmd2: the second command is
+    # analyzed like one after a `;`. The `&` of a redirect (`&>`, `2>&1`) is
+    # not a separator.
+    expect("sleep 0.1 & git commit on main denied",
+           run_hook(BCM, "bash", "sleep 0.1 & git commit -m x", main_repo), "deny")
+    expect("true & rm -rf denied",
+           run_hook(RM, "bash", "true & rm -rf /tmp/x", feat_repo), "deny")
+    expect("true & git commit with staged code warns",
+           run_hook(CS, "bash", "true & git commit -m x", cs_repo), "warn")
+    expect("bash -c 'true & git commit' on main denied",
+           run_hook(BCM, "bash", "bash -c 'true & git commit -m x'", main_repo), "deny")
+    expect("guard: git commit -m x 2>&1 on main still denied",
+           run_hook(BCM, "bash", "git commit -m x 2>&1", main_repo), "deny")
+    expect("guard: git commit -m x 2>&1 with staged code still warns",
+           run_hook(CS, "bash", "git commit -m x 2>&1", cs_repo), "warn")
+    expect("guard: echo a &> log && git commit on feat allowed",
+           run_hook(BCM, "bash", "echo a &> log && git commit -m x", feat_repo), "silent")
+
 # --- suggest_test_after_ts (post_tool shape) ---
     def run_ts(tool_name, file_path, status="success"):
         payload = json.dumps({
@@ -775,6 +859,30 @@ def main():
     for tool in ("edit", "write_file", "file_system.search_replace", "file_system.write_file"):
         check(f"edit match fires for {tool}", match_fires(edit_match, tool))
     check("edit match does not fire for bash", not match_fires(edit_match, "bash"))
+
+    # The match patterns also fullmatch the qualified tool names literally,
+    # not only the leaf/alias candidates Vibe derives from them.
+    for h in hooks:
+        rx = re.compile(h["match"][len("re:"):])
+        names = (("bash", "file_system.bash", "process.start") if h["type"] == "pre_tool"
+                 else ("edit", "write_file", "file_system.search_replace", "file_system.write_file"))
+        check(f"hook {h['name']} match literally fullmatches the qualified tool names",
+              all(rx.fullmatch(n) for n in names), h["match"])
+
+    # --- .vibe/agents profiles stay in sync with the .claude agent docs ---
+    # The toml instructions are the .md body after the frontmatter, modulo the
+    # blank lines around it.
+    agents_dir = os.path.join(REPO, ".vibe", "agents")
+    for fname in sorted(os.listdir(agents_dir)):
+        if not fname.endswith(".toml"):
+            continue
+        with open(os.path.join(agents_dir, fname), "rb") as f:
+            instructions = tomllib.load(f)["instructions"]
+        md_path = os.path.join(REPO, ".claude", "agents", fname[: -len(".toml")] + ".md")
+        with open(md_path) as f:
+            body = f.read().split("---", 2)[2]
+        check(f"{fname} instructions match the .claude agent doc",
+              body.strip("\n") == instructions.strip("\n"), fname)
 
     print()
     print(f"{cases - len(failures)}/{cases} passed")

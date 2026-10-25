@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Hook pre_tool: block git commit on the main branch.
 
-Analyzes the command line segment by segment (split on ;, &&, ||, | and
+Analyzes the command line segment by segment (split on ;, &&, ||, |, & and
 newlines, outside quotes) for `git commit` as a standalone command.
 Blocks when the branch the commit would land on is main/master. The
 commit's target directory is tracked through `cd` segments and `git -C
@@ -96,14 +96,17 @@ COMMIT_RE = re.compile(
 # after the branch name reject longer names (mainline, main-x, main/x)
 # and revision suffixes (main~1 detaches HEAD, it does not switch), and
 # the pathspec form (`git checkout main -- <paths>` restores paths, it
-# does not switch). Group 2 captures the branch (group 1 is the git
-# global options).
+# does not switch). A bare word after the branch is the two-argument
+# pathspec form (`git checkout main <path>`): it restores paths and does
+# not switch either; options after the branch are fine (`git checkout
+# main -q` really switches). Group 2 captures the branch (group 1 is
+# the git global options).
 SWITCH_RE = re.compile(
     PREFIX +
     r"git\s+" + GIT_OPTS +
     r"(?:checkout|switch)\s+"
     + OPTIONS +
-    r"((?:main|master)|refs/heads/(?:main|master))(?![/\w-])(?=\s|$)(?!\s*--)"
+    r"((?:main|master)|refs/heads/(?:main|master))(?![/\w-])(?=\s*(?:-|$))(?!\s*--)"
 )
 
 # A branch-creating checkout/switch (`git checkout -b <name>`,
@@ -125,8 +128,9 @@ CREATE_RE = re.compile(
 # directory a previous switch to main/master marked when the target is a
 # branch or a revision (a revision detaches HEAD); a pathspec target
 # restores paths and changes nothing (resolved via git, see below). The
-# pathspec form (`git checkout <target> -- <paths>`) is excluded, as is
-# a switch to main/master itself. Group 2 captures the target.
+# pathspec forms (`git checkout <target> -- <paths>` and the
+# two-argument `git checkout <target> <path>`) are excluded, as is a
+# switch to main/master itself. Group 2 captures the target.
 SWITCH_AWAY_RE = re.compile(
     PREFIX +
     r"git\s+" + GIT_OPTS +
@@ -135,21 +139,22 @@ SWITCH_AWAY_RE = re.compile(
     r"(?!(?:main|master|refs/heads/(?:main|master))(?=\s|$|--))"
     r"(?!-)"
     r"(\"[^\"]*\"|'[^']*'|\S+)"
-    r"(?=\s|$)(?!\s*--)"
+    r"(?=\s*(?:-|$))(?!\s*--)"
 )
 
 # A switch to a previous branch as a standalone command: the previous-
 # checkout shorthand (`git checkout -`, `git switch -`) and its numbered
 # form (`git checkout @{-2}`). Group 2 captures the target (group 1 is
-# the git global options). The pathspec form (`git checkout - -- <paths>`
-# restores paths, it does not switch) is excluded, and so are option
-# clusters: the shorthand is a bare `-`, never `-b` or `--`.
+# the git global options). The pathspec forms (`git checkout - -- <paths>`
+# and `git checkout - <path>` restore paths, they do not switch) are
+# excluded, and so are option clusters: the shorthand is a bare `-`,
+# never `-b` or `--`.
 PREV_SWITCH_RE = re.compile(
     PREFIX +
     r"git\s+" + GIT_OPTS +
     r"(?:checkout|switch)\s+"
     + OPTIONS +
-    r"(-|@\{-\d+\})(?![\w-])(?=\s|$)(?!\s*--)"
+    r"(-|@\{-\d+\})(?![\w-])(?=\s*(?:-|$))(?!\s*--)"
 )
 
 # A cd that changes the working directory for the rest of the command
@@ -171,11 +176,14 @@ WRAPPER_RE = re.compile(
 
 
 def split_segments(command):
-    """Split a command line on separators (&&, ||, ;, |, newline).
+    """Split a command line on separators (&&, ||, ;, |, &, newline).
 
     A separator inside a quoted section or inside a ( ... ) / $( ... )
     subshell does not split: bash parses it as part of the subshell's
-    command line, not as a command separator of the outer line.
+    command line, not as a command separator of the outer line. A bare
+    `&` backgrounds the command before it, so the rest of the line is a
+    new command; the `&` of a redirect (`&>`, `2>&1`) is not a
+    separator.
     """
     segments = []
     current = []
@@ -197,6 +205,11 @@ def split_segments(command):
             segments.append("".join(current))
             current = []
             i += 2
+        elif depth == 0 and ch == "&" and not command.startswith("&>", i) \
+                and (i == 0 or command[i - 1] != ">"):
+            segments.append("".join(current))
+            current = []
+            i += 1
         elif depth == 0 and (ch == ";" or ch == "|" or ch == "\n"):
             segments.append("".join(current))
             current = []

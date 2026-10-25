@@ -9,7 +9,7 @@ Long options are matched as GNU accepts them: unambiguous abbreviations
 alternative for tracked files.
 
 Only `rm` invocations as a command are checked (at the start of a command
-segment, after ;, &&, ||, |, \n — outside quotes, so text inside a quoted
+segment, after ;, &&, ||, |, &, \n — outside quotes, so text inside a quoted
 argument is not a command), not substrings inside echo, grep, etc.
 Handles generic env-assignment prefixes (FOO=1 rm -rf). A
 `bash -c '...'` / `sh -c '...'` wrapper (with flags or an absolute path,
@@ -58,12 +58,14 @@ WRAPPER_RE = re.compile(
 
 
 def split_segments(command):
-    """Split a command line on separators (&&, ||, ;, |, newline).
+    """Split a command line on separators (&&, ||, ;, |, &, newline).
 
     A separator inside a quoted section or inside a ( ... ) / $( ... )
     subshell does not split: the shell parses it as part of the
     subshell's command line, not as a command separator of the outer
-    line.
+    line. A bare `&` backgrounds the command before it, so the rest of
+    the line is a new command; the `&` of a redirect (`&>`, `2>&1`) is
+    not a separator.
     """
     segments = []
     current = []
@@ -85,6 +87,11 @@ def split_segments(command):
             segments.append("".join(current))
             current = []
             i += 2
+        elif depth == 0 and ch == "&" and not command.startswith("&>", i) \
+                and (i == 0 or command[i - 1] != ">"):
+            segments.append("".join(current))
+            current = []
+            i += 1
         elif depth == 0 and (ch == ";" or ch == "|" or ch == "\n"):
             segments.append("".join(current))
             current = []

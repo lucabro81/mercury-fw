@@ -11,7 +11,7 @@
 [[hooks]]
 name = "block-commit-on-main"
 type = "pre_tool"
-match = "re:(bash|process\\.start)"
+match = "re:(bash|file_system\\.bash|process\\.start)"
 command = "SCRIPT=$(git rev-parse --show-toplevel 2>/dev/null)/.vibe/tools/block_commit_on_main.py; if test -f \"$SCRIPT\"; then python3 \"$SCRIPT\"; fi"
 description = "Block git commit on main: only commit on feat/<N>-<slug>"
 
@@ -19,7 +19,7 @@ description = "Block git commit on main: only commit on feat/<N>-<slug>"
 [[hooks]]
 name = "block-rm-rf"
 type = "pre_tool"
-match = "re:(bash|process\\.start)"
+match = "re:(bash|file_system\\.bash|process\\.start)"
 command = "SCRIPT=$(git rev-parse --show-toplevel 2>/dev/null)/.vibe/tools/block_rm_rf.py; if test -f \"$SCRIPT\"; then python3 \"$SCRIPT\"; fi"
 description = "Block rm -rf: use git rm for tracked files"
 
@@ -27,7 +27,7 @@ description = "Block rm -rf: use git rm for tracked files"
 [[hooks]]
 name = "suggest-changeset"
 type = "pre_tool"
-match = "re:(bash|process\\.start)"
+match = "re:(bash|file_system\\.bash|process\\.start)"
 command = "SCRIPT=$(git rev-parse --show-toplevel 2>/dev/null)/.vibe/tools/suggest_changeset.py; if test -f \"$SCRIPT\"; then python3 \"$SCRIPT\"; fi"
 description = "Warn when committing code without a changeset"
 
@@ -35,6 +35,6 @@ description = "Warn when committing code without a changeset"
 [[hooks]]
 name = "suggest-test-after-ts-edit"
 type = "post_tool"
-match = "re:(edit|write_file)"
+match = "re:(edit|write_file|file_system\\.search_replace|file_system\\.write_file)"
 command = "SCRIPT=$(git rev-parse --show-toplevel 2>/dev/null)/.vibe/tools/suggest_test_after_ts.py; if test -f \"$SCRIPT\"; then python3 \"$SCRIPT\"; fi"
 description = "After editing a non-test .ts file, remind to run typecheck and tests"
