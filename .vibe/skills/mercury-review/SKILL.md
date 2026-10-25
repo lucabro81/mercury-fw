@@ -110,6 +110,16 @@ Scope: full branch                          (first round of this reviewer)
 Scope: delta since <sha> — files: ...       (afterwards)
 ```
 
+### Spawn fallback — Vibe builds without typed subagents (steps 2–3)
+
+On Vibe builds where spawning a subagent by its own type does not resolve
+(Vibe 2.26.1's local harness fails with `subagent_type_not_found`), spawn a
+generic child instead and carry the profile in the message: the task is the
+profile's `instructions` from `.vibe/agents/<profile>.toml` (verbatim),
+followed by the `Issue:` / `Branch:` / `Scope:` lines above. The read-only
+contract then rides on the message text; the profile's `disabled_tools` is
+defense in depth in environments where typed spawning resolves.
+
 ### 4. Collect verdicts
 
 Wait for both subagents to complete. Read their reports:
@@ -172,11 +182,11 @@ in the final report.
 | S1 | Fail-open on a common, innocent command of the workflow: a commit on main, an `rm -rf`, a commit that should carry a changeset slips through | Blocks the merge |
 | S2 | Over-block: a legitimate workflow command is refused (a commit on a feature branch blocked, the reviewers' read-only contract broken) | Blocks the merge |
 | S3 | Inaccuracy in the safe direction: over-warning, false positives, imprecise state that causes no harm | Fix in the same round with a regression test, or defer with a tracked issue |
-| S4 | Cosmetic, marginal robustness, or outside the threat model | Defer with a tracked tech-debt issue; never blocks |
+| S4 | Cosmetic or marginal robustness — no user-visible harm | Defer with a tracked tech-debt issue; never blocks |
 
-A finding that restates a limitation already documented as accepted (the
-hooks' "not a sandbox" docstring, a linked tech-debt issue) is not a
-finding: it is a deferral.
+A finding that restates a limitation already documented as accepted (in a
+docstring, the issue, or a linked tech-debt issue) is not a finding: it is a
+deferral.
 
 ## Exit conditions
 
@@ -207,16 +217,6 @@ agent definitions and changesets. A reviewer that APPROVEd is not re-run
 for changes outside its domain. The re-run is scoped to the delta since
 its last verdict (see Review scope); a reviewer whose delta is empty is
 not re-run.
-
-## Threat model for the hooks
-
-The `.vibe/tools/` hooks are a guard-rail for an honest but fallible agent,
-not a sandbox: they analyze the command line textually, so a deliberately
-hostile command can route around them (an alias, a renamed binary,
-`git --git-dir=<foreign repo>`, editing `.git` directly). They exist to
-catch the common accidents of the Mercury workflow — a commit on main, an
-`rm -rf`, a commit that should carry a changeset — not to stop an
-adversary. Findings outside this model are S4 deferrals, not blockers.
 
 ## After the review
 

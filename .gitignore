@@ -44,6 +44,3 @@ logs
 .vscode
 .idea
 coverage
-
-# Vibe hook scripts — Python bytecode cache
-.vibe/tools/__pycache__/

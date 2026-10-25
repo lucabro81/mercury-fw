@@ -49,18 +49,12 @@ regression test that fails before the fix and passes after.
 ### Vibe workflow tooling
 
 The workflow above is encoded for Mistral Vibe under `.vibe/`, so the same
-rules are enforced automatically when working in Vibe:
+workflow runs natively in Vibe:
 
 - **Skills** (`.vibe/skills/`) — one per phase, loaded on demand:
   `mercury-plan` (phase 1), `mercury-issue` (phase 2), `mercury-tdd` (phase 4,
   includes changeset creation), `mercury-review` (phase 5),
   `mercury-release` (phase 6, post-merge release on main).
-- **Hooks** (`.vibe/hooks.toml` + `.vibe/tools/`) — guard-rails that run on
-  tool calls: block commits on `main`, block `rm -rf`, warn when committing
-  code without a changeset, remind to run typecheck + tests after editing
-  non-test `.ts` files. Pushes to `main` are not blocked — releases are supervised
-  by Luca. Their behavior is covered by `.vibe/tools/test_hooks.py`
-  (`python3 .vibe/tools/test_hooks.py`).
 - **Review scope** (`.vibe/tools/review_scope.py`) — computes the scope line
   the review-gate subagents are spawned with
   (`python3 .vibe/tools/review_scope.py [--since <sha>]`); covered by
@@ -68,7 +62,13 @@ rules are enforced automatically when working in Vibe:
 - **Agent profiles** (`.vibe/agents/`) — `cold-reviewer.toml` and
   `docs-auditor.toml`, the Vibe-native equivalents of the `.claude/agents/*.md`
   subagents, spawnable via Vibe's `task` tool. Keep them in sync with the
-  `.claude/agents/*.md` files.
+  `.claude/agents/*.md` files (a drift guard in
+  `.vibe/tools/test_agent_profiles.py` fails when they diverge).
+
+The workflow rules (never commit on `main`, no `rm -rf`, always a changeset)
+are not enforced by local hooks: they hold by convention, through the agent's
+approval layer and through the review gate — the responsibility stays with the
+maintainer.
 
 The plan phase uses Vibe's built-in `--agent plan` (read-only). For isolation,
 `vibe --worktree <branch>` creates a dedicated git worktree per issue.
@@ -148,7 +148,7 @@ mercury/                       # repo root
 ├── README.md
 ├── turbo.json
 ├── .changeset/                # repo-level release state
-├── .vibe/                     # Vibe workflow tooling — skills, hooks, agent profiles (in Development workflow)
+├── .vibe/                     # Vibe workflow tooling — skills, agent profiles, review tooling (in Development workflow)
 ├── scripts/                   # release tooling: release.ts (versions + tags), publish.ts (types + pack check + bun pm pack + npm publish), github-releases.ts (a GitHub Release per published tag), build-types.ts, check-pack.ts, workspaces.ts
 ├── packages/                  # grouped into per-role buckets; every workspace is @mercury-fw/*
 │   ├── types/

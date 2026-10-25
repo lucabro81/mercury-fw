@@ -70,7 +70,8 @@ For each unit of work in the plan:
 - **Message**: follows Conventional Commits: `type(scope): description`
   - `type`: `feat`, `fix`, `test`, `refactor`, `docs`, `chore`
   - `scope`: the package or area (e.g. `core`, `cli`, `plugin-jira`)
-- **Never commit on main**: the hook blocks it, but always verify the current branch.
+- **Never commit on main**: always verify the current branch
+  (`git branch --show-current`) before committing.
 
 ## Before every push
 
