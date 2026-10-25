@@ -62,9 +62,12 @@ def evaluate_bash(command):
 
 def evaluate(tool_name, tool_input):
     """Return a deny payload for the call, or None to allow it."""
-    if tool_name == "bash":
+    # Tool names arrive namespaced in some builds (file_system.bash); compare
+    # on the bare name so both shapes behave the same.
+    name = tool_name.rsplit(".", 1)[-1]
+    if name == "bash":
         return evaluate_bash(tool_input.get("command") or "")
-    if tool_name == "read_file":
+    if name == "read_file":
         path = tool_input.get("path") or tool_input.get("file_path") or ""
         if ENV_FILE_RE.search(path):
             return deny(f"Blocked: {READ_ENV_REASON}")

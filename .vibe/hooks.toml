@@ -6,7 +6,7 @@
 [[hooks]]
 name = "block-secrets"
 type = "pre_tool"
-match = "re:(bash|read_file|edit|write_file)"
+match = "re:(file_system\\.)?(bash|read_file|edit|write_file)"
 strict = true
 command = "python3 \"$(git rev-parse --show-toplevel)/.vibe/tools/block_secrets.py\""
 description = "Block secret exposure: .env reads, docker compose config without --no-interpolate, ~/.config/*-cli/ credentials"

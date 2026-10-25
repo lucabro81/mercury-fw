@@ -107,6 +107,14 @@ for path in [
 ]:
     check(f"allow read_file: {path}", evaluate("read_file", {"path": path}) is None)
 
+# --- namespaced tool names (file_system.bash) behave like bare names ------
+check("deny file_system.bash: cat .env",
+      is_deny(evaluate("file_system.bash", {"command": "cat .env"})))
+check("allow file_system.bash: ls",
+      evaluate("file_system.bash", {"command": "ls"}) is None)
+check("deny file_system.read_file: .env",
+      is_deny(evaluate("file_system.read_file", {"path": ".env"})))
+
 # --- edit / write_file: writes are not denied (a write cannot leak a value
 # --- into chat; denying them would also block legitimate edits of the
 # --- versioned .env.example). Only reads are denied.
@@ -156,8 +164,8 @@ if hooks_path.is_file():
     check("hooks.toml: block-secrets declared", h is not None)
     if h is not None:
         check("hooks.toml: type pre_tool", h.get("type") == "pre_tool")
-        check("hooks.toml: match covers bash/read_file/edit/write_file",
-              h.get("match") == "re:(bash|read_file|edit|write_file)")
+        check("hooks.toml: match covers bash/read_file/edit/write_file (bare and namespaced)",
+              h.get("match") == "re:(file_system\\.)?(bash|read_file|edit|write_file)")
         check("hooks.toml: strict (fail closed)", h.get("strict") is True)
         check("hooks.toml: command runs block_secrets.py",
               "block_secrets.py" in str(h.get("command", "")))
