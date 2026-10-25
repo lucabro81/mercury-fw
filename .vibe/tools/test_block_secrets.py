@@ -170,9 +170,11 @@ def ignored(path):
 
 
 check("gitignore: knowledge dir ignored",
-      ignored(".vibe/plugins/mercury-memory/ai.mistral.vibe/knowledge/state/KNOWLEDGE.md"))
+      ignored(".vibe/plugins/other-plugin/ai.mistral.vibe/knowledge/state/KNOWLEDGE.md"))
 check("gitignore: plugin.json committable",
-      not ignored(".vibe/plugins/mercury-memory/plugin.json"))
+      not ignored(".vibe/plugins/other-plugin/plugin.json"))
+check("gitignore: mercury-memory plugin fully local",
+      ignored(".vibe/plugins/mercury-memory/plugin.json"))
 check("gitignore: hooks.toml committable", not ignored(".vibe/hooks.toml"))
 
 # --- report ---------------------------------------------------------------
