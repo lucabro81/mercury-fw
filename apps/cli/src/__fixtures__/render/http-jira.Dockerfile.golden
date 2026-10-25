@@ -15,15 +15,16 @@ WORKDIR /app
 # package.json's trustedDependencies); the binaries go on PATH. .packs/ holds
 # local tarballs when the app installs them (mfw local-packages), plugins/ the
 # app's own plugins (workspaces, whose postinstall needs their whole folder),
-# and each is skipped when it isn't there. bunfig.toml keeps Bun's hoisted
-# node_modules, which the workspaces would otherwise turn into symlinks.
-COPY --chown=mercury:mercury package.json bun.lock* bunfig.toml ./
+# and each is skipped when it isn't there.
+COPY --chown=mercury:mercury package.json bun.lock* ./
 COPY --chown=mercury:mercury .pack[s] ./.packs/
 COPY --chown=mercury:mercury plugin[s] ./plugins/
 RUN bun install --production && chown -R mercury:mercury node_modules
-# plugins/ made when the app has none, or find fails on it.
+# plugins/ made when the app has none, or find fails on it. -L follows the
+# symlinks of Bun's isolated linker, so the binaries inside node_modules/.bun
+# are found through the package links.
 RUN mkdir -p /app/plugins \
-  && find /app/node_modules/@mercury-fw /app/plugins -mindepth 3 -maxdepth 3 -path '*/bin/*' -type f -exec ln -sf {} /usr/local/bin/ \;
+  && find -L /app/node_modules/@mercury-fw /app/plugins -mindepth 3 -maxdepth 3 -path '*/bin/*' -type f -exec ln -sf {} /usr/local/bin/ \;
 
 COPY --chown=mercury:mercury mercury.config.ts ./
 COPY --chown=mercury:mercury locales ./locales

@@ -52,7 +52,6 @@ const ALWAYS = [
   ".gitignore",
   "Dockerfile",
   "README.md",
-  "bunfig.toml",
   "docker-compose.yml",
   "locales/en.json",
   "mercury.config.ts",
@@ -105,12 +104,13 @@ describe("renderApp: Dockerfile", () => {
     expect(dockerfile).toContain("COPY --chown=mercury:mercury plugin[s] ./plugins/\nRUN bun install --production");
   });
 
-  // #147: a workspace plugin is linked into node_modules, not installed under
-  // @mercury-fw/, so its postinstall's binaries are looked for in plugins/ too.
+  // #147 + #337: a workspace plugin is linked into node_modules, not installed
+  // under @mercury-fw/, so its postinstall's binaries are looked for in
+  // plugins/ too. -L follows Bun's isolated linker's symlinks into .bun/.
   test("puts on PATH the binaries of the framework's packages and of the app's plugins", () => {
     const dockerfile = renderApp(HTTP).get("Dockerfile") ?? "";
     expect(dockerfile).toContain(
-      "RUN mkdir -p /app/plugins \\\n  && find /app/node_modules/@mercury-fw /app/plugins -mindepth 3 -maxdepth 3 -path '*/bin/*' -type f -exec ln -sf {} /usr/local/bin/ \\;\n",
+      "RUN mkdir -p /app/plugins \\\n  && find -L /app/node_modules/@mercury-fw /app/plugins -mindepth 3 -maxdepth 3 -path '*/bin/*' -type f -exec ln -sf {} /usr/local/bin/ \\;\n",
     );
   });
 
@@ -130,16 +130,11 @@ describe("renderApp: Dockerfile", () => {
     expect(gitignore.split("\n")).toContain("plugins/*/bin");
   });
 
-  // Review of #147: with a workspaces key, Bun 1.4 installs with its isolated
-  // linker, every package under node_modules becomes a symlink into
-  // node_modules/.bun, and the binaries of the framework's CLI plugins were no
-  // longer found to go on PATH. bunfig.toml keeps the hoisted layout, so it
-  // has to reach the image before bun install.
-  test("copies bunfig.toml with the manifest, before installing", () => {
+  // #337: bunfig.toml is gone — the app installs with Bun's isolated linker
+  // (the default with workspaces), and the PATH step above follows symlinks.
+  test("does not copy bunfig.toml: the isolated linker is the default", () => {
     const dockerfile = renderApp(HTTP).get("Dockerfile") ?? "";
-    const copy = dockerfile.indexOf("COPY --chown=mercury:mercury package.json bun.lock* bunfig.toml ./\n");
-    expect(copy).toBeGreaterThan(-1);
-    expect(copy).toBeLessThan(dockerfile.indexOf("RUN bun install --production"));
+    expect(dockerfile).not.toContain("bunfig.toml");
   });
 
   // #271: the persona is in the config, there are no persona files to copy.
@@ -215,13 +210,12 @@ describe("renderApp: mercury.config.ts", () => {
   });
 });
 
-// Review of #147: the workspaces key would switch Bun to its isolated linker
-// (node_modules made of symlinks into node_modules/.bun); the app keeps the
-// hoisted layout its plugins were written for.
+// #337: the hoisted-linker workaround is gone — apps install with Bun's
+// isolated linker, the default when workspaces are present.
 describe("renderApp: bunfig.toml", () => {
-  test("installs with the hoisted linker, whatever was chosen", () => {
+  test("is not generated, whatever was chosen", () => {
     for (const choice of [EMPTY, HTTP_JIRA, FULL]) {
-      expect(renderApp(choice).get("bunfig.toml")).toBe('[install]\nlinker = "hoisted"\n');
+      expect(renderApp(choice).get("bunfig.toml")).toBeUndefined();
     }
   });
 });
@@ -416,13 +410,10 @@ describe("renderApp: README.md", () => {
     );
   });
 
-  // Review of #147: bunfig.toml looks optional, and removing it would switch
-  // the app to Bun's isolated linker.
-  test("the layout says what bunfig.toml is for", () => {
+  // #337: bunfig.toml is gone from new apps; the layout no longer mentions it.
+  test("the layout does not mention bunfig.toml", () => {
     const readme = renderApp(EMPTY).get("README.md") ?? "";
-    expect(readme).toContain(
-      "- `bunfig.toml`: keeps Bun's hoisted `node_modules`, which the workspaces would otherwise turn into links the image's PATH step doesn't follow. Keep it.\n",
-    );
+    expect(readme).not.toContain("bunfig.toml");
   });
 
   test("says how to get mfw once, globally, and how to do without", () => {
