@@ -150,9 +150,27 @@ if block_secrets is not None:
                      "tool_input": {"command": "ls"}})
     check("wire: allow on ls (empty stdout, exit 0)",
           proc.returncode == 0 and proc.stdout.strip() == "")
+
+    proc = run_hook({"hook_event_name": "pre_tool",
+                     "tool_name": "file_system.read_file",
+                     "tool_input": {"path": ".env"}})
+    out = json.loads(proc.stdout) if proc.stdout.strip() else {}
+    check("wire: deny on file_system.read_file .env",
+          proc.returncode == 0 and out.get("decision") == "deny"
+          and bool(out.get("reason")))
+
+    proc = subprocess.run(
+        [sys.executable, str(TOOLS / "block_secrets.py")],
+        input="not json", capture_output=True, text=True, cwd=REPO,
+    )
+    check("wire: fail-open on malformed stdin (exit 0, empty stdout, stderr diagnostic)",
+          proc.returncode == 0 and proc.stdout.strip() == ""
+          and proc.stderr.strip() != "")
 else:
     check("wire: deny on cat .env", False)
     check("wire: allow on ls (empty stdout, exit 0)", False)
+    check("wire: deny on file_system.read_file .env", False)
+    check("wire: fail-open on malformed stdin (exit 0, empty stdout, stderr diagnostic)", False)
 
 # --- .vibe/hooks.toml: the hook is declared with the required fields ------
 hooks_path = REPO / ".vibe" / "hooks.toml"
