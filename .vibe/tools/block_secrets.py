@@ -25,6 +25,11 @@ READ_ENV_REASON = (
     "write-only append (printf ... >> .env) is fine; ask Luca if you need to "
     "see a value."
 )
+READ_FILE_ENV_REASON = (
+    "reading a .env-shaped file. Never read .env directly, even to check "
+    "formatting or key names — it holds live secrets. A write-only append "
+    "(printf ... >> .env) is fine; ask Luca if you need to see a value."
+)
 COMPOSE_REASON = (
     "'docker compose config' resolves and prints the FULL interpolated "
     "environment for every service, including secrets injected via .env — not "
@@ -70,7 +75,7 @@ def evaluate(tool_name, tool_input):
     if name == "read_file":
         path = tool_input.get("path") or tool_input.get("file_path") or ""
         if ENV_FILE_RE.search(path):
-            return deny(f"Blocked: {READ_ENV_REASON}")
+            return deny(f"Blocked: {READ_FILE_ENV_REASON}")
     # edit / write_file are matched by the hook but not denied: a write cannot
     # leak a value into chat the way a read can, and denying writes would also
     # block legitimate edits of the versioned .env.example.
