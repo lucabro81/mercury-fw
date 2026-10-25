@@ -44,3 +44,6 @@ logs
 .vscode
 .idea
 coverage
+
+# Python bytecode cache for the .vibe tools
+.vibe/tools/__pycache__/

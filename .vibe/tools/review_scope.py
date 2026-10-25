@@ -12,11 +12,10 @@ does not assemble it by hand:
                                       empty: the reviewer is not re-run)
 
 `--repo` selects the repository (default: the current directory); the
-file list is `git diff --name-only <sha>..HEAD`, sorted. Unlike the
-pre_tool hooks this is a caller's tool, not a guard-rail: when git fails
-(a bad sha, not a repository) it fails loud — a non-zero exit and the
-error on stderr — so a broken scope line never reaches a reviewer
-silently.
+file list is `git diff --name-only <sha>..HEAD`, sorted. This is a
+caller's tool: when git fails (a bad sha, not a repository) it fails
+loud — a non-zero exit and the error on stderr — so a broken scope
+line never reaches a reviewer silently.
 """
 import argparse
 import subprocess
