@@ -47,3 +47,7 @@ coverage
 
 # Python bytecode cache for the .vibe tools
 .vibe/tools/__pycache__/
+
+# Vibe plugin knowledge is personal memory — never versioned (the rest of a
+# plugin under .vibe/plugins/ stays committable)
+.vibe/plugins/*/ai.mistral.vibe/knowledge/
