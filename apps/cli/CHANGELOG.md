@@ -1,5 +1,16 @@
 # @mercury-fw/cli
 
+## 0.60.0
+
+### Minor Changes
+
+- 4ac0457: Scaffolded apps now install with Bun's isolated linker (the default when workspaces are present). The Dockerfile's PATH step follows symlinks (`find -L`) so the CLI plugins' binaries are linked as before. The `bunfig.toml` that forced the hoisted layout is gone from new apps; existing apps keep theirs.
+
+### Patch Changes
+
+- @mercury-fw/core@0.60.0
+- @mercury-fw/utils@0.60.0
+
 ## 0.59.2
 
 ### Patch Changes

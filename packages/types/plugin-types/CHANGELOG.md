@@ -1,5 +1,7 @@
 # @mercury-fw/plugin-types
 
+## 0.60.0
+
 ## 0.59.2
 
 ### Patch Changes
