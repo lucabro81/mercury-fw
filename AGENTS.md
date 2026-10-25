@@ -74,8 +74,9 @@ workflow runs natively in Vibe:
   memory lives there.
 - **Secrets guard** (`.vibe/hooks.toml`, `.vibe/tools/block_secrets.py`) —
   the `block-secrets` pre-tool hook: denies `.env`-shaped reads,
-  `docker compose config` without `--no-interpolate`, and `~/.config/*-cli/`
-  credential reads; covered by `.vibe/tools/test_block_secrets.py`.
+  `docker compose config` without `--no-interpolate`, and any command touching
+  a `~/.config/*-cli/` credential directory; covered by
+  `.vibe/tools/test_block_secrets.py`.
 
 The workflow rules (never commit on `main`, no `rm -rf`, always a changeset)
 are not enforced by local hooks: they hold by convention, through the agent's
