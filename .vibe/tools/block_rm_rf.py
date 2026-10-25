@@ -11,6 +11,9 @@ alternative for tracked files.
 Only `rm` invocations as a command are checked (at the start of a command
 segment, after ;, &&, ||, |, &, \n — outside quotes, so text inside a quoted
 argument is not a command), not substrings inside echo, grep, etc.
+Line comments are stripped first the way bash parses them (an unquoted
+`#` at a word start runs to the end of the line), so a comment hiding a
+separator does not expose the command after it.
 Handles generic env-assignment prefixes (FOO=1 rm -rf). A
 `bash -c '...'` / `sh -c '...'` wrapper (with flags or an absolute path,
 e.g. `bash -lc`, `/bin/bash -c`) is unwrapped and its inner command
@@ -55,6 +58,63 @@ WRAPPER_RE = re.compile(
     r"(?:-[a-zA-Z]+\s+)*-[a-zA-Z]*c\s+"
     r"(?:'([^']*)'|\"([^\"]*)\")"
 )
+
+
+def strip_comments(command):
+    """Remove line comments the way bash parses them: an unquoted `#` at
+    a word start (the beginning of the line, after whitespace, or after
+    a `; & | ( ) > <` operator) runs to the end of the line; the newline
+    itself is kept, it still separates commands. A `#` inside quotes,
+    one escaped with a backslash, or mid-word (`a#b`, `$#`, `${#x}`,
+    `"a"#c`) is literal.
+    """
+    out = []
+    quote = None
+    word_start = True
+    i = 0
+    n = len(command)
+    while i < n:
+        ch = command[i]
+        if quote == "'":
+            out.append(ch)
+            if ch == "'":
+                quote = None
+            word_start = False
+            i += 1
+            continue
+        if quote == '"':
+            out.append(ch)
+            if ch == "\\" and i + 1 < n:
+                out.append(command[i + 1])
+                word_start = False
+                i += 2
+                continue
+            if ch == '"':
+                quote = None
+            word_start = False
+            i += 1
+            continue
+        if ch == "\\" and i + 1 < n:
+            out.append(ch)
+            out.append(command[i + 1])
+            word_start = False
+            i += 2
+            continue
+        if ch == "'" or ch == '"':
+            quote = ch
+            out.append(ch)
+            word_start = False
+            i += 1
+            continue
+        if ch == "#" and word_start:
+            # a comment runs to the end of the line; the newline is kept
+            while i < n and command[i] != "\n":
+                i += 1
+            continue
+        out.append(ch)
+        word_start = ch in " \t\n;&|()><"
+        i += 1
+    return "".join(out)
 
 
 def split_segments(command):
@@ -226,6 +286,7 @@ def segment_has_dangerous_rm(segment):
 
 def is_dangerous_rm(command):
     """True when some command segment contains a dangerous rm -rf."""
+    command = strip_comments(command)
     for segment in split_segments(command):
         wrapped = WRAPPER_RE.match(segment)
         if wrapped:

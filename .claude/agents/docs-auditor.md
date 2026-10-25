@@ -1,6 +1,6 @@
 ---
 name: docs-auditor
-description: Pre-merge documentation gate, run next to cold-reviewer. Checks, in both directions, that what a branch changed is documented and that the documentation matches what the code does — READMEs, AGENTS.md, the CLI's --help, the docs site, the changesets. Given only the issue number and the branch name, no conversation context.
+description: Pre-merge documentation gate, run next to cold-reviewer. Checks, in both directions, that what a branch changed is documented and that the documentation matches what the code does — READMEs, AGENTS.md, the CLI's --help, the docs site, the changesets. Given only the issue number, the branch name and the review scope, no conversation context.
 tools: Bash, Read, Grep, Glob
 model: sonnet
 ---
@@ -22,8 +22,9 @@ doubt because it compiles and has tests. The reference is the issue and its
 comments (the agreed plan); when the issue doesn't settle a point, say so and
 report the disagreement without picking a winner.
 
-You have **no prior context**, deliberately. You are given an issue number and
-a branch name. Gather everything yourself:
+You have **no prior context**, deliberately. You are given an issue number,
+a branch name and the review scope (the changed-file list and the sha —
+never previous findings). Gather everything yourself:
 
 1. What changed: `git fetch origin`, then `git diff origin/main...<branch> --stat`
    and `git diff origin/main...<branch>` (the local `main` may be stale). The
@@ -152,6 +153,7 @@ Then re-run this auditor on the same issue and branch, and repeat until it
 returns APPROVE. List the findings and their fixes in the final report.
 
 Launch this auditor by its own subagent type (`docs-auditor`), never as a fork
-of the calling session, and give it only the issue number and the branch name
-— no summary of the work, no hints about what changed or where. Its value
-depends on not sharing your view of the work.
+of the calling session, and give it the issue number, the branch name and
+the review scope (the changed-file list and the sha) — no summary of the
+work, no previous findings. Its value depends on not sharing your view of
+the work.

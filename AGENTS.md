@@ -30,8 +30,13 @@ truth; the plan for a unit of work lives in its issue and never restates it.
    issue, and `docs-auditor` (`.claude/agents/docs-auditor.md` or
    `.vibe/agents/docs-auditor.toml`), which checks both ways that what changed
    is documented (READMEs, `AGENTS.md`, the CLI's `--help`, the docs site, the
-   changesets) and that the documentation matches the code. Resolve their
-   findings in-branch and re-run both until each approves.
+   changesets) and that the documentation matches the code. Findings are
+   classified S1–S4 (S1/S2 block the merge; S3 is fixed with a regression
+   test or deferred in a tracked issue; S4 is deferred); resolve them
+   in-branch and re-run only the reviewers whose domain changed, until each
+   approves — the loop always ends (the `mercury-review` skill holds the
+   bounded exit conditions: 3 consecutive blocking rounds or 5 rounds total
+   escalate to Luca with a written report).
 6. **Merge on approval:** squash-merge (the issue auto-closes), sync `main`,
    delete the branch.
 7. **Close the loop.** At the end of each unit of work, update project memory

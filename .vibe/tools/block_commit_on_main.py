@@ -3,6 +3,12 @@
 
 Analyzes the command line segment by segment (split on ;, &&, ||, |, & and
 newlines, outside quotes) for `git commit` as a standalone command.
+Line comments are stripped first the way bash parses them (an unquoted
+`#` at a word start runs to the end of the line): a switch followed by a
+comment still switches, and a comment hides the separators and commands
+inside it. Checkout/switch subcommand options — short clusters and long
+ones like `--quiet` — are skipped before the target; a bare `--` still
+starts the pathspec form.
 Blocks when the branch the commit would land on is main/master. The
 commit's target directory is tracked through `cd` segments and `git -C
 <path>` (with ~ and $VAR expansion), and a checkout/switch to
@@ -80,8 +86,10 @@ GIT_OPTS = (
 # (single-quoted) or group 3 (bare).
 GIT_C_RE = re.compile(r"(?<![\w=.-])-C\s*(?:\"([^\"]*)\"|'([^']*)'|(\S+))")
 
-# Checkout/switch options (short options only, never a bare `--`).
-OPTIONS = r"(?:-(?!-)\S+\s+)*"
+# Checkout/switch options: short clusters and the subcommand's own long
+# options (`git checkout --quiet main` really switches), never a bare
+# `--` (that starts the pathspec form).
+OPTIONS = r"(?:(?:-(?!-)\S+|--[\w-]+(?:=\S+)?)\s+)*"
 
 # A commit as a standalone command: git commit, git -C <path> commit,
 # git --no-pager commit, env git commit, FOO=1 git commit. The lookahead
@@ -173,6 +181,63 @@ WRAPPER_RE = re.compile(
     r"(?:-[a-zA-Z]+\s+)*-[a-zA-Z]*c\s+"
     r"(?:'([^']*)'|\"([^\"]*)\")"
 )
+
+
+def strip_comments(command):
+    """Remove line comments the way bash parses them: an unquoted `#` at
+    a word start (the beginning of the line, after whitespace, or after
+    a `; & | ( ) > <` operator) runs to the end of the line; the newline
+    itself is kept, it still separates commands. A `#` inside quotes,
+    one escaped with a backslash, or mid-word (`a#b`, `$#`, `${#x}`,
+    `"a"#c`) is literal.
+    """
+    out = []
+    quote = None
+    word_start = True
+    i = 0
+    n = len(command)
+    while i < n:
+        ch = command[i]
+        if quote == "'":
+            out.append(ch)
+            if ch == "'":
+                quote = None
+            word_start = False
+            i += 1
+            continue
+        if quote == '"':
+            out.append(ch)
+            if ch == "\\" and i + 1 < n:
+                out.append(command[i + 1])
+                word_start = False
+                i += 2
+                continue
+            if ch == '"':
+                quote = None
+            word_start = False
+            i += 1
+            continue
+        if ch == "\\" and i + 1 < n:
+            out.append(ch)
+            out.append(command[i + 1])
+            word_start = False
+            i += 2
+            continue
+        if ch == "'" or ch == '"':
+            quote = ch
+            out.append(ch)
+            word_start = False
+            i += 1
+            continue
+        if ch == "#" and word_start:
+            # a comment runs to the end of the line; the newline is kept
+            while i < n and command[i] != "\n":
+                i += 1
+            continue
+        out.append(ch)
+        word_start = ch in " \t\n;&|()><"
+        i += 1
+    return "".join(out)
 
 
 def split_segments(command):
@@ -452,6 +517,7 @@ def run_command_line(command, directory, switched_to_main, sim):
     it so far (shared across scopes the same way); it resolves
     previous-branch switch targets.
     """
+    command = strip_comments(command)
     for segment in split_segments(command):
         wrapped = WRAPPER_RE.match(segment)
         if wrapped:

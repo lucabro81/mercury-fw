@@ -780,6 +780,124 @@ def main():
     expect("guard: echo a &> log && git commit on feat allowed",
            run_hook(BCM, "bash", "echo a &> log && git commit -m x", feat_repo), "silent")
 
+    # --- block_commit_on_main: shell comments are stripped before analysis (round 13, S1) ---
+    # A `#` at a word start (the beginning of the line, after whitespace, or
+    # after a ; & | ( ) > < operator) runs to the end of the line: a switch
+    # followed by a comment still switches, and a comment hides the
+    # separators and commands inside it. A `#` inside quotes, escaped, or
+    # mid-word (`a#b`, `$#`, `"a"#c`) is literal.
+    expect("switch to main with a trailing comment, then commit -> denied",
+           run_hook(BCM, "bash", "git checkout main # sync with origin\ngit commit -m x", feat_repo), "deny")
+    expect("switch to main then away with a trailing comment, then commit -> allowed",
+           run_hook(BCM, "bash", "git checkout main && git checkout feat/331-test # back\ngit commit -m x", feat_repo), "silent")
+    expect("a comment hides the separator and the commit inside it -> silent",
+           run_hook(BCM, "bash", "git checkout main # c; git commit -m x", feat_repo), "silent")
+    expect("comment inside a wrapper's inner command line -> denied",
+           run_hook(BCM, "bash", "bash -c 'git checkout main # c\ngit commit -m x'", feat_repo), "deny")
+    expect("a quote inside a comment does not open a quote -> denied",
+           run_hook(BCM, "bash", "git checkout main # don't panic\ngit commit -m x", feat_repo), "deny")
+    expect("a full-line comment does not hide a commit on main -> denied",
+           run_hook(BCM, "bash", "# just a comment\ngit commit -m x", main_repo), "deny")
+    expect("a trailing comment after a commit on main -> denied",
+           run_hook(BCM, "bash", "git commit -m x # trailing note", main_repo), "deny")
+    expect("a # inside a quoted message is literal: commit on main denied",
+           run_hook(BCM, "bash", 'git commit -m "fix #331"', main_repo), "deny")
+    expect("a # mid-word is literal: commit on main denied",
+           run_hook(BCM, "bash", "git commit -m fix#331", main_repo), "deny")
+    expect("control: a # in an echo does not hide a commit on main",
+           run_hook(BCM, "bash", "echo A#not-a-comment && git commit -m x", main_repo), "deny")
+    expect("control: a quoted message then a comment, commit on main -> denied",
+           run_hook(BCM, "bash", 'git commit -m "a" # c', main_repo), "deny")
+
+    # --- block_commit_on_main: long options between checkout/switch and the target (round 13, S1) ---
+    # `git checkout --quiet main` really switches: the subcommand's own long
+    # options are skipped like the short ones (a bare `--` still is not).
+    expect("git checkout --quiet main && git commit denied",
+           run_hook(BCM, "bash", "git checkout --quiet main && git commit -m x", feat_repo), "deny")
+    expect("git switch --quiet main && git commit denied",
+           run_hook(BCM, "bash", "git switch --quiet main && git commit -m x", feat_repo), "deny")
+    expect("git checkout --force main && git commit denied",
+           run_hook(BCM, "bash", "git checkout --force main && git commit -m x", feat_repo), "deny")
+    expect("switch to main then away with a long option, then commit -> allowed",
+           run_hook(BCM, "bash", "git checkout main && git checkout --quiet feat/331-test && git commit -m x", feat_repo), "silent")
+    expect("git checkout --quiet main <path> is the two-argument pathspec form -> allowed",
+           run_hook(BCM, "bash", "git checkout --quiet main file.txt && git commit -m x", feat_repo), "silent")
+    expect("git checkout --quiet main -q (option after the target) still switches -> denied",
+           run_hook(BCM, "bash", "git checkout --quiet main -q && git commit -m x", feat_repo), "deny")
+    expect("switch to main then 'checkout --detach main~1' (a revision) + commit allowed",
+           run_hook(BCM, "bash", "git checkout main && git checkout --detach main~1 && git commit -m x", prev_repo), "silent")
+    expect("switch to main then 'checkout --detach HEAD' + commit still denied (detached at main's commit)",
+           run_hook(BCM, "bash", "git checkout main && git checkout --detach HEAD && git commit -m x", feat_repo), "deny")
+
+    # --- block_rm_rf: a comment hides the separators inside it (round 13, S1) ---
+    expect("a comment hides '; rm -rf' -> allowed (the rm never runs)",
+           run_hook(RM, "bash", "true # a; rm -rf /tmp/x", feat_repo), "silent")
+    expect("a comment hides '&& rm -rf' -> allowed (the rm never runs)",
+           run_hook(RM, "bash", "echo done # note && rm -rf /tmp/x", feat_repo), "silent")
+    expect("control: rm -rf with a trailing comment -> denied",
+           run_hook(RM, "bash", "rm -rf /tmp/x # note && echo done", feat_repo), "deny")
+    expect("control: a quoted # in the path -> denied",
+           run_hook(RM, "bash", "rm -rf '/tmp/a#b'", feat_repo), "deny")
+
+    # --- suggest_changeset: shell comments (round 13, S1) ---
+    # x.ts is tracked in feat_repo with an unstaged modification (the state
+    # the round-12 sections left behind).
+    expect("control: git add <pkg file> with a trailing comment && git commit warns",
+           run_hook(CS, "bash", "git add packages/libs/core/src/x.ts # stage it\ngit commit -m x", feat_repo), "warn")
+    expect("a comment hides '; git commit' -> silent (the commit never runs)",
+           run_hook(CS, "bash", "git add packages/libs/core/src/x.ts # c; git commit -m x", feat_repo), "silent")
+    git(feat_repo, "add", "packages/libs/core/src/x.ts")
+    expect("git commit with a trailing comment and staged code -> warns",
+           run_hook(CS, "bash", "git commit -m x # no changeset yet", feat_repo), "warn")
+    expect("git commit with a comment line after it and staged code -> warns",
+           run_hook(CS, "bash", "git commit -m x # c\ngit status", feat_repo), "warn")
+    expect("control: a quoted message then a comment, staged code -> warns",
+           run_hook(CS, "bash", 'git commit -m "msg" # c', feat_repo), "warn")
+    git(feat_repo, "reset", "-q")
+
+    # --- suggest_changeset: a pathspec commit counts only its pathspecs, staged side too (round 13, S3) ---
+    # A `git commit -- <paths>` includes only the named paths: unrelated staged
+    # changes stay staged, so they must not trigger the warning — and a staged
+    # changeset outside the pathspecs is not included by the commit either.
+    git(feat_repo, "add", "README.md")
+    git(feat_repo, "commit", "-q", "-m", "docs: readme")  # README.md tracked now
+    write("README.md", "# r2\n")  # tracked modification for the pathspec commit
+    write("packages/libs/core/src/x.ts", "export const x = 20;\n")
+    git(feat_repo, "add", "packages/libs/core/src/x.ts")  # unrelated staged code
+    expect("pathspec commit of a doc with unrelated staged code -> silent",
+           run_hook(CS, "bash", "git commit -m x -- README.md", feat_repo), "silent")
+    expect("control: plain commit with the same staged code -> warns",
+           run_hook(CS, "bash", "git commit -m x", feat_repo), "warn")
+    expect("pathspec commit matching the staged code -> warns",
+           run_hook(CS, "bash", "git commit -m x -- packages/libs/core/src/x.ts", feat_repo), "warn")
+    write(".changeset/cs3.md", "---\n'@mercury-fw/core': patch\n---\n\ncs3\n")
+    git(feat_repo, "add", ".changeset/cs3.md")
+    expect("pathspec commit excluding the staged changeset -> warns (the commit includes no changeset)",
+           run_hook(CS, "bash", "git commit -m x -- packages/libs/core/src/x.ts", feat_repo), "warn")
+    expect("pathspec commit including the staged changeset -> silent",
+           run_hook(CS, "bash", "git commit -m x -- packages/libs/core/src/x.ts .changeset/cs3.md", feat_repo), "silent")
+    git(feat_repo, "reset", "-q")
+    os.remove(os.path.join(feat_repo, ".changeset/cs3.md"))
+
+    # --- suggest_changeset: git add -u stages no untracked files (round 13, S3) ---
+    # `git add -u` stages tracked modifications only: an untracked file under
+    # packages/ on disk is staged by no commit form, so `git add -u && git
+    # commit` warns for nothing. `git add -A` stages untracked files too.
+    git(feat_repo, "add", "packages/libs/core/src/x.ts")
+    git(feat_repo, "commit", "-q", "-m", "code")  # x.ts clean now
+    write("packages/libs/core/src/untracked.ts", "export const u = 1;\n")
+    expect("git add -u && git commit with only an untracked pkg file -> silent",
+           run_hook(CS, "bash", "git add -u && git commit -m x", feat_repo), "silent")
+    expect("control: git add -A && git commit with the untracked pkg file -> warns",
+           run_hook(CS, "bash", "git add -A && git commit -m x", feat_repo), "warn")
+    os.remove(os.path.join(feat_repo, "packages/libs/core/src/untracked.ts"))
+    write("packages/libs/core/src/x.ts", "export const x = 21;\n")  # tracked modification
+    expect("control: git add -u && git commit with a tracked modification -> warns",
+           run_hook(CS, "bash", "git add -u && git commit -m x", feat_repo), "warn")
+    expect("control: git add --update && git commit with a tracked modification -> warns",
+           run_hook(CS, "bash", "git add --update && git commit -m x", feat_repo), "warn")
+    git(feat_repo, "reset", "-q")
+
 # --- suggest_test_after_ts (post_tool shape) ---
     def run_ts(tool_name, file_path, status="success"):
         payload = json.dumps({

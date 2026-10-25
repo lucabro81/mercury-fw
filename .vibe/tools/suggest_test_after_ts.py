@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Hook post_tool: suggest tests and typecheck after editing a .ts file (non-test)."""
+"""Hook post_tool: suggest tests and typecheck after editing a .ts file (non-test).
+
+A reminder, not a guard-rail: it never denies a call — it only appends
+context after a successful edit of a non-test .ts file.
+"""
 import json
 import sys
 

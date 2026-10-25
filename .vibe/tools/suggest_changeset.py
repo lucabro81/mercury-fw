@@ -1,12 +1,18 @@
 #!/usr/bin/env python3
 """Hook pre_tool: warn when a commit is missing a changeset.
 
-Checks the files the commit would include — the staged ones, the files a
-`git add` earlier in the same command would stage, plus tracked unstaged
-modifications when the commit uses -a/--all (the whole tree) or a
-pathspec (only the files matching it) — and warns if they touch a
-published workspace without a changeset. Repo tooling (.vibe/,
-scripts/, .github/, docs site, test bed) does not require a changeset.
+Checks the files the commit would include — the staged ones (all of them,
+or only the files matching a pathspec commit's pathspecs), the files a
+`git add` earlier in the same command would stage (filtered the same way
+for a pathspec commit), plus tracked unstaged modifications when the
+commit uses -a/--all (the whole tree) or a pathspec (only the files
+matching it) — and warns if they touch a published workspace without a
+changeset. Repo tooling (.vibe/, scripts/, .github/, docs site, test
+bed) does not require a changeset.
+
+Line comments are stripped before the analysis the way bash parses them
+(an unquoted `#` at a word start runs to the end of the line), so a
+comment cannot hide a commit or smuggle in a pathspec.
 
 The commit's target directory is tracked through `cd` segments and the
 commit's own `git -C <path>` (with ~ and $VAR expansion), so the warning
@@ -137,6 +143,63 @@ SHORT_VALUE_OPTIONS = frozenset("mFtCc")
 # cluster (-S<keyid>, -u<mode>): a standalone -S/-u is complete on its own
 # and never consumes the next token.
 SHORT_OPTIONAL_VALUE_OPTIONS = frozenset("Su")
+
+
+def strip_comments(command):
+    """Remove line comments the way bash parses them: an unquoted `#` at
+    a word start (the beginning of the line, after whitespace, or after
+    a `; & | ( ) > <` operator) runs to the end of the line; the newline
+    itself is kept, it still separates commands. A `#` inside quotes,
+    one escaped with a backslash, or mid-word (`a#b`, `$#`, `${#x}`,
+    `"a"#c`) is literal.
+    """
+    out = []
+    quote = None
+    word_start = True
+    i = 0
+    n = len(command)
+    while i < n:
+        ch = command[i]
+        if quote == "'":
+            out.append(ch)
+            if ch == "'":
+                quote = None
+            word_start = False
+            i += 1
+            continue
+        if quote == '"':
+            out.append(ch)
+            if ch == "\\" and i + 1 < n:
+                out.append(command[i + 1])
+                word_start = False
+                i += 2
+                continue
+            if ch == '"':
+                quote = None
+            word_start = False
+            i += 1
+            continue
+        if ch == "\\" and i + 1 < n:
+            out.append(ch)
+            out.append(command[i + 1])
+            word_start = False
+            i += 2
+            continue
+        if ch == "'" or ch == '"':
+            quote = ch
+            out.append(ch)
+            word_start = False
+            i += 1
+            continue
+        if ch == "#" and word_start:
+            # a comment runs to the end of the line; the newline is kept
+            while i < n and command[i] != "\n":
+                i += 1
+            continue
+        out.append(ch)
+        word_start = ch in " \t\n;&|()><"
+        i += 1
+    return "".join(out)
 
 
 def split_segments(command):
@@ -314,15 +377,17 @@ def commit_target(command, directory, adds=None):
     `directory` is the scope's working directory: a `cd` segment moves it
     for the rest of the scope (a `cd` inside a bash -c wrapper stays
     inside the wrapper), and a segment's own `git -C <path>` overrides
-    it. A `git add` before the commit stages its pathspecs — or the
-    whole tree for -A/--all/-u/--update; a --dry-run add stages nothing.
+    it. A `git add` before the commit stages its pathspecs — the whole
+    tree for -A/--all (untracked files included), only tracked
+    modifications for -u/--update; a --dry-run add stages nothing.
     `adds` is the list of `git add`s earlier in the same scope, shared
     with the wrapper and subshell recursions: an add inside a `bash -c`
     wrapper or a `( ... )` subshell stages into the same index, so it
     counts for a commit after it too.
     """
     if adds is None:
-        adds = []  # (directory, (whole_tree, pathspecs))
+        adds = []  # (directory, (kind, pathspecs))
+    command = strip_comments(command)
     for segment in split_segments(command):
         wrapped = WRAPPER_RE.match(segment)
         if wrapped:
@@ -355,9 +420,9 @@ def commit_target(command, directory, adds=None):
             target_dir = git_target_dir(segment, directory)
             added = set()
             root = repo_root(target_dir)
-            for add_dir, (whole_tree, pathspecs) in adds:
+            for add_dir, (kind, pathspecs) in adds:
                 if repo_root(add_dir) == root:
-                    added |= add_files(root, whole_tree, root_pathspecs(add_dir, root, pathspecs))
+                    added |= add_files(root, kind, root_pathspecs(add_dir, root, pathspecs))
             return m.group(2), target_dir, added
     return None
 
@@ -370,12 +435,15 @@ REDIRECT_RE = re.compile(r"([&]?\d*>+|&\d*>?|<)(.*)")
 
 def parse_add_args(args):
     """A `git add`'s arguments: None when the add stages nothing
-    (--dry-run), else (whole_tree, pathspecs)."""
+    (--dry-run), else (kind, pathspecs) — kind is "all" for -A/--all (the
+    whole tree, untracked files included), "update" for -u/--update (the
+    tracked modifications only: `git add -u` never stages untracked
+    files), or "paths" for a plain pathspec add."""
     try:
         tokens = shlex.split(args)
     except ValueError:
         tokens = args.split()
-    whole_tree = False
+    kind = "paths"
     pathspecs = []
     i = 0
     while i < len(tokens):
@@ -385,13 +453,17 @@ def parse_add_args(args):
             break
         if token in ("-n", "--dry-run"):
             return None
-        if token in ("-A", "--all", "-u", "--update"):
-            whole_tree = True
+        if token in ("-A", "--all"):
+            kind = "all"
+            i += 1
+            continue
+        if token in ("-u", "--update"):
+            kind = "update"
             i += 1
             continue
         if token.startswith("--pathspec-from-file"):
             # the paths come from a file: treat the add as whole-tree
-            whole_tree = True
+            kind = "all"
             i += 2 if "=" not in token else 1
             continue
         if token.startswith("--"):
@@ -403,7 +475,7 @@ def parse_add_args(args):
             continue
         pathspecs.append(token)
         i += 1
-    return whole_tree, pathspecs
+    return kind, pathspecs
 
 
 def root_pathspecs(directory, root, pathspecs):
@@ -426,18 +498,25 @@ def root_pathspecs(directory, root, pathspecs):
     return out
 
 
-def add_files(directory, whole_tree, pathspecs):
-    """The files a `git add` would stage: the tracked modifications and
-    the untracked files matching its pathspecs (the whole tree for
-    -A/--all/-u/--update)."""
+def add_files(directory, kind, pathspecs):
+    """The files a `git add` would stage. "all" (-A/--all): the tracked
+    modifications and the untracked files, of the whole tree or of the
+    pathspecs. "update" (-u/--update): the tracked modifications only —
+    `git add -u` never stages untracked files. "paths": the tracked
+    modifications and the untracked files matching the pathspecs."""
     files = set()
-    if whole_tree:
-        for f in git(directory, "diff", "--name-only").split("\n"):
-            if f:
-                files.add(f)
-        for f in git(directory, "ls-files", "--others", "--exclude-standard").split("\n"):
-            if f:
-                files.add(f)
+    if kind in ("all", "update"):
+        for path in pathspecs or [None]:
+            diff_args = ["diff", "--name-only"] + ([] if path is None else ["--", path])
+            for f in git(directory, *diff_args).split("\n"):
+                if f:
+                    files.add(f)
+            if kind == "all":
+                others_args = ["ls-files", "--others", "--exclude-standard"] \
+                    + ([] if path is None else ["--", path])
+                for f in git(directory, *others_args).split("\n"):
+                    if f:
+                        files.add(f)
         return files
     for path in pathspecs:
         for f in git(directory, "diff", "--name-only", "--", path).split("\n"):
@@ -522,81 +601,92 @@ def main():
         sys.exit(0)
     args, target_dir, added = found
 
-    try:
-        scope, pathspecs = commit_scope(args)
-        # Git queries run from the repository root: `git diff` prints
-        # root-relative paths from any directory, but a pathspec is
-        # working-directory-relative (`.changeset/` from a subdirectory
-        # fails) and `git ls-files` prints working-directory-relative
-        # paths — so the pathspecs are rewritten to root-relative form
-        # and every query runs from the root.
-        root = repo_root(target_dir)
-        pathspecs = root_pathspecs(target_dir, root, pathspecs or [])
+    scope, pathspecs = commit_scope(args)
+    # Git queries run from the repository root: `git diff` prints
+    # root-relative paths from any directory, but a pathspec is
+    # working-directory-relative (`.changeset/` from a subdirectory
+    # fails) and `git ls-files` prints working-directory-relative
+    # paths — so the pathspecs are rewritten to root-relative form
+    # and every query runs from the root.
+    root = repo_root(target_dir)
+    pathspecs = root_pathspecs(target_dir, root, pathspecs or [])
 
-        files = set()
-        for f in git(root, "diff", "--cached", "--name-only").split("\n"):
+    # The staged set the commit includes: all of it, or — for a pathspec
+    # commit — only the files matching its pathspecs (the other staged
+    # changes stay staged, the commit does not include them). The files
+    # an earlier `git add` would stage are filtered the same way.
+    if scope == "paths":
+        staged = [
+            f for f in git(root, "diff", "--cached", "--name-only", "--", *pathspecs).split("\n")
+            if f
+        ]
+        matching = set()
+        for f in git(root, "ls-files", "--", *pathspecs).split("\n"):
+            if f:
+                matching.add(f)
+        for f in git(root, "ls-files", "--others", "--exclude-standard", "--", *pathspecs).split("\n"):
+            if f:
+                matching.add(f)
+        included_added = added & matching
+    else:
+        staged = [f for f in git(root, "diff", "--cached", "--name-only").split("\n") if f]
+        included_added = added
+
+    files = set(staged) | included_added
+    if scope == "all":
+        for f in git(root, "diff", "--name-only").split("\n"):
             if f:
                 files.add(f)
-        files |= added
-        if scope == "all":
-            for f in git(root, "diff", "--name-only").split("\n"):
-                if f:
-                    files.add(f)
-        elif scope == "paths":
-            for f in git(root, "diff", "--name-only", "--", *pathspecs).split("\n"):
-                if f:
-                    files.add(f)
+    elif scope == "paths":
+        for f in git(root, "diff", "--name-only", "--", *pathspecs).split("\n"):
+            if f:
+                files.add(f)
 
-        # Only published workspaces require a changeset; .md files are
-        # out of scope (the hook's scope is code changes)
-        relevant = [
-            f for f in files
-            if f.startswith(CHANGESET_REQUIRED_PREFIXES)
-            and not f.startswith(CHANGESET_EXCLUDED_PREFIXES)
-            and not f.endswith(".md")
-        ]
-        if not relevant:
-            sys.exit(0)
+    # Only published workspaces require a changeset; .md files are
+    # out of scope (the hook's scope is code changes)
+    relevant = [
+        f for f in files
+        if f.startswith(CHANGESET_REQUIRED_PREFIXES)
+        and not f.startswith(CHANGESET_EXCLUDED_PREFIXES)
+        and not f.endswith(".md")
+    ]
+    if not relevant:
+        sys.exit(0)
 
-        # A changeset the commit would include covers: staged changeset
-        # files, the ones the command's own `git add` would stage, plus
-        # tracked unstaged ones when the commit includes unstaged
-        # modifications. An untracked changeset file is included by no
-        # commit form, so it does not count.
-        changeset_files = set()
-        for f in git(root, "diff", "--cached", "--name-only", ".changeset/").split("\n"):
+    # A changeset the commit would include covers: staged changeset
+    # files (all of them, or only the ones matching a pathspec commit's
+    # pathspecs), the ones the command's own `git add` would stage
+    # (filtered the same way), plus tracked unstaged ones when the
+    # commit includes unstaged modifications. An untracked changeset
+    # file is included by no commit form, so it does not count.
+    changeset_files = {f for f in staged if f.startswith(".changeset/")}
+    if scope == "all":
+        for f in git(root, "diff", "--name-only", ".changeset/").split("\n"):
             if f:
                 changeset_files.add(f)
-        if scope == "all":
-            for f in git(root, "diff", "--name-only", ".changeset/").split("\n"):
-                if f:
-                    changeset_files.add(f)
-        elif scope == "paths":
-            for f in git(root, "diff", "--name-only", "--", *pathspecs).split("\n"):
-                if f and f.startswith(".changeset/"):
-                    changeset_files.add(f)
-        # a changeset staged by the command's own `git add` is included too
-        changeset_files |= {f for f in added if f.startswith(".changeset/")}
+    elif scope == "paths":
+        for f in git(root, "diff", "--name-only", "--", *pathspecs).split("\n"):
+            if f and f.startswith(".changeset/"):
+                changeset_files.add(f)
+    # a changeset staged by the command's own `git add` is included too
+    changeset_files |= {f for f in included_added if f.startswith(".changeset/")}
 
-        # ...or the last commit already carried one
-        last_commit_files = git(root, "diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD")
-        has_changeset = bool(changeset_files) or any(
-            f.startswith(".changeset/") for f in last_commit_files.split("\n") if f
-        )
+    # ...or the last commit already carried one
+    last_commit_files = git(root, "diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD")
+    has_changeset = bool(changeset_files) or any(
+        f.startswith(".changeset/") for f in last_commit_files.split("\n") if f
+    )
 
-        if not has_changeset:
-            print(json.dumps({
-                "decision": "allow",
-                "system_message": (
-                    "This commit modifies code without a changeset. "
-                    "The Mercury workflow requires a changeset for every relevant change. "
-                    "Run `bun run changeset` before committing, or include the changeset "
-                    "in this commit. See skill mercury-tdd."
-                ),
-            }))
-            sys.exit(0)
-
-    except Exception:
+    if not has_changeset:
+        print(json.dumps({
+            "decision": "allow",
+            "system_message": (
+                "This commit modifies code without a changeset. "
+                "The Mercury workflow requires a changeset for every relevant change. "
+                "Run `bun run changeset` before committing, or include the changeset "
+                "in this commit. See skill mercury-tdd."
+            ),
+        }))
         sys.exit(0)
 
     sys.exit(0)
