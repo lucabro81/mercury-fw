@@ -1,0 +1,13 @@
+# Pre-tool guard against secret exposure: reads of .env-shaped files,
+# `docker compose config` without --no-interpolate, and ~/.config/<name>-cli/
+# credential directories. Port of .claude/hooks/block-env-read.sh to Vibe's
+# hook protocol. strict = true fails closed when the hook cannot run at all;
+# a runtime error inside the script fails open (see its docstring).
+[[hooks]]
+name = "block-secrets"
+type = "pre_tool"
+match = "re:(file_system\\.)?(bash|read_file|edit|write_file)"
+strict = true
+command = "python3 \"$(git rev-parse --show-toplevel)/.vibe/tools/block_secrets.py\""
+description = "Block secret exposure: .env reads, docker compose config without --no-interpolate, ~/.config/*-cli/ credentials"
+timeout = 10.0
