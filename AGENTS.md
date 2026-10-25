@@ -72,6 +72,10 @@ workflow runs natively in Vibe:
   rotated by hand (when adding an entry, drop the oldest). Keep this file lean:
   shared, versioned conventions live here and in the skills/hooks, personal
   memory lives there.
+- **Secrets guard** (`.vibe/hooks.toml`, `.vibe/tools/block_secrets.py`) —
+  the `block-secrets` pre-tool hook: denies `.env`-shaped reads,
+  `docker compose config` without `--no-interpolate`, and `~/.config/*-cli/`
+  credential reads; covered by `.vibe/tools/test_block_secrets.py`.
 
 The workflow rules (never commit on `main`, no `rm -rf`, always a changeset)
 are not enforced by local hooks: they hold by convention, through the agent's
@@ -156,7 +160,7 @@ mercury/                       # repo root
 ├── README.md
 ├── turbo.json
 ├── .changeset/                # repo-level release state
-├── .vibe/                     # Vibe workflow tooling — skills, agent profiles, review tooling (in Development workflow)
+├── .vibe/                     # Vibe workflow tooling — skills, agent profiles, hooks, review tooling (in Development workflow)
 ├── scripts/                   # release tooling: release.ts (versions + tags), publish.ts (types + pack check + bun pm pack + npm publish), github-releases.ts (a GitHub Release per published tag), build-types.ts, check-pack.ts, workspaces.ts
 ├── packages/                  # grouped into per-role buckets; every workspace is @mercury-fw/*
 │   ├── types/
