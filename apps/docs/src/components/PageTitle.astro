@@ -2,7 +2,8 @@
 /**
  * The page title, replacing Starlight's: on the home the site's name, set in
  * IBM Plex Mono Bold, shows through a field of Mercury's own source code
- * (src/lib/text-mask.ts, src/lib/char-field.ts). On narrow screens, where the
+ * (src/lib/text-mask.ts, src/lib/char-field.ts), which runs on under the name,
+ * thinning out behind the page's text. On narrow screens, where the
  * field's characters would be too small, Starlight's own title shows instead,
  * set like the name; on wide ones it's kept for screen readers only. Every
  * other page gets Starlight's title.
@@ -38,6 +39,8 @@ function rowHtml(row: Cell[]): string {
 const COLS = 180;
 /** Columns of code added on each side, enough to reach the edges of a wide screen. */
 const SIDE_COLS = 150;
+/** Rows of code under the name, thinning out behind the page's text. */
+const TAIL_ROWS = 60;
 const field = isHome
   ? charField(
       padMask(
@@ -50,7 +53,7 @@ const field = isHome
         SIDE_COLS,
       ),
       codeText(readFileSync(resolve(process.cwd(), "../../packages/libs/core/src/compose.ts"), "utf8")),
-      { random: Math.random, brightShare: 0.015 },
+      { random: Math.random, brightShare: 0.015, tailRows: TAIL_ROWS },
     )
   : null;
 ---
@@ -64,7 +67,7 @@ const field = isHome
       <pre
         class="mfw-field"
         aria-hidden="true"
-        style={`--mfw-cols: ${COLS}`}
+        style={`--mfw-cols: ${COLS}; --mfw-tail-rows: ${TAIL_ROWS}`}
         set:html={field.map(rowHtml).join("\n")}
       />
     </div>
@@ -75,13 +78,19 @@ const field = isHome
 
 <style>
   /* The title's panel loses its padding and its column (the home has no
-     sidebar), so the field runs edge to edge, from the navigation bar to the
-     line under the title. */
+     sidebar), so the field runs edge to edge from the navigation bar. */
   :global(:root:not([data-has-sidebar]) .content-panel:has(.mfw-title)) {
     padding: 0;
   }
   :global(:root:not([data-has-sidebar]) .content-panel:has(.mfw-title) .sl-container) {
     max-width: none;
+  }
+  /* The panel under the title has no line on top, and stacks over the field,
+     whose tail runs on behind its text. */
+  :global(:root:not([data-has-sidebar]) .content-panel:has(.mfw-title) + .content-panel) {
+    position: relative;
+    z-index: 1;
+    border-top: none;
   }
   /* The neon around the name's letters, in the field and in the plain title. */
   .mfw-title {
@@ -90,8 +99,7 @@ const field = isHome
       0 0 1.5em color-mix(in srgb, var(--mfw-title-color) 70%, transparent),
       0 0 2.8em color-mix(in srgb, var(--mfw-title-color) 90%, transparent);
     container-type: inline-size;
-    overflow: hidden;
-    background: var(--mfw-bg);
+    overflow-x: clip;
   }
   .mfw-title-text {
     padding: 1.5rem var(--sl-content-pad-x);
@@ -126,21 +134,32 @@ const field = isHome
   }
   /* Wider than the screen and centered, the overflow cut by the title. The
      characters are sized so the text's --mfw-cols fit a band of at most 72rem:
-     one of IBM Plex Mono is 0.6em wide, so the size is the band over cols × 0.6. */
+     one of IBM Plex Mono is 0.6em wide, so the size is the band over cols × 0.6.
+     The tail's rows take no room: the negative margin lets the page's text
+     start right under the name. */
   .mfw-field {
     position: relative;
     left: 50%;
     translate: -50%;
     width: max-content;
-    margin: 0;
+    margin: 0 0 calc(var(--mfw-tail-rows) * -1.2em);
+    pointer-events: none;
     padding: 0;
     border: 0;
     background: none;
     font-family: var(--sl-font-mono);
     font-size: calc(min(100cqi - 2rem, 72rem) / (var(--mfw-cols) * 0.6));
     line-height: 1.2;
-    color: var(--mfw-dot);
+    color: var(--mfw-field);
     user-select: none;
+  }
+  /* Light theme: the tail fades out going down. */
+  :global(:root[data-theme="light"]) .mfw-field {
+    mask-image: linear-gradient(
+      to bottom,
+      black calc(100% - var(--mfw-tail-rows) * 1.2em),
+      transparent
+    );
   }
   .mfw-field :global(b) {
     font-weight: 700;
