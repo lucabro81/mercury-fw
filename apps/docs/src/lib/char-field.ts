@@ -15,6 +15,8 @@ export interface CharFieldOptions {
   random: () => number;
   /** The share of the cells outside the letters to brighten. */
   brightShare: number;
+  /** Rows added under the mask, thinning out going down until they're empty. */
+  tailRows?: number;
 }
 
 /** Source code as one line: block comments (JSDoc included) dropped, whitespace collapsed. */
@@ -29,16 +31,30 @@ export function codeText(source: string): string {
  * Fills the mask's grid with the text, in order and starting over when it runs
  * out. A space inside a letter becomes a middle dot, so the letter has no
  * holes; outside the letters, `brightShare` of the non-space cells stand out.
+ * Under the mask, `tailRows` rows go on with the text, none of them bright,
+ * each cell kept with a chance falling row by row as (1 - (r + 1) / (tailRows + 1))²,
+ * and blank otherwise.
  */
 export function charField(mask: boolean[][], text: string, options: CharFieldOptions): Cell[][] {
   if (!text) throw new Error("The field's text is empty");
-  const { random, brightShare } = options;
+  const { random, brightShare, tailRows = 0 } = options;
   let next = 0;
-  return mask.map((row) =>
-    row.map((on) => {
+  const field = mask.map((row) =>
+    row.map((on): Cell => {
       const ch = text[next++ % text.length];
       if (on) return { ch: ch === " " ? "·" : ch, kind: "on" };
       return { ch, kind: ch !== " " && random() < brightShare ? "bright" : "off" };
     }),
   );
+  const width = mask[0]?.length ?? 0;
+  for (let r = 0; r < tailRows; r++) {
+    const density = (1 - (r + 1) / (tailRows + 1)) ** 2;
+    field.push(
+      Array.from({ length: width }, (): Cell => {
+        const ch = text[next++ % text.length];
+        return { ch: random() < density ? ch : " ", kind: "off" };
+      }),
+    );
+  }
+  return field;
 }

@@ -14,6 +14,7 @@
   --mfw-accent-low: #0b2a30;
   --mfw-border: #2a2a2a;
   --mfw-dot: #202020;
+  --mfw-field: #202020;
   --mfw-title-color: #22d3ee;
 }
 
@@ -26,7 +27,8 @@
   --mfw-accent-low: #dcecef;
   --mfw-border: #dddddd;
   --mfw-dot: #c4c4c4;
-  --mfw-title-color: #82260e;
+  --mfw-field: #d8d8d8;
+  --mfw-title-color: #111111;
 }
 
 /* Starlight's variables, on our tokens. In both themes "white" is the
