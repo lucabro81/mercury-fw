@@ -57,6 +57,35 @@ describe("charField", () => {
     expect(share).toBeLessThan(0.03);
   });
 
+  test("adds tailRows rows under the mask, as wide as it, going on with the text, none of them bright", () => {
+    const mask = [[false, true, false]];
+    const rows = charField(mask, "abcdefgh", { random: () => 0, brightShare: 1, tailRows: 2 });
+    expect(text(rows)).toEqual(["abc", "def", "gha"]);
+    expect(kinds(rows)).toEqual(["*#*", "...", "..."]);
+  });
+
+  test("keeps a tail cell while random stays under the row's density, (1 - (r + 1) / (tailRows + 1))²", () => {
+    // Densities for 2 tail rows: 4/9 ≈ 0.44, then 1/9 ≈ 0.11; 0.3 sits between them.
+    const mask = [[false, false, false]];
+    const rows = charField(mask, "abcdefghi", { random: () => 0.3, brightShare: 0, tailRows: 2 });
+    expect(text(rows)).toEqual(["abc", "def", "   "]);
+  });
+
+  test("thins the tail out going down, to almost nothing on its last row", () => {
+    let seed = 1;
+    const random = () => ((seed = (seed * 16807) % 2147483647) - 1) / 2147483646;
+    const tail = charField([Array(200).fill(false)], "x", { random, brightShare: 0, tailRows: 40 }).slice(1);
+    const share = (rows: { ch: string }[][]) =>
+      rows.flat().filter((c) => c.ch !== " ").length / rows.flat().length;
+    expect(share(tail.slice(0, 10))).toBeGreaterThan(0.6);
+    expect(share(tail.slice(15, 25))).toBeGreaterThan(share(tail.slice(30, 40)));
+    expect(share(tail.slice(-1))).toBeLessThan(0.01);
+  });
+
+  test("adds no tail by default", () => {
+    expect(charField([[false]], "a", { random: none, brightShare: 0 })).toHaveLength(1);
+  });
+
   test("refuses an empty text, which would leave the field blank", () => {
     expect(() => charField([[false]], "", { random: none, brightShare: 0 })).toThrow(/empty/);
   });
