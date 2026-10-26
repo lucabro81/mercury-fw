@@ -124,8 +124,9 @@ export type InboundTurn = {
   logPrefix: string;
   /** Set when the turn resumes after a confirmation whose result goes back to
    * the model (`ConfirmReply.resume`): the core runs the model on what it kept
-   * for the session, and `text` is ignored. With nothing kept, the turn ends
-   * with no answer. */
+   * for the session, and `text` is ignored. With nothing kept (expired, lost
+   * to a restart, or already resumed), the core answers that the confirmed
+   * action's answer is no longer available (`core.resume.gone`). */
   resumeAfterConfirm?: true;
   /**
    * When set, aborting it cancels the turn: one still waiting never starts,
