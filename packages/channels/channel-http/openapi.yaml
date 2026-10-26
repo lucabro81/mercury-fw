@@ -80,7 +80,9 @@ info:
     (a page read after the caller allowed it, for example). Confirming one by
     `POST /turn` streams the model's answer on that same stream; `POST /confirm`
     answers `resume: true`, and the client then opens
-    `POST /turn { resume: true, conversationId }` to hear it.
+    `POST /turn { resume: true, conversationId }` to hear it. The answer waits
+    five minutes and is heard once: later, after a restart, or a second time,
+    that `final`'s text says it's no longer available.
 security:
   - bearerAuth: []
 servers:

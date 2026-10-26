@@ -4,7 +4,7 @@ Gives a [Mercury](https://github.com/lucabro81/mercury-fw) agent an HTTP surface
 
 On Mercury's documentation site: [its page](https://lucabro81.github.io/mercury-fw/plugins/channel-http/).
 
-This version is written for version 6 of the channel contract, the one that brings the channels' texts in the person's language, and needs the framework at 0.59 or later, the first whose core gives channels its version (`GET /version`). A core with an older contract skips it, and the log says why.
+This version is written for version 6 of the channel contract, the one that brings the channels' texts in the person's language, and needs the framework at 0.61 or later, the first whose core says when a resumed turn's answer is no longer available (`resume` below); since 0.59 the core gives channels its version (`GET /version`). A core with an older contract skips it, and the log says why.
 
 ```bash
 bun add @mercury-fw/channel-http
@@ -51,7 +51,7 @@ Runs one conversational turn; the reply streams back as Server-Sent Events.
 |---|---|---|---|
 | `text` | string | yes, unless `opening` or `resume` | The user message. A bare confirmation token here confirms a staged action (see the `pending` event) without invoking the model; when the action hands its result back to the model, the model's answer streams on this same request. |
 | `opening` | `true` | no | The assistant speaks first, before the person writes anything: what a UI asks right after someone signs in, when `GET /me` says the assistant doesn't know their name. It introduces itself and asks how to call them, and saves the answer once they give it. For someone it already knows, the stream is a single `final` with an empty text. Needs `conversationId`; `text` is ignored. |
-| `resume` | `true` | no | The turn a `POST /confirm` answered `resume: true` for: the model answers on what the confirmed action handed back. Needs `conversationId`; `text` is ignored. With nothing to resume, the stream is a single `final` with an empty text. |
+| `resume` | `true` | no | The turn a `POST /confirm` answered `resume: true` for: the model answers on what the confirmed action handed back. Needs `conversationId`; `text` is ignored. With nothing left to resume (more than five minutes after the confirmation, a restart in between, or a turn already resumed), the stream is a single `final` whose text says the answer is no longer available, in the person's language. |
 | `conversationId` | string | no | Opaque, client-owned id that continues one of your conversations: letters, digits, `-` and `_`, up to 128 characters (a UUID fits) once surrounding whitespace is trimmed, `400` otherwise. Sent again, however long after, it continues that conversation, rebuilt from the archive if Mercury had freed it (see `HTTP_SURFACE_RESUME_MAX_CHARS`). Omitted ⇒ a fresh one-off session that can't be continued. |
 
 **Responses**: `200 text/event-stream` (the events below); `400` if `text` is missing, an opening has no `conversationId`, the body isn't JSON, or `conversationId` has other characters than the ones above.

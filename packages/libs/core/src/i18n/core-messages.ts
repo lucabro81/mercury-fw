@@ -29,6 +29,8 @@ export const CORE_MESSAGES: Messages = {
   "core.confirm.failed": "Confirmed, but it failed: {error}",
   "core.confirm.done": "Confirmed and done.",
   "core.confirm.resume": "Confirmed, picking up where I left off.",
+  // A resumed turn with nothing kept for it (`router/turn-runner.ts`).
+  "core.resume.gone": "The action was confirmed, but its answer is no longer available: ask me about it again.",
 
   // A person's login to a service (`identity/person-logins.ts`), and the words on its link (`loginLinkText`).
   "core.login.link": "Log in to {service}",

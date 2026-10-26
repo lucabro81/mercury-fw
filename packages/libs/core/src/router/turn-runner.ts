@@ -372,10 +372,11 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
       return;
     }
     const resumed = turn.resumeAfterConfirm ? deps.takeResumed?.(turn.sessionKey) : undefined;
-    // Nothing kept to resume with (already taken, or lost to a restart).
+    // Nothing kept to resume with (already taken, expired, or lost to a
+    // restart): said, since an empty answer reads like the model's.
     if (turn.resumeAfterConfirm && resumed === undefined) {
       try {
-        await sink.finalize("");
+        await sink.finalize(t("core.resume.gone"));
       } finally {
         sink.dispose();
       }

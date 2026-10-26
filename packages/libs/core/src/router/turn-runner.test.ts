@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { createTurnRunner, parseStallTimeoutMs, DEFAULT_STALL_TIMEOUT_MS, OPENING_CUE, OPENING_NOTE, PREFERRED_LANGUAGE_NOTE, PREFERRED_NAME_NOTE, RECAP_NOTE, SHOWN_LISTS_NOTE, RESUMED_LINE, type PostTurnGuard } from "./turn-runner.ts";
+import { createTurnRunner, parseStallTimeoutMs, DEFAULT_STALL_TIMEOUT_MS, OPENING_CUE, OPENING_NOTE, PREFERRED_LANGUAGE_NOTE, PREFERRED_NAME_NOTE, RECAP_NOTE, SHOWN_LISTS_NOTE, RESUMED_LINE, type PostTurnGuard, type TurnRunnerDeps } from "./turn-runner.ts";
 import type { InboundTurn, TurnSink } from "./provider.ts";
 import type { Principal } from "@mercury-fw/channel-types";
 import { createSessionHistory, type SessionHistory } from "../session/history.ts";
@@ -2126,14 +2126,23 @@ describe("createTurnRunner: a turn resumed after a confirmation", () => {
     output: { title: "A", text: "the page body" },
   };
 
-  function setup(slot: Map<string, typeof resumed>, guards: PostTurnGuard[] = []) {
+  function setup(
+    slot: Map<string, typeof resumed>,
+    guards: PostTurnGuard[] = [],
+    translatorFor?: TurnRunnerDeps["translatorFor"],
+  ) {
     const calls: Array<{ text: string; resumed: unknown }> = [];
     const captured: Array<{ role: string; content: string }> = [];
+    const histories: string[] = [];
     const runner = createTurnRunner({
       model: {} as any,
       systemPrompts: { singleUser: "single", multiUser: "multi" },
       buildTools: () => ({}),
-      getOrCreateHistory: () => fakeHistory(),
+      getOrCreateHistory: (sessionKey) => {
+        histories.push(sessionKey);
+        return fakeHistory();
+      },
+      ...(translatorFor === undefined ? {} : { translatorFor }),
       trackSession: () => {},
       registerCaptureCallback: () => {},
       maybeCapture: async () => {},
@@ -2153,7 +2162,7 @@ describe("createTurnRunner: a turn resumed after a confirmation", () => {
         return "The page says hello.";
       },
     });
-    return { runner, calls, captured };
+    return { runner, calls, captured, histories };
   }
 
   test("runs the model with the session's confirmed action and a line naming it, then empties the slot", async () => {
@@ -2169,15 +2178,49 @@ describe("createTurnRunner: a turn resumed after a confirmation", () => {
     expect(slot.size).toBe(0);
   });
 
-  test("with nothing kept for the session, ends the turn with no answer and no model call", async () => {
-    const { runner, calls } = setup(new Map([["other-session", resumed]]));
+  // #339: an empty answer here read like a model with nothing to add, so a
+  // person who came back too late (or after a restart) saw no answer, ever.
+  test("with nothing kept for the session, says the answer is gone, with no model call and no history", async () => {
+    const { runner, calls, histories } = setup(new Map([["other-session", resumed]]));
     const sink = baseSink();
 
     await runner(baseTurn({ text: "", resumeAfterConfirm: true }), sink);
 
     expect(calls).toEqual([]);
-    expect(sink.finalized).toEqual([""]);
+    expect(histories).toEqual([]);
+    expect(sink.finalized).toEqual([
+      "The action was confirmed, but its answer is no longer available: ask me about it again.",
+    ]);
     expect(sink.disposed).toBe(true);
+  });
+
+  test("says the answer is gone in the language of the turn's person", async () => {
+    const asked: Array<[string, string | undefined]> = [];
+    const { runner } = setup(new Map(), [], (key, hint) => {
+      asked.push([key, hint]);
+      return (k) => `it/${k}`;
+    });
+    const sink = baseSink();
+
+    await runner(baseTurn({ text: "", resumeAfterConfirm: true, principal: verified("u1"), languageHint: "it-IT" }), sink);
+
+    expect(asked).toEqual([["google-chat:u1", "it-IT"]]);
+    expect(sink.finalized).toEqual(["it/core.resume.gone"]);
+  });
+
+  test("a turn resumed twice answers once, then says the answer is gone", async () => {
+    const { runner, calls } = setup(new Map([["session-1", resumed]]));
+    const first = baseSink();
+    const second = baseSink();
+
+    await runner(baseTurn({ text: "", resumeAfterConfirm: true }), first);
+    await runner(baseTurn({ text: "", resumeAfterConfirm: true }), second);
+
+    expect(calls.length).toBe(1);
+    expect(first.finalized).toEqual(["The page says hello."]);
+    expect(second.finalized).toEqual([
+      "The action was confirmed, but its answer is no longer available: ask me about it again.",
+    ]);
   });
 
   test("a guard's shouldRun sees the turn's steps too, the confirmed action first", async () => {
