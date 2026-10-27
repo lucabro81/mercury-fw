@@ -177,6 +177,7 @@ mercury/                       # repo root
 │   │   └── directory-static/      # user directory: people, their channel identities and roles, from DIRECTORY_STATIC_PEOPLE
 │   ├── tools/
 │   │   ├── plugin-jira/           # Jira plugin: allowlist, SKILL.md, issue-list extractor + the typed kinds of list it emits (JiraDisplays), pinned CLI binary
+│   │   ├── plugin-confluence/     # Confluence plugin: read-only allowlist, SKILL.md, page-list/child-pages extractor + the typed kinds of list it emits (ConfluenceDisplays), pinned CLI binary
 │   │   ├── plugin-bitbucket/      # Bitbucket plugin: allowlist + pinned CLI binary (the minimal plugin shape)
 │   │   ├── plugin-atlassian-admin/ # atlassian-admin plugin: allowlist + pinned CLI binary (read-only)
 │   │   ├── plugin-web-search/     # web search plugin (no CLI, acts as no one): web_search through a WebSearchBackend package, web_fetch with host allowlist (instance + per person, in dataDir), SSRF guard, two-choice confirmation for unknown hosts, Readability extraction, sources guard

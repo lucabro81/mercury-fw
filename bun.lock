@@ -31,6 +31,7 @@
         "@mercury-fw/formatter": "workspace:*",
         "@mercury-fw/plugin-atlassian-admin": "workspace:*",
         "@mercury-fw/plugin-bitbucket": "workspace:*",
+        "@mercury-fw/plugin-confluence": "workspace:*",
         "@mercury-fw/plugin-jira": "workspace:*",
         "@mercury-fw/plugin-web-search": "workspace:*",
         "@mercury-fw/plugin-zitadel": "workspace:*",
@@ -296,6 +297,23 @@
     "packages/tools/plugin-bitbucket": {
       "name": "@mercury-fw/plugin-bitbucket",
       "version": "0.6.1",
+      "devDependencies": {
+        "@mercury-fw/cli-engine": "workspace:*",
+        "@mercury-fw/plugin-types": "workspace:*",
+        "@mercury-fw/typescript-config": "*",
+        "@mercury-fw/utils": "workspace:*",
+        "@types/bun": "^1.4.2",
+        "typescript": "^6.0.3",
+      },
+      "peerDependencies": {
+        "@mercury-fw/cli-engine": ">=0.54.0 <1.0.0",
+        "@mercury-fw/plugin-types": ">=0.55.0 <1.0.0",
+        "@mercury-fw/utils": ">=0.45.0 <1.0.0",
+      },
+    },
+    "packages/tools/plugin-confluence": {
+      "name": "@mercury-fw/plugin-confluence",
+      "version": "0.0.0",
       "devDependencies": {
         "@mercury-fw/cli-engine": "workspace:*",
         "@mercury-fw/plugin-types": "workspace:*",
@@ -679,6 +697,8 @@
     "@mercury-fw/plugin-atlassian-admin": ["@mercury-fw/plugin-atlassian-admin@workspace:packages/tools/plugin-atlassian-admin"],
 
     "@mercury-fw/plugin-bitbucket": ["@mercury-fw/plugin-bitbucket@workspace:packages/tools/plugin-bitbucket"],
+
+    "@mercury-fw/plugin-confluence": ["@mercury-fw/plugin-confluence@workspace:packages/tools/plugin-confluence"],
 
     "@mercury-fw/plugin-jira": ["@mercury-fw/plugin-jira@workspace:packages/tools/plugin-jira"],
 

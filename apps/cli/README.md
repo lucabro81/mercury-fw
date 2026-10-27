@@ -63,7 +63,7 @@ Then it runs `bun install` in the app and creates a git repository on `main` wit
 | `--assistant-name <name>` | The assistant's name (default `Mercury`). |
 | `--role <text>` | Completes "You are <name>, …" (default `an internal assistant`). |
 | `--channels <ids>` | Comma-separated: `google-chat`, `http`. |
-| `--plugins <ids>` | Comma-separated: `jira`, `bitbucket`, `atlassian-admin`, `zitadel`, `web-search` (with a SearXNG service next to the app: set `SEARXNG_SECRET` in the env file). |
+| `--plugins <ids>` | Comma-separated: `jira`, `bitbucket`, `atlassian-admin`, `zitadel`, `web-search` (with a SearXNG service next to the app: set `SEARXNG_SECRET` in the env file), `confluence`. |
 | `--auth <id>` | The HTTP channel's auth provider, `oidc` or `static`: required with `http`, refused without it, since the channel doesn't start without one. The wizard asks for it once `http` is chosen. |
 | `--directory <id>` | The user directory, `static` or `zitadel`: who the people are and their roles. Without one, the person is whoever the channel says, with no roles. |
 | `--local-packages <folder>` | Installs the packages packed in `<folder>` (`bun pm pack`) instead of the registry's, as [`mfw local-packages`](#mfw-local-packages-folder--mfw-local-packages---off) does on an existing app: their versions come from the tarballs, so a package that isn't published yet works too, and no newer `mfw` is looked up on the registry. For trying unreleased packages in a new app; the test bed makes its apps this way. |

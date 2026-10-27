@@ -106,6 +106,7 @@ The first-party plugins, channels and auth providers, each with its own version:
 | Package | What it does |
 |---|---|
 | [`@mercury-fw/plugin-jira`](packages/tools/plugin-jira) | Jira through the `jira` CLI: searches, issue changes, typed issue lists, and deletion only after confirmation. |
+| [`@mercury-fw/plugin-confluence`](packages/tools/plugin-confluence) | Confluence through the `confluence` CLI, read-only, as the person: searches, pages as Markdown, a page's children and comments, typed page lists. |
 | [`@mercury-fw/plugin-bitbucket`](packages/tools/plugin-bitbucket) | Bitbucket pull requests through the `bitbucket` CLI, read-only. |
 | [`@mercury-fw/plugin-atlassian-admin`](packages/tools/plugin-atlassian-admin) | User lookup in an Atlassian organization through the `atlassian-admin` CLI, read-only. |
 | [`@mercury-fw/plugin-web-search`](packages/tools/plugin-web-search) | Web search through a backend of the app's choice, and the pages it finds, read only on hosts the instance or the person allowed. |

@@ -1,0 +1,17 @@
+{
+  "binary": "confluence",
+  "commands": [
+    { "prefix": ["page", "search"], "confirm": false, "mutating": false },
+    { "prefix": ["page", "get"], "confirm": false, "mutating": false },
+    { "prefix": ["page", "children"], "confirm": false, "mutating": false },
+    { "prefix": ["page", "ancestors"], "confirm": false, "mutating": false },
+    { "prefix": ["page", "comments"], "confirm": false, "mutating": false },
+    { "prefix": ["space", "list"], "confirm": false, "mutating": false },
+    { "prefix": ["space", "get"], "confirm": false, "mutating": false },
+    { "prefix": ["doctor"], "confirm": false, "mutating": false },
+    { "prefix": ["auth", "whoami"], "confirm": false, "mutating": false }
+  ],
+  "globalFlags": [
+    { "flag": "--select", "takesValue": true }
+  ]
+}
