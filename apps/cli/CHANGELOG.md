@@ -1,5 +1,16 @@
 # @mercury-fw/cli
 
+## 0.62.0
+
+### Minor Changes
+
+- 96eb1a8: - `mfw create` offers the Confluence plugin (`--plugins confluence`), wrapped in the formatter with a starting rule for its search results and one for a page's children, and their empty texts in `locales/en.json`.
+
+### Patch Changes
+
+- @mercury-fw/core@0.62.0
+- @mercury-fw/utils@0.62.0
+
 ## 0.61.0
 
 ### Patch Changes

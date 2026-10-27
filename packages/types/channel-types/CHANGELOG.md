@@ -1,5 +1,11 @@
 # @mercury-fw/channel-types
 
+## 0.62.0
+
+### Patch Changes
+
+- @mercury-fw/plugin-types@0.62.0
+
 ## 0.61.0
 
 ### Minor Changes
