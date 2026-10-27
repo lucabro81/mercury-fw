@@ -1,0 +1,82 @@
+---
+title: Confluence
+description: Searches and reads Confluence pages, their children and comments, and spaces, read-only.
+---
+
+import PluginFacts from "../../../components/PluginFacts.astro";
+
+<PluginFacts slug="plugin-confluence" />
+
+The agent reads Confluence through the `confluence` command-line tool, which the package downloads when it installs
+(an exact version, so every app runs the one the plugin was tested with). It can search pages with Confluence CQL
+(Confluence's query language), read a page, which the tool turns into Markdown so the model reads text instead of
+Confluence's own markup, list a page's children to browse a space, tell where a page sits, and read its comments.
+It's read-only: the tool can also create and change pages, but the plugin never lets those commands run.
+
+## Adding it
+
+An app created with `mfw create --plugins confluence` has everything below already. By hand:
+
+1. `bun add @mercury-fw/plugin-confluence`, and list it in `trustedDependencies` in the app's `package.json`: Bun
+   runs a package's install script only when it's trusted, and that script downloads the tool.
+2. Declare it, wrapped in the formatter so its two lists, a search's pages and a page's children, read the way you
+   want:
+
+   ```ts title="mercury.config.ts"
+   import { formatterPlugin, formatter } from "@mercury-fw/formatter";
+   import { confluencePlugin, type ConfluenceDisplays } from "@mercury-fw/plugin-confluence";
+
+   plugins: [
+     formatterPlugin(
+       confluencePlugin,
+       formatter<ConfluenceDisplays>({
+         "page-list": {
+           item: (page) => `${page.title}${page.space ? ` (${page.space})` : ""}${page.url ? `\n${page.url}` : ""}`,
+           empty: (t) => t("app.confluence.no-pages"),
+         },
+         "child-pages": {
+           item: (child) => `${child.title}${child.type && child.type !== "page" ? ` [${child.type}]` : ""}${child.url ? `\n${child.url}` : ""}`,
+           empty: (t) => t("app.confluence.no-children"),
+         },
+       }),
+     ),
+   ],
+   ```
+
+   Each search result also has an `excerpt`, the text around the match, if you want it in the list. A child's
+   `type` tells a page from a folder or a whiteboard, and only a page has a `url`.
+
+   `app.confluence.no-pages` and `app.confluence.no-children` are the app's own texts:
+   `{ "app.confluence.no-pages": "No matching pages.", "app.confluence.no-children": "This page has no child pages." }`
+   in `locales/en.json`, translated in its other [language files](../../concepts/languages/). A plain string works
+   too.
+
+There's no environment variable to set: the links come from the tool, which knows the Confluence site each login
+belongs to.
+
+## Logins
+
+The plugin acts as the person (`actsAs: "person"`): every command runs with the Confluence account of whoever the
+agent is talking to, so they see exactly what their account can. In the terminal there's no person, and commands run
+as a Confluence **service account**.
+
+Two things are set up once, on Atlassian's side and then in the app's container:
+
+- the service account, created by an organization admin in admin.atlassian.com, which the terminal runs as;
+- the app people log in through, created on developer.atlassian.com, with
+  `<HTTP_SURFACE_PUBLIC_URL>/login/callback` among its callback addresses.
+
+Both need the permissions (Atlassian calls them scopes) the tool asks for when it logs in, listed in the
+[package's README](https://github.com/lucabro81/mercury-fw/tree/main/packages/tools/plugin-confluence#credentials).
+Two of them allow writing: the plugin never uses them, but the tool asks for them, and a login without them is
+refused. The [confluence tool's README](https://github.com/lucabro81/CLI-monorepo/tree/main/crates/confluence#setup)
+has the steps on Atlassian's side. Then:
+
+```bash
+mfw credentials setup @mercury-fw/plugin-confluence
+mfw credentials setup @mercury-fw/plugin-confluence --user-app
+mfw credentials check @mercury-fw/plugin-confluence
+```
+
+People log in on their own: the first time someone asks for something in Confluence, the agent tells them, and the
+[HTTP channel](../channel-http/) shows them the link.

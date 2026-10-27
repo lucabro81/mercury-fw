@@ -36,7 +36,7 @@ Then it runs `bun install` and makes a git repository with a first commit (nothi
 | `--assistant-name <name>` | The assistant's name (default `Mercury`). |
 | `--role <text>` | Completes "You are <name>, …" (default `an internal assistant`). |
 | `--channels <ids>` | Comma-separated: `google-chat`, `http`. |
-| `--plugins <ids>` | Comma-separated: `jira`, `bitbucket`, `atlassian-admin`, `zitadel`, `web-search`. |
+| `--plugins <ids>` | Comma-separated: `jira`, `bitbucket`, `atlassian-admin`, `zitadel`, `web-search`, `confluence`. |
 | `--auth <id>` | The HTTP channel's auth provider, `oidc` or `static`. Required with `http`. |
 | `--directory <id>` | The user directory, `static` or `zitadel`. |
 | `--local-packages <folder>` | Installs packages packed in `<folder>` instead of the registry's, to try unreleased ones. |
