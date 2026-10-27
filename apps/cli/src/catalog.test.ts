@@ -19,6 +19,7 @@ describe("CATALOG", () => {
       "tool:atlassian-admin",
       "tool:zitadel",
       "tool:web-search",
+      "tool:confluence",
       "directory:static",
       "directory:zitadel",
     ]);

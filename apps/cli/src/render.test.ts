@@ -27,6 +27,7 @@ const versions: Record<string, string> = {
   "@mercury-fw/directory-static": "0.1.0",
   "@mercury-fw/plugin-web-search": "0.1.0",
   "@mercury-fw/web-search-searxng": "0.1.0",
+  "@mercury-fw/plugin-confluence": "0.1.0",
 };
 
 const input = (over: Partial<RenderInput> = {}): RenderInput => ({
@@ -201,6 +202,45 @@ describe("renderApp: mercury.config.ts", () => {
     const config = renderApp(twice).get("mercury.config.ts") ?? "";
     expect(config.split('from "@mercury-fw/plugin-bitbucket"').length - 1).toBe(1);
     expect(config).toContain("  plugins: [\n    bitbucketPlugin,\n  ],\n");
+  });
+
+  // #348: Confluence hands over two lists, so its plugin is wrapped with a
+  // starting rule for each, and their empty texts are the app's.
+  test("confluence: wrapped in the formatter with a rule for each of its lists", () => {
+    const app = renderApp(input({ plugins: ["confluence"] }));
+    const config = app.get("mercury.config.ts") ?? "";
+    expect(config).toContain('import { confluencePlugin, type ConfluenceDisplays } from "@mercury-fw/plugin-confluence";\n');
+    expect(config).toContain(
+      [
+        "/** One page in a Confluence search result: its title, its space in parentheses",
+        " * when there is one, and its link on its own line. A starting point: change it",
+        " * to change how Confluence search results read (each item also has an excerpt). */",
+        'const confluencePageLine = (page: ConfluenceDisplays["page-list"]) =>',
+        '  `${page.title}${page.space ? ` (${page.space})` : ""}${page.url ? `\\n${page.url}` : ""}`;',
+        "",
+        "/** One child of a Confluence page: its title, its type in brackets when it isn't",
+        " * a page (a folder, a whiteboard), and its link on its own line when it has one. */",
+        'const confluenceChildLine = (child: ConfluenceDisplays["child-pages"]) =>',
+        '  `${child.title}${child.type && child.type !== "page" ? ` [${child.type}]` : ""}${child.url ? `\\n${child.url}` : ""}`;',
+      ].join("\n"),
+    );
+    expect(config).toContain(
+      [
+        "    formatterPlugin(",
+        "      confluencePlugin,",
+        "      formatter<ConfluenceDisplays>({",
+        '        "page-list": { item: confluencePageLine, empty: (t) => t("app.confluence.no-pages") },',
+        '        "child-pages": { item: confluenceChildLine, empty: (t) => t("app.confluence.no-children") },',
+        "      }),",
+        "    ),",
+      ].join("\n"),
+    );
+    expect(JSON.parse(app.get("locales/en.json")!)).toEqual({
+      "app.confluence.no-pages": "No matching pages.",
+      "app.confluence.no-children": "This page has no child pages.",
+    });
+    expect(JSON.parse(app.get("package.json")!).trustedDependencies).toContain("@mercury-fw/plugin-confluence");
+    expect(app.get(".env.example")).not.toContain("CONFLUENCE");
   });
 
   test("without jira there is no formatter at all", () => {

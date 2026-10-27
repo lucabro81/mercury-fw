@@ -188,6 +188,33 @@ export const CATALOG: CatalogEntry[] = [
     files: { "searxng/settings.yml": SEARXNG_SETTINGS },
   },
   {
+    id: "confluence",
+    kind: "tool",
+    package: "@mercury-fw/plugin-confluence",
+    exportName: "confluencePlugin",
+    env: [],
+    formatter: {
+      displaysType: "ConfluenceDisplays",
+      helpers: [
+        "/** One page in a Confluence search result: its title, its space in parentheses",
+        " * when there is one, and its link on its own line. A starting point: change it",
+        " * to change how Confluence search results read (each item also has an excerpt). */",
+        'const confluencePageLine = (page: ConfluenceDisplays["page-list"]) =>',
+        '  `${page.title}${page.space ? ` (${page.space})` : ""}${page.url ? `\\n${page.url}` : ""}`;',
+        "",
+        "/** One child of a Confluence page: its title, its type in brackets when it isn't",
+        " * a page (a folder, a whiteboard), and its link on its own line when it has one. */",
+        'const confluenceChildLine = (child: ConfluenceDisplays["child-pages"]) =>',
+        '  `${child.title}${child.type && child.type !== "page" ? ` [${child.type}]` : ""}${child.url ? `\\n${child.url}` : ""}`;',
+      ].join("\n"),
+      rules: [
+        '"page-list": { item: confluencePageLine, empty: (t) => t("app.confluence.no-pages") },',
+        '"child-pages": { item: confluenceChildLine, empty: (t) => t("app.confluence.no-children") },',
+      ],
+      messages: { "app.confluence.no-pages": "No matching pages.", "app.confluence.no-children": "This page has no child pages." },
+    },
+  },
+  {
     id: "static",
     kind: "directory",
     package: "@mercury-fw/directory-static",

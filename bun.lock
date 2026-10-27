@@ -31,6 +31,7 @@
         "@mercury-fw/formatter": "workspace:*",
         "@mercury-fw/plugin-atlassian-admin": "workspace:*",
         "@mercury-fw/plugin-bitbucket": "workspace:*",
+        "@mercury-fw/plugin-confluence": "workspace:*",
         "@mercury-fw/plugin-jira": "workspace:*",
         "@mercury-fw/plugin-web-search": "workspace:*",
         "@mercury-fw/plugin-zitadel": "workspace:*",
