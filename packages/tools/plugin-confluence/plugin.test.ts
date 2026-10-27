@@ -49,6 +49,14 @@ describe("confluencePlugin", () => {
     expect(c.postTurnGuards ?? []).toEqual([]);
   });
 
+  it("contributes nothing, and says why in the log, when its allowlist doesn't validate", () => {
+    const logs: string[] = [];
+    const plugin = createConfluencePlugin({ cliConfig: { binary: "confluence", commands: "not a list" } });
+    expect(plugin.build!({ model: MODEL, env: {}, log: (line) => logs.push(line) })).toEqual({});
+    expect(logs).toHaveLength(1);
+    expect(logs[0]).toStartWith("confluence allowlist failed to load, confluence tool not contributed: ");
+  });
+
   it("needs no environment variable: the links come from the CLI", () => {
     expect(() => confluencePlugin.build!({ model: MODEL, env: {}, log: noLog })).not.toThrow();
   });
@@ -105,6 +113,12 @@ describe("confluencePlugin", () => {
 
 describe("the confluence skill agrees with the CLI", () => {
   const body = confluencePlugin.skills![0]!.body;
+
+  // The CLI prints doctor, auth whoami and space get in full whatever the
+  // select: the skill names all three, so the model isn't told doctor needs one.
+  it("names the commands that print without --select", () => {
+    expect(body).toContain("Every command but `space get`, `doctor` and `auth whoami` REQUIRES `--select`");
+  });
 
   it("gives the exact selects the two lists are built from", () => {
     expect(body).toContain(`--select ${CONFLUENCE_PAGE_LIST_SELECT}`);

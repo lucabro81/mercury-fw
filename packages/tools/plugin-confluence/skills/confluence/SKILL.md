@@ -6,7 +6,7 @@ description: Search and read Confluence via the confluenceCommand tool — Confl
 You have access to the confluenceCommand tool, which runs the `confluence` CLI, read-only: searching pages, reading a page, its children, its ancestors and its comments, and spaces. It can't create, change or delete anything.
 
 HOW THE CLI PRINTS (read this first):
-- Every command but `space get` REQUIRES `--select`: without it the CLI refuses to print and reports the response's top-level fields instead.
+- Every command but `space get`, `doctor` and `auth whoami` REQUIRES `--select`: without it the CLI refuses to print and reports the response's top-level fields instead.
 - `--select` takes comma-separated dot-notation paths from the root of the response; arrays are projected element by element, so `results.content.title` gives every result's title.
 - A search — always start from exactly this:
   `confluence page search --cql 'type = page AND text ~ "deploy"' --select results.content.id,results.content.title,results.content.type,results.resultGlobalContainer.title,results.excerpt,results.link,totalSize`

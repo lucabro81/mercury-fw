@@ -47,10 +47,11 @@ function commandOf(input: unknown): string | undefined {
   return undefined;
 }
 
-/** Builds the plugin. `runCliFn` is injectable for tests; the default spawns
- * the pinned binary. */
-export function createConfluencePlugin(deps: { runCliFn?: typeof runCli } = {}): Plugin {
+/** Builds the plugin. `runCliFn` and `cliConfig` are injectable for tests; the
+ * defaults spawn the pinned binary and use the shipped allowlist. */
+export function createConfluencePlugin(deps: { runCliFn?: typeof runCli; cliConfig?: unknown } = {}): Plugin {
   const runCliFn = deps.runCliFn ?? runCli;
+  const cliConfig = deps.cliConfig ?? confluenceCliConfig;
   return {
     apiVersion: PLUGIN_API_VERSION,
     name: "confluence",
@@ -63,7 +64,7 @@ export function createConfluencePlugin(deps: { runCliFn?: typeof runCli } = {}):
       // Schema-only validation: the pinned binary is co-shipped with this
       // allowlist, so no `--version` check (see `parseCliConfig`). A config
       // that fails schema means no tool, rather than an unvalidated one.
-      const loaded = parseCliConfig(confluenceCliConfig);
+      const loaded = parseCliConfig(cliConfig);
       if (!loaded.ok) {
         ctx.log(`confluence allowlist failed to load, confluence tool not contributed: ${loaded.reason}`);
         return {};
