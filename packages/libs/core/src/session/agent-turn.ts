@@ -51,7 +51,8 @@
 import { isStepCount, type JSONValue, type LanguageModel, type ModelMessage, type StopCondition, type Tool } from "ai";
 import type { ResumedAction } from "@mercury-fw/confirm-engine";
 import { generateText, streamText } from "ai-sdk-ollama";
-import type { SessionHistory } from "./history.ts";
+import type { Message, SessionHistory } from "./history.ts";
+import { callMessages, callRecords, type CallRecord } from "./call-record.ts";
 import type { StepInfo } from "./step-info.ts";
 import { detectPendingConfirmation } from "./pending-confirmation.ts";
 import { CORE_MESSAGES } from "../i18n/core-messages.ts";
@@ -91,6 +92,34 @@ function resolveEmptyText(lastStep: StepInfo | undefined, note: string): string 
 function resolveHistoryText(lastStep: StepInfo | undefined, displayText: string): string {
   const pending = lastStep ? detectPendingConfirmation(lastStep) : null;
   return pending ? `[REQ:${pending.token}]` : displayText;
+}
+
+/**
+ * The turn's tool calls as the history keeps them: a resumed turn's confirmed
+ * call first, then every step's, in order. None for a turn that staged a
+ * confirmation: the resumed turn brings that call back.
+ */
+function turnCalls(steps: StepInfo[], resumed: ResumedAction | undefined): CallRecord[] {
+  if (steps.some((step) => detectPendingConfirmation(step) !== null)) return [];
+  const confirmed: StepInfo[] = resumed
+    ? [
+        {
+          toolCalls: [{ toolCallId: "resumed", toolName: resumed.toolName, input: resumed.input }],
+          toolResults: [{ toolCallId: "resumed", toolName: resumed.toolName, output: resumed.output }],
+          content: [],
+        },
+      ]
+    : [];
+  return callRecords([...confirmed, ...steps]);
+}
+
+/** The history as the model reads it: each past answer's calls, as tool calls and their reduced results, before its text. */
+function historyMessages(messages: Message[]): ModelMessage[] {
+  return messages.flatMap((m, i): ModelMessage[] =>
+    m.role === "assistant" && m.calls !== undefined
+      ? [...callMessages(m.calls, `history-${i}`), { role: "assistant", content: m.content }]
+      : [{ role: m.role, content: m.content }],
+  );
 }
 
 /**
@@ -373,8 +402,9 @@ export async function runTurn(
 /** `runTurn`'s model call, once the user's message is recorded: records the answer, or `ABORTED_MARKER` for an aborted call that returned. */
 async function generateAnswer(history: SessionHistory, deps: Parameters<typeof runTurn>[2]): Promise<string> {
   const messages: ModelMessage[] = deps.resumed
-    ? [...history.getMessages(), ...resumedMessages(deps.resumed)]
-    : history.getMessages();
+    ? [...historyMessages(history.getMessages()), ...resumedMessages(deps.resumed)]
+    : historyMessages(history.getMessages());
+  const steps: StepInfo[] = [];
 
   if (deps.onTextChunk || deps.onReasoningChunk) {
     const stream = deps.streamTextFn ?? defaultStreamTextFn;
@@ -387,6 +417,7 @@ async function generateAnswer(history: SessionHistory, deps: Parameters<typeof r
       abortSignal: deps.abortSignal,
       onStepEnd: (step) => {
         lastStep = step;
+        steps.push(step);
         deps.onStepFinish?.(step);
       },
     });
@@ -449,7 +480,7 @@ async function generateAnswer(history: SessionHistory, deps: Parameters<typeof r
       if (fullText.length > 0) deps.onPendingNote?.();
     }
 
-    await history.addAssistantMessage(resolveHistoryText(lastStep, fullText));
+    await history.addAssistantMessage(resolveHistoryText(lastStep, fullText), turnCalls(steps, deps.resumed));
     return fullText;
   }
 
@@ -463,6 +494,7 @@ async function generateAnswer(history: SessionHistory, deps: Parameters<typeof r
     abortSignal: deps.abortSignal,
     onStepEnd: (step) => {
       lastStep = step;
+      steps.push(step);
       deps.onStepFinish?.(step);
     },
   });
@@ -475,6 +507,6 @@ async function generateAnswer(history: SessionHistory, deps: Parameters<typeof r
 
   const text = result.text.trim().length === 0 ? resolveEmptyText(lastStep, deps.pendingNote ?? DEFAULT_PENDING_NOTE) : result.text;
   if (result.text.trim().length === 0 && text.length > 0) deps.onPendingNote?.();
-  await history.addAssistantMessage(resolveHistoryText(lastStep, text));
+  await history.addAssistantMessage(resolveHistoryText(lastStep, text), turnCalls(steps, deps.resumed));
   return text;
 }
