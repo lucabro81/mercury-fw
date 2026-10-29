@@ -17,6 +17,7 @@
  * subset of the real client every store in this directory shares.
  */
 import type { QdrantClientLike } from "./episodic-store.ts";
+import type { CallRecord } from "../session/call-record.ts";
 
 /**
  * Creates `collectionName` (cosine distance, `vectorSize`-dim) if it
@@ -50,7 +51,9 @@ export async function ensureVerbatimCollection(
  * A single verbatim message as it was emitted in chat. `timestamp` (ISO 8601,
  * ms precision) is the durable ordering key. `content` is what the model said;
  * `displays` are what the turn showed after it (the lists the model chose to
- * `present`), absent on messages archived before they were kept.
+ * `present`), absent on messages archived before they were kept. `calls` are
+ * the tool calls an answer was written from, reduced (`call-record.ts`): they
+ * go back to the model with a resumed conversation, never to the person.
  */
 export type VerbatimMessage = {
   userId: string;
@@ -58,6 +61,7 @@ export type VerbatimMessage = {
   role: "user" | "assistant";
   content: string;
   displays?: string[];
+  calls?: CallRecord[];
   timestamp: string;
 };
 
@@ -70,9 +74,9 @@ export function shownText(content: string, displays: string[] | undefined): stri
   return [content, ...(displays ?? [])].filter((part) => part !== "").join("\n\n");
 }
 
-/** `m` as the person saw it, for whatever renders a conversation: the displays folded into `content`. */
+/** `m` as the person saw it, for whatever renders a conversation: the displays folded into `content`, no calls. */
 function asShown(m: VerbatimMessage): VerbatimMessage {
-  const { displays, ...rest } = m;
+  const { displays, calls: _calls, ...rest } = m;
   return displays === undefined ? rest : { ...rest, content: shownText(m.content, displays) };
 }
 
@@ -88,6 +92,31 @@ function said(m: VerbatimMessage): boolean {
 function asSaid(m: VerbatimMessage): VerbatimMessage {
   const { displays: _displays, ...rest } = m;
   return rest;
+}
+
+/** `m` without its calls: what `recall_verbatim` quotes is what was said. */
+function withoutCalls(m: VerbatimMessage): VerbatimMessage {
+  const { calls: _calls, ...rest } = m;
+  return rest;
+}
+
+/** How much of a budget `m` takes back to the model: its text and, as JSON, its calls (as the history counts them). */
+function modelChars(m: VerbatimMessage): number {
+  return m.content.length + (m.calls === undefined ? 0 : JSON.stringify(m.calls).length);
+}
+
+/** Whether `value` looks like a list of `CallRecord`s, as `appendVerbatimMessage` stored them. */
+function isCallList(value: unknown): boolean {
+  return (
+    Array.isArray(value) &&
+    value.every(
+      (c) =>
+        c !== null &&
+        typeof c === "object" &&
+        typeof (c as { toolName?: unknown }).toolName === "string" &&
+        typeof (c as { result?: { ok?: unknown } }).result?.ok === "boolean",
+    )
+  );
 }
 
 /**
@@ -125,6 +154,7 @@ function isVerbatimMessage(payload: Record<string, unknown> | null): payload is 
     typeof payload.content === "string" &&
     (payload.displays === undefined ||
       (Array.isArray(payload.displays) && payload.displays.every((d) => typeof d === "string"))) &&
+    (payload.calls === undefined || isCallList(payload.calls)) &&
     typeof payload.timestamp === "string"
   );
 }
@@ -150,7 +180,7 @@ export async function searchVerbatim(
     limit: query.limit ?? DEFAULT_SEARCH_LIMIT,
     with_payload: true,
   });
-  return results.points.map((r) => r.payload ?? null).filter(isVerbatimMessage).filter(said).map(asSaid);
+  return results.points.map((r) => r.payload ?? null).filter(isVerbatimMessage).filter(said).map(asSaid).map(withoutCalls);
 }
 
 /**
@@ -262,14 +292,14 @@ const TAIL_SCAN_LIMIT = 200;
  * the tail, which a summary has to cover.
  */
 export type VerbatimTail = {
-  messages: Array<{ role: "user" | "assistant"; content: string; timestamp: string }>;
+  messages: Array<{ role: "user" | "assistant"; content: string; calls?: CallRecord[]; timestamp: string }>;
   complete: boolean;
   leftOutAt?: string;
 };
 
 /**
  * The newest messages of one conversation (`sessionKey`) of the person
- * `userId` whose content fits `maxChars`, in chronological order — what a
+ * `userId` whose content (calls included) fits `maxChars`, in chronological order — what a
  * resumed conversation hands back to the model. Reads at most
  * `TAIL_SCAN_LIMIT` messages, newest first, stops at the first one that
  * doesn't fit, leaves out answers that were only displays (no words to hand
@@ -301,14 +331,18 @@ export async function listVerbatimTail(
   const taken: VerbatimMessage[] = [];
   let chars = 0;
   for (const m of newestFirst) {
-    if (chars + m.content.length > query.maxChars) break;
-    chars += m.content.length;
+    if (chars + modelChars(m) > query.maxChars) break;
+    chars += modelChars(m);
     taken.push(m);
   }
   const chronological = taken.reverse();
   const firstUser = chronological.findIndex((m) => m.role === "user");
   const kept = firstUser === -1 ? [] : chronological.slice(firstUser);
-  const messages = kept.map((m) => ({ role: m.role, content: m.content, timestamp: m.timestamp }));
+  const messages = kept.map((m) =>
+    m.calls === undefined
+      ? { role: m.role, content: m.content, timestamp: m.timestamp }
+      : { role: m.role, content: m.content, calls: m.calls, timestamp: m.timestamp },
+  );
   const complete = result.points.length < TAIL_SCAN_LIMIT && messages.length === newestFirst.length;
   if (complete) return { messages, complete };
   // Newest first, the first message not kept.

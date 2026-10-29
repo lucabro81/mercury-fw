@@ -14,6 +14,7 @@ import { tool, type Tool } from "ai";
 import { z } from "zod";
 import { appendVerbatimMessage, searchVerbatim, shownText } from "./verbatim-archive-store.ts";
 import type { QdrantClientLike } from "./episodic-store.ts";
+import type { CallRecord } from "../session/call-record.ts";
 
 /**
  * One side of an exchange to archive — the provider stamps its own durable
@@ -25,6 +26,8 @@ export type VerbatimExchange = {
   role: "user" | "assistant";
   content: string;
   displays?: string[];
+  /** The tool calls an answer was written from, reduced (`../session/call-record.ts`). */
+  calls?: CallRecord[];
 };
 
 /** Per-turn identity a provider's recall tools are scoped to. `userId` is what makes recall cross-session. */

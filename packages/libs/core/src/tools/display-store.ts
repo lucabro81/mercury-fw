@@ -20,7 +20,7 @@
  * most recent are kept per session, and a day-long TTL reclaims what no
  * sweep ever closes. Each entry keeps a short label (the command that built
  * it), so `shown` can tell the model which lists it has already shown: the
- * history keeps only the text of its answers, never the lists.
+ * history never keeps the lists.
  */
 export type DisplayStore = {
   /** Stashes `artifact` for `sessionKey`, with what it is (`label`), and returns a fresh ref. */

@@ -1,6 +1,7 @@
 import { describe, it, expect } from "bun:test";
 import { runTurn, buildGenerateTextParams, buildStreamTextParams, ABORTED_MARKER } from "./agent-turn.ts";
 import { CORE_MESSAGES } from "../i18n/core-messages.ts";
+import { HISTORY_CALL_NOTE } from "./call-record.ts";
 
 /** The stand-in for an answer the model didn't write, in English. */
 const PENDING_CONFIRMATION_NOTE = CORE_MESSAGES["core.pending.note"]!;
@@ -962,9 +963,14 @@ describe("runTurn — resumed after a confirmation", () => {
     expect(text).toBe("Here is what the page says.");
     expect(seen[seen.length - 3]).toEqual({ role: "user", content: "[Confermato: fetch https://example.org/a — Solo questa volta]" });
     expectResumedPair(seen);
+    // The confirmed call stays, reduced: what it ran and how it went, not the page.
     expect(history.getMessages()).toEqual([
       { role: "user", content: "[Confermato: fetch https://example.org/a — Solo questa volta]" },
-      { role: "assistant", content: "Here is what the page says." },
+      {
+        role: "assistant",
+        content: "Here is what the page says.",
+        calls: [{ toolName: "web_fetch", input: { url: "https://example.org/a" }, result: { ok: true, ran: '{"url":"https://example.org/a"}' } }],
+      },
     ]);
   });
 
@@ -1117,5 +1123,174 @@ describe("runTurn — an aborted call", () => {
       },
     });
     expect(noted).toBe(false);
+  });
+});
+
+// A turn's tool calls stay in the history, and later turns get them back as
+// real tool messages with reduced results: with plain-text answers only, the
+// model stops calling tools and invents the data (#351, #352).
+describe("runTurn — the turn's tool calls in the history", () => {
+  const searchStep: StepInfo = {
+    toolCalls: [{ toolCallId: "a", toolName: "confluenceCommand", input: { command: "confluence page search --cql 'text ~ \"docker\"'" } }],
+    toolResults: [{ toolCallId: "a", toolName: "confluenceCommand", output: { ok: true, data: { results: [{ id: "1101" }] }, displayRef: "d1" } }],
+    content: [],
+  };
+  const presentStep: StepInfo = {
+    toolCalls: [{ toolCallId: "b", toolName: "present", input: { ref: "d1" } }],
+    toolResults: [{ toolCallId: "b", toolName: "present", output: { ok: true } }],
+    content: [],
+  };
+  const searchCall = {
+    toolName: "confluenceCommand",
+    input: { command: "confluence page search --cql 'text ~ \"docker\"'" },
+    result: { ok: true, ran: "confluence page search --cql 'text ~ \"docker\"'", results: 1, displayRef: "d1" },
+  };
+  const presentCall = { toolName: "present", input: { ref: "d1" }, result: { ok: true, ran: '{"ref":"d1"}' } };
+
+  /** A non-streaming generator that runs `steps`, then answers `text`, and keeps the messages it was handed. */
+  function generating(steps: StepInfo[], text: string, seen?: { messages: ModelMessage[] }) {
+    return async (params: { messages: ModelMessage[]; onStepEnd?: (step: StepInfo) => void }) => {
+      if (seen) seen.messages = params.messages;
+      for (const step of steps) params.onStepEnd?.(step);
+      return { text };
+    };
+  }
+
+  it("records the calls of every step, in order, with the answer (non-streaming)", async () => {
+    const history = createSessionHistory(neverSummarize);
+    await runTurn(history, "docker pages?", {
+      model: "fake-model" as never,
+      tools: {},
+      system: SYSTEM,
+      generateTextFn: generating([searchStep, presentStep], "One page."),
+    });
+    expect(history.getMessages()).toEqual([
+      { role: "user", content: "docker pages?" },
+      { role: "assistant", content: "One page.", calls: [searchCall, presentCall] },
+    ]);
+  });
+
+  it("records them on the streaming path too", async () => {
+    const history = createSessionHistory(neverSummarize);
+    await runTurn(history, "docker pages?", {
+      model: "fake-model" as never,
+      tools: {},
+      system: SYSTEM,
+      streamTextFn: async (params: { onStepEnd?: (step: StepInfo) => void }) => {
+        params.onStepEnd?.(searchStep);
+        params.onStepEnd?.(presentStep);
+        return { stream: textDeltaStream(["One ", "page."]) };
+      },
+      onTextChunk: () => {},
+    });
+    expect(history.getMessages()[1]).toEqual({ role: "assistant", content: "One page.", calls: [searchCall, presentCall] });
+  });
+
+  it("hands later turns each past answer's calls as tool calls and reduced results, before its text, ids unique", async () => {
+    const history = createSessionHistory(neverSummarize);
+    const deps = { model: "fake-model" as never, tools: {}, system: SYSTEM };
+    await runTurn(history, "docker pages?", { ...deps, generateTextFn: generating([searchStep], "One page.") });
+    await runTurn(history, "show it", { ...deps, generateTextFn: generating([presentStep], "Here.") });
+    const seen = { messages: [] as ModelMessage[] };
+    await runTurn(history, "thanks", { ...deps, generateTextFn: generating([], "You're welcome.", seen) });
+
+    expect(seen.messages).toEqual([
+      { role: "user", content: "docker pages?" },
+      { role: "assistant", content: [{ type: "tool-call", toolCallId: "history-1-0", toolName: "confluenceCommand", input: searchCall.input }] },
+      {
+        role: "tool",
+        content: [
+          {
+            type: "tool-result",
+            toolCallId: "history-1-0",
+            toolName: "confluenceCommand",
+            output: { type: "json", value: { ...searchCall.result, note: HISTORY_CALL_NOTE } },
+          },
+        ],
+      },
+      { role: "assistant", content: "One page." },
+      { role: "user", content: "show it" },
+      { role: "assistant", content: [{ type: "tool-call", toolCallId: "history-3-0", toolName: "present", input: { ref: "d1" } }] },
+      {
+        role: "tool",
+        content: [
+          { type: "tool-result", toolCallId: "history-3-0", toolName: "present", output: { type: "json", value: { ...presentCall.result, note: HISTORY_CALL_NOTE } } },
+        ],
+      },
+      { role: "assistant", content: "Here." },
+      { role: "user", content: "thanks" },
+    ]);
+  });
+
+  it("hands a past answer without calls back as its text alone, with no calls field", async () => {
+    const history = createSessionHistory(neverSummarize);
+    const deps = { model: "fake-model" as never, tools: {}, system: SYSTEM };
+    await runTurn(history, "hi", { ...deps, generateTextFn: generating([], "Hello.") });
+    const seen = { messages: [] as ModelMessage[] };
+    await runTurn(history, "again", { ...deps, generateTextFn: generating([], "Hello again.", seen) });
+    expect(seen.messages).toEqual([
+      { role: "user", content: "hi" },
+      { role: "assistant", content: "Hello." },
+      { role: "user", content: "again" },
+    ]);
+  });
+
+  it("records no calls for a turn that staged a confirmation: the resumed turn brings that call back", async () => {
+    const history = createSessionHistory(neverSummarize);
+    await runTurn(history, "delete KAN-1", {
+      model: "fake-model" as never,
+      tools: {},
+      system: SYSTEM,
+      generateTextFn: generating([searchStep, PENDING_CONFIRMATION_STEP], ""),
+    });
+    expect(history.getMessages()).toEqual([
+      { role: "user", content: "delete KAN-1" },
+      { role: "assistant", content: "[REQ:TOK1]" },
+    ]);
+  });
+
+  it("records no calls for an aborted turn", async () => {
+    const ac = new AbortController();
+    const history = createSessionHistory(neverSummarize);
+    await runTurn(history, "docker pages?", {
+      model: "fake-model" as never,
+      tools: {},
+      system: SYSTEM,
+      generateTextFn: async (params: { onStepEnd?: (step: StepInfo) => void }) => {
+        params.onStepEnd?.(searchStep);
+        ac.abort();
+        return { text: "half" };
+      },
+      abortSignal: ac.signal,
+    });
+    expect(history.getMessages()).toEqual([
+      { role: "user", content: "docker pages?" },
+      { role: "assistant", content: ABORTED_MARKER },
+    ]);
+  });
+
+  it("records, for a resumed turn, the confirmed call first, then the turn's own", async () => {
+    const history = createSessionHistory(neverSummarize);
+    await runTurn(history, "[Confermato: fetch https://example.org/a — Solo questa volta]", {
+      model: "fake-model" as never,
+      tools: {},
+      system: SYSTEM,
+      generateTextFn: generating([presentStep], "Here is the page."),
+      resumed: {
+        describe: "fetch https://example.org/a",
+        label: "Solo questa volta",
+        toolName: "web_fetch",
+        input: { url: "https://example.org/a" },
+        output: { ok: true, title: "A", text: "the page body" },
+      },
+    });
+    expect(history.getMessages()[1]).toEqual({
+      role: "assistant",
+      content: "Here is the page.",
+      calls: [
+        { toolName: "web_fetch", input: { url: "https://example.org/a" }, result: { ok: true, ran: '{"url":"https://example.org/a"}' } },
+        presentCall,
+      ],
+    });
   });
 });

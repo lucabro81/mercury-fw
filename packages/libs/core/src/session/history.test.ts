@@ -1,6 +1,7 @@
 import { describe, it, expect } from "bun:test";
 import { createSessionHistory, MAX_HISTORY_CHARS } from "./history.ts";
 import type { Message } from "./history.ts";
+import type { CallRecord } from "./call-record.ts";
 
 function fakeSummarizer(spy?: { calls: Message[][] }) {
   return async (messages: Message[]): Promise<string> => {
@@ -374,6 +375,53 @@ describe("createSessionHistory", () => {
       const history = createSessionHistory(fakeSummarizer(), undefined, { current: "", recap: "primer" });
       await history.addUserMessage("hi");
       expect(history.getCapturable()).toEqual(history.getMessages());
+    });
+  });
+  // The calls are what later turns see of this one's tools: lost, the history
+  // shows only plain-text answers and the model stops calling tools (#351, #352).
+  describe("calls (#352)", () => {
+    const calls: CallRecord[] = [
+      { toolName: "confluenceCommand", input: { command: "confluence page comments 1102" }, result: { ok: true, ran: "confluence page comments 1102", results: 2 } },
+    ];
+
+    it("keeps an answer's tool calls with it, and leaves them off a message that had none", async () => {
+      const history = createSessionHistory(fakeSummarizer());
+      await history.addUserMessage("comments?");
+      await history.addAssistantMessage("Two comments.", calls);
+      await history.addUserMessage("thanks");
+      await history.addAssistantMessage("You're welcome.", []);
+      expect(history.getMessages()).toEqual([
+        { role: "user", content: "comments?" },
+        { role: "assistant", content: "Two comments.", calls },
+        { role: "user", content: "thanks" },
+        { role: "assistant", content: "You're welcome." },
+      ]);
+    });
+
+    it("keeps the calls when replaceLastAssistantMessage corrects the answer's text", async () => {
+      const history = createSessionHistory(fakeSummarizer());
+      await history.addUserMessage("comments?");
+      await history.addAssistantMessage("Two comment.", calls);
+      history.replaceLastAssistantMessage("Two comments.");
+      expect(history.getMessages()[1]).toEqual({ role: "assistant", content: "Two comments.", calls });
+    });
+
+    it("counts the calls toward getCharCount", async () => {
+      const history = createSessionHistory(fakeSummarizer());
+      await history.addAssistantMessage("ok", calls);
+      expect(history.getCharCount()).toBe(2 + JSON.stringify(calls).length);
+    });
+
+    it("summarizes when the calls are what crosses the threshold", async () => {
+      const spy = { calls: [] as Message[][] };
+      const history = createSessionHistory(fakeSummarizer(spy));
+      // "q", the text and the calls land exactly on the threshold: the next message crosses it.
+      const text = "x".repeat(MAX_HISTORY_CHARS - 1 - JSON.stringify(calls).length);
+      await history.addUserMessage("q");
+      await history.addAssistantMessage(text, calls);
+      expect(spy.calls).toHaveLength(0);
+      await history.addUserMessage("next");
+      expect(spy.calls).toHaveLength(1);
     });
   });
 });

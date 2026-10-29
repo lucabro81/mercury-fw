@@ -15,9 +15,14 @@
  */
 
 import type { ContextPrimer } from "./context-primer.ts";
+import type { CallRecord } from "./call-record.ts";
 
-/** A single turn's worth of conversation content. */
-export type Message = { role: "user" | "assistant"; content: string };
+/**
+ * A single turn's worth of conversation content. `calls`, on an answer, are
+ * the tool calls it was written from, reduced (`call-record.ts`): absent when
+ * there were none.
+ */
+export type Message = { role: "user" | "assistant"; content: string; calls?: CallRecord[] };
 
 /**
  * Character-count threshold (not a real tokenizer count — a `chars/4`
@@ -36,11 +41,11 @@ export const MAX_HISTORY_CHARS = 60_000;
 export type SessionHistory = {
   /** Appends a user turn, summarizing first if this push crosses the threshold. */
   addUserMessage(content: string): Promise<void>;
-  /** Appends an assistant turn, summarizing first if this push crosses the threshold. */
-  addAssistantMessage(content: string): Promise<void>;
+  /** Appends an assistant turn with the tool calls it was written from, summarizing first if this push crosses the threshold. */
+  addAssistantMessage(content: string, calls?: CallRecord[]): Promise<void>;
   /**
    * Overwrites the most recently added message with `content`, in place,
-   * if it exists and is an assistant message — used when a turn's
+   * if it exists and is an assistant message, keeping its calls — used when a turn's
    * assistant text is corrected after already being recorded (see
    * turn-runner.ts's issue-list correction). No-ops if there is no last
    * message, or if it isn't an assistant message (defensive; shouldn't
@@ -66,7 +71,7 @@ export type SessionHistory = {
   getMessages(): Message[];
   /**
    * Total character length of what `getMessages()` would currently
-   * return — a live read on how close this conversation is to
+   * return, calls counted as JSON — a live read on how close this conversation is to
    * `MAX_HISTORY_CHARS` (and so to triggering summarization). Exposed so
    * a channel can show this to a human, e.g. to tell apart "the model
    * lost track of something" from "the context is actually near full".
@@ -84,6 +89,11 @@ export type SessionHistory = {
 
 /** What a resumed conversation brings back: the summary of its older part, if any, and its newest messages. */
 export type ResumedConversation = { summary?: string; messages: Message[] };
+
+/** How much of the history `m` takes: its text and, as JSON, its calls. */
+function messageChars(m: Message): number {
+  return m.content.length + (m.calls === undefined ? 0 : JSON.stringify(m.calls).length);
+}
 
 /** Wraps a summary string as the synthetic leading message `getMessages()` prepends. */
 function summaryMessage(summary: string): Message {
@@ -140,7 +150,7 @@ export function createSessionHistory(
   async function add(message: Message): Promise<void> {
     rawMessages.push(message);
 
-    const total = rawMessages.reduce((sum, m) => sum + m.content.length, 0);
+    const total = rawMessages.reduce((sum, m) => sum + messageChars(m), 0);
     if (total > MAX_HISTORY_CHARS) {
       // Retain the trailing run from the last user message onward instead of
       // clearing everything: getMessages() for a model call always follows an
@@ -181,16 +191,17 @@ export function createSessionHistory(
 
   return {
     addUserMessage: (content) => add({ role: "user", content }),
-    addAssistantMessage: (content) => add({ role: "assistant", content }),
+    addAssistantMessage: (content, calls) =>
+      add(calls !== undefined && calls.length > 0 ? { role: "assistant", content, calls } : { role: "assistant", content }),
     replaceLastAssistantMessage: (content) => {
       const last = rawMessages[rawMessages.length - 1];
       if (last?.role === "assistant") {
-        rawMessages[rawMessages.length - 1] = { role: "assistant", content };
+        rawMessages[rawMessages.length - 1] = { ...last, content };
       }
     },
     primer: () => (primer && (primer.current || primer.recap) ? primer : undefined),
     getMessages,
     getCapturable: () => [...leadingMessages(false), ...rawMessages.slice(restoredCount)],
-    getCharCount: () => getMessages().reduce((sum, m) => sum + m.content.length, 0),
+    getCharCount: () => getMessages().reduce((sum, m) => sum + messageChars(m), 0),
   };
 }
