@@ -117,7 +117,7 @@ All `GET`, all JSON, all reporting state already held in-process. They need an a
 | `GET /wiki/list` | `{ files: [...] }` — `curated/...` and `personal/...` paths |
 | `GET /wiki/read?path=<path>` | `{ content }` — a path as `/wiki/list` gives it; `400` if `path` is missing, `404` if it isn't among yours |
 | `GET /wiki/grep?pattern=<regex>` | `{ matches: [...] }` — `400` if `pattern` is missing |
-| `GET /memory/scroll?collection=<name>&limit=<n>&offset=<cursor>` | one page of your points in a collection kept per person (verbatim archive, episodic memory, semantic facts); `400` for any other collection |
+| `GET /memory/scroll?collection=<name>&limit=<n>&offset=<cursor>` | one page of your points in a collection kept per person (verbatim archive, episodic memory, semantic facts), each with its whole payload (a verbatim answer's `displays` and `calls` included); `400` for any other collection |
 | `GET /openapi.yaml` | the OpenAPI document for this surface (`text/yaml`) |
 
 Conversation history and the conversation list are backed by the durable verbatim archive; they degrade to empty when the vector store is unreachable.
