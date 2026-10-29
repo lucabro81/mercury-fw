@@ -79,8 +79,8 @@ export const RECAP_NOTE = (recap: string): string =>
 
 /**
  * Appended last to a turn's prompt when lists were shown in the conversation:
- * the history keeps only the text of each answer, so without it the model no
- * longer knows which list it showed. Refs and labels only, never the lists.
+ * the history never keeps a list, so without it the model no longer knows
+ * which list it showed. Refs and labels only, never the lists.
  */
 export const SHOWN_LISTS_NOTE = (shown: Array<{ ref: string; label: string }>): string =>
   [

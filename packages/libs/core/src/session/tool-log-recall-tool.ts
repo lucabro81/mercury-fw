@@ -1,11 +1,11 @@
 /**
  * Model-invocable recall of this conversation's own past tool calls —
  * same split as `wiki-tools.ts` wrapping plain functions in `tool()`.
- * Exists because `SessionHistory` (`history.ts`) only ever persists the
- * final assistant text of a turn, never the tool-call trace: asked to
- * recall exactly what it ran, the model otherwise has no ground truth in
- * its own context and reconstructs a plausible-looking (and sometimes
- * wrong) answer instead of quoting the real one. Backed by
+ * Exists because `SessionHistory` (`history.ts`) keeps a turn's tool calls
+ * reduced (`call-record.ts`: what each ran and how it went), never what they
+ * returned: asked what a call gave back, the model otherwise has no ground
+ * truth in its own context and reconstructs a plausible-looking (and
+ * sometimes wrong) answer instead of quoting the real one. Backed by
  * `tool-log-buffer.ts`, filtered to the calling person and session only —
  * never another conversation's history.
  */

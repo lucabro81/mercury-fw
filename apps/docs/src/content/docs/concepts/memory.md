@@ -14,6 +14,9 @@ window**). So remembering is the framework's job, and Mercury keeps three kinds 
 The **history** is the conversation as the model gets it. It's the one memory the agent can't work without, and it
 lives in the process's memory while the conversation is active.
 
+Besides what was said, it keeps the tools the model called for each answer: what each call ran and how it went, not
+what came back. On later turns the model sees it looked things up, and runs the tool again when it needs the data.
+
 When it grows past about 60,000 characters, Mercury replaces its older part with a **summary** the model writes,
 and the conversation goes on from the summary plus the recent messages. Every message is also kept word for word in
 an **archive**, which a chat interface shows when it reopens a conversation, and which the model can search when it

@@ -128,7 +128,7 @@ export function buildSystemPrompt(opts: {
     [
       "You have access to the recall_tool_calls tool.",
       "DO:",
-      "- If asked what you actually ran/queried/did earlier in this same conversation, call recall_tool_calls and quote it verbatim — you have no memory of your own past tool calls otherwise, only your own prior reply text, so reconstructing from memory instead of calling this tool risks getting it wrong.",
+      "- If asked what you actually ran/queried/did earlier in this same conversation, call recall_tool_calls and quote it verbatim — your earlier turns show which tools you called and how they went, but not what they returned, so reconstructing from memory instead of calling this tool risks getting it wrong.",
     ].join("\n"),
   );
   lines.push(
