@@ -93,10 +93,12 @@ export async function resumeConversation(
   if (!stamped.complete) {
     const trimmed = trimToFit(stamped, query.maxChars - Math.floor(query.maxChars / SUMMARY_SHARE));
     kept = trimmed.messages;
-    const left = query.maxChars - kept.reduce((sum, m) => sum + m.content.length, 0);
+    const left = query.maxChars - kept.reduce((sum, m) => sum + tailChars(m), 0);
     summary = await summaryBefore(trimmed, left, query, deps);
   }
-  const messages: Message[] = kept.map((m) => ({ role: m.role, content: m.content }));
+  const messages: Message[] = kept.map((m) =>
+    m.calls === undefined ? { role: m.role, content: m.content } : { role: m.role, content: m.content, calls: m.calls },
+  );
   if (messages.length === 0 && summary === undefined) return undefined;
 
   deps.log(`[memory] resumed ${query.sessionKey}: ${messages.length} messages, ${summary === undefined ? "no summary" : "summary"}`);
@@ -145,13 +147,18 @@ async function summaryBefore(
   return picked.length > 0 ? picked.join(SUMMARY_SEPARATOR) : undefined;
 }
 
+/** How much of the budget `m` takes: its text and, as JSON, its calls (as the history counts them). */
+function tailChars(m: TailMessage): number {
+  return m.content.length + (m.calls === undefined ? 0 : JSON.stringify(m.calls).length);
+}
+
 /** `tail` without its oldest messages until it fits `maxChars`, still opening with a user message, and when the newest it left out was written. */
 function trimToFit(tail: VerbatimTail, maxChars: number): { messages: TailMessage[]; leftOutAt?: string } {
   const messages = tail.messages;
   let start = 0;
-  let chars = messages.reduce((sum, m) => sum + m.content.length, 0);
+  let chars = messages.reduce((sum, m) => sum + tailChars(m), 0);
   while (start < messages.length && chars > maxChars) {
-    chars -= messages[start]!.content.length;
+    chars -= tailChars(messages[start]!);
     start += 1;
   }
   while (start < messages.length && messages[start]!.role !== "user") start += 1;

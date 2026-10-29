@@ -182,3 +182,33 @@ describe("the resume budget", () => {
     expect(resumeBudget({ maxChars: 500 }, 0)).toBe(500);
   });
 });
+
+// A resumed conversation brings back the tool calls its answers were written
+// from: as text only, the model would see answers written from memory and stop
+// calling tools (#351, #352).
+describe("resumeConversation — the answers' tool calls (#352)", () => {
+  const calls = [{ toolName: "confluenceCommand", input: { command: "confluence page comments 1102" }, result: { ok: true, ran: "confluence page comments 1102", results: 2 } }];
+
+  test("puts each answer's calls back in the history's messages", async () => {
+    const { d } = deps({ messages: [user("commenti?", 1), { ...assistant("Due commenti.", 2), calls }], complete: true });
+    expect(await resumeConversation(query, d)).toEqual({
+      messages: [plain(user("commenti?")), { role: "assistant", content: "Due commenti.", calls }],
+    });
+  });
+
+  test("counts the calls toward the budget when it trims the tail", async () => {
+    // The tail's budget (three quarters of maxChars) holds the four messages' text (40)
+    // but not their text plus the older answer's calls: counted, the older pair goes.
+    const callsChars = JSON.stringify(calls).length;
+    let maxChars = 0;
+    while (maxChars - Math.floor(maxChars / 4) < 40) maxChars += 1;
+    expect(maxChars - Math.floor(maxChars / 4)).toBeLessThan(40 + callsChars);
+    const tail = {
+      messages: [user("a".repeat(10), 1), { ...assistant("b".repeat(10), 2), calls }, user("c".repeat(10), 3), assistant("d".repeat(10), 4)],
+      complete: false,
+    };
+    const { d } = deps(tail);
+    const resumed = await resumeConversation({ ...query, maxChars }, d);
+    expect(resumed!.messages.map((m) => m.content.slice(-1))).toEqual(["c", "d"]);
+  });
+});
