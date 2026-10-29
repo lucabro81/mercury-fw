@@ -778,3 +778,100 @@ describe("the displays a turn showed", () => {
     expect(result.messages).toEqual([question]);
   });
 });
+
+// A conversation picked up again must bring its tool calls back with it: as
+// text only, it would show the model answers written from memory, and the
+// model would stop calling tools (#351, #352). The person never sees them.
+describe("the tool calls an answer was written from (#352)", () => {
+  const calls = [
+    { toolName: "jiraCommand", input: { command: "jira issue search --jql 'assignee = currentUser()'" }, result: { ok: true, ran: "jira issue search --jql 'assignee = currentUser()'", results: 1, displayRef: "d1" } },
+  ];
+  const answer = {
+    userId: "static:alice",
+    sessionKey: "conv-1",
+    role: "assistant" as const,
+    content: "Hai una issue.",
+    calls,
+    timestamp: "2026-10-15T10:00:01.000Z",
+  };
+  const question = {
+    userId: "static:alice",
+    sessionKey: "conv-1",
+    role: "user" as const,
+    content: "Quali issue ho?",
+    timestamp: "2026-10-15T10:00:00.000Z",
+  };
+
+  function clientWith(payloads: Array<Record<string, unknown>>): QdrantClientLike {
+    const points = payloads.map((payload, i) => ({ id: `p${i}`, score: 1, payload }));
+    return {
+      getCollections: async () => ({ collections: [] }),
+      createCollection: async () => ({}),
+      upsert: async () => ({}),
+      query: async () => ({ points }),
+      scroll: async () => ({ points, next_page_offset: null }),
+    };
+  }
+
+  it("keeps the calls in the payload", async () => {
+    let payload: Record<string, unknown> | undefined;
+    const client: QdrantClientLike = {
+      ...clientWith([]),
+      upsert: async (_collection, params) => {
+        payload = (params.points[0] as { payload: Record<string, unknown> }).payload;
+        return {};
+      },
+    };
+    await appendVerbatimMessage(client, "verbatim_archive", async () => [1], answer);
+    expect(payload).toEqual(answer);
+  });
+
+  it("listVerbatimTail, what goes back to the model, brings the calls back", async () => {
+    const tail = await listVerbatimTail(clientWith([answer, question]), "verbatim_archive", {
+      userId: "static:alice",
+      sessionKey: "conv-1",
+      maxChars: 10_000,
+    });
+    expect(tail.messages).toEqual([
+      { role: "user", content: "Quali issue ho?", timestamp: question.timestamp },
+      { role: "assistant", content: "Hai una issue.", calls, timestamp: answer.timestamp },
+    ]);
+  });
+
+  it("listVerbatimTail counts the calls toward the budget", async () => {
+    const fits = question.content.length + answer.content.length + JSON.stringify(calls).length;
+    const query = { userId: "static:alice", sessionKey: "conv-1" };
+    const whole = await listVerbatimTail(clientWith([answer, question]), "verbatim_archive", { ...query, maxChars: fits });
+    expect(whole.messages).toHaveLength(2);
+    const short = await listVerbatimTail(clientWith([answer, question]), "verbatim_archive", { ...query, maxChars: fits - 1 });
+    expect(short.messages).toEqual([]);
+  });
+
+  it("listVerbatimBySession, what a UI renders, leaves the calls out", async () => {
+    const result = await listVerbatimBySession(clientWith([question, answer]), "verbatim_archive", {
+      userId: "static:alice",
+      sessionKey: "conv-1",
+      limit: 50,
+    });
+    const { calls: _calls, ...shown } = answer;
+    expect(result.messages).toEqual([question, shown]);
+  });
+
+  it("searchVerbatim, what recall_verbatim hands the model, leaves the calls out", async () => {
+    const results = await searchVerbatim(clientWith([answer]), "verbatim_archive", async () => [1], {
+      userId: "static:alice",
+      queryText: "issue",
+    });
+    const { calls: _calls, ...said } = answer;
+    expect(results).toEqual([said]);
+  });
+
+  it("skips a point whose calls aren't a list of calls", async () => {
+    const tail = await listVerbatimTail(clientWith([{ ...answer, calls: "nope" }, question]), "verbatim_archive", {
+      userId: "static:alice",
+      sessionKey: "conv-1",
+      maxChars: 10_000,
+    });
+    expect(tail.messages).toEqual([{ role: "user", content: "Quali issue ho?", timestamp: question.timestamp }]);
+  });
+});

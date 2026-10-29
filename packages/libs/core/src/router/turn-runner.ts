@@ -10,6 +10,7 @@
  * given turn came from — same channel-agnostic spirit as `runTurn` itself.
  */
 import type { LanguageModel, Tool } from "ai";
+import type { CallRecord } from "../session/call-record.ts";
 import { runTurn } from "../session/agent-turn.ts";
 import type { StepInfo } from "../session/step-info.ts";
 import { formatTurnStamp } from "../session/turn-stamp.ts";
@@ -236,6 +237,7 @@ export type TurnRunnerDeps = {
     role: "user" | "assistant";
     content: string;
     displays?: string[];
+    calls?: CallRecord[];
   }) => Promise<void>;
   /** `key` is the turn's person: the corrections' status reads in their language. */
   processToolCorrections: (
@@ -638,12 +640,16 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
           if (!turn.opening && !resumed) {
             await deps.captureVerbatim({ sessionKey: turn.sessionKey, userId: key, role: "user", content: turn.text });
           }
+          // The calls the answer was written from, as the history recorded them.
+          const answer = history.getMessages().at(-1);
+          const calls = answer?.role === "assistant" ? answer.calls : undefined;
           await deps.captureVerbatim({
             sessionKey: turn.sessionKey,
             userId: key,
             role: "assistant",
             content: assistantText,
             ...(surfacedDisplays.length > 0 ? { displays: surfacedDisplays } : {}),
+            ...(calls !== undefined ? { calls } : {}),
           });
         } catch (err) {
           console.log(

@@ -1240,6 +1240,46 @@ describe("createTurnRunner", () => {
       });
     });
 
+    // A reopened conversation brings back the calls its answers were written
+    // from (#352); archived as text only, it would show the model answers
+    // written from memory, and the model would stop calling tools (#351).
+    test("archives the answer's tool calls next to it, as the history recorded them", async () => {
+      const calls = [{ toolName: "confluenceCommand", input: { command: "confluence page comments 1102" }, result: { ok: true, ran: "confluence page comments 1102", results: 2 } }];
+      const captured: Array<{ sessionKey: string; userId: string; role: string; content: string; calls?: unknown }> = [];
+      const history = fakeHistory({
+        getMessages: () => [
+          { role: "user", content: "comments?" },
+          { role: "assistant", content: "Two comments.", calls },
+        ],
+      });
+      const runner = createTurnRunner({
+        model: {} as any,
+        systemPrompts: { singleUser: "s", multiUser: "m" },
+        buildTools: () => ({}),
+        getOrCreateHistory: () => history,
+        trackSession: () => {},
+        registerCaptureCallback: () => {},
+        maybeCapture: async () => {},
+        processToolCorrections: async () => {},
+        logStep: () => {},
+        captureVerbatim: async (msg) => {
+          captured.push(msg);
+        },
+        runTurnFn: async () => "Two comments.",
+      });
+
+      await runner(baseTurn({ principal: verified("u1") }), baseSink());
+
+      expect(captured.find((m) => m.role === "assistant")).toEqual({
+        sessionKey: expect.any(String),
+        userId: expect.any(String),
+        role: "assistant",
+        content: "Two comments.",
+        calls,
+      });
+      expect(captured.find((m) => m.role === "user")).not.toHaveProperty("calls");
+    });
+
     test("archives a turn whose answer is only surfaced displays", async () => {
       const captured: Array<{ role: string; content: string; displays?: string[] }> = [];
       const sink = baseSink();
