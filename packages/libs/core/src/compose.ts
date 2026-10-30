@@ -148,6 +148,8 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   // What every text calls the assistant: checked first, so a persona name that
   // can't stand in a prompt stops the app before anything starts.
   const assistantName = assistantNameOf(config.persona);
+  // Shown as the app declares it; an empty one is none.
+  const appVersion = config.version?.trim() || undefined;
 
   // The model is constructed up front, before the plugins load and the system
   // prompt is built: a plugin's post-turn guard can be model-backed (Jira's
@@ -652,6 +654,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
     linking: { start: linking.start },
     assistantName,
     frameworkVersion: frameworkVersion(),
+    ...(appVersion === undefined ? {} : { appVersion }),
   };
 
   /** Starts the Layer-3 idle-capture and self-review crons; returns one stopper. */

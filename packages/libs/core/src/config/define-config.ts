@@ -51,8 +51,9 @@ export type MercuryI18n = {
  * channel like HTTP who is calling (one, or several tried in order; that
  * channel won't start without one),
  * the directory that tells the core who that is and their roles, who may
- * use what (`access`), the languages it speaks (`i18n`), plus the
- * assistant's persona (its identity and tone; the defaults when left out). */
+ * use what (`access`), the languages it speaks (`i18n`), the assistant's
+ * persona (its identity and tone; the defaults when left out), plus the
+ * app's own version (`version`). */
 export type MercuryConfig = {
   plugins: Plugin[];
   channels?: ChannelPlugin[];
@@ -61,6 +62,8 @@ export type MercuryConfig = {
   access?: MercuryAccess;
   i18n?: MercuryI18n;
   persona?: Persona;
+  /** The app's version, as its `package.json` has it (`version: pkg.version`), shown next to the framework's on the HTTP channel's `GET /version`. Shown as is, never bumped: the app's own tooling moves it. Left out (or empty), nothing is shown. */
+  version?: string;
 };
 
 /**
