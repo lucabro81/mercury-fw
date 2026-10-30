@@ -136,8 +136,7 @@ What it does:
 
 What it doesn't do:
 
-- It doesn't move the number. That's up to you: by hand, with [Changesets](https://github.com/changesets/changesets),
-  or with a script you run before pushing. An app whose `package.json` still says `0.1.0` shows `0.1.0`.
+- It doesn't move the number: it shows whatever the app's `package.json` says.
 - It doesn't tell which commit is running, or whether there are changes nobody committed.
 - It doesn't hide the number: `GET /version` needs no token, so anyone who reaches the HTTP channel's port sees it.
   Remove the line, or leave the field out, and only the framework's version is shown. An empty string counts as none.

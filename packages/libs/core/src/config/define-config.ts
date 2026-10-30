@@ -62,7 +62,7 @@ export type MercuryConfig = {
   access?: MercuryAccess;
   i18n?: MercuryI18n;
   persona?: Persona;
-  /** The app's version, as its `package.json` has it (`version: pkg.version`), shown next to the framework's on the HTTP channel's `GET /version`. Shown as is, never bumped: the app's own tooling moves it. Left out (or empty), nothing is shown. */
+  /** The app's version, as its `package.json` has it (`version: pkg.version`), shown next to the framework's on the HTTP channel's `GET /version`. Shown as is, never changed by Mercury. Left out (or empty), nothing is shown. */
   version?: string;
 };
 
