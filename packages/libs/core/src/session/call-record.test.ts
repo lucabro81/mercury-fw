@@ -1,5 +1,5 @@
 import { describe, it, expect } from "bun:test";
-import { callMessages, callRecords, HISTORY_CALL_NOTE } from "./call-record.ts";
+import { callMessages, callRecords, HISTORY_CALL_NOTE, SKILL_CALL_NOTE } from "./call-record.ts";
 import type { StepInfo } from "./step-info.ts";
 
 function step(
@@ -153,5 +153,55 @@ describe("callMessages", () => {
 
   it("returns nothing for no records", () => {
     expect(callMessages([], "history-0")).toEqual([]);
+  });
+
+  // The skill's text isn't in the history: with the generic note the model saw
+  // its own read_skill call, took the skill for still loaded and didn't read it
+  // again (13 later turns out of 120, against 90 before the calls were kept),
+  // then guessed the commands the skill names (#356).
+  it("gives a read_skill call the note that the skill must be read again, the other calls the generic one", () => {
+    const records = callRecords([
+      step(
+        [{ toolCallId: "1", toolName: "read_skill", input: { name: "confluence" } }, cli("2", "confluence page comments 2101")],
+        [out("1", { ok: true, data: "the skill" }, "read_skill"), out("2", { ok: true, data: { results: [] } })],
+      ),
+    ]);
+    expect(callMessages(records, "history-2")[1]).toEqual({
+      role: "tool",
+      content: [
+        {
+          type: "tool-result",
+          toolCallId: "history-2-0",
+          toolName: "read_skill",
+          output: { type: "json", value: { ok: true, ran: '{"name":"confluence"}', note: SKILL_CALL_NOTE } },
+        },
+        {
+          type: "tool-result",
+          toolCallId: "history-2-1",
+          toolName: "confluenceCommand",
+          output: { type: "json", value: { ok: true, ran: "confluence page comments 2101", results: 0, found: false, note: HISTORY_CALL_NOTE } },
+        },
+      ],
+    });
+  });
+
+  it("keeps the error of a failed read_skill, with the same note", () => {
+    const records = callRecords([
+      step([{ toolCallId: "1", toolName: "read_skill", input: { name: "nope" } }], [out("1", { ok: false, error: 'no skill named "nope"' }, "read_skill")]),
+    ]);
+    expect(callMessages(records, "history-0")[1]!.content).toEqual([
+      {
+        type: "tool-result",
+        toolCallId: "history-0-0",
+        toolName: "read_skill",
+        output: { type: "json", value: { ok: false, ran: '{"name":"nope"}', error: 'no skill named "nope"', note: SKILL_CALL_NOTE } },
+      },
+    ]);
+  });
+
+  it("says, in the skill's note, that its text isn't kept and that it must be read again", () => {
+    expect(SKILL_CALL_NOTE).toBe(
+      "The skill's text is not kept in the conversation history: call read_skill again to load it before using its tools.",
+    );
   });
 });

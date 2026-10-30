@@ -1,7 +1,7 @@
 import { describe, it, expect } from "bun:test";
 import { runTurn, buildGenerateTextParams, buildStreamTextParams, ABORTED_MARKER } from "./agent-turn.ts";
 import { CORE_MESSAGES } from "../i18n/core-messages.ts";
-import { HISTORY_CALL_NOTE } from "./call-record.ts";
+import { HISTORY_CALL_NOTE, SKILL_CALL_NOTE } from "./call-record.ts";
 
 /** The stand-in for an answer the model didn't write, in English. */
 const PENDING_CONFIRMATION_NOTE = CORE_MESSAGES["core.pending.note"]!;
@@ -1220,6 +1220,39 @@ describe("runTurn — the turn's tool calls in the history", () => {
       { role: "assistant", content: "Here." },
       { role: "user", content: "thanks" },
     ]);
+  });
+
+  // A skill read in an earlier turn isn't loaded anymore: the model must be told
+  // so, or it guesses the skill's commands instead of reading it again (#356).
+  it("hands a later turn an earlier read_skill with the note that the skill must be read again", async () => {
+    const history = createSessionHistory(neverSummarize);
+    const deps = { model: "fake-model" as never, tools: {}, system: SYSTEM };
+    const skillStep: StepInfo = {
+      toolCalls: [{ toolCallId: "s", toolName: "read_skill", input: { name: "confluence" } }],
+      toolResults: [{ toolCallId: "s", toolName: "read_skill", output: { ok: true, data: "the skill" } }],
+      content: [],
+    };
+    await runTurn(history, "docker pages?", { ...deps, generateTextFn: generating([skillStep, searchStep], "One page.") });
+    const seen = { messages: [] as ModelMessage[] };
+    await runTurn(history, "its comments?", { ...deps, generateTextFn: generating([], "None.", seen) });
+
+    expect(seen.messages[2]).toEqual({
+      role: "tool",
+      content: [
+        {
+          type: "tool-result",
+          toolCallId: "history-1-0",
+          toolName: "read_skill",
+          output: { type: "json", value: { ok: true, ran: '{"name":"confluence"}', note: SKILL_CALL_NOTE } },
+        },
+        {
+          type: "tool-result",
+          toolCallId: "history-1-1",
+          toolName: "confluenceCommand",
+          output: { type: "json", value: { ...searchCall.result, note: HISTORY_CALL_NOTE } },
+        },
+      ],
+    });
   });
 
   it("hands a past answer without calls back as its text alone, with no calls field", async () => {

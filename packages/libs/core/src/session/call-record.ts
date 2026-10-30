@@ -7,10 +7,14 @@
  * (`callMessages`). Without them every past answer looks written from memory,
  * and the more of those a conversation has, the more the model stops calling
  * tools and invents the data (#351); a plain-text trace in the answer worked
- * too, but the model learned to write it, real tool messages it can't.
+ * too, but the model learned to write it, real tool messages it can't. A
+ * `read_skill` call gets a note of its own: what it returned is the skill's
+ * text, and with the generic note the model took the skill for still loaded
+ * and guessed its commands instead of reading it again (#356).
  */
 import type { ModelMessage } from "ai";
 import type { StepInfo } from "./step-info.ts";
+import { READ_SKILL_TOOL } from "./read-skill-tool.ts";
 
 /** A call's result as the history keeps it. `results`/`found` only when the count can be told; `error` only for a failed call. */
 export type CallResult = {
@@ -28,6 +32,10 @@ export type CallRecord = { toolName: string; input: unknown; result: CallResult 
 /** What every reduced result tells the model about the data it no longer has. Model-facing, so in English. */
 export const HISTORY_CALL_NOTE =
   "Data not kept in the conversation history. Run the tool again for current data, or call recall_tool_calls for what it returned then.";
+
+/** What the reduced result of a `read_skill` call tells the model instead: the skill isn't loaded anymore. Model-facing, so in English. */
+export const SKILL_CALL_NOTE =
+  "The skill's text is not kept in the conversation history: call read_skill again to load it before using its tools.";
 
 /** How much of what a call ran, and of its error, the history keeps. */
 const SUMMARY_MAX = 300;
@@ -112,7 +120,8 @@ export function callRecords(steps: StepInfo[]): CallRecord[] {
 
 /**
  * `records` as the model reads them back: the assistant's tool calls, then a
- * tool message with each one's reduced result and `HISTORY_CALL_NOTE`. Ids are
+ * tool message with each one's reduced result and `HISTORY_CALL_NOTE`
+ * (`SKILL_CALL_NOTE` for a `read_skill` call). Ids are
  * `<idPrefix>-<n>`, so the caller keeps them unique within a prompt. Nothing
  * for no records.
  */
@@ -130,7 +139,7 @@ export function callMessages(records: CallRecord[], idPrefix: string): ModelMess
         type: "tool-result" as const,
         toolCallId: id(n),
         toolName: r.toolName,
-        output: { type: "json" as const, value: { ...r.result, note: HISTORY_CALL_NOTE } },
+        output: { type: "json" as const, value: { ...r.result, note: r.toolName === READ_SKILL_TOOL ? SKILL_CALL_NOTE : HISTORY_CALL_NOTE } },
       })),
     },
   ];

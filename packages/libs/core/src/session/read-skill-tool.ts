@@ -14,7 +14,10 @@ import { tool } from "ai";
 import { z } from "zod";
 import type { Skill, ExecutableTool } from "@mercury-fw/plugin-types";
 
-export function createReadSkillTool(skills: Skill[]): { read_skill: ExecutableTool } {
+/** The tool's name, as the model calls it and as the history records it (`call-record.ts`). */
+export const READ_SKILL_TOOL = "read_skill";
+
+export function createReadSkillTool(skills: Skill[]): { [READ_SKILL_TOOL]: ExecutableTool } {
   const byName = new Map(skills.map((s) => [s.name, s]));
   const names = skills.map((s) => s.name).join(", ");
   const read_skill = tool({
@@ -34,5 +37,5 @@ export function createReadSkillTool(skills: Skill[]): { read_skill: ExecutableTo
     },
   });
 
-  return { read_skill };
+  return { [READ_SKILL_TOOL]: read_skill };
 }
