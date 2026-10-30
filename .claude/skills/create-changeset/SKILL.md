@@ -13,7 +13,7 @@ Write a changeset markdown file in `.changeset/` that describes the current chan
 
 ### 1. Identify the changed packages
 
-Run `git diff main...HEAD --stat` (plus `git status` for uncommitted work) and map the changed files to packages through each `package.json` `name` field (`@mercury-fw/core`, `@mercury-fw/channel-http`, not `core`). Only public workspaces get an entry: a `"private": true` one (the docs site, the test bed, the skill trainer) gets none.
+Run `git diff origin/main...HEAD --stat` (plus `git status` for uncommitted work) and map the changed files to packages through each `package.json` `name` field (`@mercury-fw/core`, `@mercury-fw/channel-http`, not `core`). Only public workspaces get an entry: a `"private": true` one (the docs site, the test bed, the skill trainer) gets none.
 
 Name only the packages the diff actually touches. The framework's `fixed` group (`.changeset/config.json`) moves together anyway, so touching `@mercury-fw/cli` alone still releases the whole group; plugins, channels and auth providers are versioned on their own and get an entry only when they change.
 
