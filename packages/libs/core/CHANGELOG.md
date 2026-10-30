@@ -1,5 +1,17 @@
 # @mercury-fw/core
 
+## 0.65.1
+
+### Patch Changes
+
+- 9b2e1bf: - `mfw create`: the comment above the config's `version` and the app's README say what it shows, and no longer how to move the number: that's the app's own business.
+  - The `version` field's description says Mercury never changes it, with no advice on who does.
+  - @mercury-fw/plugin-types@0.65.1
+  - @mercury-fw/channel-types@0.65.1
+  - @mercury-fw/cli-engine@0.65.1
+  - @mercury-fw/confirm-engine@0.65.1
+  - @mercury-fw/utils@0.65.1
+
 ## 0.65.0
 
 ### Minor Changes

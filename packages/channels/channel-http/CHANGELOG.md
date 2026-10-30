@@ -1,5 +1,11 @@
 # @mercury-fw/channel-http
 
+## 0.14.1
+
+### Patch Changes
+
+- 9b2e1bf: - README: `GET /version` describes the app's version without saying how the app moves it.
+
 ## 0.14.0
 
 ### Minor Changes
