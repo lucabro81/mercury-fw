@@ -40,4 +40,22 @@ describe("composeMercury", () => {
     const app = await composeMercury(config);
     expect(app.channelRuntime.frameworkVersion).toBe(pkg.version);
   });
+
+  // #358: the app's own version, next to the framework's, as its config declares it.
+  it("gives channels the app's version when the config declares one, trimmed, as is", async () => {
+    for (const [declared, given] of [
+      ["1.2.0", "1.2.0"],
+      [" 1.2.0-beta.1 ", "1.2.0-beta.1"],
+    ]) {
+      const app = await composeMercury({ plugins: [], version: declared });
+      expect(app.channelRuntime.appVersion).toBe(given);
+    }
+  });
+
+  it("gives channels no app version when the config declares none, or an empty one", async () => {
+    for (const config of [{ plugins: [] }, { plugins: [], version: "" }, { plugins: [], version: "  " }] satisfies MercuryConfig[]) {
+      const app = await composeMercury(config);
+      expect("appVersion" in app.channelRuntime).toBe(false);
+    }
+  });
 });

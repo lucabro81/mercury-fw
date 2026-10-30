@@ -197,6 +197,15 @@ describe("renderApp: mercury.config.ts", () => {
     expect(renderApp(shuffled).get("mercury.config.ts")).toBe(golden("full.mercury.config.ts"));
   });
 
+  // #358: every new app declares its package.json's version, which /version shows.
+  test("declares the app's version from its package.json, whatever was chosen", () => {
+    for (const chosen of [EMPTY, HTTP_JIRA, FULL]) {
+      const config = renderApp(chosen).get("mercury.config.ts") ?? "";
+      expect(config).toContain('import pkg from "./package.json";\n');
+      expect(config).toContain("  version: pkg.version,\n});\n");
+    }
+  });
+
   test("a plugin chosen twice is imported and declared once", () => {
     const twice = input({ plugins: ["bitbucket", "bitbucket"] });
     const config = renderApp(twice).get("mercury.config.ts") ?? "";
@@ -370,8 +379,9 @@ describe("renderApp: docker-compose.yml", () => {
  * checked as the core gets it, not as text.
  */
 function evaluatedConfig(config: string): { persona: { name: string; identity: string; tone: string } } {
-  // The imports are dropped: the language file's stands in as the empty file it is.
-  const body = `const en = {};\n${config.replace(/^import .*$/gm, "").replace("export default defineMercuryConfig(", "return (")}`;
+  // The imports are dropped: the language file's stands in as the empty file it
+  // is, the package.json's as a manifest with a version.
+  const body = `const en = {};\nconst pkg = { version: "0.1.0" };\n${config.replace(/^import .*$/gm, "").replace("export default defineMercuryConfig(", "return (")}`;
   return new Function(body)();
 }
 
@@ -434,10 +444,18 @@ describe("renderApp: persona", () => {
 });
 
 describe("renderApp: README.md", () => {
+  // #358: the README says what the config's version shows, and what it doesn't.
+  test("the layout says the config's version is package.json's, shown to anyone, never moved by Mercury", () => {
+    const readme = renderApp(EMPTY).get("README.md") ?? "";
+    expect(readme).toContain(
+      "Its `version` is the one in `package.json`, which the HTTP channel's `GET /version` shows to anyone, no token needed: Mercury never moves it (do it by hand, with Changesets, or with a script before pushing), and a new one shows once the app is rebuilt. Remove the line to show none.\n",
+    );
+  });
+
   // #271: the persona is in the config; the layout names no persona files.
   test("the layout puts the persona in mercury.config.ts, with no persona files", () => {
     const readme = renderApp(EMPTY).get("README.md") ?? "";
-    expect(readme).toContain("- `mercury.config.ts`: what the app is made of (tool plugins, channels, how their lists read) and the assistant's persona: its name, who it is and how it answers. Edit them freely.\n");
+    expect(readme).toContain("- `mercury.config.ts`: what the app is made of (tool plugins, channels, how their lists read) and the assistant's persona: its name, who it is and how it answers. Edit them freely. ");
     expect(readme).not.toContain("persona/");
   });
 

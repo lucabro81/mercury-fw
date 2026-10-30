@@ -595,12 +595,13 @@ paths:
     get:
       summary: Which Mercury this is
       description: >
-        The framework's version, `major.minor.patch`, for a UI to show. Needs
-        no bearer token.
+        The framework's version, `major.minor.patch`, for a UI to show, and
+        the app's own when its config declares one (`app.version`, its
+        `package.json`'s, shown as the app has it). Needs no bearer token.
       security: []
       responses:
         "200":
-          description: The framework's version.
+          description: The framework's version, and the app's when it declares one.
           content:
             application/json:
               schema:
@@ -612,6 +613,15 @@ paths:
                     type: string
                     pattern: '^\d+\.\d+\.\d+$'
                     examples: ["0.59.0"]
+                  app:
+                    type: object
+                    description: The app's own version; absent when the app declares none.
+                    required: [version]
+                    properties:
+                      version:
+                        type: string
+                        description: As the app's `package.json` has it, not checked.
+                        examples: ["1.2.0"]
   /openapi.yaml:
     get:
       summary: This OpenAPI document

@@ -91,9 +91,10 @@ words of its own, such as a status line while its tool runs, writes them in its 
 
 A plugin does nothing until the app declares it. In `mercury.config.ts`, import it and put it in `plugins`:
 
-```ts title="mercury.config.ts" ins={3,15}
+```ts title="mercury.config.ts" ins={4,16}
 import { defineMercuryConfig } from "@mercury-fw/core";
 import en from "./locales/en.json";
+import pkg from "./package.json";
 import { guestWifiPlugin } from "./src/plugins/guest-wifi.ts";
 
 const name = "Mercury";
@@ -109,8 +110,11 @@ export default defineMercuryConfig({
   plugins: [guestWifiPlugin],
   channels: [],
   i18n: { locales: { en } },
+  version: pkg.version,
 });
 ```
+
+The other lines are the ones `mfw create` wrote; `version` is the app's own, see [`version`](../../reference/config/#version).
 
 ## Its settings
 

@@ -453,6 +453,8 @@ export type ChannelRuntimeContext = {
   assistantName?: string;
   /** The framework's version (`major.minor.patch`), for a channel that tells people which Mercury they're talking to (HTTP's `/version`). The core always sets it; absent on an older core. */
   frameworkVersion?: string;
+  /** The app's own version, as its config declares it (`MercuryConfig.version`, its `package.json`'s), for the same channel to show next to the framework's. Absent when the app declares none, and on an older core. */
+  appVersion?: string;
 };
 
 /**

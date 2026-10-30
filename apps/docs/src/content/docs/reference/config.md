@@ -15,6 +15,7 @@ import { oidcAuth } from "@mercury-fw/auth-oidc";
 import { staticDirectory } from "@mercury-fw/directory-static";
 import en from "./locales/en.json";
 import it from "./locales/it.json";
+import pkg from "./package.json";
 
 const name = "Hermes";
 
@@ -34,6 +35,7 @@ export default defineMercuryConfig({
   directory: staticDirectory,
   access: { unknown: "refuse" },
   i18n: { defaultLocale: "it", locales: { en, it } },
+  version: pkg.version,
 });
 ```
 
@@ -119,3 +121,23 @@ Who the assistant is. Every field is optional, and a field left out takes the de
 A scaffolded app writes the name once, as a `const`, and refers to it in `identity` and `tone`; the tone is written out
 in full, one string per line, ready to edit. `{{assistant}}` in any text the model reads also becomes `name`: that's how
 the plugins' fragments and skills, written without knowing what the assistant will be called, refer to it.
+
+## `version`
+
+The app's own version, shown next to the framework's when a UI asks the HTTP channel which agent it's talking to
+(`GET /version` answers `{ "ok": true, "version": "0.65.0", "app": { "version": "1.2.0" } }`). A scaffolded app sets it
+to the `version` of its `package.json`, imported at the top of the file.
+
+What it does:
+
+- It shows the version as the app's `package.json` has it, with nothing checked: `1.2.0`, `1.2.0-beta.1` or anything
+  else you write there, only trimmed of spaces around it.
+- It's read when the app starts, so a new number shows once the app has been rebuilt and restarted (`mfw start`).
+
+What it doesn't do:
+
+- It doesn't move the number. That's up to you: by hand, with [Changesets](https://github.com/changesets/changesets),
+  or with a script you run before pushing. An app whose `package.json` still says `0.1.0` shows `0.1.0`.
+- It doesn't tell which commit is running, or whether there are changes nobody committed.
+- It doesn't hide the number: `GET /version` needs no token, so anyone who reaches the HTTP channel's port sees it.
+  Remove the line, or leave the field out, and only the framework's version is shown. An empty string counts as none.
