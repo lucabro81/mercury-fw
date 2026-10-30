@@ -61,8 +61,7 @@ export default defineMercuryConfig({
   auth: oidcAuth,
   i18n: { locales: { en } },
   // The app's version, from package.json: GET /version shows it next to the
-  // framework's, to anyone (no token). Mercury never bumps it, your own
-  // tooling does, and a new one shows once the app is rebuilt. Remove this
-  // line to show none.
+  // framework's, to anyone (no token). Mercury never changes it, and a new
+  // one shows once the app is rebuilt. Remove this line to show none.
   version: pkg.version,
 });
