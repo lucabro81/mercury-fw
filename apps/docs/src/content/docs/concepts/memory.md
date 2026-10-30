@@ -16,6 +16,8 @@ lives in the process's memory while the conversation is active.
 
 Besides what was said, it keeps the tools the model called for each answer: what each call ran and how it went, not
 what came back. On later turns the model sees it looked things up, and runs the tool again when it needs the data.
+The same goes for a [skill](../plugins/#skills) it read: the skill's text isn't kept, and the model is told to read it again before using
+the plugin's tools.
 
 When it grows past about 60,000 characters, Mercury replaces its older part with a **summary** the model writes,
 and the conversation goes on from the summary plus the recent messages. Every message is also kept word for word in
