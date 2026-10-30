@@ -130,8 +130,8 @@ to the `version` of its `package.json`, imported at the top of the file.
 
 What it does:
 
-- It shows the version as the app's `package.json` has it, with nothing checked or changed: `1.2.0`, `1.2.0-beta.1` or
-  anything else you write there.
+- It shows the version as the app's `package.json` has it, with nothing checked: `1.2.0`, `1.2.0-beta.1` or anything
+  else you write there, only trimmed of spaces around it.
 - It's read when the app starts, so a new number shows once the app has been rebuilt and restarted (`mfw start`).
 
 What it doesn't do:
