@@ -124,4 +124,4 @@ Conversation history and the conversation list are backed by the durable verbati
 
 ## `GET /version`
 
-Which Mercury this is, for a UI to show: `{ ok: true, version }`, the framework's version as `major.minor.patch` (`"0.59.0"`), the one of `@mercury-fw/core`, not this channel's own. When the app's config declares its own version (`version` in `mercury.config.ts`, its `package.json`'s, as a scaffolded app does), it comes too, as it is: `{ ok: true, version: "0.65.0", app: { version: "1.2.0" } }`. The app moves that number itself, and a new one shows once the app is rebuilt. It needs no token, so anyone who reaches the port sees both.
+Which Mercury this is, for a UI to show: `{ ok: true, version }`, the framework's version as `major.minor.patch` (`"0.59.0"`), the one of `@mercury-fw/core`, not this channel's own. When the app's config declares its own version (`version` in `mercury.config.ts`, its `package.json`'s, as a scaffolded app does), it comes too, as it is: `{ ok: true, version: "0.65.0", app: { version: "1.2.0" } }`. A new one shows once the app is rebuilt. It needs no token, so anyone who reaches the port sees both.

@@ -206,6 +206,20 @@ describe("renderApp: mercury.config.ts", () => {
     }
   });
 
+  // #360: how the app moves that number is its own business: no advice on it.
+  test("the config's version comment gives no advice on moving the number", () => {
+    const config = renderApp(EMPTY).get("mercury.config.ts") ?? "";
+    expect(config).toContain(
+      [
+        "  // The app's version, from package.json: GET /version shows it next to the",
+        "  // framework's, to anyone (no token). Mercury never changes it, and a new",
+        "  // one shows once the app is rebuilt. Remove this line to show none.",
+        "  version: pkg.version,",
+      ].join("\n"),
+    );
+    expect(config).not.toContain("tooling");
+  });
+
   test("a plugin chosen twice is imported and declared once", () => {
     const twice = input({ plugins: ["bitbucket", "bitbucket"] });
     const config = renderApp(twice).get("mercury.config.ts") ?? "";
@@ -445,11 +459,13 @@ describe("renderApp: persona", () => {
 
 describe("renderApp: README.md", () => {
   // #358: the README says what the config's version shows, and what it doesn't.
-  test("the layout says the config's version is package.json's, shown to anyone, never moved by Mercury", () => {
+  // #360: how the app moves that number is its own business: no advice on it.
+  test("the layout says the config's version is package.json's, shown to anyone, never changed by Mercury", () => {
     const readme = renderApp(EMPTY).get("README.md") ?? "";
     expect(readme).toContain(
-      "Its `version` is the one in `package.json`, which the HTTP channel's `GET /version` shows to anyone, no token needed: Mercury never moves it (do it by hand, with Changesets, or with a script before pushing), and a new one shows once the app is rebuilt. Remove the line to show none.\n",
+      "Its `version` is the one in `package.json`, which the HTTP channel's `GET /version` shows to anyone, no token needed: Mercury never changes it, and a new one shows once the app is rebuilt. Remove the line to show none.\n",
     );
+    expect(readme).not.toContain("Changesets");
   });
 
   // #271: the persona is in the config; the layout names no persona files.

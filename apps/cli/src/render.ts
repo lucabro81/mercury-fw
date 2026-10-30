@@ -58,9 +58,8 @@ const CORE_ENV: EnvVar[] = [
 /** Above the config's `version`: what it does, and what it doesn't. */
 const VERSION_COMMENT = [
   "  // The app's version, from package.json: GET /version shows it next to the",
-  "  // framework's, to anyone (no token). Mercury never bumps it, your own",
-  "  // tooling does, and a new one shows once the app is rebuilt. Remove this",
-  "  // line to show none.",
+  "  // framework's, to anyone (no token). Mercury never changes it, and a new",
+  "  // one shows once the app is rebuilt. Remove this line to show none.",
 ].join("\n");
 
 const CONFIG_HEADER = `/**
@@ -432,7 +431,7 @@ ${auth ? `- Auth: ${auth.id}\n` : ""}- Tool plugins: ${list(tools)}
 ${directory ? `- Directory: ${directory.id}\n` : ""}
 ## Layout
 
-- \`mercury.config.ts\`: what the app is made of (tool plugins, channels, how their lists read) and the assistant's persona: its name, who it is and how it answers. Edit them freely. Its \`version\` is the one in \`package.json\`, which the HTTP channel's \`GET /version\` shows to anyone, no token needed: Mercury never moves it (do it by hand, with Changesets, or with a script before pushing), and a new one shows once the app is rebuilt. Remove the line to show none.
+- \`mercury.config.ts\`: what the app is made of (tool plugins, channels, how their lists read) and the assistant's persona: its name, who it is and how it answers. Edit them freely. Its \`version\` is the one in \`package.json\`, which the HTTP channel's \`GET /version\` shows to anyone, no token needed: Mercury never changes it, and a new one shows once the app is rebuilt. Remove the line to show none.
 - \`locales/\`: the texts people see, one file per language the assistant speaks. \`en.json\` overrides the English ones; add \`it.json\` (and \`it\` to \`i18n.locales\` in the config) for Italian, \`i18n.defaultLocale\` for the language people get when they haven't picked one, \`i18n.timeZone\` (an IANA name such as \`Europe/Rome\`) for the time zone of whoever saved none and whose app says none. The app's own texts (a formatter rule's) are \`app.\` keys, written in English in \`en.json\` and translated in every other file. Mercury logs at startup the keys a file is missing.
 - \`src/index.ts\`: the service (channels, crons). \`src/repl.ts\`: an interactive terminal for trying things out.
 - \`plugins/\`: the app's own plugins, when it has any: each one a package in a folder of its own (\`plugins/<name>\`, a workspace), listed in \`dependencies\` as \`workspace:*\` and declared in \`mercury.config.ts\`. \`bun run test\` runs their tests.
