@@ -55,11 +55,20 @@ const CORE_ENV: EnvVar[] = [
   },
 ];
 
+/** Above the config's `version`: what it does, and what it doesn't. */
+const VERSION_COMMENT = [
+  "  // The app's version, from package.json: GET /version shows it next to the",
+  "  // framework's, to anyone (no token). Mercury never bumps it, your own",
+  "  // tooling does, and a new one shows once the app is rebuilt. Remove this",
+  "  // line to show none.",
+].join("\n");
+
 const CONFIG_HEADER = `/**
  * This app's composition: the tool plugins and channels it runs, the auth
  * provider when a channel needs one, how the lists its plugins hand over read,
  * the assistant's persona and the languages it speaks (\`i18n\`: a file per
- * language in \`locales/\`, \`en.json\` overriding the English texts). The entrypoints
+ * language in \`locales/\`, \`en.json\` overriding the English texts) and its version
+ * (\`version\`, its \`package.json\`'s, shown on the HTTP channel's \`/version\`). The entrypoints
  * (\`src/index.ts\`, \`src/repl.ts\`) hand this config to \`composeMercury\`.
  *
  * Every tool plugin and channel declared here is active.
@@ -214,7 +223,11 @@ function renderConfig(
   directory: CatalogEntry | undefined,
 ): string {
   const withRules = tools.filter((t) => t.formatter);
-  const imports = ['import { defineMercuryConfig } from "@mercury-fw/core";', 'import en from "./locales/en.json";'];
+  const imports = [
+    'import { defineMercuryConfig } from "@mercury-fw/core";',
+    'import en from "./locales/en.json";',
+    'import pkg from "./package.json";',
+  ];
   if (withRules.length > 0) {
     imports.push('import { formatterPlugin, formatter } from "@mercury-fw/formatter";');
   }
@@ -249,6 +262,8 @@ function renderConfig(
     ...(auth ? [`  auth: ${auth.exportName},`] : []),
     ...(directory ? [`  directory: ${directory.exportName},`] : []),
     "  i18n: { locales: { en } },",
+    VERSION_COMMENT,
+    "  version: pkg.version,",
     "});",
     "",
   ].join("\n");
