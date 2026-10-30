@@ -1,5 +1,19 @@
 # @mercury-fw/core
 
+## 0.64.0
+
+### Minor Changes
+
+- f4b6532: A skill the model read in an earlier turn of the conversation is no longer taken for loaded: the history keeps the `read_skill` call but not the skill's text, and that call now tells the model to read the skill again before using its tools. With the generic note of the other calls, the model rarely read a skill again in later turns and guessed the commands it names instead.
+
+### Patch Changes
+
+- @mercury-fw/plugin-types@0.64.0
+- @mercury-fw/channel-types@0.64.0
+- @mercury-fw/cli-engine@0.64.0
+- @mercury-fw/confirm-engine@0.64.0
+- @mercury-fw/utils@0.64.0
+
 ## 0.63.0
 
 ### Minor Changes
