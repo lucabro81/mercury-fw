@@ -1,5 +1,17 @@
 # @mercury-fw/cli
 
+## 0.65.0
+
+### Minor Changes
+
+- 7a76257: - `mfw create`: the new app's `mercury.config.ts` declares its version, the one in its `package.json` (`version: pkg.version`), with a comment on what it shows and what it doesn't; the app's README says the same.
+
+### Patch Changes
+
+- Updated dependencies [7a76257]
+  - @mercury-fw/core@0.65.0
+  - @mercury-fw/utils@0.65.0
+
 ## 0.64.0
 
 ### Patch Changes
