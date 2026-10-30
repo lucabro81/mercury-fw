@@ -109,6 +109,8 @@ The channel listens inside the container, so the compose file has to publish its
   in your settings with `PATCH /me`, which saves it for the person. A zone they saved wins over the header. See
   [The time where the person is](../../concepts/languages/#the-time-where-the-person-is).
 - **Which Mercury it is.** `GET /version` answers the framework's version (`{ "ok": true, "version": "0.59.0" }`)
-  with no token, so your interface can show it anywhere, the login page included.
+  with no token, so your interface can show it anywhere, the login page included. When the app declares its own
+  version (`version` in `mercury.config.ts`, which a new app sets to its `package.json`'s), it comes too, as
+  `app.version`. See [`version`](../../reference/config/#version) for what that number does and doesn't tell.
 
 The [HTTP API reference](../../reference/http-api/) describes every route and event.

@@ -4,7 +4,7 @@ Gives a [Mercury](https://github.com/lucabro81/mercury-fw) agent an HTTP surface
 
 On Mercury's documentation site: [its page](https://lucabro81.github.io/mercury-fw/plugins/channel-http/).
 
-This version is written for version 6 of the channel contract, the one that brings the channels' texts in the person's language, and needs the framework at 0.61 or later, the first whose core says when a resumed turn's answer is no longer available (`resume` below); since 0.59 the core gives channels its version (`GET /version`). A core with an older contract skips it, and the log says why.
+This version is written for version 6 of the channel contract, the one that brings the channels' texts in the person's language, and needs the framework at 0.65 or later, the first whose core gives channels the app's version (`GET /version`); since 0.61 the core says when a resumed turn's answer is no longer available (`resume` below). A core with an older contract skips it, and the log says why.
 
 ```bash
 bun add @mercury-fw/channel-http
@@ -124,4 +124,4 @@ Conversation history and the conversation list are backed by the durable verbati
 
 ## `GET /version`
 
-Which Mercury this is, for a UI to show: `{ ok: true, version }`, the framework's version as `major.minor.patch` (`"0.59.0"`), the one of `@mercury-fw/core`, not this channel's own. It needs no token.
+Which Mercury this is, for a UI to show: `{ ok: true, version }`, the framework's version as `major.minor.patch` (`"0.59.0"`), the one of `@mercury-fw/core`, not this channel's own. When the app's config declares its own version (`version` in `mercury.config.ts`, its `package.json`'s, as a scaffolded app does), it comes too, as it is: `{ ok: true, version: "0.65.0", app: { version: "1.2.0" } }`. The app moves that number itself, and a new one shows once the app is rebuilt. It needs no token, so anyone who reaches the port sees both.
