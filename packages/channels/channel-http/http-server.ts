@@ -580,13 +580,15 @@ export function readRoutes(
 }
 
 /**
- * `GET /version`: which Mercury this is (the framework's version), for any
- * front end to show. Nobody is asked who they are, like `/openapi.yaml`.
+ * `GET /version`: which Mercury this is (the framework's version, and the
+ * app's own when it declares one), for any front end to show. Nobody is asked
+ * who they are, like `/openapi.yaml`.
  */
-function versionRoutes(version: string, corsOrigin = "*"): Record<string, ReadRoute> {
+function versionRoutes(version: string, appVersion: string | undefined, corsOrigin = "*"): Record<string, ReadRoute> {
+  const body = appVersion === undefined ? { ok: true, version } : { ok: true, version, app: { version: appVersion } };
   return {
     "/version": {
-      GET: () => Response.json({ ok: true, version }, { headers: corsHeaders(corsOrigin) }),
+      GET: () => Response.json(body, { headers: corsHeaders(corsOrigin) }),
       OPTIONS: () => preflight(corsOrigin),
     },
   };
@@ -607,6 +609,8 @@ export type HttpServerDeps = TurnRequestDeps & {
   assistantName?: string;
   /** The framework's version; `/version` is mounted only with it. */
   version?: string;
+  /** The app's own version, served on `/version` next to the framework's. */
+  appVersion?: string;
 };
 
 /** Starts the HTTP surface: `POST /turn` (4a) plus the read-only routes (4b)
@@ -638,7 +642,7 @@ export function startHttpServer(deps: HttpServerDeps): ReturnType<typeof Bun.ser
         OPTIONS: () => preflight(origin),
       },
       "/openapi.yaml": { GET: () => openApiResponse(origin), OPTIONS: () => preflight(origin) },
-      ...(deps.version === undefined ? {} : versionRoutes(deps.version, origin)),
+      ...(deps.version === undefined ? {} : versionRoutes(deps.version, deps.appVersion, origin)),
       ...(deps.reads ? readRoutes(deps.reads, deps.authenticate, origin, deps.admit, deps.settings) : {}),
       ...(deps.completeLogin ? loginRoutes(deps.completeLogin, deps.assistantName, deps.i18n) : {}),
       ...(deps.linking ? linkRoutes({ ...deps, start: deps.linking.start, corsOrigin: origin }) : {}),

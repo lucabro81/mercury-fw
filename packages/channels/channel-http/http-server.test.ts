@@ -711,6 +711,18 @@ describe("openApiResponse", () => {
     };
     expect(doc.paths["/version"]?.get?.security).toEqual([]);
   });
+
+  // #358: the document describes the app's version, optional, as the route serves it.
+  it("describes /version's app version as optional", async () => {
+    type Schema = { required?: string[]; properties?: Record<string, Schema>; type?: string };
+    const doc = Bun.YAML.parse(await openApiResponse().text()) as {
+      paths: Record<string, { get?: { responses: Record<string, { content: Record<string, { schema: Schema }> }> } }>;
+    };
+    const schema = doc.paths["/version"]?.get?.responses["200"]?.content["application/json"]?.schema;
+    expect(schema?.required).toEqual(["ok", "version"]);
+    expect(schema?.properties?.app?.required).toEqual(["version"]);
+    expect(schema?.properties?.app?.properties?.version?.type).toBe("string");
+  });
 });
 
 // A browser UI on another origin (the separate custom-UI project) can only call
@@ -1042,6 +1054,47 @@ describe("startHttpServer", () => {
       expect(preflight.status).toBe(204);
       expect(preflight.headers.get("access-control-allow-origin")).toBe("https://ui.example");
       expect(asked).toBe(0);
+    } finally {
+      server.stop(true);
+    }
+  });
+
+  // #358: what's deployed is the app, so its own version sits next to the framework's.
+  it("serves the app's version next to the framework's, to anyone", async () => {
+    let asked = 0;
+    const server = startHttpServer({
+      port: 0,
+      handleTurn: async () => {},
+      confirm: async () => null,
+      resolveConfirmation: async () => ({ status: "not-a-token", text: null }),
+      authenticate: async () => {
+        asked++;
+        return null;
+      },
+      version: "0.65.0",
+      appVersion: "1.2.0-beta.1",
+    });
+    try {
+      const res = await fetch(`http://localhost:${server.port}/version`);
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ ok: true, version: "0.65.0", app: { version: "1.2.0-beta.1" } });
+      expect(asked).toBe(0);
+    } finally {
+      server.stop(true);
+    }
+  });
+
+  it("mounts no /version on the app's version alone", async () => {
+    const server = startHttpServer({
+      port: 0,
+      handleTurn: async () => {},
+      confirm: async () => null,
+      resolveConfirmation: async () => ({ status: "not-a-token", text: null }),
+      authenticate: refuse,
+      appVersion: "1.2.0",
+    });
+    try {
+      expect((await fetch(`http://localhost:${server.port}/version`)).status).toBe(404);
     } finally {
       server.stop(true);
     }

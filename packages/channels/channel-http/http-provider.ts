@@ -41,6 +41,8 @@ export type HttpProviderDeps = {
   i18n?: ChannelI18n;
   /** The framework's version, served on `/version` (`ctx.frameworkVersion`). */
   version?: string;
+  /** The app's own version, served on `/version` next to it (`ctx.appVersion`). */
+  appVersion?: string;
 };
 
 export function createHttpProvider(deps: HttpProviderDeps): Provider & { stop(): Promise<void> } {
@@ -63,6 +65,7 @@ export function createHttpProvider(deps: HttpProviderDeps): Provider & { stop():
         ...(deps.assistantName === undefined ? {} : { assistantName: deps.assistantName }),
         ...(deps.i18n === undefined ? {} : { i18n: deps.i18n }),
         ...(deps.version === undefined ? {} : { version: deps.version }),
+        ...(deps.appVersion === undefined ? {} : { appVersion: deps.appVersion }),
       });
       deps.logins?.accept(deps.logins.callbackUrl);
     },

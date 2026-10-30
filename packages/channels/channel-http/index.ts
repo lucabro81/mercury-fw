@@ -52,6 +52,7 @@ export const httpChannel: ChannelPlugin = {
       ...(resumeMaxChars === undefined ? {} : { resumeMaxChars }),
       ...(ctx.assistantName === undefined ? {} : { assistantName: ctx.assistantName }),
       ...(ctx.frameworkVersion === undefined ? {} : { version: ctx.frameworkVersion }),
+      ...(ctx.appVersion === undefined ? {} : { appVersion: ctx.appVersion }),
       ...(logins ? { logins: { callbackUrl: `${publicUrl}/login/callback`, accept: logins.accept, complete: logins.complete } } : {}),
     });
   },
