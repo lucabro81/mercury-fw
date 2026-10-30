@@ -63,7 +63,10 @@ never previous findings). Gather everything yourself:
      catalog;
    - every changeset the branch adds under `.changeset/`: its text becomes the
      public changelog, so it must describe what changed, name the packages it
-     actually touches, and carry no internal references;
+     actually touches, and carry no internal references; it is written as
+     `.claude/skills/create-changeset/SKILL.md` describes: one bullet per
+     change, only what is different for whoever uses the package, no
+     mechanism, rationale or development history;
    - `.env.example`-style lists of variables the code reads (the catalog's
      `env` entries, the README tables of variables).
 4. The code: whatever settles each claim — `apps/cli/src/program.ts` (the real
