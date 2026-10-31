@@ -101,9 +101,10 @@ jobs:
         run: bun scripts/publish.ts
 
   # The GitHub Release of each tag on the release commit, the unified
-  # changelog the docs site reads (scripts/github-releases.ts). After the
-  # publish, so a Release exists only for what is on npm; a rerun creates
-  # only what's missing. It reads the tags on the pushed commit, where
+  # changelog the docs site reads (scripts/github-releases.ts). Only after a
+  # successful publish, which is what makes a tag's version published: npm
+  # isn't asked, since it takes a few minutes to show a new version. A rerun
+  # creates only what's missing. It reads the tags on the pushed commit, where
   # scripts/release.ts puts them: a release that reached main another way
   # gets its Releases from the script run by hand.
   releases:

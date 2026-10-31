@@ -3,16 +3,18 @@
  * docs site reads. Run by `publish.yml` after `scripts/publish.ts`, from the
  * release commit:
  *
- *   bun scripts/github-releases.ts [--backfill-framework] [--dry-run]
+ *   bun scripts/github-releases.ts [--dry-run]
  *
- * - By default it takes the tags on `HEAD` (`scripts/release.ts` puts them on
- *   the release commit); `--backfill-framework` takes every `vX.Y.Z` tag
- *   instead, for the releases made before this script existed.
+ * - It takes the tags on `HEAD` (`scripts/release.ts` puts them on the
+ *   release commit).
  * - A framework release (`vX.Y.Z`) merges that version's sections from every
  *   package in the Changesets `fixed` group, whose own `<name>@<version>`
  *   tags get no Release; a plugin, channel or auth provider gets its own
  *   section. Dependency bumps are left out.
- * - Only a version on npm gets a Release, and a tag that already has one is
+ * - Every tag picked gets a Release, with nothing asked of npm: the job runs
+ *   only after `publish` succeeded, so every version tagged on the commit is
+ *   uploaded, even while npm takes its few minutes to show it (asking npm
+ *   then skipped the Release, #350). A tag that already has a Release is
  *   skipped, so a rerun creates only what's missing.
  * - The newest framework release is Latest; older framework releases and
  *   every package release never are.
@@ -22,7 +24,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
-import { isPublished } from "./publish.ts";
 import { root, workspaces } from "./workspaces.ts";
 
 /** A tag as a release: the framework's (`name` null) or one package's. */
@@ -153,21 +154,25 @@ export function createReleaseCommand(tag: string, allTags: string[]): string[] {
   return ["gh", "release", "create", tag, "--title", title, "--notes-file", "-", "--verify-tag", latest ? "--latest" : "--latest=false"];
 }
 
-/** Whether `tag`'s version is on `registry`: a framework tag as the core's version. */
-export async function publishedOnNpm(
-  tag: string,
-  registry: string,
-  published: (name: string, version: string, registry: string) => Promise<boolean> = isPublished,
-): Promise<boolean> {
-  const p = parseTag(tag)!;
-  return published(p.kind === "framework" ? "@mercury-fw/core" : p.name!, p.version, registry);
+/** Creates the Release of each tag in `todo`, in order, through `create`; says so when there's none. Throws on the first that fails, naming its tag. */
+export async function createReleases(
+  todo: string[],
+  { create, log }: { create: (tag: string) => Promise<void>; log: (line: string) => void },
+): Promise<void> {
+  if (todo.length === 0) log("No Release to create.");
+  for (const tag of todo) {
+    try {
+      await create(tag);
+    } catch (error) {
+      throw new Error(`${tag}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
 }
 
 if (import.meta.main) {
   const { values } = parseArgs({
-    options: { "backfill-framework": { type: "boolean", default: false }, "dry-run": { type: "boolean", default: false } },
+    options: { "dry-run": { type: "boolean", default: false } },
   });
-  const registry = "https://registry.npmjs.org";
 
   /** `cmd`'s stdout lines; throws when it fails. */
   const lines = (...cmd: string[]): string[] => {
@@ -177,7 +182,7 @@ if (import.meta.main) {
   };
 
   const allTags = lines("git", "tag", "-l");
-  const candidates = values["backfill-framework"] ? lines("git", "tag", "-l", "v*") : lines("git", "tag", "--points-at", "HEAD");
+  const candidates = lines("git", "tag", "--points-at", "HEAD");
   const existing = new Set(lines("gh", "release", "list", "--limit", "1000", "--json", "tagName", "--jq", ".[].tagName"));
 
   const config = JSON.parse(readFileSync(join(root, ".changeset/config.json"), "utf-8")) as { fixed: string[][] };
@@ -190,20 +195,17 @@ if (import.meta.main) {
     },
   };
 
-  const todo = releasesToCreate(candidates, existing, ctx.fixed);
-  if (todo.length === 0) console.log("No Release to create.");
-  for (const tag of todo) {
-    if (!(await publishedOnNpm(tag, registry))) {
-      console.log(`${tag}: not on ${registry}, no Release`);
-      continue;
-    }
-    const cmd = createReleaseCommand(tag, allTags);
-    const notes = releaseNotes(tag, ctx);
-    if (values["dry-run"]) {
-      console.log(`would run: ${cmd.join(" ")}\n${notes}\n`);
-      continue;
-    }
-    const proc = Bun.spawnSync(cmd, { cwd: root, stdin: Buffer.from(notes), stdout: "inherit", stderr: "inherit" });
-    if (proc.exitCode !== 0) throw new Error(`${tag}: gh release create failed`);
-  }
+  await createReleases(releasesToCreate(candidates, existing, ctx.fixed), {
+    create: async (tag) => {
+      const cmd = createReleaseCommand(tag, allTags);
+      const notes = releaseNotes(tag, ctx);
+      if (values["dry-run"]) {
+        console.log(`would run: ${cmd.join(" ")}\n${notes}\n`);
+        return;
+      }
+      const proc = Bun.spawnSync(cmd, { cwd: root, stdin: Buffer.from(notes), stdout: "inherit", stderr: "inherit" });
+      if (proc.exitCode !== 0) throw new Error("gh release create failed");
+    },
+    log: (line) => console.log(line),
+  });
 }
