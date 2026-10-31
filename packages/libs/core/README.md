@@ -12,10 +12,11 @@ bun create mercury-agent my-agent
 
 ## What it exports
 
-- `defineMercuryConfig(config)` types the app's `mercury.config.ts`: `plugins`, `channels`, `auth` (the provider that tells a channel like HTTP who is calling, or a list of them tried in order, the first that recognizes the caller deciding; each provider's people are its own, so the same person coming in through two providers is two people; HTTP doesn't start without one), `directory` (who that is to Mercury, with their roles; a closed instance for anyone it doesn't know), `access` (whether unknown people are let in, and which roles a plugin is restricted to), `i18n` (the instance's language files, `defaultLocale` and `timeZone`, see [Languages](https://github.com/lucabro81/mercury-fw/blob/main/apps/docs/src/content/docs/concepts/languages.md)), `persona`, `version` (the app's own version, its `package.json`'s, handed to channels as `ctx.appVersion` and shown on the HTTP channel's `GET /version`, see [the config reference](https://github.com/lucabro81/mercury-fw/blob/main/apps/docs/src/content/docs/reference/config.md#version)).
+- `defineMercuryConfig(config)` types the app's `mercury.config.ts`: `plugins`, `channels`, `auth` (the provider that tells a channel like HTTP who is calling, or a list of them tried in order, the first that recognizes the caller deciding; each provider's people are its own, so the same person coming in through two providers is two people; HTTP doesn't start without one), `directory` (who that is to Mercury, with their roles; a closed instance for anyone it doesn't know), `access` (whether unknown people are let in, and which roles a plugin is restricted to), `i18n` (the instance's language files, `defaultLocale` and `timeZone`, see [Languages](https://github.com/lucabro81/mercury-fw/blob/main/apps/docs/src/content/docs/concepts/languages.md)), `model` (how the main model generates, for every call on it: `think`, `temperature`, `topP`, `topK`; a field left out isn't sent, so the model's own value applies, and one out of its range stops the start, see [the config reference](https://github.com/lucabro81/mercury-fw/blob/main/apps/docs/src/content/docs/reference/config.md#model)), `persona`, `version` (the app's own version, its `package.json`'s, handed to channels as `ctx.appVersion` and shown on the HTTP channel's `GET /version`, see [the config reference](https://github.com/lucabro81/mercury-fw/blob/main/apps/docs/src/content/docs/reference/config.md#version)).
 - `composeMercury(config)` builds the agent from that config and the environment, and returns what the entrypoints start: `handleTurn`, the declared channels with their runtime, the background jobs (`startCrons`), and `texts`, the texts a person sees in their language, which the REPL entrypoint hands to `createTerminalProvider({ texts })` for the terminal's own lines.
 - `loadChannels(channels, { runtime })` turns the declared channels into started providers, and `createTerminalProvider(...)` opens the dev REPL on `handleTurn`.
 - The types `MercuryI18n` (the config's `i18n`), `Messages` (a language file's texts, key to text), `Texts` and `Translate` (the texts for a person, and the function giving one by key); `Messages` and `Translate` are the plugin contract's (`@mercury-fw/plugin-types`), re-exported.
+- `envNumber(name, fallback?)` and `envBoolean(name, fallback)` read a config field's value from an environment variable: a number, or `true`/`false`; empty or unset gives the fallback, anything else throws naming the variable. A scaffolded app's `model` section reads `OLLAMA_THINK`, `OLLAMA_TEMPERATURE`, `OLLAMA_TOP_P` and `OLLAMA_TOP_K` with them.
 - `DEFAULT_PERSONA_IDENTITY`, `DEFAULT_PERSONA_TONE` are the persona an app gets when its config sets none, both referring to the assistant's name as `{{assistant}}`.
 - `assistantNameOf(persona)` is the assistant's name (`persona.name`, Mercury by default), refusing one that can't stand in a prompt: blank, longer than 40 characters, on more than one line. `composeMercury` refuses to start on such a name.
 
@@ -28,12 +29,13 @@ A scaffolded app's `src/index.ts` (the service) and `src/repl.ts` (the REPL) are
 | `OLLAMA_HOST` | The Ollama-compatible endpoint. Required. |
 | `OLLAMA_MODEL` | The chat model. Required. |
 | `OLLAMA_EMBEDDING_MODEL` | The embedding model for the episodic memory (default `nomic-embed-text`). |
-| `OLLAMA_THINK` | `false` for a model that doesn't support thinking. |
 | `QDRANT_URL` | Qdrant, for the episodic memory (default `http://qdrant:6333`). |
 | `WIKI_VAULT_PATH` | Where the wiki lives. Required. |
 | `TURN_STALL_TIMEOUT_MS` | How long a turn on a streaming channel (the HTTP surface) waits for the model's next token or step before it's stopped with an error, "the model sent nothing for N seconds" (default 120000, two minutes; `0` turns it off). A tool that takes long doesn't count: the wait pauses while a tool runs. Without it, a model server that stops sending mid-answer leaves the turn, and its conversation, hanging until the service restarts. |
 
 Qdrant being unreachable degrades memory, it doesn't stop the agent.
+
+How the main model generates isn't read from the environment by the core: it's the config's `model` section, whose values a scaffolded app reads from `OLLAMA_THINK`, `OLLAMA_TEMPERATURE`, `OLLAMA_TOP_P` and `OLLAMA_TOP_K`. The startup log says what the model runs with (`[model] qwen3.8:27b: think on, temperature 0.2`).
 
 ## How Mercury remembers a conversation
 

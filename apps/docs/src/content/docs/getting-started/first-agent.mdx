@@ -70,14 +70,16 @@ cd my-agent
 cp .env.example .env
 ```
 
-Open `.env` and fill in the chat model you pulled, the only line left empty:
+Open `.env` and fill in the chat model you pulled:
 
 ```bash title=".env"
 OLLAMA_MODEL=<chat-model>
 ```
 
 The other lines already point at Ollama on your machine (`OLLAMA_HOST`; set it to `http://<host>:11434` when
-Ollama runs elsewhere), at the embedding model, and at the two places Mercury keeps its memory. The [environment reference](../../reference/environment/) explains each one.
+Ollama runs elsewhere), at the embedding model, and at the two places Mercury keeps its memory. The four after
+`OLLAMA_MODEL` (`OLLAMA_THINK`, `OLLAMA_TEMPERATURE`, `OLLAMA_TOP_P`, `OLLAMA_TOP_K`) tune how the model answers: leave
+them empty and the model's own settings apply. The [environment reference](../../reference/environment/) explains each one.
 
 ## 3. Start it
 
