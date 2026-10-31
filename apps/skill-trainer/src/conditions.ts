@@ -7,6 +7,8 @@
 import { createHash } from "node:crypto";
 import { readdir, readFile } from "node:fs/promises";
 import { join, relative } from "node:path";
+import type { MercuryModel } from "@mercury-fw/core";
+import { modelSettingsFromEnv } from "./model-settings.ts";
 
 export type RunConditions = {
   /** The repo's commit. */
@@ -19,6 +21,8 @@ export type RunConditions = {
   model: string;
   /** `OLLAMA_HOST`, empty when unset. */
   host: string;
+  /** The model's settings (think, temperature, top_p, top_k) from the env, only those set. Missing in a run recorded before they were. */
+  settings?: MercuryModel;
   /** sha256 of the skill body that ran. */
   skill: string;
   /** sha256 of the plugin's training data (its `skill-training/` folder, tests left out). */
@@ -61,18 +65,27 @@ export async function collectConditions(skillBody: string, dataDir: string, deps
     clean: status.trim() === "",
     model: deps.env.OLLAMA_MODEL ?? "",
     host: deps.env.OLLAMA_HOST ?? "",
+    settings: modelSettingsFromEnv(deps.env),
     skill: sha256(skillBody),
     data,
   };
 }
 
-/** The conditions in which `a` and `b` differ, the skill aside; a tree with changes always counts as one. */
+/** Whether two runs' settings are known and the same, whatever order their entries were written in. */
+function sameSettings(a: MercuryModel | undefined, b: MercuryModel | undefined): boolean {
+  if (a === undefined || b === undefined) return false;
+  const keys: Array<keyof MercuryModel> = ["think", "temperature", "topP", "topK"];
+  return keys.every((key) => a[key] === b[key]);
+}
+
+/** The conditions in which `a` and `b` differ, the skill aside; a tree with changes, or settings a run didn't record, always count as one. */
 export function conditionsDiffer(a: RunConditions, b: RunConditions): Array<keyof RunConditions> {
   const differ: Array<keyof RunConditions> = [];
   if (a.commit !== b.commit) differ.push("commit");
   if (!a.clean || !b.clean) differ.push("clean");
   if (a.model !== b.model) differ.push("model");
   if (a.host !== b.host) differ.push("host");
+  if (!sameSettings(a.settings, b.settings)) differ.push("settings");
   if (a.data !== b.data) differ.push("data");
   return differ;
 }
