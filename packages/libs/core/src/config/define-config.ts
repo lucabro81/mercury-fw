@@ -45,6 +45,24 @@ export type MercuryI18n = {
   timeZone?: string;
 };
 
+/**
+ * How the main model (the one in `OLLAMA_MODEL`) generates (#355), for every
+ * call on it: the turn, the summaries, the plugins' guards. Every entry is
+ * optional: one left out (or `undefined`, an empty variable read with
+ * `envNumber`) isn't sent, so the model's own value (its Modelfile) applies.
+ * A value out of its range stops the start.
+ */
+export type MercuryModel = {
+  /** Whether the model reasons before answering; on when left out. `false` for a model that doesn't support it, which Ollama otherwise refuses. */
+  think?: boolean;
+  /** How much room the less likely words get: lower is more predictable. From 0 up. */
+  temperature?: number;
+  /** Only the most likely words whose probabilities add up to this are kept. Above 0, at most 1. */
+  topP?: number;
+  /** Only this many of the most likely words are kept. A whole number from 1 up. */
+  topK?: number;
+};
+
 /** The shape of a Mercury instance's composition config: the tool plugins
  * and the channel plugins (each enabled by being declared here: declared =
  * active), each loaded by its own loader, the auth providers that tell a
@@ -52,10 +70,11 @@ export type MercuryI18n = {
  * channel won't start without one),
  * the directory that tells the core who that is and their roles, who may
  * use what (`access`), the languages it speaks (`i18n`), the assistant's
- * persona (its identity and tone; the defaults when left out), plus the
- * app's own version (`version`). */
+ * persona (its identity and tone; the defaults when left out), how the main
+ * model generates (`model`), plus the app's own version (`version`). */
 export type MercuryConfig = {
   plugins: Plugin[];
+  model?: MercuryModel;
   channels?: ChannelPlugin[];
   auth?: AuthPlugin | AuthPlugin[];
   directory?: DirectoryPlugin;
