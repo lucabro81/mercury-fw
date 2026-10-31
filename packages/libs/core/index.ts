@@ -14,9 +14,9 @@
  *   its composition through these; `Persona` types its `persona` field,
  *   `MercuryI18n` its `i18n` field, `MercuryModel` its `model` field (how the
  *   main model generates), and `Messages` a language file's texts.
+ *   `Texts`/`Translate` type the texts the app hands the terminal (`app.texts`).
  * - `envNumber`/`envBoolean` — a config entry's value from an environment
  *   variable, or the config's fallback when it's unset or empty.
- *   `Texts`/`Translate` type the texts the app hands the terminal (`app.texts`).
  * - `DEFAULT_PERSONA_IDENTITY`/`DEFAULT_PERSONA_TONE` — the persona an instance
  *   gets when its config sets none; the scaffolder writes them as a new app's
  *   starting persona.
