@@ -9,7 +9,7 @@ sidebar:
 `defineMercuryConfig`, which does nothing at runtime: it's there so your editor and `tsc` check every field.
 
 ```ts title="mercury.config.ts"
-import { defineMercuryConfig } from "@mercury-fw/core";
+import { defineMercuryConfig, envBoolean, envNumber } from "@mercury-fw/core";
 import { httpChannel } from "@mercury-fw/channel-http";
 import { oidcAuth } from "@mercury-fw/auth-oidc";
 import { staticDirectory } from "@mercury-fw/directory-static";
@@ -34,13 +34,20 @@ export default defineMercuryConfig({
   auth: oidcAuth,
   directory: staticDirectory,
   access: { unknown: "refuse" },
+  model: {
+    think: envBoolean("OLLAMA_THINK", true),
+    temperature: envNumber("OLLAMA_TEMPERATURE"),
+    topP: envNumber("OLLAMA_TOP_P"),
+    topK: envNumber("OLLAMA_TOP_K"),
+  },
   i18n: { defaultLocale: "it", locales: { en, it } },
   version: pkg.version,
 });
 ```
 
 Settings that change between machines, and secrets, never go here: they go in `.env`, and each piece reads its own
-(see [Environment variables](../environment/)).
+(see [Environment variables](../environment/)). A field whose value changes between machines, like the model's in
+[`model`](#model), reads it from `.env` through `envNumber` or `envBoolean`.
 
 ## `plugins`
 
@@ -121,6 +128,42 @@ Who the assistant is. Every field is optional, and a field left out takes the de
 A scaffolded app writes the name once, as a `const`, and refers to it in `identity` and `tone`; the tone is written out
 in full, one string per line, ready to edit. `{{assistant}}` in any text the model reads also becomes `name`: that's how
 the plugins' fragments and skills, written without knowing what the assistant will be called, refer to it.
+
+## `model`
+
+How the chat model (the one in `OLLAMA_MODEL`) generates. It applies to every call on that model: the answers, and
+the summaries and checks the agent runs on it in the background. Every field is optional: a field left out isn't
+sent to Ollama, so the model's own value applies, the one in its Modelfile.
+
+| Field | |
+|---|---|
+| `think` | Whether the model reasons before it answers (on when left out). `false` for a model that doesn't support it: Ollama refuses its requests otherwise. |
+| `temperature` | How much room the less likely words get, from 0 up. Lower is more predictable: a model that guesses commands instead of reading how to write them guesses less at a low temperature. |
+| `topP` | Before each word is picked, only the most likely ones whose probabilities add up to this are kept. Above 0, at most 1. |
+| `topK` | Before each word is picked, only this many of the most likely ones are kept. A whole number from 1 up. |
+
+A value out of its range stops the agent at startup, and the log says which field. At startup the log also says what
+the model runs with: `[model] qwen3.8:27b: think on, temperature 0.2`, or `server defaults` when nothing is set.
+
+Each value usually comes from `.env`, so the same app can run another model somewhere else with other values. A
+scaffolded app writes the section like this:
+
+```ts
+import { defineMercuryConfig, envBoolean, envNumber } from "@mercury-fw/core";
+
+model: {
+  think: envBoolean("OLLAMA_THINK", true),
+  temperature: envNumber("OLLAMA_TEMPERATURE"),
+  topP: envNumber("OLLAMA_TOP_P"),
+  topK: envNumber("OLLAMA_TOP_K"),
+},
+```
+
+`envNumber(name, fallback?)` reads a number from the variable, and `envBoolean(name, fallback)` reads `true` or `false`.
+An empty or missing variable gives the fallback: with none, as for the three numbers above, the field is left out and
+the model's own value applies. Write one to have a default of your own, `envNumber("OLLAMA_TEMPERATURE", 0.2)`. Text
+that isn't a number, or isn't `true` or `false`, stops the agent at startup with the variable's name. The variables are
+listed in [Environment variables](../environment/#the-model).
 
 ## `version`
 

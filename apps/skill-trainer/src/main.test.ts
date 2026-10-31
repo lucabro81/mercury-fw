@@ -29,7 +29,7 @@ const training: SkillTraining = {
   tasks: [task("a", "done"), task("b", "something else")],
 };
 
-const CONDITIONS: RunConditions = { commit: "abc123", clean: true, model: "m", host: "h", skill: "s", data: "d" };
+const CONDITIONS: RunConditions = { commit: "abc123", clean: true, model: "m", host: "h", settings: { think: true }, skill: "s", data: "d" };
 
 /** Deps answering every turn "done", calling `onOpen` first; the skill bodies the conditions were taken for land in `bodies`. */
 function deps(onOpen: () => void = () => {}, { failOpen = false } = {}): { deps: CommandDeps; printed: string[]; bodies: Array<[string, string]> } {

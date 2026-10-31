@@ -16,6 +16,7 @@
  */
 import { QdrantClient } from "@qdrant/js-client-rest";
 import { getOllamaProvider } from "./model/client.ts";
+import { describeModelSettings, ollamaSettings } from "./model/generation-settings.ts";
 import { createConfirmationStore, createStageChoices, createStageConfirmation, type ConfirmationStore, type ResumedAction } from "@mercury-fw/confirm-engine";
 import { createDisplayStore } from "./tools/display-store.ts";
 import { createPresentTool } from "./tools/present-tool.ts";
@@ -158,14 +159,13 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   const provider = getOllamaProvider();
   const ollamaHost = requireEnv("OLLAMA_HOST"); // already validated by getOllamaProvider(); read again here for the terminal provider's getLoadedContextLength call
   const ollamaModel = requireEnv("OLLAMA_MODEL");
-  // think: true enables Ollama's native extended-thinking tokens — see
-  // agent-turn.ts's reasoning-delta handling. OLLAMA_THINK lets the deployer
-  // turn it off for a model that doesn't support it (Ollama rejects the request
-  // outright otherwise, 400 "does not support thinking"), same reasoning as
-  // never guessing OLLAMA_HOST. Model-construction-time setting only, set once
-  // here for the one shared model instance used by every channel.
-  const ollamaThink = process.env.OLLAMA_THINK !== "false";
-  const model = provider(ollamaModel, { think: ollamaThink });
+  // How the model generates comes from the config's `model` section (#355),
+  // set once here for the one shared model instance every call goes through:
+  // think (Ollama's native extended thinking, see agent-turn.ts's
+  // reasoning-delta handling) and the sampling options, each sent only when set.
+  const modelSettings = ollamaSettings(config.model);
+  console.error(describeModelSettings(ollamaModel, modelSettings));
+  const model = provider(ollamaModel, modelSettings);
   const summarize = createSummarizer(model);
 
   // Plugins are declared in the instance's config (its `mercury.config.ts`) and

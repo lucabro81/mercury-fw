@@ -220,6 +220,27 @@ describe("renderApp: mercury.config.ts", () => {
     expect(config).not.toContain("tooling");
   });
 
+  // #355: how the main model generates is the config's, each value read from
+  // the env, none with a fallback of the app's: empty means the model's own.
+  test("declares the main model's settings, each from its env variable", () => {
+    for (const chosen of [EMPTY, HTTP_JIRA, FULL]) {
+      const config = renderApp(chosen).get("mercury.config.ts") ?? "";
+      expect(config).toContain('import { defineMercuryConfig, envBoolean, envNumber } from "@mercury-fw/core";\n');
+      expect(config).toContain(
+        [
+          "  // How the main model generates, each value from .env: left empty, the",
+          "  // model's own applies (thinking stays on).",
+          "  model: {",
+          '    think: envBoolean("OLLAMA_THINK", true),',
+          '    temperature: envNumber("OLLAMA_TEMPERATURE"),',
+          '    topP: envNumber("OLLAMA_TOP_P"),',
+          '    topK: envNumber("OLLAMA_TOP_K"),',
+          "  },",
+        ].join("\n"),
+      );
+    }
+  });
+
   test("a plugin chosen twice is imported and declared once", () => {
     const twice = input({ plugins: ["bitbucket", "bitbucket"] });
     const config = renderApp(twice).get("mercury.config.ts") ?? "";
@@ -341,6 +362,26 @@ describe("renderApp: .env.example", () => {
     expect(env).not.toContain("# ---");
   });
 
+  // #355: the variables the config's model section reads, empty, right after the model.
+  test("the main model's settings, empty, after OLLAMA_MODEL", () => {
+    const env = renderApp(EMPTY).get(".env.example") ?? "";
+    expect(env).toContain(
+      [
+        "# Chat model the assistant runs on",
+        "OLLAMA_MODEL=",
+        "# false for a chat model that doesn't support thinking (empty: on)",
+        "OLLAMA_THINK=",
+        "# The chat model's temperature, from 0 up (empty: the model's own)",
+        "OLLAMA_TEMPERATURE=",
+        "# The chat model's top_p, above 0 and at most 1 (empty: the model's own)",
+        "OLLAMA_TOP_P=",
+        "# The chat model's top_k, a whole number from 1 up (empty: the model's own)",
+        "OLLAMA_TOP_K=",
+        "",
+      ].join("\n"),
+    );
+  });
+
   // #142: MERCURY_CLIS repeated the config, and a plugin missing from it
   // was skipped silently.
   test("no MERCURY_CLIS: declaring a plugin is what enables it", () => {
@@ -394,8 +435,9 @@ describe("renderApp: docker-compose.yml", () => {
  */
 function evaluatedConfig(config: string): { persona: { name: string; identity: string; tone: string } } {
   // The imports are dropped: the language file's stands in as the empty file it
-  // is, the package.json's as a manifest with a version.
-  const body = `const en = {};\nconst pkg = { version: "0.1.0" };\n${config.replace(/^import .*$/gm, "").replace("export default defineMercuryConfig(", "return (")}`;
+  // is, the package.json's as a manifest with a version, the core's env helpers
+  // as an empty environment.
+  const body = `const en = {};\nconst pkg = { version: "0.1.0" };\nconst envBoolean = (_, fallback) => fallback;\nconst envNumber = (_, fallback) => fallback;\n${config.replace(/^import .*$/gm, "").replace("export default defineMercuryConfig(", "return (")}`;
   return new Function(body)();
 }
 

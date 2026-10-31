@@ -115,7 +115,7 @@ export function createTerminalProvider(deps: TerminalProviderDeps): Provider {
             onToolStart: dim,
             onTextChunk: (chunk) => write(chunk),
             // Only ever fires for a model that actually supports Ollama's
-            // extended thinking (see src/index.ts's OLLAMA_THINK) — a
+            // extended thinking (the config's model.think) — a
             // non-reasoning model means this is simply never called, so
             // there's no header and no output at all for that turn.
             onReasoningChunk: (chunk, id) => {

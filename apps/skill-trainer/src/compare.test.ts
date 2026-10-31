@@ -4,7 +4,7 @@ import type { RunConditions } from "./conditions.ts";
 import type { Split } from "./contract.ts";
 import type { RunFile, RunResult } from "./main.ts";
 
-const CONDITIONS: RunConditions = { commit: "c1", clean: true, model: "m", host: "h", skill: "s1", data: "d1" };
+const CONDITIONS: RunConditions = { commit: "c1", clean: true, model: "m", host: "h", settings: { think: true }, skill: "s1", data: "d1" };
 
 /** A result of task `id` in `repeat`, passed or not. */
 const result = (id: string, repeat: number, passed: boolean, over: Partial<RunResult> = {}): RunResult => ({

@@ -322,7 +322,7 @@ function resumedMessages(resumed: ResumedAction): ModelMessage[] {
  *   `streamText` (see `onTextChunk`). Called once per reasoning-token
  *   delta as it streams, tagged with the SDK's own id for that reasoning
  *   block — only ever fires for a model that actually supports Ollama's
- *   native extended thinking (see `src/index.ts`'s `OLLAMA_THINK`);
+ *   native extended thinking (the config's `model.think`);
  *   otherwise no reasoning parts ever arrive and this is simply never
  *   called. This content is UI-only: it never touches the returned text
  *   or `SessionHistory`. A single turn can reason more than once (e.g.

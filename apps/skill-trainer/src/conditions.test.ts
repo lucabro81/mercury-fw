@@ -29,6 +29,7 @@ describe("collectConditions", () => {
       clean: true,
       model: "qwen3.8:27b",
       host: "http://192.168.90.217:11434",
+      settings: { think: true },
       skill: expect.stringMatching(/^[0-9a-f]{64}$/),
       data: expect.stringMatching(/^[0-9a-f]{64}$/),
     });
@@ -69,6 +70,14 @@ describe("collectConditions", () => {
     expect((await collectConditions("b", dir, deps())).data).not.toBe(before);
   });
 
+  // #355: the model's settings move a score as much as the skill does, so a run records them.
+  test("the main model's settings, as the instance gets them from the env", async () => {
+    const env = { OLLAMA_THINK: "false", OLLAMA_TEMPERATURE: "0.2", OLLAMA_TOP_P: "", OLLAMA_TOP_K: "20" };
+    const conditions = await collectConditions("b", dir, deps({ env }));
+    expect(conditions.settings).toEqual({ think: false, temperature: 0.2, topK: 20 });
+    expect(Object.keys(conditions.settings ?? {})).toEqual(["think", "temperature", "topK"]);
+  });
+
   test("an unset model or host is recorded as empty, not guessed", async () => {
     const conditions = await collectConditions("b", dir, deps({ env: {} }));
     expect([conditions.model, conditions.host]).toEqual(["", ""]);
@@ -76,7 +85,7 @@ describe("collectConditions", () => {
 });
 
 describe("conditionsDiffer", () => {
-  const base: RunConditions = { commit: "c1", clean: true, model: "m", host: "h", skill: "s1", data: "d1" };
+  const base: RunConditions = { commit: "c1", clean: true, model: "m", host: "h", settings: { think: true }, skill: "s1", data: "d1" };
 
   test("two runs that differ only in the skill compare", () => {
     expect(conditionsDiffer(base, { ...base, skill: "s2" })).toEqual([]);
@@ -84,6 +93,20 @@ describe("conditionsDiffer", () => {
 
   test("every other difference is named", () => {
     expect(conditionsDiffer(base, { ...base, commit: "c2", model: "m2", data: "d2" })).toEqual(["commit", "model", "data"]);
+  });
+
+  // #355: two runs at different temperatures don't compare as if only the skill had changed.
+  test("different model settings are a difference, the same ones in another order aren't", () => {
+    expect(conditionsDiffer(base, { ...base, settings: { think: true, temperature: 0.2 } })).toEqual(["settings"]);
+    expect(conditionsDiffer(base, { ...base, settings: { think: false } })).toEqual(["settings"]);
+    const both = { think: true, temperature: 0.2, topK: 20 };
+    expect(conditionsDiffer({ ...base, settings: both }, { ...base, settings: { topK: 20, temperature: 0.2, think: true } })).toEqual([]);
+  });
+
+  test("a run recorded before the settings were never compares with one that has them", () => {
+    const { settings: _settings, ...older } = base;
+    expect(conditionsDiffer(older, base)).toEqual(["settings"]);
+    expect(conditionsDiffer(older, older)).toEqual(["settings"]);
   });
 
   // A dirty tree means the code that ran isn't the commit recorded: the two runs can't be shown to match.
