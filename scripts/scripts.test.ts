@@ -13,7 +13,7 @@ import { typesConfig } from "./build-types.ts";
 import { isPublished, publishAction, publishAll, publishCommand, writeGithubOutput } from "./publish.ts";
 import { comparePack, privacyProblem } from "./check-pack.ts";
 import { pendingChangesets, stageRelease } from "./release.ts";
-import { changelogSection, createReleaseCommand, parseTag, publishedOnNpm, releaseNotes, releasesToCreate } from "./github-releases.ts";
+import { changelogSection, createReleaseCommand, createReleases, parseTag, releaseNotes, releasesToCreate } from "./github-releases.ts";
 
 const ws = (name: string, deps: Record<string, string> = {}, peers: Record<string, string> = {}): Workspace => ({
   dir: `/repo/${name}`,
@@ -437,16 +437,40 @@ describe("createReleaseCommand", () => {
   });
 });
 
-describe("publishedOnNpm", () => {
-  test("a framework tag is checked as the core's version, a package tag as itself", async () => {
-    const asked: string[] = [];
-    const published = async (name: string, version: string) => {
-      asked.push(`${name}@${version}`);
-      return name !== "@mercury-fw/plugin-jira";
+describe("createReleases", () => {
+  // #350: the job asked npm about each tag right after publishing, npm didn't
+  // show the new version yet, and the Release was skipped with the job green.
+  // A tag gets its Release on the publish's success alone: there's no registry
+  // to ask.
+  test("every tag gets its Release, in order, with nothing asked of npm", async () => {
+    const created: string[] = [];
+    const logged: string[] = [];
+    await createReleases(["v0.66.0", "@mercury-fw/channel-http@0.14.0"], {
+      create: async (tag) => void created.push(tag),
+      log: (line) => void logged.push(line),
+    });
+    expect(created).toEqual(["v0.66.0", "@mercury-fw/channel-http@0.14.0"]);
+    expect(logged).toEqual([]);
+  });
+
+  test("nothing to create says so and creates nothing", async () => {
+    const created: string[] = [];
+    const logged: string[] = [];
+    await createReleases([], { create: async (tag) => void created.push(tag), log: (line) => void logged.push(line) });
+    expect(created).toEqual([]);
+    expect(logged).toEqual(["No Release to create."]);
+  });
+
+  test("a creation that fails stops the run, naming the tag, before the next one", async () => {
+    const created: string[] = [];
+    const create = async (tag: string) => {
+      if (tag === "v0.66.0") throw new Error("gh release create failed");
+      created.push(tag);
     };
-    expect(await publishedOnNpm("v0.59.1", "https://r", published)).toBe(true);
-    expect(await publishedOnNpm("@mercury-fw/plugin-jira@0.8.0", "https://r", published)).toBe(false);
-    expect(asked).toEqual(["@mercury-fw/core@0.59.1", "@mercury-fw/plugin-jira@0.8.0"]);
+    await expect(createReleases(["v0.66.0", "@mercury-fw/channel-http@0.14.0"], { create, log: () => {} })).rejects.toThrow(
+      "v0.66.0: gh release create failed",
+    );
+    expect(created).toEqual([]);
   });
 });
 
