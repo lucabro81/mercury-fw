@@ -45,6 +45,10 @@ const CORE_ENV: EnvVar[] = [
     value: "http://host.docker.internal:11434",
   },
   { name: "OLLAMA_MODEL", comment: "Chat model the assistant runs on" },
+  { name: "OLLAMA_THINK", comment: "false for a chat model that doesn't support thinking (empty: on)" },
+  { name: "OLLAMA_TEMPERATURE", comment: "The chat model's temperature, from 0 up (empty: the model's own)" },
+  { name: "OLLAMA_TOP_P", comment: "The chat model's top_p, above 0 and at most 1 (empty: the model's own)" },
+  { name: "OLLAMA_TOP_K", comment: "The chat model's top_k, a whole number from 1 up (empty: the model's own)" },
   { name: "OLLAMA_EMBEDDING_MODEL", comment: "Embedding model for the episodic memory", value: "nomic-embed-text" },
   { name: "QDRANT_URL", comment: "Qdrant, the compose service", value: "http://qdrant:6333" },
   { name: "WIKI_VAULT_PATH", comment: "Wiki vault, the named volume's mount point", value: "/app/wiki-vault" },
@@ -54,6 +58,18 @@ const CORE_ENV: EnvVar[] = [
     value: "120000",
   },
 ];
+
+/** The config's `model` section: the main model's settings, each from its env variable (#355). */
+const MODEL_SECTION = [
+  "  // How the main model generates, each value from .env: left empty, the",
+  "  // model's own applies (thinking stays on).",
+  "  model: {",
+  '    think: envBoolean("OLLAMA_THINK", true),',
+  '    temperature: envNumber("OLLAMA_TEMPERATURE"),',
+  '    topP: envNumber("OLLAMA_TOP_P"),',
+  '    topK: envNumber("OLLAMA_TOP_K"),',
+  "  },",
+].join("\n");
 
 /** Above the config's `version`: what it does, and what it doesn't. */
 const VERSION_COMMENT = [
@@ -223,7 +239,7 @@ function renderConfig(
 ): string {
   const withRules = tools.filter((t) => t.formatter);
   const imports = [
-    'import { defineMercuryConfig } from "@mercury-fw/core";',
+    'import { defineMercuryConfig, envBoolean, envNumber } from "@mercury-fw/core";',
     'import en from "./locales/en.json";',
     'import pkg from "./package.json";',
   ];
@@ -260,6 +276,7 @@ function renderConfig(
     channelList,
     ...(auth ? [`  auth: ${auth.exportName},`] : []),
     ...(directory ? [`  directory: ${directory.exportName},`] : []),
+    MODEL_SECTION,
     "  i18n: { locales: { en } },",
     VERSION_COMMENT,
     "  version: pkg.version,",
@@ -431,7 +448,7 @@ ${auth ? `- Auth: ${auth.id}\n` : ""}- Tool plugins: ${list(tools)}
 ${directory ? `- Directory: ${directory.id}\n` : ""}
 ## Layout
 
-- \`mercury.config.ts\`: what the app is made of (tool plugins, channels, how their lists read) and the assistant's persona: its name, who it is and how it answers. Edit them freely. Its \`version\` is the one in \`package.json\`, which the HTTP channel's \`GET /version\` shows to anyone, no token needed: Mercury never changes it, and a new one shows once the app is rebuilt. Remove the line to show none.
+- \`mercury.config.ts\`: what the app is made of (tool plugins, channels, how their lists read) and the assistant's persona: its name, who it is and how it answers. Edit them freely. Its \`model\` section is how the chat model generates (thinking, temperature, top_p, top_k), each value from \`.env\`: left empty, the model's own applies. Its \`version\` is the one in \`package.json\`, which the HTTP channel's \`GET /version\` shows to anyone, no token needed: Mercury never changes it, and a new one shows once the app is rebuilt. Remove the line to show none.
 - \`locales/\`: the texts people see, one file per language the assistant speaks. \`en.json\` overrides the English ones; add \`it.json\` (and \`it\` to \`i18n.locales\` in the config) for Italian, \`i18n.defaultLocale\` for the language people get when they haven't picked one, \`i18n.timeZone\` (an IANA name such as \`Europe/Rome\`) for the time zone of whoever saved none and whose app says none. The app's own texts (a formatter rule's) are \`app.\` keys, written in English in \`en.json\` and translated in every other file. Mercury logs at startup the keys a file is missing.
 - \`src/index.ts\`: the service (channels, crons). \`src/repl.ts\`: an interactive terminal for trying things out.
 - \`plugins/\`: the app's own plugins, when it has any: each one a package in a folder of its own (\`plugins/<name>\`, a workspace), listed in \`dependencies\` as \`workspace:*\` and declared in \`mercury.config.ts\`. \`bun run test\` runs their tests.

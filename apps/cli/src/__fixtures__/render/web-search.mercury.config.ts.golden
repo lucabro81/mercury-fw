@@ -8,7 +8,7 @@
  *
  * Every tool plugin and channel declared here is active.
  */
-import { defineMercuryConfig } from "@mercury-fw/core";
+import { defineMercuryConfig, envBoolean, envNumber } from "@mercury-fw/core";
 import en from "./locales/en.json";
 import pkg from "./package.json";
 import { webSearchPlugin } from "@mercury-fw/plugin-web-search";
@@ -45,6 +45,14 @@ export default defineMercuryConfig({
   ],
   channels: [httpChannel],
   auth: staticAuth,
+  // How the main model generates, each value from .env: left empty, the
+  // model's own applies (thinking stays on).
+  model: {
+    think: envBoolean("OLLAMA_THINK", true),
+    temperature: envNumber("OLLAMA_TEMPERATURE"),
+    topP: envNumber("OLLAMA_TOP_P"),
+    topK: envNumber("OLLAMA_TOP_K"),
+  },
   i18n: { locales: { en } },
   // The app's version, from package.json: GET /version shows it next to the
   // framework's, to anyone (no token). Mercury never changes it, and a new
