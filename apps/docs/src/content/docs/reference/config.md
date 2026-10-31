@@ -159,7 +159,7 @@ model: {
 },
 ```
 
-`envNumber(name, fallback)` reads a number from the variable, and `envBoolean(name, fallback)` reads `true` or `false`.
+`envNumber(name, fallback?)` reads a number from the variable, and `envBoolean(name, fallback)` reads `true` or `false`.
 An empty or missing variable gives the fallback: with none, as for the three numbers above, the field is left out and
 the model's own value applies. Write one to have a default of your own, `envNumber("OLLAMA_TEMPERATURE", 0.2)`. Text
 that isn't a number, or isn't `true` or `false`, stops the agent at startup with the variable's name. The variables are
