@@ -52,6 +52,44 @@ describe("composeMercury", () => {
     }
   });
 
+  /** The lines `composeMercury(config)` writes to stderr. */
+  async function startupLines(config: MercuryConfig): Promise<string[]> {
+    const lines: string[] = [];
+    const original = console.error;
+    console.error = (...args: unknown[]) => void lines.push(args.map(String).join(" "));
+    try {
+      await composeMercury(config);
+    } finally {
+      console.error = original;
+    }
+    return lines;
+  }
+
+  // #355: the main model's settings come from the config's `model` section, logged at startup.
+  it("logs the main model with the settings the config gives it", async () => {
+    const lines = await startupLines({ plugins: [], model: { think: false, temperature: 0.2, topK: 20 } });
+    expect(lines).toContain("[model] none: think off, temperature 0.2, top_k 20");
+  });
+
+  it("logs the server's defaults when the config sets nothing", async () => {
+    expect(await startupLines({ plugins: [] })).toContain("[model] none: think on, server defaults");
+  });
+
+  it("no longer reads OLLAMA_THINK itself: think follows the config", async () => {
+    process.env.OLLAMA_THINK = "false";
+    try {
+      expect(await startupLines({ plugins: [] })).toContain("[model] none: think on, server defaults");
+    } finally {
+      delete process.env.OLLAMA_THINK;
+    }
+  });
+
+  it("refuses to start on a setting out of its range", async () => {
+    await expect(composeMercury({ plugins: [], model: { temperature: -1 } })).rejects.toThrow(
+      "model.temperature must be a number from 0 up, got -1",
+    );
+  });
+
   it("gives channels no app version when the config declares none, or an empty one", async () => {
     for (const config of [{ plugins: [] }, { plugins: [], version: "" }, { plugins: [], version: "  " }] satisfies MercuryConfig[]) {
       const app = await composeMercury(config);

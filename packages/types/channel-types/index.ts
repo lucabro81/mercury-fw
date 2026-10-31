@@ -197,7 +197,7 @@ export type TurnSink = {
   onToolFinish?: (toolCallId: string, outcome: ToolOutcome) => void;
   /** Present ⇒ `runTurn` uses `streamText`. Must stay undefined for Google Chat's own *answer* delivery. */
   onTextChunk?: (chunk: string) => void;
-  /** Reasoning-token delta (Ollama extended thinking, behind OLLAMA_THINK). Present ⇒ `streamText`. Never reaches `SessionHistory`. `id` is the reasoning-block id; a turn can reason more than once, each burst with its own id. */
+  /** Reasoning-token delta (Ollama extended thinking, behind the config's `model.think`). Present ⇒ `streamText`. Never reaches `SessionHistory`. `id` is the reasoning-block id; a turn can reason more than once, each burst with its own id. */
   onReasoningChunk?: (chunk: string, id: string) => void;
   /** Closes a reasoning block that started (even if the turn aborts with it open), so a live display doesn't get stuck. Never for an id `onReasoningChunk` didn't report. `failed` is true only on abort. */
   onReasoningEnd?: (id: string, failed: boolean) => void;
