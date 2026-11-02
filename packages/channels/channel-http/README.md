@@ -60,7 +60,7 @@ Runs one conversational turn; the reply streams back as Server-Sent Events.
 
 **Time zone.** The model reads each message with the time the person wrote it, in their time zone: the one they saved, else the one the request's `X-Time-Zone` header names (an IANA name such as `Europe/Rome`, what `Intl.DateTimeFormat().resolvedOptions().timeZone` gives in a browser), else the app's. A UI saves the person's with `PATCH /me`.
 
-Reasoning and answer text arrive as **incremental deltas** — never one finished block — so a UI renders them live; treat the `final` event as the authoritative text. **To cancel** a turn (e.g. a generation that's diverging), close the connection: Mercury aborts the in-flight generation. Nothing of the half answer is kept: the conversation's transcript keeps your message and an answer marked `interrupted` (see `GET /conversation`). Any connection that closes mid-turn cancels it, a page reload included.
+Reasoning and answer text arrive as **incremental deltas** — never one finished block — so a UI renders them live; treat the `final` event as the authoritative text. **To cancel** a turn (e.g. a generation that's diverging), close the connection: Mercury aborts the in-flight generation. Any connection that closes mid-turn cancels it, a page reload included. Nothing of the half answer is kept: once the model was answering, the conversation's transcript keeps your message and an answer marked `interrupted` (see `GET /conversation`); an opening, or a turn still waiting behind another, leaves nothing.
 
 **SSE events** — each is `event: <name>` followed by `data: <json>`:
 
@@ -117,7 +117,7 @@ All `GET`, all JSON, all reporting state already held in-process. They need an a
 | `GET /wiki/list` | `{ files: [...] }` — `curated/...` and `personal/...` paths |
 | `GET /wiki/read?path=<path>` | `{ content }` — a path as `/wiki/list` gives it; `400` if `path` is missing, `404` if it isn't among yours |
 | `GET /wiki/grep?pattern=<regex>` | `{ matches: [...] }` — `400` if `pattern` is missing |
-| `GET /memory/scroll?collection=<name>&limit=<n>&offset=<cursor>` | one page of your points in a collection kept per person (verbatim archive, episodic memory, semantic facts), each with its whole payload (a verbatim answer's `displays` and `calls` included); `400` for any other collection |
+| `GET /memory/scroll?collection=<name>&limit=<n>&offset=<cursor>` | one page of your points in a collection kept per person (verbatim archive, episodic memory, semantic facts), each with its whole payload (a verbatim answer's `displays` and `calls` included, and an interrupted answer's `interrupted: true` with the note the model gets in its `content`); `400` for any other collection |
 | `GET /openapi.yaml` | the OpenAPI document for this surface (`text/yaml`) |
 
 Conversation history and the conversation list are backed by the durable verbatim archive; they degrade to empty when the vector store is unreachable.

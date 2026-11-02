@@ -857,6 +857,7 @@ components:
           type: string
         preview:
           type: string
+          description: The newest message that shows something, as the person saw it, so the question when the last answer was interrupted.
     ConversationList:
       type: object
       required: [ok, conversations]
