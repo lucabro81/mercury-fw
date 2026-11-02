@@ -28,6 +28,8 @@ export type VerbatimExchange = {
   displays?: string[];
   /** The tool calls an answer was written from, reduced (`../session/call-record.ts`). */
   calls?: CallRecord[];
+  /** Set on the answer of a cancelled turn, whose `content` is the text the history kept for it. */
+  interrupted?: true;
 };
 
 /** Per-turn identity a provider's recall tools are scoped to. `userId` is what makes recall cross-session. */

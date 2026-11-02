@@ -5,6 +5,7 @@ import type { Principal } from "@mercury-fw/channel-types";
 import { createSessionHistory, type SessionHistory } from "../session/history.ts";
 import { OPERATOR_PRINCIPAL } from "../identity/people.ts";
 import { createSessionLock } from "./session-lock.ts";
+import { ABORTED_MARKER } from "../session/agent-turn.ts";
 import type { StepInfo } from "../session/step-info.ts";
 
 function fakeHistory(overrides: Partial<SessionHistory> = {}): SessionHistory {
@@ -2602,5 +2603,106 @@ describe("createTurnRunner: a turn the person cancels", () => {
     expect(sink.finalized).toEqual(["the answer"]);
     expect(ran).toContain("guard");
     expect(ran).toContain("verbatim");
+  });
+});
+
+// #366: a cancelled turn used to leave the archive without a trace, not even
+// the question, so a UI reading the conversation back showed nothing and a
+// history rebuilt from the archive lost it. The question stays, with an answer
+// marked as interrupted; nothing half done (text, calls) goes with it.
+describe("createTurnRunner: what a cancelled turn leaves in the archive", () => {
+  const resumed = {
+    describe: "fetch https://example.org/a",
+    label: "Solo questa volta",
+    toolName: "web_fetch",
+    input: { url: "https://example.org/a" },
+    output: { title: "A", text: "the page body" },
+  };
+
+  /** A runner whose model call records what `runTurn` does: the message, then the marker once aborted (or the answer). */
+  function setup(opts: { recordsMarker?: boolean; failingCapture?: boolean } = {}) {
+    const controller = new AbortController();
+    const captured: unknown[] = [];
+    const ran: string[] = [];
+    const lines: string[] = [];
+    const messages: Array<{ role: "user" | "assistant"; content: string }> = [];
+    const history = fakeHistory({
+      addUserMessage: async (content) => void messages.push({ role: "user", content }),
+      addAssistantMessage: async (content) => void messages.push({ role: "assistant", content }),
+      getMessages: () => messages,
+    });
+    const runner = createTurnRunner({
+      model: {} as any,
+      systemPrompts: { singleUser: "s", multiUser: "m" },
+      buildTools: () => ({}),
+      getOrCreateHistory: () => history,
+      trackSession: () => void ran.push("track"),
+      registerCaptureCallback: () => {},
+      maybeCapture: async () => void ran.push("capture"),
+      processToolCorrections: async () => void ran.push("corrections"),
+      logStep: () => {},
+      logTurnFn: (line) => lines.push(line),
+      heartbeat: () => () => {},
+      captureVerbatim: async (msg) => {
+        if (opts.failingCapture) throw new Error("qdrant down");
+        captured.push(msg);
+      },
+      takeResumed: () => resumed,
+      runTurnFn: async (h, text) => {
+        await h.addUserMessage(text);
+        controller.abort();
+        if (opts.recordsMarker !== false) await h.addAssistantMessage(ABORTED_MARKER);
+        return "half an answer";
+      },
+    });
+    return { runner, controller, captured, ran, lines };
+  }
+
+  test("archives the question, then an answer marked as interrupted with the history's text, and nothing else of the turn", async () => {
+    const { runner, controller, captured, ran } = setup();
+    const sink = baseSink();
+    await runner(baseTurn({ sessionKey: "sk", principal: verified("u1"), text: "the question", abortSignal: controller.signal }), sink);
+    expect(captured).toEqual([
+      { sessionKey: "sk", userId: "google-chat:u1", role: "user", content: "the question" },
+      { sessionKey: "sk", userId: "google-chat:u1", role: "assistant", content: ABORTED_MARKER, interrupted: true },
+    ]);
+    expect(sink.finalized).toEqual([]);
+    expect(sink.disposed).toBe(true);
+    expect(ran).toEqual(["track", "track"]);
+  });
+
+  test("a resumed turn archives only the interrupted answer, as it archives no line of the person's", async () => {
+    const { runner, controller, captured } = setup();
+    await runner(baseTurn({ sessionKey: "sk", principal: verified("u1"), text: "", resumeAfterConfirm: true, abortSignal: controller.signal }), baseSink());
+    expect(captured).toEqual([
+      { sessionKey: "sk", userId: "google-chat:u1", role: "assistant", content: ABORTED_MARKER, interrupted: true },
+    ]);
+  });
+
+  test("an opening archives nothing: nobody asked anything", async () => {
+    const { runner, controller, captured } = setup();
+    await runner(baseTurn({ principal: verified("u1"), opening: true, text: "", abortSignal: controller.signal }), baseSink());
+    expect(captured).toEqual([]);
+  });
+
+  test("archives nothing when the history holds no marker: the model call never recorded the turn", async () => {
+    const { runner, controller, captured } = setup({ recordsMarker: false });
+    await runner(baseTurn({ principal: verified("u1"), abortSignal: controller.signal }), baseSink());
+    expect(captured).toEqual([]);
+  });
+
+  test("archives nothing for a principal nobody vouched for", async () => {
+    const { runner, controller, captured } = setup();
+    await runner(baseTurn({ principal: anonymous("x"), abortSignal: controller.signal }), baseSink());
+    expect(captured).toEqual([]);
+  });
+
+  test("a failing archive leaves the cancel a cancel", async () => {
+    const { runner, controller, lines } = setup({ failingCapture: true });
+    const sink = baseSink();
+    await runner(baseTurn({ principal: verified("u1"), logPrefix: "[p] ", abortSignal: controller.signal }), sink);
+    expect(sink.finalized).toEqual([]);
+    expect(sink.disposed).toBe(true);
+    expect(lines.some((line) => /^\[p\] \[turn\] cancelled after [\d.]+s$/.test(line))).toBe(true);
   });
 });

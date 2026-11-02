@@ -98,6 +98,32 @@ describe("createVerbatimArchiveProvider — captureExchange", () => {
       { userId: "u", sessionKey: "s", role: "assistant", content: "", displays: ["KAN-2"], timestamp: "2026-10-15T10:00:00.000Z" },
     ]);
   });
+
+  // #366: a cancelled turn's answer is archived marked, so a UI can show the question was left unanswered.
+  it("archives the mark of an interrupted answer", async () => {
+    const upserted: Array<Record<string, unknown>> = [];
+    const client: QdrantClientLike = {
+      getCollections: async () => ({ collections: [] }),
+      createCollection: async () => ({}),
+      upsert: async (_collection, params) => {
+        upserted.push((params.points[0] as { payload: Record<string, unknown> }).payload);
+        return {};
+      },
+      query: async () => ({ points: [] }),
+    };
+    const provider = createVerbatimArchiveProvider({
+      client,
+      collectionName: "verbatim_archive",
+      embed: async () => [1, 2, 3],
+      now: () => new Date("2026-11-02T10:00:00.000Z"),
+    });
+
+    await provider.captureExchange!({ userId: "u", sessionKey: "s", role: "assistant", content: "[stopped]", interrupted: true });
+
+    expect(upserted).toEqual([
+      { userId: "u", sessionKey: "s", role: "assistant", content: "[stopped]", interrupted: true, timestamp: "2026-11-02T10:00:00.000Z" },
+    ]);
+  });
 });
 
 describe("createVerbatimArchiveProvider — recall_verbatim tool", () => {
