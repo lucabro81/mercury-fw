@@ -1,5 +1,14 @@
 # @mercury-fw/channel-http
 
+## 0.14.2
+
+### Patch Changes
+
+- c4f4fd3: - a cancelled turn is archived: the person's message, then an answer marked `interrupted`
+  - `reads.conversation`: an interrupted answer comes with `interrupted: true` and an empty `content`
+  - `reads.conversations`: the preview skips an interrupted answer
+  - `GET /conversation` documents `interrupted` on `Message`
+
 ## 0.14.1
 
 ### Patch Changes

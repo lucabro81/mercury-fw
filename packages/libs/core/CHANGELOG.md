@@ -1,5 +1,22 @@
 # @mercury-fw/core
 
+## 0.67.0
+
+### Minor Changes
+
+- c4f4fd3: - a cancelled turn is archived: the person's message, then an answer marked `interrupted`
+  - `reads.conversation`: an interrupted answer comes with `interrupted: true` and an empty `content`
+  - `reads.conversations`: the preview skips an interrupted answer
+  - `GET /conversation` documents `interrupted` on `Message`
+
+### Patch Changes
+
+- @mercury-fw/plugin-types@0.67.0
+- @mercury-fw/channel-types@0.67.0
+- @mercury-fw/cli-engine@0.67.0
+- @mercury-fw/confirm-engine@0.67.0
+- @mercury-fw/utils@0.67.0
+
 ## 0.66.0
 
 ### Minor Changes
