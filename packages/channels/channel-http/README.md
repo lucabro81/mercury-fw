@@ -60,7 +60,7 @@ Runs one conversational turn; the reply streams back as Server-Sent Events.
 
 **Time zone.** The model reads each message with the time the person wrote it, in their time zone: the one they saved, else the one the request's `X-Time-Zone` header names (an IANA name such as `Europe/Rome`, what `Intl.DateTimeFormat().resolvedOptions().timeZone` gives in a browser), else the app's. A UI saves the person's with `PATCH /me`.
 
-Reasoning and answer text arrive as **incremental deltas** — never one finished block — so a UI renders them live; treat the `final` event as the authoritative text. **To cancel** a turn (e.g. a generation that's diverging), close the connection: Mercury aborts the in-flight generation.
+Reasoning and answer text arrive as **incremental deltas** — never one finished block — so a UI renders them live; treat the `final` event as the authoritative text. **To cancel** a turn (e.g. a generation that's diverging), close the connection: Mercury aborts the in-flight generation. Any connection that closes mid-turn cancels it, a page reload included. Nothing of the half answer is kept: once the model was answering, the conversation's transcript keeps your message and an answer marked `interrupted` (see `GET /conversation`); an opening, or a turn still waiting behind another, leaves nothing.
 
 **SSE events** — each is `event: <name>` followed by `data: <json>`:
 
@@ -107,8 +107,8 @@ All `GET`, all JSON, all reporting state already held in-process. They need an a
 
 | endpoint | `data` on success |
 |---|---|
-| `GET /conversation?id=<conversationId>&limit=<n>&offset=<cursor>` | `{ messages: [{ role, content, timestamp }], nextOffset }` — one of your conversations, its durable transcript in order, each answer as you saw it with the lists it showed (empty for an id that isn't yours); `400` if `id` is missing or has other characters than `/turn` accepts |
-| `GET /conversations?limit=<n>` | `{ conversations: [{ conversationId, lastTimestamp, preview }] }` — your conversations, most-recently-active first |
+| `GET /conversation?id=<conversationId>&limit=<n>&offset=<cursor>` | `{ messages: [{ role, content, interrupted?, timestamp }], nextOffset }` — one of your conversations, its durable transcript in order, each answer as you saw it with the lists it showed (empty for an id that isn't yours). An answer whose turn was cancelled has `interrupted: true` and an empty `content`: the question before it was left unanswered. `400` if `id` is missing or has other characters than `/turn` accepts |
+| `GET /conversations?limit=<n>` | `{ conversations: [{ conversationId, lastTimestamp, preview }] }` — your conversations, most-recently-active first; the preview is the newest message that shows something, so the question when the last answer was interrupted |
 | `GET /manifest` | `{ manifest: { coreApiVersion, plugins: [{ name, apiVersion, active, skills, hasBuild, customStatus }], activeClis, skills } }` |
 | `GET /confirmations` | `{ pending: [{ sessionKey, summary, expiresAt }] }` — your pending confirmations; tokens are deliberately never included |
 | `GET /me` | `{ name, language, timeZone }` — how you asked the assistant to call you, the language you asked it to use and the time zone you saved, `null` when you never said; `language` and `timeZone` are missing on a core that doesn't know them, and the route isn't there on a core older than this channel |
@@ -117,7 +117,7 @@ All `GET`, all JSON, all reporting state already held in-process. They need an a
 | `GET /wiki/list` | `{ files: [...] }` — `curated/...` and `personal/...` paths |
 | `GET /wiki/read?path=<path>` | `{ content }` — a path as `/wiki/list` gives it; `400` if `path` is missing, `404` if it isn't among yours |
 | `GET /wiki/grep?pattern=<regex>` | `{ matches: [...] }` — `400` if `pattern` is missing |
-| `GET /memory/scroll?collection=<name>&limit=<n>&offset=<cursor>` | one page of your points in a collection kept per person (verbatim archive, episodic memory, semantic facts), each with its whole payload (a verbatim answer's `displays` and `calls` included); `400` for any other collection |
+| `GET /memory/scroll?collection=<name>&limit=<n>&offset=<cursor>` | one page of your points in a collection kept per person (verbatim archive, episodic memory, semantic facts), each with its whole payload (a verbatim answer's `displays` and `calls` included, and an interrupted answer's `interrupted: true` with the note the model gets in its `content`); `400` for any other collection |
 | `GET /openapi.yaml` | the OpenAPI document for this surface (`text/yaml`) |
 
 Conversation history and the conversation list are backed by the durable verbatim archive; they degrade to empty when the vector store is unreachable.

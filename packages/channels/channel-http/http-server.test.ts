@@ -723,6 +723,16 @@ describe("openApiResponse", () => {
     expect(schema?.properties?.app?.required).toEqual(["version"]);
     expect(schema?.properties?.app?.properties?.version?.type).toBe("string");
   });
+
+  // #366: a conversation read back marks the answer of a turn that was cancelled.
+  it("describes a message's interrupted mark as optional", async () => {
+    type Schema = { required?: string[]; properties?: Record<string, { enum?: unknown[]; description?: string }> };
+    const doc = Bun.YAML.parse(await openApiResponse().text()) as { components: { schemas: Record<string, Schema> } };
+    const message = doc.components.schemas.Message;
+    expect(message?.required).toEqual(["role", "content", "timestamp"]);
+    expect(message?.properties?.interrupted?.enum).toEqual([true]);
+    expect(message?.properties?.interrupted?.description).toContain("`content` is empty");
+  });
 });
 
 // A browser UI on another origin (the separate custom-UI project) can only call
@@ -1157,6 +1167,17 @@ describe("GET /conversation", () => {
     expect(payload.ok).toBe(true);
     expect(payload.messages).toHaveLength(1);
     expect(payload.nextOffset).toBeNull();
+  });
+
+  // #366: the answer of a cancelled turn comes back marked, as the core reads it.
+  it("serves an interrupted answer's mark as the getter returns it", async () => {
+    const messages = [
+      { role: "user", content: "hi", timestamp: "2026-11-02T10:00:00.000Z" },
+      { role: "assistant", content: "", interrupted: true, timestamp: "2026-11-02T10:00:01.000Z" },
+    ];
+    const reads: ChannelHostReads = { ...baseReads, conversation: async () => ({ messages, nextOffset: null }) };
+    const res = await readRoutes(reads, asAlice)["/conversation"]!.GET(new Request("http://x/conversation?id=conv-1"));
+    expect(((await res.json()) as { messages: unknown[] }).messages).toEqual(messages);
   });
 
   // Regression: ?id used to be any session key /conversations listed, every

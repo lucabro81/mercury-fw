@@ -825,6 +825,10 @@ components:
         content:
           type: string
           description: The message as the person saw it. For an answer, the lists the turn showed after it are included, as in the turn's `final` text.
+        interrupted:
+          type: boolean
+          enum: [true]
+          description: "On an answer whose turn was stopped before it was finished (the client closed the stream): `content` is empty. The question before it was left unanswered."
         timestamp:
           type: string
           description: ISO 8601, millisecond precision — the durable ordering key.
@@ -853,6 +857,7 @@ components:
           type: string
         preview:
           type: string
+          description: The newest message that shows something, as the person saw it, so the question when the last answer was interrupted.
     ConversationList:
       type: object
       required: [ok, conversations]

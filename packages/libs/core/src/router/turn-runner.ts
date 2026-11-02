@@ -11,7 +11,7 @@
  */
 import type { LanguageModel, Tool } from "ai";
 import type { CallRecord } from "../session/call-record.ts";
-import { runTurn } from "../session/agent-turn.ts";
+import { ABORTED_MARKER, runTurn } from "../session/agent-turn.ts";
 import type { StepInfo } from "../session/step-info.ts";
 import { formatTurnStamp } from "../session/turn-stamp.ts";
 // `PostTurnGuard` is part of the plugin contract (a plugin's `build()` may
@@ -24,7 +24,7 @@ import { formatTurnStamp } from "../session/turn-stamp.ts";
 import type { PostTurnGuard } from "@mercury-fw/plugin-types";
 import type { ResumedAction } from "@mercury-fw/confirm-engine";
 export type { PostTurnGuard };
-import type { SessionHistory } from "../session/history.ts";
+import type { Message, SessionHistory } from "../session/history.ts";
 import { recordStep } from "../session/tool-log-buffer.ts";
 import { shownText } from "../memory/verbatim-archive-store.ts";
 import type { HandleTurn, InboundTurn, TurnSink } from "./provider.ts";
@@ -229,7 +229,8 @@ export type TurnRunnerDeps = {
    * a provider vouched for (the archive is per-person, like Layer-3 capture),
    * with `userId` set to the space-independent user key. `content` is only
    * ever the model's own answer text; the `present` displays the turn showed
-   * after it come as `displays`, never inside it.
+   * after it come as `displays`, never inside it. A cancelled turn's answer
+   * comes as `interrupted`, its `content` the text the history kept for it.
    */
   captureVerbatim?: (msg: {
     sessionKey: string;
@@ -238,6 +239,7 @@ export type TurnRunnerDeps = {
     content: string;
     displays?: string[];
     calls?: CallRecord[];
+    interrupted?: true;
   }) => Promise<void>;
   /** `key` is the turn's person: the corrections' status reads in their language. */
   processToolCorrections: (
@@ -449,6 +451,34 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
     let assistantText = "";
     // What the model surfaced with `present` this turn, archived next to it.
     let surfacedDisplays: string[] = [];
+    // The history's last message before this turn: a marker that is still it was left by an earlier turn.
+    let lastBefore: Message | undefined;
+    // Set when the turn's channel cancelled it: archived once the sink is released.
+    let cancelled = false;
+
+    /**
+     * What a cancelled turn leaves in the archive (#366): the person's message
+     * and an answer marked as interrupted, with the text the history kept in
+     * its place; nothing half done. Only when this turn's model call recorded
+     * that text, so the archive matches the history, and never for an
+     * opening, where nobody asked anything. Fail-soft, like the archive of a
+     * turn that ended.
+     */
+    async function archiveInterrupted(): Promise<void> {
+      if (!tracked) return;
+      deps.trackSession(turn.sessionKey, key, (deps.now ?? Date.now)());
+      if (!deps.captureVerbatim || turn.opening) return;
+      const last = history?.getMessages().at(-1);
+      if (last === lastBefore || last?.content !== ABORTED_MARKER) return;
+      try {
+        if (!resumed) {
+          await deps.captureVerbatim({ sessionKey: turn.sessionKey, userId: key, role: "user", content: turn.text });
+        }
+        await deps.captureVerbatim({ sessionKey: turn.sessionKey, userId: key, role: "assistant", content: ABORTED_MARKER, interrupted: true });
+      } catch (err) {
+        console.log(`[verbatim-archive] capture failed, turn unaffected: ${String(err instanceof Error ? err.message : err)}`);
+      }
+    }
 
     try {
       // Inside the try, not before it: a failure building the history
@@ -464,6 +494,7 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
         tracked ? turn.resume : undefined,
         tracked ? timeZone : undefined,
       );
+      lastBefore = history.getMessages().at(-1);
       watchdog = createWatchdog(
         stallMs,
         () => {
@@ -545,9 +576,10 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
       // the call returns what it had. A stall is a failure all the same.
       if (stalled && !turn.abortSignal?.aborted) throw new Error(stallMessage(stallMs));
       // The person stopped it: what the call had isn't an answer, so nothing
-      // is guarded, delivered or archived.
+      // of it is guarded, delivered or archived.
       if (turn.abortSignal?.aborted) {
         logTurn(`${turn.logPrefix}[turn] cancelled after ${seconds()}s`);
+        cancelled = true;
         return;
       }
       const cut = finishFailure(finish);
@@ -613,6 +645,7 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
       // A cancel isn't a failure: the channel that asked for it knows.
       if (turn.abortSignal?.aborted) {
         logTurn(`${turn.logPrefix}[turn] cancelled after ${seconds()}s`);
+        cancelled = true;
         return;
       }
       logTurn(`${turn.logPrefix}[turn] failed after ${seconds()}s: ${err instanceof Error ? err.message : String(err)}`);
@@ -621,6 +654,7 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
       watchdog.stop();
       stopHeartbeat();
       sink.dispose();
+      if (cancelled) await archiveInterrupted();
     }
 
     if (tracked) {
