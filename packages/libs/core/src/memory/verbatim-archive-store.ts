@@ -54,6 +54,9 @@ export async function ensureVerbatimCollection(
  * `present`), absent on messages archived before they were kept. `calls` are
  * the tool calls an answer was written from, reduced (`call-record.ts`): they
  * go back to the model with a resumed conversation, never to the person.
+ * `interrupted` marks an answer whose turn was stopped before it was
+ * finished: its `content` is the text the history kept in its place, for
+ * the model, never shown to the person.
  */
 export type VerbatimMessage = {
   userId: string;
@@ -62,6 +65,7 @@ export type VerbatimMessage = {
   content: string;
   displays?: string[];
   calls?: CallRecord[];
+  interrupted?: true;
   timestamp: string;
 };
 
@@ -74,9 +78,10 @@ export function shownText(content: string, displays: string[] | undefined): stri
   return [content, ...(displays ?? [])].filter((part) => part !== "").join("\n\n");
 }
 
-/** `m` as the person saw it, for whatever renders a conversation: the displays folded into `content`, no calls. */
+/** `m` as the person saw it, for whatever renders a conversation: the displays folded into `content`, no calls, no text for an interrupted answer. */
 function asShown(m: VerbatimMessage): VerbatimMessage {
   const { displays, calls: _calls, ...rest } = m;
+  if (m.interrupted) return { ...rest, content: "" };
   return displays === undefined ? rest : { ...rest, content: shownText(m.content, displays) };
 }
 
@@ -155,6 +160,7 @@ function isVerbatimMessage(payload: Record<string, unknown> | null): payload is 
     (payload.displays === undefined ||
       (Array.isArray(payload.displays) && payload.displays.every((d) => typeof d === "string"))) &&
     (payload.calls === undefined || isCallList(payload.calls)) &&
+    (payload.interrupted === undefined || payload.interrupted === true) &&
     typeof payload.timestamp === "string"
   );
 }
@@ -206,9 +212,10 @@ const PREVIEW_CHARS = 120;
  * One person's conversations, most-recently-active first — the sidebar a UI
  * shows to switch between them. Scrolls the person's newest `SESSION_SCAN_LIMIT`
  * messages (timestamp desc) and dedups by `sessionKey`, keeping each
- * conversation's most recent message for its timestamp and preview (of what
- * was shown, displays included), then caps
- * the result at `limit`. Returns empty if the client can't scroll.
+ * conversation's most recent message for its timestamp and its most recent
+ * one with something shown for its preview (displays included; an
+ * interrupted answer shows nothing, so its question is the preview), then
+ * caps the result at `limit`. Returns empty if the client can't scroll.
  */
 export async function listVerbatimSessions(
   client: QdrantClientLike,
@@ -226,14 +233,20 @@ export async function listVerbatimSessions(
   });
   const messages = result.points.map((p) => p.payload ?? null).filter(isVerbatimMessage);
   const seen = new Map<string, VerbatimSession>();
+  // The conversations whose preview is still to come: their newest messages were interrupted answers.
+  const previewless = new Set<string>();
   for (const m of messages) {
-    if (seen.has(m.sessionKey)) {
-      continue; // desc order → first occurrence is the most recent
+    // desc order → first occurrence is the most recent
+    const known = seen.get(m.sessionKey);
+    if (known !== undefined && !previewless.has(m.sessionKey)) {
+      continue;
     }
-    const shown = shownText(m.content, m.displays);
+    const shown = m.interrupted ? "" : shownText(m.content, m.displays);
+    if (m.interrupted) previewless.add(m.sessionKey);
+    else previewless.delete(m.sessionKey);
     seen.set(m.sessionKey, {
       sessionKey: m.sessionKey,
-      lastTimestamp: m.timestamp,
+      lastTimestamp: known?.lastTimestamp ?? m.timestamp,
       preview: shown.length <= PREVIEW_CHARS ? shown : `${shown.slice(0, PREVIEW_CHARS)}…`,
     });
   }

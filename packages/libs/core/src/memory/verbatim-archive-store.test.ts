@@ -875,3 +875,96 @@ describe("the tool calls an answer was written from (#352)", () => {
     expect(tail.messages).toEqual([{ role: "user", content: "Quali issue ho?", timestamp: question.timestamp }]);
   });
 });
+
+describe("an answer the turn's interruption cut short (#366)", () => {
+  const marker = "[This answer was stopped before it was finished.]";
+  const question = {
+    userId: "static:alice",
+    sessionKey: "conv-1",
+    role: "user" as const,
+    content: "Quali issue ho?",
+    timestamp: "2026-11-02T10:00:00.000Z",
+  };
+  const interrupted = {
+    userId: "static:alice",
+    sessionKey: "conv-1",
+    role: "assistant" as const,
+    content: marker,
+    interrupted: true as const,
+    timestamp: "2026-11-02T10:00:01.000Z",
+  };
+
+  function clientWith(payloads: Array<Record<string, unknown>>): QdrantClientLike {
+    const points = payloads.map((payload, i) => ({ id: `p${i}`, score: 1, payload }));
+    return {
+      getCollections: async () => ({ collections: [] }),
+      createCollection: async () => ({}),
+      upsert: async () => ({}),
+      query: async () => ({ points }),
+      scroll: async () => ({ points, next_page_offset: null }),
+    };
+  }
+
+  it("keeps the mark in the payload", async () => {
+    let payload: Record<string, unknown> | undefined;
+    const client: QdrantClientLike = {
+      ...clientWith([]),
+      upsert: async (_collection, params) => {
+        payload = (params.points[0] as { payload: Record<string, unknown> }).payload;
+        return {};
+      },
+    };
+    await appendVerbatimMessage(client, "verbatim_archive", async () => [1], interrupted);
+    expect(payload).toEqual(interrupted);
+  });
+
+  it("listVerbatimBySession, what a UI renders, serves it marked and without the model's text", async () => {
+    const result = await listVerbatimBySession(clientWith([question, interrupted]), "verbatim_archive", {
+      userId: "static:alice",
+      sessionKey: "conv-1",
+      limit: 50,
+    });
+    expect(result.messages).toEqual([question, { ...interrupted, content: "" }]);
+  });
+
+  it("listVerbatimTail, what goes back to the model, hands back the text the history held", async () => {
+    const tail = await listVerbatimTail(clientWith([interrupted, question]), "verbatim_archive", {
+      userId: "static:alice",
+      sessionKey: "conv-1",
+      maxChars: 10_000,
+    });
+    expect(tail.messages).toEqual([
+      { role: "user", content: "Quali issue ho?", timestamp: question.timestamp },
+      { role: "assistant", content: marker, timestamp: interrupted.timestamp },
+    ]);
+  });
+
+  it("listVerbatimSessions previews the question, at the time of the interruption", async () => {
+    const result = await listVerbatimSessions(clientWith([interrupted, question]), "verbatim_archive", {
+      userId: "static:alice",
+      limit: 10,
+    });
+    expect(result.conversations).toEqual([
+      { sessionKey: "conv-1", lastTimestamp: interrupted.timestamp, preview: "Quali issue ho?" },
+    ]);
+  });
+
+  it("listVerbatimSessions previews nothing when its scan holds only the interrupted answer", async () => {
+    const result = await listVerbatimSessions(clientWith([interrupted]), "verbatim_archive", {
+      userId: "static:alice",
+      limit: 10,
+    });
+    expect(result.conversations).toEqual([{ sessionKey: "conv-1", lastTimestamp: interrupted.timestamp, preview: "" }]);
+  });
+
+  it("skips a point whose mark isn't true", async () => {
+    for (const mark of [false, "yes", 1]) {
+      const tail = await listVerbatimTail(clientWith([{ ...interrupted, interrupted: mark }, question]), "verbatim_archive", {
+        userId: "static:alice",
+        sessionKey: "conv-1",
+        maxChars: 10_000,
+      });
+      expect(tail.messages).toEqual([{ role: "user", content: "Quali issue ho?", timestamp: question.timestamp }]);
+    }
+  });
+});
