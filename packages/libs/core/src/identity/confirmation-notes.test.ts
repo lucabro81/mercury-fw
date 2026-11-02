@@ -55,7 +55,7 @@ describe("a confirmation's note, staged in a turn then confirmed from the channe
           stage = createStageConfirmation({ ...confirmDeps, sessionKey, owner: key });
           return {};
         },
-        getOrCreateHistory: () => ({ replaceLastAssistantMessage: () => {}, primer: () => undefined }) as never,
+        getOrCreateHistory: () => ({ replaceLastAssistantMessage: () => {}, getMessages: () => [], primer: () => undefined }) as never,
         trackSession: () => {},
         registerCaptureCallback: () => {},
         maybeCapture: async () => {},

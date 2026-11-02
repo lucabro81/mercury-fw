@@ -2620,12 +2620,12 @@ describe("createTurnRunner: what a cancelled turn leaves in the archive", () => 
   };
 
   /** A runner whose model call records what `runTurn` does: the message, then the marker once aborted (or the answer). */
-  function setup(opts: { recordsMarker?: boolean; failingCapture?: boolean } = {}) {
+  function setup(opts: { recordsMarker?: boolean; failingCapture?: boolean; recordsMessage?: boolean; earlier?: Array<{ role: "user" | "assistant"; content: string }> } = {}) {
     const controller = new AbortController();
     const captured: unknown[] = [];
     const ran: string[] = [];
     const lines: string[] = [];
-    const messages: Array<{ role: "user" | "assistant"; content: string }> = [];
+    const messages: Array<{ role: "user" | "assistant"; content: string }> = [...(opts.earlier ?? [])];
     const history = fakeHistory({
       addUserMessage: async (content) => void messages.push({ role: "user", content }),
       addAssistantMessage: async (content) => void messages.push({ role: "assistant", content }),
@@ -2649,7 +2649,7 @@ describe("createTurnRunner: what a cancelled turn leaves in the archive", () => 
       },
       takeResumed: () => resumed,
       runTurnFn: async (h, text) => {
-        await h.addUserMessage(text);
+        if (opts.recordsMessage !== false) await h.addUserMessage(text);
         controller.abort();
         if (opts.recordsMarker !== false) await h.addAssistantMessage(ABORTED_MARKER);
         return "half an answer";
@@ -2671,6 +2671,15 @@ describe("createTurnRunner: what a cancelled turn leaves in the archive", () => 
     expect(ran).toEqual(["track", "track"]);
   });
 
+  // Review of #366: the archive (an embedding and a Qdrant write) ran before
+  // the sink was released, holding the channel's timers on a closed stream.
+  test("releases the sink before archiving", async () => {
+    const { runner, controller, captured } = setup();
+    await runner(baseTurn({ principal: verified("u1"), abortSignal: controller.signal }), baseSink({ dispose: () => void captured.push("disposed") }));
+    expect(captured[0]).toBe("disposed");
+    expect(captured).toHaveLength(3);
+  });
+
   test("a resumed turn archives only the interrupted answer, as it archives no line of the person's", async () => {
     const { runner, controller, captured } = setup();
     await runner(baseTurn({ sessionKey: "sk", principal: verified("u1"), text: "", resumeAfterConfirm: true, abortSignal: controller.signal }), baseSink());
@@ -2687,6 +2696,23 @@ describe("createTurnRunner: what a cancelled turn leaves in the archive", () => 
 
   test("archives nothing when the history holds no marker: the model call never recorded the turn", async () => {
     const { runner, controller, captured } = setup({ recordsMarker: false });
+    await runner(baseTurn({ principal: verified("u1"), abortSignal: controller.signal }), baseSink());
+    expect(captured).toEqual([]);
+  });
+
+  // Review of #366: the check read only the history's last message, so the
+  // marker an earlier cancelled turn left there passed for this turn's, and
+  // a turn whose model call recorded nothing archived a question the history
+  // never held.
+  test("archives nothing when the marker at the history's end is an earlier turn's", async () => {
+    const { runner, controller, captured } = setup({
+      recordsMessage: false,
+      recordsMarker: false,
+      earlier: [
+        { role: "user", content: "an earlier question" },
+        { role: "assistant", content: ABORTED_MARKER },
+      ],
+    });
     await runner(baseTurn({ principal: verified("u1"), abortSignal: controller.signal }), baseSink());
     expect(captured).toEqual([]);
   });

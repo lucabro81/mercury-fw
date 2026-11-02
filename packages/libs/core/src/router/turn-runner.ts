@@ -24,7 +24,7 @@ import { formatTurnStamp } from "../session/turn-stamp.ts";
 import type { PostTurnGuard } from "@mercury-fw/plugin-types";
 import type { ResumedAction } from "@mercury-fw/confirm-engine";
 export type { PostTurnGuard };
-import type { SessionHistory } from "../session/history.ts";
+import type { Message, SessionHistory } from "../session/history.ts";
 import { recordStep } from "../session/tool-log-buffer.ts";
 import { shownText } from "../memory/verbatim-archive-store.ts";
 import type { HandleTurn, InboundTurn, TurnSink } from "./provider.ts";
@@ -451,19 +451,25 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
     let assistantText = "";
     // What the model surfaced with `present` this turn, archived next to it.
     let surfacedDisplays: string[] = [];
+    // The history's last message before this turn: a marker that is still it was left by an earlier turn.
+    let lastBefore: Message | undefined;
+    // Set when the turn's channel cancelled it: archived once the sink is released.
+    let cancelled = false;
 
     /**
      * What a cancelled turn leaves in the archive (#366): the person's message
      * and an answer marked as interrupted, with the text the history kept in
-     * its place; nothing half done. Only when the model call recorded that
-     * text, so the archive matches the history, and never for an opening,
-     * where nobody asked anything. Fail-soft, like the archive of a turn that ended.
+     * its place; nothing half done. Only when this turn's model call recorded
+     * that text, so the archive matches the history, and never for an
+     * opening, where nobody asked anything. Fail-soft, like the archive of a
+     * turn that ended.
      */
     async function archiveInterrupted(): Promise<void> {
       if (!tracked) return;
       deps.trackSession(turn.sessionKey, key, (deps.now ?? Date.now)());
       if (!deps.captureVerbatim || turn.opening) return;
-      if (history?.getMessages().at(-1)?.content !== ABORTED_MARKER) return;
+      const last = history?.getMessages().at(-1);
+      if (last === lastBefore || last?.content !== ABORTED_MARKER) return;
       try {
         if (!resumed) {
           await deps.captureVerbatim({ sessionKey: turn.sessionKey, userId: key, role: "user", content: turn.text });
@@ -488,6 +494,7 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
         tracked ? turn.resume : undefined,
         tracked ? timeZone : undefined,
       );
+      lastBefore = history.getMessages().at(-1);
       watchdog = createWatchdog(
         stallMs,
         () => {
@@ -572,7 +579,7 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
       // of it is guarded, delivered or archived.
       if (turn.abortSignal?.aborted) {
         logTurn(`${turn.logPrefix}[turn] cancelled after ${seconds()}s`);
-        await archiveInterrupted();
+        cancelled = true;
         return;
       }
       const cut = finishFailure(finish);
@@ -638,7 +645,7 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
       // A cancel isn't a failure: the channel that asked for it knows.
       if (turn.abortSignal?.aborted) {
         logTurn(`${turn.logPrefix}[turn] cancelled after ${seconds()}s`);
-        await archiveInterrupted();
+        cancelled = true;
         return;
       }
       logTurn(`${turn.logPrefix}[turn] failed after ${seconds()}s: ${err instanceof Error ? err.message : String(err)}`);
@@ -647,6 +654,7 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
       watchdog.stop();
       stopHeartbeat();
       sink.dispose();
+      if (cancelled) await archiveInterrupted();
     }
 
     if (tracked) {
