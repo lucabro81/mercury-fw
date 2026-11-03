@@ -1441,6 +1441,38 @@ describe("a step asking for a login ends the turn", () => {
     expect(result).toBe(LOGIN_NOTE("confluence, bitbucket"));
   });
 
+  // Review of #368: an empty service name read "log in to  with…", and two
+  // links to one service named it twice.
+  it("names each service once, leaving out empty names, and says no name when none is left", async () => {
+    const step = (...services: string[]): StepInfo => ({
+      toolCalls: services.map((_, i) => ({ toolCallId: String(i), toolName: "t", input: {} })),
+      toolResults: services.map((service, i) => ({
+        toolCallId: String(i),
+        toolName: "t",
+        output: { ok: false, loginRequired: true, service, authorizeUrl: `https://login.example/${i}`, error: "e" },
+      })),
+      content: [],
+    });
+    const run = (s: StepInfo, loginNote?: (services: string[]) => string) =>
+      runTurn(createSessionHistory(neverSummarize), "hi", {
+        model: "fake-model" as never,
+        tools: {},
+        system: SYSTEM,
+        generateTextFn: async (p: { onStepEnd?: (step: StepInfo) => void }) => {
+          p.onStepEnd?.(s);
+          return { text: "" };
+        },
+        ...(loginNote ? { loginNote } : {}),
+      });
+    const asked: string[][] = [];
+    await run(step("jira", "", "jira"), (services) => {
+      asked.push(services);
+      return "n";
+    });
+    expect(asked).toEqual([["jira"]]);
+    expect(await run(step(""))).toBe(CORE_MESSAGES["core.login.note-any"]!);
+  });
+
   it("leaves a step that also staged a confirmation to the confirmation's handling", async () => {
     const both: StepInfo = {
       toolCalls: [...PENDING_CONFIRMATION_STEP.toolCalls, ...LOGIN_STEP.toolCalls],

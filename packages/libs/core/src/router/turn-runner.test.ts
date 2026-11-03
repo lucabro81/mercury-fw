@@ -2442,6 +2442,29 @@ describe("createTurnRunner: the turn's language and the pending note", () => {
     expect(calls.loginNote).toEqual(['it:core.login.note{"services":"confluence, bitbucket"}']);
   });
 
+  test("a login note with no service name says none", async () => {
+    let note: string | undefined;
+    const runner = createTurnRunner({
+      model: {} as any,
+      systemPrompts: { singleUser: "s", multiUser: "m" },
+      identify: async () => ({ ok: true, operator: false, person: { key: "k:u1", roles: [] } }),
+      buildTools: () => ({}),
+      translatorFor: () => (k, params) => `${k}${params === undefined ? "" : JSON.stringify(params)}`,
+      getOrCreateHistory: () => fakeHistory(),
+      trackSession: () => {},
+      registerCaptureCallback: () => {},
+      maybeCapture: async () => {},
+      processToolCorrections: async () => {},
+      logStep: () => {},
+      runTurnFn: async (_history, _input, deps) => {
+        note = deps.loginNote?.([]);
+        return "answer";
+      },
+    });
+    await runner(baseTurn({ principal: verified("u1") }), baseSink({ finalize: async () => {} }));
+    expect(note).toBe("core.login.note-any");
+  });
+
   test("an answer the model wrote says nothing more", async () => {
     const { runner, sink, calls } = setup({ text: "answer" });
     await runner(baseTurn({ principal: verified("u1") }), sink);

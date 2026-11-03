@@ -63,7 +63,8 @@ import { interpolate } from "../i18n/i18n.ts";
 const DEFAULT_PENDING_NOTE = CORE_MESSAGES["core.pending.note"]!;
 
 /** The note closing a turn that stopped for a login, in English: what a turn with no `loginNote` of its own uses. */
-const defaultLoginNote = (services: string[]): string => interpolate(CORE_MESSAGES["core.login.note"]!, { services: services.join(", ") });
+const defaultLoginNote = (services: string[]): string =>
+  services.length === 0 ? CORE_MESSAGES["core.login.note-any"]! : interpolate(CORE_MESSAGES["core.login.note"]!, { services: services.join(", ") });
 
 /**
  * What the history keeps in place of an answer whose call was aborted, by the
@@ -74,7 +75,8 @@ const defaultLoginNote = (services: string[]): string => interpolate(CORE_MESSAG
 export const ABORTED_MARKER = "[This answer was stopped before it was finished.]";
 
 /**
- * `text`, followed by `note` naming the services when `lastStep` asked the
+ * `text`, followed by `note` naming the services (each once, none without a
+ * name) when `lastStep` asked the
  * person to log in (the step that ended the turn, see `loginRequiredStop`), or
  * `note` alone when the model wrote nothing. Appended, so what was already
  * streamed stays a prefix. A step that also staged a confirmation is left to
@@ -84,7 +86,7 @@ function withLoginNote(lastStep: StepInfo | undefined, text: string, note: (serv
   if (!lastStep || detectPendingConfirmation(lastStep)) return text;
   const logins = detectLoginRequests(lastStep);
   if (logins.length === 0) return text;
-  const line = note(logins.map((login) => login.service));
+  const line = note([...new Set(logins.map((login) => login.service).filter((service) => service !== ""))]);
   return text.trim().length === 0 ? line : `${text}\n\n${line}`;
 }
 
@@ -421,8 +423,8 @@ export async function runTurn(
     /** Called when the turn's text is that stand-in, so the caller knows without comparing text. */
     onPendingNote?: () => void;
     /** The note closing a turn that stopped because a tool asked the person
-     * to log in, naming the services, in the person's language; English when
-     * absent. Never streamed: it isn't the model's. */
+     * to log in, naming the services (none when no name is known), in the
+     * person's language; English when absent. Never streamed: it isn't the model's. */
     loginNote?: (services: string[]) => string;
   },
 ): Promise<string> {
