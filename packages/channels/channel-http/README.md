@@ -72,7 +72,7 @@ Reasoning and answer text arrive as **incremental deltas** — never one finishe
 | `tool_finish` | `{ toolCallId, outcome }` | a tool call settles (`outcome`: `success` \| `failed` \| `pending`) |
 | `text` | `{ chunk }` | an answer-text delta |
 | `pending` | `{ command, token, choices }` | a confirm-required action was staged; send a token back to confirm it — as a later `/turn` `text`, or via `POST /confirm`. `choices` is every way to answer (`{ token, label }`, in order, each label in the caller's language; one with an empty `label` for a plain staging, which the UI words itself, a "Confirm" button): the others die with the one sent |
-| `login` | `{ service, url }` | the caller isn't logged in to `service` yet, which a plugin acts on as them: show them `url` to open (the model never gets it) |
+| `login` | `{ service, url }` | the caller isn't logged in to `service` yet, which a plugin acts on as them: show them `url` to open (the model never gets it). One per service; the turn ends after the step that asked, its `final` text telling them to log in and write again |
 | `final` | `{ text, pendingNote? }` | the complete answer (also emitted for a token confirmation, with no model turn). `pendingNote` is there when the model wrote nothing because the turn staged an action: the core's stand-in sentence `text` begins with (then any list the turn surfaced). A UI showing its own confirmation hides it; the conversation's transcript keeps it |
 | `error` | `{ message }` | the turn failed mid-stream |
 

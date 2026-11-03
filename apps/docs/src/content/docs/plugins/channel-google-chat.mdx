@@ -70,5 +70,5 @@ it.
 ## Logins
 
 When a plugin that acts as the person needs them to log in to a service, the channel sends a card with a button only
-that person sees. The service then sends their browser back to the [HTTP channel](../channel-http/)'s
+that person sees, one card for each service, and the answer stops there until they've logged in and written again. The service then sends their browser back to the [HTTP channel](../channel-http/)'s
 `/login/callback`, so an app where people log in needs the HTTP channel too, with `HTTP_SURFACE_PUBLIC_URL`.

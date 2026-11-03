@@ -132,7 +132,8 @@ paths:
             `tool_finish` (status of a tool call), `pending` (a staged
             confirm-required action, with its command, its token and the
             choices it offers), `login` (a
-            service the caller has to log in to first, with the link to open),
+            service the caller has to log in to first, with the link to open;
+            one per service, and the turn ends after the step that asked),
             `final` (the
             authoritative complete answer), and `error`.
           headers:

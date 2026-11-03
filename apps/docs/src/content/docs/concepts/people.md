@@ -48,7 +48,8 @@ else's. The wiki has a common area everyone reads, and a note goes there only wh
 When a tool reaches a service, it does so as someone. Each plugin declares which (`actsAs`):
 
 - **`"person"`**: as the person asking. They log in to the service once, through a link the agent sends, and the
-  tool then sees what they see there and nothing more.
+  tool then sees what they see there and nothing more. When a tool needs that login, the answer stops there: the
+  person gets a link for each service still to log in to and a line saying so, logs in, and writes again.
 - **`"mercury"`**: as the agent's own service account. That account may see more than any one person, so only
   people holding the role `mercury.act-as-self` (every plugin) or `mercury.act-as-self.<plugin>` (that plugin) may
   use it, plus the terminal. A plugin that declares nothing counts as `"mercury"`.

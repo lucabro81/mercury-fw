@@ -94,7 +94,8 @@ The channel listens inside the container, so the compose file has to publish its
   conversation of their own.
 - **Confirmations** arrive as a `pending` event with a token for each choice; send the token back as the next
   message's `text`, or to `POST /confirm`. See [Confirmations](../../concepts/confirmations/).
-- **Logins** to the services plugins act on as the person arrive as a `login` event with a link. They need
+- **Logins** to the services plugins act on as the person arrive as a `login` event with a link, one for each
+  service, and the turn ends there: its `final` text tells the person to log in and write again. They need
   `HTTP_SURFACE_PUBLIC_URL`, the address people's browsers reach the channel at, because the service sends them
   back to `<HTTP_SURFACE_PUBLIC_URL>/login/callback`.
 - **Browsers on another origin** can call it: set `HTTP_SURFACE_CORS_ORIGIN` to your interface's origin.
