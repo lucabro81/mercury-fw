@@ -234,3 +234,55 @@ describe("resume", () => {
     expect(outcome).toEqual({ status: "ok", data: { text: "page" } });
   });
 });
+
+describe("onResolved", () => {
+  it("reports a lone action's own token, what it was and how it went", async () => {
+    const reported: unknown[] = [];
+    for (const [result, status] of [
+      [{ ok: true, data: null }, "ok"],
+      [{ ok: false, error: "boom" }, "failed"],
+    ] as const) {
+      const store = createConfirmationStore({ tokenFn: () => "k9m2-x7q4" });
+      store.stage("s1", OWNER, staged("jira issue delete KAN-1 --confirm", async () => result));
+      await resolveConfirmation("k9m2-x7q4", "s1", baseDeps({ store, onResolved: (info) => reported.push(info) }));
+      expect(reported.at(-1)).toEqual({ token: "k9m2-x7q4", describe: "jira issue delete KAN-1 --confirm", status });
+    }
+    expect(reported).toHaveLength(2);
+  });
+
+  it("reports a group's first token, whichever choice was taken, and the choice's label", async () => {
+    let n = 0;
+    const store = createConfirmationStore({ tokenFn: () => `abc${++n}-wxyz` });
+    store.stageGroup("s1", OWNER, [
+      { ...staged("fetch https://example.org/a", async () => ({ ok: true, data: null })), label: "Solo questa volta" },
+      { ...staged("fetch https://example.org/a", async () => ({ ok: true, data: null })), label: "Sempre per example.org" },
+    ]);
+    const reported: unknown[] = [];
+
+    await resolveConfirmation("abc2-wxyz", "s1", baseDeps({ store, onResolved: (info) => reported.push(info) }));
+
+    expect(reported).toEqual([{ token: "abc1-wxyz", describe: "fetch https://example.org/a", label: "Sempre per example.org", status: "ok" }]);
+  });
+
+  it("reports a resumed action as resumed", async () => {
+    const store = createConfirmationStore({ tokenFn: () => "k9m2-x7q4" });
+    store.stageGroup("s1", OWNER, [
+      { ...staged("fetch https://example.org/a", async () => ({ ok: true, data: {} })), label: "Solo questa volta", resume: { toolName: "web_fetch", input: {} } },
+    ]);
+    const reported: unknown[] = [];
+
+    await resolveConfirmation("k9m2-x7q4", "s1", baseDeps({ store, onResume: () => {}, onResolved: (info) => reported.push(info) }));
+
+    expect(reported).toEqual([{ token: "k9m2-x7q4", describe: "fetch https://example.org/a", label: "Solo questa volta", status: "resume" }]);
+  });
+
+  it("reports nothing for input that isn't a token, or a token that resolves nothing", async () => {
+    const reported: unknown[] = [];
+    const deps = baseDeps({ onResolved: (info) => reported.push(info) });
+
+    await resolveConfirmation("hello", "s1", deps);
+    await resolveConfirmation("ABCD-EFGH", "s1", deps);
+
+    expect(reported).toEqual([]);
+  });
+});
