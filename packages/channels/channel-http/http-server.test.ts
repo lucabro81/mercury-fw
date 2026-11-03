@@ -266,6 +266,38 @@ describe("handleTurnRequest", () => {
     expect(body.indexOf("event: login")).toBeLessThan(body.indexOf("event: final"));
   });
 
+  // #211: only the first login of a step was sent, so a step asking for two
+  // left the second service for another round.
+  it("sends a login event for every login a step asks for, in order", async () => {
+    const login = (id: string, service: string) => ({
+      toolCallId: id,
+      toolName: `${service}Command`,
+      output: { ok: false, loginRequired: true, service, authorizeUrl: `https://auth.example/${service}`, error: "log in" },
+    });
+    const step = {
+      toolCalls: [
+        { toolCallId: "1", toolName: "confluenceCommand", input: {} },
+        { toolCallId: "2", toolName: "bitbucketCommand", input: {} },
+      ],
+      toolResults: [login("1", "confluence"), login("2", "bitbucket")],
+      content: [],
+    } as unknown as StepInfo;
+    const handleTurn: HandleTurn = async (_turn, sink) => {
+      sink.onStep?.(step);
+      await sink.finalize("log in");
+    };
+    const res = await handleTurnRequest(turnReq({ text: "pages", conversationId: "c" }), {
+      handleTurn,
+      confirm: async () => null,
+      authenticate: asAlice,
+    });
+    const body = await res.text();
+    const confluence = body.indexOf('event: login\ndata: {"service":"confluence","url":"https://auth.example/confluence"}\n\n');
+    const bitbucket = body.indexOf('event: login\ndata: {"service":"bitbucket","url":"https://auth.example/bitbucket"}\n\n');
+    expect(confluence).toBeGreaterThan(-1);
+    expect(bitbucket).toBeGreaterThan(confluence);
+  });
+
   it("uses a fresh ephemeral session key when the client supplies no conversationId", async () => {
     let seenKey: string | undefined;
     const handleTurn: HandleTurn = async (turn, sink) => {

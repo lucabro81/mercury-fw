@@ -3,7 +3,7 @@
  * (`Provider`/`InboundTurn`/`TurnSink`/`HandleTurn`/`Notifier`), the pure
  * confirmation pieces a channel uses to build its own UI
  * (`detectPendingConfirmation`, `NO_REPLY`), the login a tool asks a person
- * for (`detectLoginRequired`, `loginLinkText`), and
+ * for (`detectLoginRequests`, `detectLoginRequired`, `loginLinkText`), and
  * the channel-plugin system (`ChannelPlugin`/`ChannelRuntimeContext`/
  * `CHANNEL_API_VERSION`), and the providers a config declares beside the
  * channels: who is calling (`AuthPlugin`) and who that is to Mercury
@@ -65,20 +65,28 @@ export function detectPendingConfirmation(step: StepInfo): PendingConfirmation |
 export type LoginRequest = { service: string; url: string };
 
 /**
- * Returns the first login a tool asked for in `step` (its result carries
- * `loginRequired` and the link), or `null`. A channel shows the link to the
- * person itself: the model is never handed it, so it can't mangle or leak it.
- * Only to that person, never where someone else can see it: whoever opens the
- * link logs their own account in as the person who asked.
+ * Returns every login the tools asked for in `step` (each result carrying
+ * `loginRequired` and the link), in tool-call order, one per link. A channel
+ * shows the links to the person itself: the model is never handed them, so it
+ * can't mangle or leak them. Only to that person, never where someone else
+ * can see them: whoever opens a link logs their own account in as the person
+ * who asked. A step asking for a login is the turn's last.
  */
-export function detectLoginRequired(step: StepInfo): LoginRequest | null {
+export function detectLoginRequests(step: StepInfo): LoginRequest[] {
+  const requests: LoginRequest[] = [];
   for (const call of step.toolCalls) {
     const result = step.toolResults.find((r) => r.toolCallId === call.toolCallId);
     const output = result?.output as { loginRequired?: unknown; authorizeUrl?: unknown; service?: unknown } | undefined;
     if (!output || output.loginRequired !== true || typeof output.authorizeUrl !== "string") continue;
-    return { service: typeof output.service === "string" ? output.service : "", url: output.authorizeUrl };
+    if (requests.some((r) => r.url === output.authorizeUrl)) continue;
+    requests.push({ service: typeof output.service === "string" ? output.service : "", url: output.authorizeUrl });
   }
-  return null;
+  return requests;
+}
+
+/** The first login a tool asked for in `step` (see `detectLoginRequests`), or `null`. */
+export function detectLoginRequired(step: StepInfo): LoginRequest | null {
+  return detectLoginRequests(step)[0] ?? null;
 }
 
 /** The words a channel puts on a login link (a button, a link text), in the person's language (`t`, the core's `core.login.link*`), so every channel says it the same way. */

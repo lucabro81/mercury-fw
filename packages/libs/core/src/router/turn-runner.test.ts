@@ -2352,6 +2352,7 @@ describe("createTurnRunner: the turn's language and the pending note", () => {
       buildTools: [] as unknown[],
       translatorFor: [] as unknown[][],
       pendingNote: [] as unknown[],
+      loginNote: [] as unknown[],
       finalize: [] as unknown[][],
     };
     const runner = createTurnRunner({
@@ -2367,7 +2368,7 @@ describe("createTurnRunner: the turn's language and the pending note", () => {
       },
       translatorFor: (key, hint) => {
         calls.translatorFor.push([key, hint]);
-        return (k) => `${hint ?? "-"}:${k}`;
+        return (k, params) => `${hint ?? "-"}:${k}${params === undefined ? "" : JSON.stringify(params)}`;
       },
       getOrCreateHistory: () => fakeHistory(),
       trackSession: () => {},
@@ -2378,6 +2379,7 @@ describe("createTurnRunner: the turn's language and the pending note", () => {
       takeSurfacedDisplays: () => opts.displays ?? [],
       runTurnFn: async (_history, _input, deps) => {
         calls.pendingNote.push(deps.pendingNote);
+        calls.loginNote.push(deps.loginNote?.(["confluence", "bitbucket"]));
         if (opts.text !== undefined) return opts.text;
         deps.onPendingNote?.();
         return deps.pendingNote!;
@@ -2430,6 +2432,37 @@ describe("createTurnRunner: the turn's language and the pending note", () => {
     const mimic = setup({ text: `-:${NOTE_KEY}` });
     await mimic.runner(baseTurn({ principal: verified("u1") }), mimic.sink);
     expect(mimic.calls.finalize).toEqual([[`-:${NOTE_KEY}`]]);
+  });
+
+  // #368: a turn that stopped for a login closes with the core's note, in
+  // the person's language, naming every service the step asked for.
+  test("the model gets the login note in the turn's language, naming the services", async () => {
+    const { runner, sink, calls } = setup({ text: "answer" });
+    await runner(baseTurn({ principal: verified("u1"), languageHint: "it" }), sink);
+    expect(calls.loginNote).toEqual(['it:core.login.note{"services":"confluence, bitbucket"}']);
+  });
+
+  test("a login note with no service name says none", async () => {
+    let note: string | undefined;
+    const runner = createTurnRunner({
+      model: {} as any,
+      systemPrompts: { singleUser: "s", multiUser: "m" },
+      identify: async () => ({ ok: true, operator: false, person: { key: "k:u1", roles: [] } }),
+      buildTools: () => ({}),
+      translatorFor: () => (k, params) => `${k}${params === undefined ? "" : JSON.stringify(params)}`,
+      getOrCreateHistory: () => fakeHistory(),
+      trackSession: () => {},
+      registerCaptureCallback: () => {},
+      maybeCapture: async () => {},
+      processToolCorrections: async () => {},
+      logStep: () => {},
+      runTurnFn: async (_history, _input, deps) => {
+        note = deps.loginNote?.([]);
+        return "answer";
+      },
+    });
+    await runner(baseTurn({ principal: verified("u1") }), baseSink({ finalize: async () => {} }));
+    expect(note).toBe("core.login.note-any");
   });
 
   test("an answer the model wrote says nothing more", async () => {

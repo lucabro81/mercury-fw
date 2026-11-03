@@ -37,6 +37,9 @@ export const CORE_MESSAGES: Messages = {
   "core.login.link-any": "Log in to the service",
   "core.login.expired": "This login link has expired or was already used: ask {assistant} again for a new one.",
   "core.login.failed": "The {service} login didn't go through. Ask {assistant} again for a new link.",
+  // The note closing a turn that stopped for a login (`session/agent-turn.ts`).
+  "core.login.note": "Log in to {services} with the link shown, then write to me again.",
+  "core.login.note-any": "Log in with the link shown, then write to me again.",
 
   // What a tool call is doing, on the channel's status (`session/tool-start-hook.ts`).
   "core.status.memory": "Checking my memory…",

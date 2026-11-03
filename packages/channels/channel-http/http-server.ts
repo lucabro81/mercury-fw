@@ -23,7 +23,7 @@
  * package never imports the app.
  */
 import {
-  detectLoginRequired,
+  detectLoginRequests,
   detectPendingConfirmation,
   type HandleTurn,
   type TurnSink,
@@ -262,8 +262,7 @@ export async function handleTurnRequest(req: Request, deps: TurnRequestDeps): Pr
         onStep: (step) => {
           const pending = detectPendingConfirmation(step);
           if (pending) send("pending", { command: pending.summary, token: pending.token, choices: pending.choices });
-          const login = detectLoginRequired(step);
-          if (login) send("login", { service: login.service, url: login.url });
+          for (const login of detectLoginRequests(step)) send("login", { service: login.service, url: login.url });
         },
         onUsage: () => {},
         // The core says when the text is its stand-in for an answer the

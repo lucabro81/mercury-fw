@@ -33,7 +33,7 @@ import {
 import { openSubscription, type PubSubSubscription, type StreamMessage } from "./google-chat-pubsub-stream.ts";
 import { splitForSendLimit } from "./google-chat-message-buffer.ts";
 import {
-  detectLoginRequired,
+  detectLoginRequests,
   detectPendingConfirmation,
   loginLinkText,
   NO_REPLY,
@@ -826,8 +826,8 @@ export function createGoogleChatProvider(deps: GoogleChatProviderDeps): GoogleCh
             sentMessageNames.add(sent.name);
           });
         }
-        const login = detectLoginRequired(step);
-        if (login && !shownLogins.has(login.url)) {
+        for (const login of detectLoginRequests(step)) {
+          if (shownLogins.has(login.url)) continue;
           shownLogins.add(login.url);
           enqueue(async () => {
             log(`[chat:${space}] [out] login card: ${login.service}`);

@@ -55,10 +55,16 @@ import type { Message, SessionHistory } from "./history.ts";
 import { callMessages, callRecords, type CallRecord } from "./call-record.ts";
 import type { StepInfo } from "./step-info.ts";
 import { detectPendingConfirmation } from "./pending-confirmation.ts";
+import { detectLoginRequests } from "@mercury-fw/channel-types";
 import { CORE_MESSAGES } from "../i18n/core-messages.ts";
+import { interpolate } from "../i18n/i18n.ts";
 
 /** The stand-in for an answer the model didn't write, in English: what a turn with no `pendingNote` of its own uses. */
 const DEFAULT_PENDING_NOTE = CORE_MESSAGES["core.pending.note"]!;
+
+/** The note closing a turn that stopped for a login, in English: what a turn with no `loginNote` of its own uses. */
+const defaultLoginNote = (services: string[]): string =>
+  services.length === 0 ? CORE_MESSAGES["core.login.note-any"]! : interpolate(CORE_MESSAGES["core.login.note"]!, { services: services.join(", ") });
 
 /**
  * What the history keeps in place of an answer whose call was aborted, by the
@@ -67,6 +73,22 @@ const DEFAULT_PENDING_NOTE = CORE_MESSAGES["core.pending.note"]!;
  * Model-facing, so in English.
  */
 export const ABORTED_MARKER = "[This answer was stopped before it was finished.]";
+
+/**
+ * `text`, followed by `note` naming the services (each once, none without a
+ * name) when `lastStep` asked the
+ * person to log in (the step that ended the turn, see `loginRequiredStop`), or
+ * `note` alone when the model wrote nothing. Appended, so what was already
+ * streamed stays a prefix. A step that also staged a confirmation is left to
+ * the confirmation's own handling.
+ */
+function withLoginNote(lastStep: StepInfo | undefined, text: string, note: (services: string[]) => string): string {
+  if (!lastStep || detectPendingConfirmation(lastStep)) return text;
+  const logins = detectLoginRequests(lastStep);
+  if (logins.length === 0) return text;
+  const line = note([...new Set(logins.map((login) => login.service).filter((service) => service !== ""))]);
+  return text.trim().length === 0 ? line : `${text}\n\n${line}`;
+}
 
 /** `""` unless `lastStep` staged a confirm-required command, in which case `note`, the stand-in for the answer. */
 function resolveEmptyText(lastStep: StepInfo | undefined, note: string): string {
@@ -134,6 +156,18 @@ function pendingConfirmationStop(): StopCondition<any> {
   return ({ steps }) => {
     const last = steps[steps.length - 1];
     return last !== undefined && detectPendingConfirmation(last) !== null;
+  };
+}
+
+/**
+ * Stops the tool-calling loop right after a step whose tool asked the person
+ * to log in: the person has the link, and nothing the model does next is
+ * what they asked for until they've logged in and written again.
+ */
+function loginRequiredStop(): StopCondition<any> {
+  return ({ steps }) => {
+    const last = steps[steps.length - 1];
+    return last !== undefined && detectLoginRequests(last).length > 0;
   };
 }
 
@@ -235,7 +269,7 @@ export function buildGenerateTextParams(params: {
   onStepEnd?: (step: StepInfo) => void;
   abortSignal?: AbortSignal;
 }) {
-  return { ...params, stopWhen: [isStepCount(100), pendingConfirmationStop()] };
+  return { ...params, stopWhen: [isStepCount(100), pendingConfirmationStop(), loginRequiredStop()] };
 }
 
 /** Default production implementation: calls the real `generateText` from `ai`. */
@@ -259,7 +293,7 @@ export function buildStreamTextParams(params: {
   onStepEnd?: (step: StepInfo) => void;
   abortSignal?: AbortSignal;
 }) {
-  return { ...params, stopWhen: [isStepCount(100), pendingConfirmationStop()] };
+  return { ...params, stopWhen: [isStepCount(100), pendingConfirmationStop(), loginRequiredStop()] };
 }
 
 /** Default production implementation: calls the real `streamText` from `ai-sdk-ollama`. */
@@ -388,6 +422,10 @@ export async function runTurn(
     pendingNote?: string;
     /** Called when the turn's text is that stand-in, so the caller knows without comparing text. */
     onPendingNote?: () => void;
+    /** The note closing a turn that stopped because a tool asked the person
+     * to log in, naming the services (none when no name is known), in the
+     * person's language; English when absent. Never streamed: it isn't the model's. */
+    loginNote?: (services: string[]) => string;
   },
 ): Promise<string> {
   await history.addUserMessage(userInput);
@@ -479,6 +517,7 @@ async function generateAnswer(history: SessionHistory, deps: Parameters<typeof r
       fullText = resolveEmptyText(lastStep, deps.pendingNote ?? DEFAULT_PENDING_NOTE);
       if (fullText.length > 0) deps.onPendingNote?.();
     }
+    fullText = withLoginNote(lastStep, fullText, deps.loginNote ?? defaultLoginNote);
 
     await history.addAssistantMessage(resolveHistoryText(lastStep, fullText), turnCalls(steps, deps.resumed));
     return fullText;
@@ -507,6 +546,7 @@ async function generateAnswer(history: SessionHistory, deps: Parameters<typeof r
 
   const text = result.text.trim().length === 0 ? resolveEmptyText(lastStep, deps.pendingNote ?? DEFAULT_PENDING_NOTE) : result.text;
   if (result.text.trim().length === 0 && text.length > 0) deps.onPendingNote?.();
-  await history.addAssistantMessage(resolveHistoryText(lastStep, text), turnCalls(steps, deps.resumed));
-  return text;
+  const answer = withLoginNote(lastStep, text, deps.loginNote ?? defaultLoginNote);
+  await history.addAssistantMessage(resolveHistoryText(lastStep, answer), turnCalls(steps, deps.resumed));
+  return answer;
 }
