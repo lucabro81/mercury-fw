@@ -75,12 +75,15 @@ describe("createTurnTrace", () => {
   });
 
   // The streaming callbacks decide the turn's path (`streamText` or not): a
-  // trace must never turn on streaming for a channel that didn't ask for it.
-  it("leaves the streaming callbacks absent when the sink has none", () => {
+  // trace must never turn on streaming for a channel that didn't ask for it,
+  // nor claim a callback the channel doesn't have.
+  it("leaves the optional callbacks absent when the sink has none", () => {
     const trace = createTurnTrace(bareSink());
 
     expect(trace.sink.onTextChunk).toBeUndefined();
     expect(trace.sink.onReasoningChunk).toBeUndefined();
+    expect(trace.sink.onReasoningEnd).toBeUndefined();
+    expect(trace.sink.onToolFinish).toBeUndefined();
   });
 
   it("records nothing for a turn that only wrote text", () => {

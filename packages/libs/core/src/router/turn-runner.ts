@@ -14,6 +14,7 @@ import type { CallRecord } from "../session/call-record.ts";
 import { ABORTED_MARKER, runTurn } from "../session/agent-turn.ts";
 import type { StepInfo } from "../session/step-info.ts";
 import { formatTurnStamp } from "../session/turn-stamp.ts";
+import { createTurnTrace, type TraceEntry } from "../session/turn-trace.ts";
 // `PostTurnGuard` is part of the plugin contract (a plugin's `build()` may
 // return these to inspect/rewrite the model's finished text), so it lives in
 // `@mercury-fw/plugin-types` and is re-exported here for the core callers that
@@ -231,6 +232,9 @@ export type TurnRunnerDeps = {
    * ever the model's own answer text; the `present` displays the turn showed
    * after it come as `displays`, never inside it. A cancelled turn's answer
    * comes as `interrupted`, its `content` the text the history kept for it.
+   * An answer carries `trace`, what the person saw of the turn besides its
+   * text (up to the stop, for a cancelled one), when there was any, and
+   * `pendingNote` when the turn stood in with the core's note.
    */
   captureVerbatim?: (msg: {
     sessionKey: string;
@@ -240,6 +244,8 @@ export type TurnRunnerDeps = {
     displays?: string[];
     calls?: CallRecord[];
     interrupted?: true;
+    trace?: TraceEntry[];
+    pendingNote?: string;
   }) => Promise<void>;
   /** `key` is the turn's person: the corrections' status reads in their language. */
   processToolCorrections: (
@@ -338,7 +344,10 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
     if (!started) sink.dispose();
   };
 
-  async function runTurnLocked(turn: InboundTurn, sink: TurnSink): Promise<void> {
+  async function runTurnLocked(turn: InboundTurn, channelSink: TurnSink): Promise<void> {
+    // What the person sees of the turn besides its text, kept with the answer (#370).
+    const trace = createTurnTrace(channelSink);
+    const sink = trace.sink;
     // Someone the core won't talk to gets the refusal, and nothing of theirs
     // is created: no history, no capture.
     const identified = await identify(turn.principal, turn.languageHint);
@@ -406,7 +415,8 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
     const input = timeZone === undefined ? message : `${formatTurnStamp(new Date((deps.now ?? Date.now)()), timeZone)}${message}`;
     if (tracked) {
       deps.trackSession(turn.sessionKey, key, (deps.now ?? Date.now)());
-      deps.registerCaptureCallback(turn.sessionKey, sink.onToolStart, sink.onToolFinish);
+      // The session's later capture pings aren't this turn's: they reach the channel unrecorded.
+      deps.registerCaptureCallback(turn.sessionKey, channelSink.onToolStart, channelSink.onToolFinish);
     }
 
     // The turn log (#238): a turn with no tool calls, or one that never ends,
@@ -451,6 +461,8 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
     let assistantText = "";
     // What the model surfaced with `present` this turn, archived next to it.
     let surfacedDisplays: string[] = [];
+    // Whether the answer begins with the core's pending note, standing in for the model's words.
+    let stoodIn = false;
     // The history's last message before this turn: a marker that is still it was left by an earlier turn.
     let lastBefore: Message | undefined;
     // Set when the turn's channel cancelled it: archived once the sink is released.
@@ -474,7 +486,15 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
         if (!resumed) {
           await deps.captureVerbatim({ sessionKey: turn.sessionKey, userId: key, role: "user", content: turn.text });
         }
-        await deps.captureVerbatim({ sessionKey: turn.sessionKey, userId: key, role: "assistant", content: ABORTED_MARKER, interrupted: true });
+        const seen = trace.entries();
+        await deps.captureVerbatim({
+          sessionKey: turn.sessionKey,
+          userId: key,
+          role: "assistant",
+          content: ABORTED_MARKER,
+          interrupted: true,
+          ...(seen.length > 0 ? { trace: seen } : {}),
+        });
       } catch (err) {
         console.log(`[verbatim-archive] capture failed, turn unaffected: ${String(err instanceof Error ? err.message : err)}`);
       }
@@ -632,7 +652,8 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
       // The model said nothing and the turn stood in with the note: the
       // channel is told, never left to recognize the text, also when a
       // guard added to it.
-      if (noteUsed && correctedText.startsWith(pendingNote)) await sink.finalize(finalText, { pendingNote });
+      stoodIn = noteUsed && correctedText.startsWith(pendingNote);
+      if (stoodIn) await sink.finalize(finalText, { pendingNote });
       else await sink.finalize(finalText);
       logTurn(
         `${turn.logPrefix}[turn] done in ${seconds()}s: ${count(steps.length, "step")}, ${count(toolCalls, "tool call")}, reasoning ${reasoningChars} chars, answer ${answerLength(assistantText, answerChars)} chars${finish ? `, finish ${finish.reason}` : ""}`,
@@ -679,6 +700,7 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
           // The calls the answer was written from, as the history recorded them.
           const answer = history.getMessages().at(-1);
           const calls = answer?.role === "assistant" ? answer.calls : undefined;
+          const seen = trace.entries();
           await deps.captureVerbatim({
             sessionKey: turn.sessionKey,
             userId: key,
@@ -686,6 +708,8 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
             content: assistantText,
             ...(surfacedDisplays.length > 0 ? { displays: surfacedDisplays } : {}),
             ...(calls !== undefined ? { calls } : {}),
+            ...(seen.length > 0 ? { trace: seen } : {}),
+            ...(stoodIn ? { pendingNote } : {}),
           });
         } catch (err) {
           console.log(
@@ -694,6 +718,7 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
         }
       }
     }
-    await deps.processToolCorrections(steps, sink.onToolStart, sink.onToolFinish, key);
+    // After the archive: nothing of it belongs to the turn's trace.
+    await deps.processToolCorrections(steps, channelSink.onToolStart, channelSink.onToolFinish, key);
   }
 }

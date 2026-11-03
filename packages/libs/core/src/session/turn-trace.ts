@@ -33,15 +33,16 @@ export type TurnTrace = {
 };
 
 /**
- * Wraps `sink` to record the turn's trace. The streaming callbacks stay absent
- * when `sink` has none, since their presence puts the turn on `streamText`.
+ * Wraps `sink` to record the turn's trace: what the channel shows, so the
+ * optional callbacks `sink` lacks stay absent (the streaming ones would put the
+ * turn on `streamText`), and what it can't show isn't recorded.
  */
 export function createTurnTrace(sink: TurnSink): TurnTrace {
   const entries: TraceEntry[] = [];
   const reasoning = new Map<string, Extract<TraceEntry, { type: "reasoning" }>>();
   const tools = new Map<string, Extract<TraceEntry, { type: "tool" }>>();
 
-  const onReasoningChunk = sink.onReasoningChunk;
+  const { onReasoningChunk, onReasoningEnd, onToolFinish } = sink;
 
   const wrapped: TurnSink = {
     ...sink,
@@ -56,16 +57,6 @@ export function createTurnTrace(sink: TurnSink): TurnTrace {
       if (toolCallId !== undefined) tools.set(toolCallId, entry);
       sink.onToolStart(label, detail, toolCallId, toolName);
     },
-    onToolFinish: (toolCallId, outcome) => {
-      const entry = tools.get(toolCallId);
-      if (entry) entry.outcome = outcome;
-      sink.onToolFinish?.(toolCallId, outcome);
-    },
-    onReasoningEnd: (id, failed) => {
-      const entry = reasoning.get(id);
-      if (entry && failed) entry.failed = true;
-      sink.onReasoningEnd?.(id, failed);
-    },
     onStep: (step) => {
       const pending = detectPendingConfirmation(step);
       if (pending) {
@@ -75,6 +66,20 @@ export function createTurnTrace(sink: TurnSink): TurnTrace {
       sink.onStep?.(step);
     },
   };
+  if (onToolFinish) {
+    wrapped.onToolFinish = (toolCallId, outcome) => {
+      const entry = tools.get(toolCallId);
+      if (entry) entry.outcome = outcome;
+      onToolFinish(toolCallId, outcome);
+    };
+  }
+  if (onReasoningEnd) {
+    wrapped.onReasoningEnd = (id, failed) => {
+      const entry = reasoning.get(id);
+      if (entry && failed) entry.failed = true;
+      onReasoningEnd(id, failed);
+    };
+  }
   if (onReasoningChunk) {
     wrapped.onReasoningChunk = (chunk, id) => {
       const entry = reasoning.get(id);

@@ -7,6 +7,7 @@ import { OPERATOR_PRINCIPAL } from "../identity/people.ts";
 import { createSessionLock } from "./session-lock.ts";
 import { ABORTED_MARKER } from "../session/agent-turn.ts";
 import type { StepInfo } from "../session/step-info.ts";
+import { confirmationId } from "../session/turn-trace.ts";
 
 function fakeHistory(overrides: Partial<SessionHistory> = {}): SessionHistory {
   return {
@@ -161,13 +162,14 @@ describe("createTurnRunner", () => {
     });
 
     const reasoning: Array<[string, string]> = [];
-    const onReasoningEnd = () => {};
-    await runner(baseTurn(), baseSink({ onReasoningChunk: (c, id) => reasoning.push([c, id]), onReasoningEnd }));
+    const ended: Array<[string, boolean]> = [];
+    await runner(baseTurn(), baseSink({ onReasoningChunk: (c, id) => reasoning.push([c, id]), onReasoningEnd: (id, failed) => ended.push([id, failed]) }));
+    (receivedOnReasoningEnd as (id: string, failed: boolean) => void)("r1", false);
 
-    // Wrapped to count what's streamed (#238), each chunk still reaching the sink.
+    // Wrapped to count what's streamed (#238) and to record the turn's trace (#370), each call still reaching the sink.
     expect(typeof receivedOnReasoningChunk).toBe("function");
     expect(reasoning).toEqual([["think", "r1"]]);
-    expect(receivedOnReasoningEnd).toBe(onReasoningEnd);
+    expect(ended).toEqual([["r1", false]]);
   });
 
   // Regression: must stay undefined, not default to a no-op — a no-op
@@ -332,15 +334,19 @@ describe("createTurnRunner", () => {
     });
   }
 
-  test("calls buildTools with the turn's sessionKey, the principal's user key, and the sink's onToolStart/onToolFinish", async () => {
-    const calls: Array<[string, string, unknown, unknown]> = [];
-    const onToolStart = () => {};
-    const onToolFinish = () => {};
+  // The callbacks are the trace's (#370): each call still reaches the sink, unchanged.
+  test("calls buildTools with the turn's sessionKey, the principal's user key, and callbacks reaching the sink's onToolStart/onToolFinish", async () => {
+    const calls: Array<[string, string]> = [];
+    const shown: unknown[][] = [];
+    const onToolStart = (...args: unknown[]) => void shown.push(["start", ...args]);
+    const onToolFinish = (...args: unknown[]) => void shown.push(["finish", ...args]);
     const runner = createTurnRunner({
       model: {} as any,
       systemPrompts: { singleUser: "s", multiUser: "m" },
       buildTools: (sessionKey, key, _who, cb, finishCb) => {
-        calls.push([sessionKey, key, cb, finishCb]);
+        calls.push([sessionKey, key]);
+        cb?.("Reading", "KAN-1", "c1", "jiraCommand");
+        finishCb?.("c1", "success");
         return {};
       },
       getOrCreateHistory: () => fakeHistory(),
@@ -354,7 +360,11 @@ describe("createTurnRunner", () => {
 
     await runner(baseTurn({ sessionKey: "sk", principal: verified("users/42") }), baseSink({ onToolStart, onToolFinish }));
 
-    expect(calls).toEqual([["sk", "google-chat:users/42", onToolStart, onToolFinish]]);
+    expect(calls).toEqual([["sk", "google-chat:users/42"]]);
+    expect(shown).toEqual([
+      ["start", "Reading", "KAN-1", "c1", "jiraCommand"],
+      ["finish", "c1", "success"],
+    ]);
   });
 
   test("onStepFinish fans out to logStep, recordStepFn, and sink.onStep", async () => {
@@ -2763,5 +2773,141 @@ describe("createTurnRunner: what a cancelled turn leaves in the archive", () => 
     expect(sink.finalized).toEqual([]);
     expect(sink.disposed).toBe(true);
     expect(lines.some((line) => /^\[p\] \[turn\] cancelled after [\d.]+s$/.test(line))).toBe(true);
+  });
+});
+
+describe("createTurnRunner: what the person saw of the turn, in the archive (#370)", () => {
+  const pendingStep: StepInfo = {
+    toolCalls: [{ toolCallId: "c2", toolName: "jiraCommand", input: {} }],
+    toolResults: [{ toolCallId: "c2", toolName: "jiraCommand", output: { ok: false, pendingConfirmation: true, token: "TOK1-aaaa", summary: "delete KAN-1" } }],
+    content: [],
+  };
+
+  /** A runner whose model call reasons, runs a tool, stages an action, then answers `text` (the pending note when absent). */
+  function setup(opts: { text?: string; abort?: boolean; guard?: PostTurnGuard } = {}) {
+    const controller = new AbortController();
+    const captured: Array<Record<string, unknown>> = [];
+    const shown: unknown[][] = [];
+    const registered: unknown[] = [];
+    const messages: Array<{ role: "user" | "assistant"; content: string }> = [];
+    const history = fakeHistory({
+      addUserMessage: async (content) => void messages.push({ role: "user", content }),
+      addAssistantMessage: async (content) => void messages.push({ role: "assistant", content }),
+      getMessages: () => messages,
+    });
+    const runner = createTurnRunner({
+      model: {} as any,
+      systemPrompts: { singleUser: "s", multiUser: "m" },
+      buildTools: (_sessionKey, _key, _who, start, finish) => {
+        start?.("Searching Jira", "issue search", "c1", "jiraCommand");
+        finish?.("c1", "success");
+        return {};
+      },
+      getOrCreateHistory: () => history,
+      trackSession: () => {},
+      registerCaptureCallback: (_sessionKey, start, finish) => void registered.push(start, finish),
+      maybeCapture: async () => {},
+      processToolCorrections: async () => {},
+      logStep: () => {},
+      logTurnFn: () => {},
+      heartbeat: () => () => {},
+      translatorFor: () => (key) => key,
+      ...(opts.guard ? { postTurnGuards: [opts.guard] } : {}),
+      captureVerbatim: async (msg) => void captured.push(msg),
+      runTurnFn: async (h, text, deps) => {
+        await h.addUserMessage(text);
+        deps.onReasoningChunk?.("Look it ", "r1");
+        deps.onReasoningChunk?.("up.", "r1");
+        deps.onReasoningEnd?.("r1", false);
+        deps.onStepFinish?.(pendingStep);
+        if (opts.abort) {
+          controller.abort();
+          await h.addAssistantMessage(ABORTED_MARKER);
+          return "";
+        }
+        await h.addAssistantMessage(opts.text ?? deps.pendingNote!);
+        if (opts.text !== undefined) return opts.text;
+        deps.onPendingNote?.();
+        return deps.pendingNote!;
+      },
+    });
+    const sink = baseSink({
+      onToolStart: (...args) => void shown.push(["tool", ...args]),
+      onToolFinish: (...args) => void shown.push(["finish", ...args]),
+      onReasoningChunk: (...args) => void shown.push(["reasoning", ...args]),
+      onReasoningEnd: (...args) => void shown.push(["reasoningEnd", ...args]),
+    });
+    return { runner, sink, controller, captured, shown, registered };
+  }
+
+  const reasoning = { type: "reasoning", text: "Look it up." };
+  const tool = { type: "tool", label: "Searching Jira", detail: "issue search", name: "jiraCommand", outcome: "success" };
+  const confirmation = { type: "confirmation", id: confirmationId("TOK1-aaaa"), command: "delete KAN-1", choices: [""] };
+
+  test("archives the answer with its trace, in the order it happened, and the pending note it stood in with", async () => {
+    const { runner, sink, captured } = setup();
+    await runner(baseTurn({ sessionKey: "sk", principal: verified("u1"), text: "delete KAN-1" }), sink);
+    expect(captured).toEqual([
+      { sessionKey: "sk", userId: "google-chat:u1", role: "user", content: "delete KAN-1" },
+      {
+        sessionKey: "sk",
+        userId: "google-chat:u1",
+        role: "assistant",
+        content: "core.pending.note",
+        trace: [tool, reasoning, confirmation],
+        pendingNote: "core.pending.note",
+      },
+    ]);
+  });
+
+  test("an answer the model wrote carries no pending note", async () => {
+    const { runner, sink, captured } = setup({ text: "Here it is." });
+    await runner(baseTurn({ principal: verified("u1") }), sink);
+    expect(captured[1]).toEqual({ sessionKey: "session-1", userId: "google-chat:u1", role: "assistant", content: "Here it is.", trace: [tool, reasoning, confirmation] });
+  });
+
+  test("the channel still gets every call, unchanged", async () => {
+    const { runner, sink, shown } = setup({ text: "ok" });
+    await runner(baseTurn({ principal: verified("u1") }), sink);
+    expect(shown).toEqual([
+      ["tool", "Searching Jira", "issue search", "c1", "jiraCommand"],
+      ["finish", "c1", "success"],
+      ["reasoning", "Look it ", "r1"],
+      ["reasoning", "up.", "r1"],
+      ["reasoningEnd", "r1", false],
+    ]);
+  });
+
+  test("a post-turn guard's status line is in the trace, as the person saw it", async () => {
+    const guard: PostTurnGuard = {
+      statusId: "guard:test",
+      statusLabel: () => "Checking the answer",
+      shouldRun: () => true,
+      run: async (text) => ({ text, outcome: "success" }),
+    };
+    const { runner, sink, captured } = setup({ text: "ok", guard });
+    await runner(baseTurn({ principal: verified("u1") }), sink);
+    expect((captured[1] as { trace: unknown[] }).trace.at(-1)).toEqual({ type: "tool", label: "Checking the answer", outcome: "success" });
+  });
+
+  test("an interrupted answer carries what happened before the stop", async () => {
+    const { runner, sink, controller, captured } = setup({ abort: true });
+    await runner(baseTurn({ sessionKey: "sk", principal: verified("u1"), text: "q", abortSignal: controller.signal }), sink);
+    expect(captured[1]).toEqual({
+      sessionKey: "sk",
+      userId: "google-chat:u1",
+      role: "assistant",
+      content: ABORTED_MARKER,
+      interrupted: true,
+      trace: [tool, reasoning, confirmation],
+    });
+  });
+
+  // A capture ping runs after the turn, on the session's later idle sweep: it
+  // isn't this turn's, so it must reach the channel without the recording.
+  test("the session's capture pings get the channel's own callbacks, not the recording ones", async () => {
+    const { runner, sink, registered } = setup({ text: "ok" });
+    await runner(baseTurn({ principal: verified("u1") }), sink);
+    expect(registered).toEqual([sink.onToolStart, sink.onToolFinish]);
   });
 });
