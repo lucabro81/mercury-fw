@@ -620,7 +620,8 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   const channelRuntime: ChannelRuntimeContext = {
     env: process.env,
     log: (msg) => console.error(msg),
-    ...bindConfirm(confirmDeps, people.identify, linking.redeem, texts),
+    // How a confirmation was resolved goes to the archive with the conversation (#370).
+    ...bindConfirm(confirmDeps, people.identify, linking.redeem, texts, verbatimProvider.captureExchange),
     admit: people.admit,
     // The channel's own texts: the person's language when the core knows who
     // it is, else the hint's, else the default.

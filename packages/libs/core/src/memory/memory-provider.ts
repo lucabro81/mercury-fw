@@ -12,9 +12,10 @@
  */
 import { tool, type Tool } from "ai";
 import { z } from "zod";
-import { appendVerbatimMessage, searchVerbatim, shownText } from "./verbatim-archive-store.ts";
+import { appendVerbatimMessage, searchVerbatim, shownText, type ArchivedConfirmation } from "./verbatim-archive-store.ts";
 import type { QdrantClientLike } from "./episodic-store.ts";
 import type { CallRecord } from "../session/call-record.ts";
+import type { TraceEntry } from "../session/turn-trace.ts";
 
 /**
  * One side of an exchange to archive — the provider stamps its own durable
@@ -30,6 +31,12 @@ export type VerbatimExchange = {
   calls?: CallRecord[];
   /** Set on the answer of a cancelled turn, whose `content` is the text the history kept for it. */
   interrupted?: true;
+  /** What the person saw of the turn besides its text (`../session/turn-trace.ts`). */
+  trace?: TraceEntry[];
+  /** The core's stand-in sentence the answer begins with, when the turn only staged an action. */
+  pendingNote?: string;
+  /** How a staged action was resolved: the message is the reply the person got, empty when the turn resumed instead. */
+  confirmation?: ArchivedConfirmation;
 };
 
 /** Per-turn identity a provider's recall tools are scoped to. `userId` is what makes recall cross-session. */
@@ -73,8 +80,9 @@ export function createVerbatimArchiveProvider(deps: VerbatimArchiveProviderDeps)
     captureExchange: async (exchange) => {
       // An empty/whitespace-only message (e.g. a present()-only turn with no
       // prose) has nothing to archive — skip it rather than store a
-      // meaningless point and embed an empty string.
-      if (shownText(exchange.content, exchange.displays).trim() === "") {
+      // meaningless point and embed an empty string. How a confirmation was
+      // resolved is kept all the same.
+      if (shownText(exchange.content, exchange.displays).trim() === "" && exchange.confirmation === undefined) {
         return;
       }
       await appendVerbatimMessage(deps.client, deps.collectionName, deps.embed, {

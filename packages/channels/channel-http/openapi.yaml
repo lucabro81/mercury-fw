@@ -262,7 +262,7 @@ paths:
         "503":
           $ref: "#/components/responses/NotAdmitted"
         "200":
-          description: The conversation's messages in chronological order; none when it isn't one of the caller's.
+          description: The conversation's messages in chronological order, each answer with what its turn showed besides the text; none when it isn't one of the caller's.
           content:
             application/json:
               schema:
@@ -830,9 +830,93 @@ components:
           type: boolean
           enum: [true]
           description: "On an answer whose turn was stopped before it was finished (the client closed the stream): `content` is empty. The question before it was left unanswered."
+        trace:
+          type: array
+          description: >
+            On an answer: what the person saw of the turn besides its text, in
+            the order it happened, as the turn's events showed it (up to the
+            stop, for an interrupted one). Absent when there was nothing, and
+            on answers archived before it was kept.
+          items:
+            $ref: "#/components/schemas/TraceEntry"
+        pendingNote:
+          type: string
+          description: >
+            On an answer whose model wrote nothing because the turn staged an
+            action: the core's stand-in sentence `content` begins with, as the
+            turn's `final` event gave it. A UI showing the confirmation from
+            the trace hides it.
+        confirmation:
+          type: object
+          description: >
+            On the message saying how a staged action was resolved (a token
+            sent back, a choice clicked): `content` is the reply the person
+            got, empty when the confirmed action's result went back to the
+            model (`resume`), whose answer is the next message. `id` is the
+            one of the trace's `confirmation` entry it resolves, which says
+            what the action was.
+          required: [id, status]
+          properties:
+            id:
+              type: string
+            status:
+              type: string
+              enum: [ok, failed, resume]
+            choice:
+              type: string
+              description: The label of the choice taken, when the action was offered as several.
         timestamp:
           type: string
           description: ISO 8601, millisecond precision — the durable ordering key.
+    TraceEntry:
+      type: object
+      description: >
+        One thing a turn showed besides its text. `reasoning`: a reasoning
+        block in full, `failed` when it was cut. `tool`: a status line, with
+        the tool the model called (`name`, absent for Mercury's own lines) and
+        how it went (`outcome`, absent when it never finished). `confirmation`:
+        an action staged, with the labels of its choices (one empty label for a
+        plain confirmation); `id` names it, never its token. `login`: a login
+        asked for, by service, never its link.
+      required: [type]
+      properties:
+        type:
+          type: string
+          enum: [reasoning, tool, confirmation, login]
+        text:
+          type: string
+          description: On `reasoning`.
+        failed:
+          type: boolean
+          enum: [true]
+          description: On `reasoning`.
+        label:
+          type: string
+          description: On `tool`.
+        detail:
+          type: string
+          description: On `tool`.
+        name:
+          type: string
+          description: On `tool`.
+        outcome:
+          type: string
+          enum: [success, failed, pending]
+          description: On `tool`.
+        id:
+          type: string
+          description: On `confirmation`.
+        command:
+          type: string
+          description: On `confirmation`.
+        choices:
+          type: array
+          items:
+            type: string
+          description: On `confirmation`.
+        service:
+          type: string
+          description: On `login`.
     ConversationPage:
       type: object
       required: [ok, messages]

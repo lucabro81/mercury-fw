@@ -30,6 +30,11 @@ export type WriteConfirmationNote = (
  * what it was (`describe`, `label` of the choice taken) for the history. */
 export type ResumedAction = { describe: string; label?: string; toolName: string; input: unknown; output: unknown };
 
+/** How a staged action was resolved: under the token its note is kept under
+ * (the group's first, or its own), the `label` of the choice taken and how it
+ * went. */
+export type ResolvedAction = { token: string; label?: string; status: "ok" | "failed" | "resume" };
+
 export type ConfirmDeps = {
   store: ConfirmationStore;
   /** Keeps a confirmed action's result for `sessionKey`'s resumed turn. Without
@@ -39,6 +44,8 @@ export type ConfirmDeps = {
   owner: string;
   vaultPath: string;
   writeConfirmationNoteFn: WriteConfirmationNote;
+  /** Told once a staged action has run, however it went; never for input that resolved nothing. */
+  onResolved?: (action: ResolvedAction) => void;
   now?: () => Date;
 };
 
@@ -86,7 +93,16 @@ export async function resolveConfirmation(
   } catch (err) {
     console.error(`[confirm-flow] failed to write confirmation note: ${String(err)}`);
   }
-  if (!result.ok) return { status: "failed", error: result.error };
+  const resolved = (status: ResolvedAction["status"]) =>
+    deps.onResolved?.({
+      token: staged.noteToken ?? token,
+      ...(staged.label === undefined ? {} : { label: staged.label }),
+      status,
+    });
+  if (!result.ok) {
+    resolved("failed");
+    return { status: "failed", error: result.error };
+  }
   if (staged.resume && deps.onResume) {
     deps.onResume(sessionKey, {
       describe: staged.describe,
@@ -95,8 +111,10 @@ export async function resolveConfirmation(
       input: staged.resume.input,
       output: result.data,
     });
+    resolved("resume");
     return { status: "resume" };
   }
+  resolved("ok");
   return { status: "ok", data: result.data };
 }
 

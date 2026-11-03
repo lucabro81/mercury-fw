@@ -21,6 +21,7 @@ export {
 export {
   resolveConfirmation,
   type ConfirmDeps,
+  type ResolvedAction,
   type ResumedAction,
   type WriteConfirmationNote,
 } from "./confirm-flow.ts";
