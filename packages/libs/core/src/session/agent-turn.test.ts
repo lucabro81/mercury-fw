@@ -1327,3 +1327,147 @@ describe("runTurn — the turn's tool calls in the history", () => {
     });
   });
 });
+
+// A tool's login request didn't end the turn: the person got the link, and
+// the model went on calling other tools nobody asked for, burning context
+// on an answer the person didn't want (observed live: a Confluence question
+// answered from Jira while the Confluence login waited).
+describe("a step asking for a login ends the turn", () => {
+  const loginResult = (service: string) => ({
+    ok: false,
+    loginRequired: true,
+    service,
+    authorizeUrl: `https://login.example/${service}`,
+    error: "The user isn't logged in yet",
+  });
+  const LOGIN_STEP: StepInfo = {
+    toolCalls: [{ toolCallId: "c", toolName: "confluenceCommand", input: { command: "confluence page search" } }],
+    toolResults: [{ toolCallId: "c", toolName: "confluenceCommand", output: loginResult("confluence") }],
+    content: [],
+  };
+  const TWO_LOGINS_STEP: StepInfo = {
+    toolCalls: [
+      { toolCallId: "c", toolName: "confluenceCommand", input: { command: "confluence page search" } },
+      { toolCallId: "j", toolName: "jiraCommand", input: { command: "jira issue list" } },
+      { toolCallId: "b", toolName: "bitbucketCommand", input: { command: "bitbucket repo list" } },
+    ],
+    toolResults: [
+      { toolCallId: "c", toolName: "confluenceCommand", output: loginResult("confluence") },
+      { toolCallId: "j", toolName: "jiraCommand", output: { ok: true, data: [] } },
+      { toolCallId: "b", toolName: "bitbucketCommand", output: loginResult("bitbucket") },
+    ],
+    content: [],
+  };
+  const LOGIN_NOTE = (services: string) => CORE_MESSAGES["core.login.note"]!.replace("{services}", services);
+  const params = { model: "fake-model" as never, messages: [], tools: {}, instructions: SYSTEM };
+
+  it("stops right after the step, on both paths", async () => {
+    expect(await stopConditionsMet(buildGenerateTextParams(params).stopWhen, [LOGIN_STEP])).toBe(true);
+    expect(await stopConditionsMet(buildStreamTextParams(params).stopWhen, [LOGIN_STEP])).toBe(true);
+  });
+
+  it("goes on when the login couldn't start: the model tells the person", async () => {
+    const failed: StepInfo = {
+      toolCalls: LOGIN_STEP.toolCalls,
+      toolResults: [{ toolCallId: "c", toolName: "confluenceCommand", output: { ok: false, error: "The user isn't logged in to confluence, and their login couldn't start" } }],
+      content: [],
+    };
+    expect(await stopConditionsMet(buildGenerateTextParams(params).stopWhen, [failed])).toBe(false);
+    expect(await stopConditionsMet(buildStreamTextParams(params).stopWhen, [failed])).toBe(false);
+  });
+
+  it("answers with the note when the model wrote nothing, and keeps it and the calls in the history", async () => {
+    const history = createSessionHistory(neverSummarize);
+    const result = await runTurn(history, "confluence pages on docker?", {
+      model: "fake-model" as never,
+      tools: {},
+      system: SYSTEM,
+      generateTextFn: async (p: { onStepEnd?: (step: StepInfo) => void }) => {
+        p.onStepEnd?.(LOGIN_STEP);
+        return { text: "" };
+      },
+    });
+    expect(result).toBe(LOGIN_NOTE("confluence"));
+    const [, answer] = history.getMessages();
+    expect(answer?.content).toBe(LOGIN_NOTE("confluence"));
+    expect(answer?.calls?.map((c) => c.toolName)).toEqual(["confluenceCommand"]);
+  });
+
+  it("puts the note after what the model streamed, without streaming it", async () => {
+    const received: string[] = [];
+    const result = await runTurn(createSessionHistory(neverSummarize), "confluence pages on docker?", {
+      model: "fake-model" as never,
+      tools: {},
+      system: SYSTEM,
+      streamTextFn: async (p: { onStepEnd?: (step: StepInfo) => void }) => {
+        p.onStepEnd?.(LOGIN_STEP);
+        return { stream: textDeltaStream(["Searching ", "Confluence."]) };
+      },
+      onTextChunk: (chunk) => received.push(chunk),
+    });
+    expect(received).toEqual(["Searching ", "Confluence."]);
+    expect(result).toBe(`Searching Confluence.\n\n${LOGIN_NOTE("confluence")}`);
+  });
+
+  it("uses the note the turn hands it, with every service of the step in order", async () => {
+    const asked: string[][] = [];
+    const result = await runTurn(createSessionHistory(neverSummarize), "ciao", {
+      model: "fake-model" as never,
+      tools: {},
+      system: SYSTEM,
+      generateTextFn: async (p: { onStepEnd?: (step: StepInfo) => void }) => {
+        p.onStepEnd?.(TWO_LOGINS_STEP);
+        return { text: "" };
+      },
+      loginNote: (services) => {
+        asked.push(services);
+        return `Accedi a ${services.join(" e ")}, poi riscrivimi.`;
+      },
+    });
+    expect(asked).toEqual([["confluence", "bitbucket"]]);
+    expect(result).toBe("Accedi a confluence e bitbucket, poi riscrivimi.");
+  });
+
+  it("the English note names the services, comma-separated", async () => {
+    const result = await runTurn(createSessionHistory(neverSummarize), "hi", {
+      model: "fake-model" as never,
+      tools: {},
+      system: SYSTEM,
+      generateTextFn: async (p: { onStepEnd?: (step: StepInfo) => void }) => {
+        p.onStepEnd?.(TWO_LOGINS_STEP);
+        return { text: "" };
+      },
+    });
+    expect(result).toBe(LOGIN_NOTE("confluence, bitbucket"));
+  });
+
+  it("leaves a step that also staged a confirmation to the confirmation's handling", async () => {
+    const both: StepInfo = {
+      toolCalls: [...PENDING_CONFIRMATION_STEP.toolCalls, ...LOGIN_STEP.toolCalls],
+      toolResults: [...PENDING_CONFIRMATION_STEP.toolResults, ...LOGIN_STEP.toolResults],
+      content: [],
+    };
+    const history = createSessionHistory(neverSummarize);
+    const result = await runTurn(history, "hi", {
+      model: "fake-model" as never,
+      tools: {},
+      system: SYSTEM,
+      generateTextFn: async (p: { onStepEnd?: (step: StepInfo) => void }) => {
+        p.onStepEnd?.(both);
+        return { text: "" };
+      },
+    });
+    expect(result).toBe(PENDING_CONFIRMATION_NOTE);
+    expect(history.getMessages()[1]?.content).toBe("[REQ:TOK1]");
+  });
+
+  it("leaves a turn with no login as the model wrote it", async () => {
+    const result = await runTurn(createSessionHistory(neverSummarize), "hi", {
+      model: "fake-model" as never,
+      tools: {},
+      system: SYSTEM,
+      generateTextFn: async () => ({ text: "Hello." }),
+    });
+    expect(result).toBe("Hello.");
+  });
+});
