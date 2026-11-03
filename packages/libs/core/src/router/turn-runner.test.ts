@@ -2903,6 +2903,46 @@ describe("createTurnRunner: what the person saw of the turn, in the archive (#37
     });
   });
 
+  test("a reasoning block the stop cut is archived as failed", async () => {
+    const controller = new AbortController();
+    const captured: Array<Record<string, unknown>> = [];
+    const runner = createTurnRunner({
+      model: {} as any,
+      systemPrompts: { singleUser: "s", multiUser: "m" },
+      buildTools: () => ({}),
+      getOrCreateHistory: () => {
+        const messages: Array<{ role: "user" | "assistant"; content: string }> = [];
+        return fakeHistory({
+          addUserMessage: async (content) => void messages.push({ role: "user", content }),
+          addAssistantMessage: async (content) => void messages.push({ role: "assistant", content }),
+          getMessages: () => messages,
+        });
+      },
+      trackSession: () => {},
+      registerCaptureCallback: () => {},
+      maybeCapture: async () => {},
+      processToolCorrections: async () => {},
+      logStep: () => {},
+      logTurnFn: () => {},
+      heartbeat: () => () => {},
+      captureVerbatim: async (msg) => void captured.push(msg),
+      runTurnFn: async (h, text, deps) => {
+        await h.addUserMessage(text);
+        deps.onReasoningChunk?.("halfway", "r1");
+        controller.abort();
+        // The model call closes the open block as failed, as agent-turn does on abort.
+        deps.onReasoningEnd?.("r1", true);
+        await h.addAssistantMessage(ABORTED_MARKER);
+        return "";
+      },
+    });
+    await runner(
+      baseTurn({ principal: verified("u1"), text: "q", abortSignal: controller.signal }),
+      baseSink({ onReasoningChunk: () => {}, onReasoningEnd: () => {} }),
+    );
+    expect(captured[1]).toMatchObject({ interrupted: true, trace: [{ type: "reasoning", text: "halfway", failed: true }] });
+  });
+
   // A capture ping runs after the turn, on the session's later idle sweep: it
   // isn't this turn's, so it must reach the channel without the recording.
   test("the session's capture pings get the channel's own callbacks, not the recording ones", async () => {

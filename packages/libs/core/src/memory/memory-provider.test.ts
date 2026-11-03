@@ -144,7 +144,7 @@ describe("createVerbatimArchiveProvider — captureExchange", () => {
       now: () => new Date("2026-11-03T10:00:00.000Z"),
     });
     const trace = [{ type: "tool" as const, label: "Searching", outcome: "success" as const }];
-    const confirmation = { id: "0123456789abcdef", command: "fetch example.org", status: "resume" as const };
+    const confirmation = { id: "0123456789abcdef", status: "resume" as const };
 
     await provider.captureExchange!({ userId: "u", sessionKey: "s", role: "assistant", content: "Pending.", pendingNote: "Pending.", trace });
     await provider.captureExchange!({ userId: "u", sessionKey: "s", role: "assistant", content: "", confirmation });

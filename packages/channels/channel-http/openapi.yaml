@@ -853,14 +853,12 @@ components:
             sent back, a choice clicked): `content` is the reply the person
             got, empty when the confirmed action's result went back to the
             model (`resume`), whose answer is the next message. `id` is the
-            one of the trace's `confirmation` entry it resolves.
-          required: [id, command, status]
+            one of the trace's `confirmation` entry it resolves, which says
+            what the action was.
+          required: [id, status]
           properties:
             id:
               type: string
-            command:
-              type: string
-              description: What the staged action was.
             status:
               type: string
               enum: [ok, failed, resume]

@@ -81,7 +81,7 @@ export function createVerbatimArchiveProvider(deps: VerbatimArchiveProviderDeps)
       // An empty/whitespace-only message (e.g. a present()-only turn with no
       // prose) has nothing to archive — skip it rather than store a
       // meaningless point and embed an empty string. How a confirmation was
-      // resolved is kept all the same, embedded on its command.
+      // resolved is kept all the same.
       if (shownText(exchange.content, exchange.displays).trim() === "" && exchange.confirmation === undefined) {
         return;
       }

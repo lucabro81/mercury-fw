@@ -80,12 +80,11 @@ export type VerbatimMessage = {
 
 /**
  * How a staged action was resolved: `id` is the staging's (`confirmationId`),
- * the one its trace entry carries; `command` what it was; `choice` the label of
- * the choice taken, when it was one of several.
+ * the one its trace entry carries, with what the action was; `choice` the
+ * label of the choice taken, when it was one of several.
  */
 export type ArchivedConfirmation = {
   id: string;
-  command: string;
   status: "ok" | "failed" | "resume";
   choice?: string;
 };
@@ -165,7 +164,6 @@ function isArchivedConfirmation(value: unknown): boolean {
   const c = value as Record<string, unknown>;
   return (
     typeof c.id === "string" &&
-    typeof c.command === "string" &&
     (c.status === "ok" || c.status === "failed" || c.status === "resume") &&
     (c.choice === undefined || typeof c.choice === "string")
   );
@@ -187,8 +185,9 @@ function verbatimMessages(payloads: Array<Record<string, unknown> | null>): Verb
 }
 
 /**
- * Embeds `entry.content` (what was shown, when the model said nothing; the
- * command of a resolved confirmation, when nothing was shown at all) and
+ * Embeds `entry.content` (what was shown, when the model said nothing; for a
+ * resolved confirmation with no reply, its choice or how it went, since
+ * nothing searches it: recall leaves it out) and
  * upserts it as a new point in `collectionName`, payload carrying the full
  * verbatim message.
  */
@@ -199,7 +198,7 @@ export async function appendVerbatimMessage(
   entry: VerbatimMessage,
 ): Promise<void> {
   const shown = entry.content.trim() !== "" ? entry.content : shownText(entry.content, entry.displays);
-  const vector = await embed(shown !== "" ? shown : (entry.confirmation?.command ?? ""));
+  const vector = await embed(shown !== "" ? shown : (entry.confirmation?.choice ?? entry.confirmation?.status ?? ""));
   await client.upsert(collectionName, {
     points: [
       {

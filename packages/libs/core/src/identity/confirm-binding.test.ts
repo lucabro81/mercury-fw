@@ -28,7 +28,7 @@ function setup(opts: { identify?: () => Promise<Identified>; failingArchive?: bo
 
 // #370: a conversation reopened later says how each staged action was resolved.
 describe("bindConfirm: how a confirmation was resolved, in the archive", () => {
-  it("archives the reply to a pasted token, with the staging's id, its command and how it went", async () => {
+  it("archives the reply to a pasted token, with the staging's id and how it went", async () => {
     const { store, bound, archived } = setup();
     const token = store.stage("s", "static:alice", { describe: "jira issue delete X-1", run: async () => ({ ok: true, data: "done" }) });
 
@@ -40,7 +40,7 @@ describe("bindConfirm: how a confirmation was resolved, in the archive", () => {
         userId: "static:alice",
         role: "assistant",
         content: "Confirmed and done.",
-        confirmation: { id: confirmationId(token), command: "jira issue delete X-1", status: "ok" },
+        confirmation: { id: confirmationId(token), status: "ok" },
       },
     ]);
   });
@@ -61,7 +61,7 @@ describe("bindConfirm: how a confirmation was resolved, in the archive", () => {
         userId: "static:alice",
         role: "assistant",
         content: outcome.text!,
-        confirmation: { id: confirmationId(tokens[0]!), command: "fetch https://example.org/a", status: "ok", choice: "Always for example.org" },
+        confirmation: { id: confirmationId(tokens[0]!), status: "ok", choice: "Always for example.org" },
       },
     ]);
   });
@@ -73,7 +73,7 @@ describe("bindConfirm: how a confirmation was resolved, in the archive", () => {
     const reply = await bound.confirm(token, "s", alice);
 
     expect(archived).toEqual([
-      { sessionKey: "s", userId: "static:alice", role: "assistant", content: reply!.text, confirmation: { id: confirmationId(token), command: "x", status: "failed" } },
+      { sessionKey: "s", userId: "static:alice", role: "assistant", content: reply!.text, confirmation: { id: confirmationId(token), status: "failed" } },
     ]);
     expect(reply!.text).toContain("boom");
   });
@@ -92,7 +92,7 @@ describe("bindConfirm: how a confirmation was resolved, in the archive", () => {
         userId: "static:alice",
         role: "assistant",
         content: "",
-        confirmation: { id: confirmationId(token!), command: "fetch https://example.org/a", status: "resume", choice: "Only this time" },
+        confirmation: { id: confirmationId(token!), status: "resume", choice: "Only this time" },
       },
     ]);
   });
@@ -118,6 +118,20 @@ describe("bindConfirm: how a confirmation was resolved, in the archive", () => {
 
     expect(await bound.confirm(token, "s", alice)).toEqual({ text: "Confirmed and done." });
     expect(archived).toEqual([]);
+  });
+
+  // Review of #370: the outcome carried the staged action's normalized argv,
+  // which for a CLI plugin ends in `--confirm --user <id>`, while the trace
+  // showed the command the model wrote: a UI showed two strings for one action.
+  // The command lives in the trace entry the outcome's id points at.
+  it("archives none of what the staged action runs", async () => {
+    const { store, bound, archived } = setup();
+    const token = store.stage("s", "static:alice", { describe: "jira issue delete X-1 --confirm --user static:alice", run: async () => ({ ok: true, data: null }) });
+
+    await bound.confirm(token, "s", alice);
+
+    expect(JSON.stringify(archived)).not.toContain("--user");
+    expect(Object.keys(archived[0]!.confirmation!)).toEqual(["id", "status"]);
   });
 
   it("a failing archive leaves the reply as it was", async () => {

@@ -76,7 +76,6 @@ export function bindConfirm(
           content: resolved.status === "resume" ? "" : replyOf(outcome),
           confirmation: {
             id: confirmationId(resolved.token),
-            command: resolved.describe,
             status: resolved.status,
             ...(resolved.label === undefined ? {} : { choice: resolved.label }),
           },

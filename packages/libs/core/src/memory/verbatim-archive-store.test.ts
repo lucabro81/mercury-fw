@@ -996,13 +996,13 @@ describe("what the person saw of the turn besides its text (#370)", () => {
     sessionKey: "conv-1",
     role: "assistant" as const,
     content: "Done.",
-    confirmation: { id: "0123456789abcdef", command: "delete KAN-1", status: "ok" },
+    confirmation: { id: "0123456789abcdef", status: "ok" },
     timestamp: "2026-11-03T10:00:02.000Z",
   };
   const resumedOutcome = {
     ...outcome,
     content: "",
-    confirmation: { id: "0123456789abcdef", command: "fetch example.org", status: "resume", choice: "Only this time" },
+    confirmation: { id: "0123456789abcdef", status: "resume", choice: "Only this time" },
   };
 
   function clientWith(payloads: Array<Record<string, unknown>>): QdrantClientLike {
@@ -1044,8 +1044,9 @@ describe("what the person saw of the turn besides its text (#370)", () => {
     expect(embedded).toBe("Done.");
   });
 
-  it("embeds an outcome with no reply (a resumed one) on its command", async () => {
-    expect((await appended(resumedOutcome as never)).embedded).toBe("fetch example.org");
+  it("embeds an outcome with no reply (a resumed one) on its choice, else on how it went", async () => {
+    expect((await appended(resumedOutcome as never)).embedded).toBe("Only this time");
+    expect((await appended({ ...resumedOutcome, confirmation: { id: "x", status: "resume" } } as never)).embedded).toBe("resume");
   });
 
   it("listVerbatimBySession, what a UI renders, serves the trace, the pending note and the outcome", async () => {
@@ -1115,7 +1116,7 @@ describe("what the person saw of the turn besides its text (#370)", () => {
 
   // A malformed outcome would otherwise read as an ordinary answer and go back to the model.
   it("skips a point whose confirmation outcome is malformed", async () => {
-    for (const confirmation of ["ok", { id: "x", command: "c", status: "maybe" }, { id: 1, command: "c", status: "ok" }, { id: "x", status: "ok" }]) {
+    for (const confirmation of ["ok", { id: "x", status: "maybe" }, { id: 1, status: "ok" }, { status: "ok" }, { id: "x", status: "ok", choice: 2 }]) {
       const tail = await listVerbatimTail(clientWith([{ ...outcome, confirmation }, question]), "verbatim_archive", {
         userId: "static:alice",
         sessionKey: "conv-1",

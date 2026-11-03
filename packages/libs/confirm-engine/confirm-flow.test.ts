@@ -236,7 +236,7 @@ describe("resume", () => {
 });
 
 describe("onResolved", () => {
-  it("reports a lone action's own token, what it was and how it went", async () => {
+  it("reports a lone action's own token and how it went", async () => {
     const reported: unknown[] = [];
     for (const [result, status] of [
       [{ ok: true, data: null }, "ok"],
@@ -245,7 +245,7 @@ describe("onResolved", () => {
       const store = createConfirmationStore({ tokenFn: () => "k9m2-x7q4" });
       store.stage("s1", OWNER, staged("jira issue delete KAN-1 --confirm", async () => result));
       await resolveConfirmation("k9m2-x7q4", "s1", baseDeps({ store, onResolved: (info) => reported.push(info) }));
-      expect(reported.at(-1)).toEqual({ token: "k9m2-x7q4", describe: "jira issue delete KAN-1 --confirm", status });
+      expect(reported.at(-1)).toEqual({ token: "k9m2-x7q4", status });
     }
     expect(reported).toHaveLength(2);
   });
@@ -261,7 +261,7 @@ describe("onResolved", () => {
 
     await resolveConfirmation("abc2-wxyz", "s1", baseDeps({ store, onResolved: (info) => reported.push(info) }));
 
-    expect(reported).toEqual([{ token: "abc1-wxyz", describe: "fetch https://example.org/a", label: "Sempre per example.org", status: "ok" }]);
+    expect(reported).toEqual([{ token: "abc1-wxyz", label: "Sempre per example.org", status: "ok" }]);
   });
 
   it("reports a resumed action as resumed", async () => {
@@ -273,7 +273,7 @@ describe("onResolved", () => {
 
     await resolveConfirmation("k9m2-x7q4", "s1", baseDeps({ store, onResume: () => {}, onResolved: (info) => reported.push(info) }));
 
-    expect(reported).toEqual([{ token: "k9m2-x7q4", describe: "fetch https://example.org/a", label: "Solo questa volta", status: "resume" }]);
+    expect(reported).toEqual([{ token: "k9m2-x7q4", label: "Solo questa volta", status: "resume" }]);
   });
 
   it("reports nothing for input that isn't a token, or a token that resolves nothing", async () => {

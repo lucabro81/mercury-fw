@@ -31,9 +31,9 @@ export type WriteConfirmationNote = (
 export type ResumedAction = { describe: string; label?: string; toolName: string; input: unknown; output: unknown };
 
 /** How a staged action was resolved: under the token its note is kept under
- * (the group's first, or its own), what it was (`describe`, `label` of the
- * choice taken) and how it went. */
-export type ResolvedAction = { token: string; describe: string; label?: string; status: "ok" | "failed" | "resume" };
+ * (the group's first, or its own), the `label` of the choice taken and how it
+ * went. */
+export type ResolvedAction = { token: string; label?: string; status: "ok" | "failed" | "resume" };
 
 export type ConfirmDeps = {
   store: ConfirmationStore;
@@ -96,7 +96,6 @@ export async function resolveConfirmation(
   const resolved = (status: ResolvedAction["status"]) =>
     deps.onResolved?.({
       token: staged.noteToken ?? token,
-      describe: staged.describe,
       ...(staged.label === undefined ? {} : { label: staged.label }),
       status,
     });
