@@ -968,3 +968,160 @@ describe("an answer the turn's interruption cut short (#366)", () => {
     }
   });
 });
+
+describe("what the person saw of the turn besides its text (#370)", () => {
+  const trace = [
+    { type: "reasoning", text: "Look up the issues first." },
+    { type: "tool", label: "Searching Jira", detail: "issue search", name: "jiraCommand", outcome: "success" },
+    { type: "confirmation", id: "0123456789abcdef", command: "delete KAN-1", choices: [""] },
+  ];
+  const question = {
+    userId: "static:alice",
+    sessionKey: "conv-1",
+    role: "user" as const,
+    content: "Cancella KAN-1",
+    timestamp: "2026-11-03T10:00:00.000Z",
+  };
+  const answer = {
+    userId: "static:alice",
+    sessionKey: "conv-1",
+    role: "assistant" as const,
+    content: "Action pending, waiting for confirmation.",
+    pendingNote: "Action pending, waiting for confirmation.",
+    trace,
+    timestamp: "2026-11-03T10:00:01.000Z",
+  };
+  const outcome = {
+    userId: "static:alice",
+    sessionKey: "conv-1",
+    role: "assistant" as const,
+    content: "Done.",
+    confirmation: { id: "0123456789abcdef", command: "delete KAN-1", status: "ok" },
+    timestamp: "2026-11-03T10:00:02.000Z",
+  };
+  const resumedOutcome = {
+    ...outcome,
+    content: "",
+    confirmation: { id: "0123456789abcdef", command: "fetch example.org", status: "resume", choice: "Only this time" },
+  };
+
+  function clientWith(payloads: Array<Record<string, unknown>>): QdrantClientLike {
+    const points = payloads.map((payload, i) => ({ id: `p${i}`, score: 1, payload }));
+    return {
+      getCollections: async () => ({ collections: [] }),
+      createCollection: async () => ({}),
+      upsert: async () => ({}),
+      query: async () => ({ points }),
+      scroll: async () => ({ points, next_page_offset: null }),
+    };
+  }
+
+  /** Appends `entry` and returns what was embedded and the payload upserted. */
+  async function appended(entry: Parameters<typeof appendVerbatimMessage>[3]) {
+    let payload: Record<string, unknown> | undefined;
+    let embedded: string | undefined;
+    const client: QdrantClientLike = {
+      ...clientWith([]),
+      upsert: async (_collection, params) => {
+        payload = (params.points[0] as { payload: Record<string, unknown> }).payload;
+        return {};
+      },
+    };
+    await appendVerbatimMessage(client, "verbatim_archive", async (text) => {
+      embedded = text;
+      return [1];
+    }, entry);
+    return { payload, embedded };
+  }
+
+  it("keeps the trace and the pending note in the payload", async () => {
+    expect((await appended(answer as never)).payload).toEqual(answer);
+  });
+
+  it("keeps a confirmation's outcome in the payload, embedded on the reply", async () => {
+    const { payload, embedded } = await appended(outcome as never);
+    expect(payload).toEqual(outcome);
+    expect(embedded).toBe("Done.");
+  });
+
+  it("embeds an outcome with no reply (a resumed one) on its command", async () => {
+    expect((await appended(resumedOutcome as never)).embedded).toBe("fetch example.org");
+  });
+
+  it("listVerbatimBySession, what a UI renders, serves the trace, the pending note and the outcome", async () => {
+    const result = await listVerbatimBySession(clientWith([question, answer, outcome, resumedOutcome]), "verbatim_archive", {
+      userId: "static:alice",
+      sessionKey: "conv-1",
+      limit: 50,
+    });
+    expect(result.messages).toEqual([question, answer, outcome, resumedOutcome] as never);
+  });
+
+  it("listVerbatimBySession serves an interrupted answer's partial trace", async () => {
+    const interrupted = { ...answer, content: "[stopped]", interrupted: true, pendingNote: undefined, trace: [trace[0]] };
+    delete (interrupted as { pendingNote?: unknown }).pendingNote;
+    const result = await listVerbatimBySession(clientWith([interrupted]), "verbatim_archive", {
+      userId: "static:alice",
+      sessionKey: "conv-1",
+      limit: 50,
+    });
+    expect(result.messages).toEqual([{ ...interrupted, content: "" }] as never);
+  });
+
+  it("listVerbatimTail, what goes back to the model, leaves out the trace, the pending note and the outcomes", async () => {
+    const tail = await listVerbatimTail(clientWith([resumedOutcome, outcome, answer, question]), "verbatim_archive", {
+      userId: "static:alice",
+      sessionKey: "conv-1",
+      maxChars: 10_000,
+    });
+    expect(tail.messages).toEqual([
+      { role: "user", content: "Cancella KAN-1", timestamp: question.timestamp },
+      { role: "assistant", content: answer.content, timestamp: answer.timestamp },
+    ]);
+    expect(tail.complete).toBe(true);
+  });
+
+  it("searchVerbatim, what recall_verbatim hands the model, leaves out the trace, the pending note and the outcomes", async () => {
+    const results = await searchVerbatim(clientWith([answer, outcome, resumedOutcome]), "verbatim_archive", async () => [1], {
+      userId: "static:alice",
+      queryText: "KAN-1",
+    });
+    const { trace: _trace, pendingNote: _note, ...said } = answer;
+    expect(results).toEqual([said]);
+  });
+
+  it("listVerbatimSessions previews the newest message that shows something, past an outcome with no reply", async () => {
+    const result = await listVerbatimSessions(clientWith([resumedOutcome, outcome, answer]), "verbatim_archive", {
+      userId: "static:alice",
+      limit: 10,
+    });
+    expect(result.conversations).toEqual([{ sessionKey: "conv-1", lastTimestamp: resumedOutcome.timestamp, preview: "Done." }]);
+  });
+
+  // An archive point whose trace or note isn't what this code wrote (a later
+  // schema, a hand edit) still shows its answer: only the extra goes.
+  it("drops a malformed trace or pending note, keeping the message", async () => {
+    for (const bad of [{ trace: "nope" }, { trace: [{ label: "no type" }] }, { trace: [null] }, { pendingNote: 3 }]) {
+      const result = await listVerbatimBySession(clientWith([{ ...answer, ...bad }]), "verbatim_archive", {
+        userId: "static:alice",
+        sessionKey: "conv-1",
+        limit: 50,
+      });
+      const kept = { ...answer } as Record<string, unknown>;
+      for (const field of Object.keys(bad)) delete kept[field];
+      expect(result.messages).toEqual([kept] as never);
+    }
+  });
+
+  // A malformed outcome would otherwise read as an ordinary answer and go back to the model.
+  it("skips a point whose confirmation outcome is malformed", async () => {
+    for (const confirmation of ["ok", { id: "x", command: "c", status: "maybe" }, { id: 1, command: "c", status: "ok" }, { id: "x", status: "ok" }]) {
+      const tail = await listVerbatimTail(clientWith([{ ...outcome, confirmation }, question]), "verbatim_archive", {
+        userId: "static:alice",
+        sessionKey: "conv-1",
+        maxChars: 10_000,
+      });
+      expect(tail.messages).toEqual([{ role: "user", content: "Cancella KAN-1", timestamp: question.timestamp }]);
+    }
+  });
+});

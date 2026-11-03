@@ -18,6 +18,7 @@
  */
 import type { QdrantClientLike } from "./episodic-store.ts";
 import type { CallRecord } from "../session/call-record.ts";
+import type { TraceEntry } from "../session/turn-trace.ts";
 
 /**
  * Creates `collectionName` (cosine distance, `vectorSize`-dim) if it
@@ -56,7 +57,12 @@ export async function ensureVerbatimCollection(
  * go back to the model with a resumed conversation, never to the person.
  * `interrupted` marks an answer whose turn was stopped before it was
  * finished: its `content` is the text the history kept in its place, for
- * the model, never shown to the person.
+ * the model, never shown to the person. `trace` is what the person saw of the
+ * turn besides its text (`../session/turn-trace.ts`), and `pendingNote` the
+ * core's stand-in sentence `content` begins with when the turn only staged an
+ * action: both for the person, never for the model. `confirmation` marks the
+ * message that says how a staged action was resolved, outside any turn: it
+ * never goes back to the model either.
  */
 export type VerbatimMessage = {
   userId: string;
@@ -66,7 +72,22 @@ export type VerbatimMessage = {
   displays?: string[];
   calls?: CallRecord[];
   interrupted?: true;
+  trace?: TraceEntry[];
+  pendingNote?: string;
+  confirmation?: ArchivedConfirmation;
   timestamp: string;
+};
+
+/**
+ * How a staged action was resolved: `id` is the staging's (`confirmationId`),
+ * the one its trace entry carries; `command` what it was; `choice` the label of
+ * the choice taken, when it was one of several.
+ */
+export type ArchivedConfirmation = {
+  id: string;
+  command: string;
+  status: "ok" | "failed" | "resume";
+  choice?: string;
 };
 
 /**
@@ -78,7 +99,7 @@ export function shownText(content: string, displays: string[] | undefined): stri
   return [content, ...(displays ?? [])].filter((part) => part !== "").join("\n\n");
 }
 
-/** `m` as the person saw it, for whatever renders a conversation: the displays folded into `content`, no calls, no text for an interrupted answer. */
+/** `m` as the person saw it, for whatever renders a conversation: the displays folded into `content`, no calls, no text for an interrupted answer; its trace, pending note and confirmation as they are. */
 function asShown(m: VerbatimMessage): VerbatimMessage {
   const { displays, calls: _calls, ...rest } = m;
   if (m.interrupted) return { ...rest, content: "" };
@@ -93,9 +114,14 @@ function said(m: VerbatimMessage): boolean {
   return m.content.trim() !== "";
 }
 
-/** `m` as the model said it, for whatever hands it back to the model: no displays. */
+/** Whether `m` is something the model said or was told: not how a confirmation was resolved. */
+function forModel(m: VerbatimMessage): boolean {
+  return m.confirmation === undefined;
+}
+
+/** `m` as the model said it, for whatever hands it back to the model: no displays, nothing that was only for the person. */
 function asSaid(m: VerbatimMessage): VerbatimMessage {
-  const { displays: _displays, ...rest } = m;
+  const { displays: _displays, trace: _trace, pendingNote: _note, ...rest } = m;
   return rest;
 }
 
@@ -124,8 +150,45 @@ function isCallList(value: unknown): boolean {
   );
 }
 
+/** Whether `value` looks like a trace, as `appendVerbatimMessage` stored it: entries with a known type. */
+function isTrace(value: unknown): boolean {
+  const types = ["reasoning", "tool", "confirmation", "login"];
+  return (
+    Array.isArray(value) &&
+    value.every((e) => e !== null && typeof e === "object" && types.includes((e as { type?: unknown }).type as string))
+  );
+}
+
+/** Whether `value` looks like an `ArchivedConfirmation`. */
+function isArchivedConfirmation(value: unknown): boolean {
+  if (value === null || typeof value !== "object") return false;
+  const c = value as Record<string, unknown>;
+  return (
+    typeof c.id === "string" &&
+    typeof c.command === "string" &&
+    (c.status === "ok" || c.status === "failed" || c.status === "resume") &&
+    (c.choice === undefined || typeof c.choice === "string")
+  );
+}
+
+/** `m` without a trace or a pending note it can't vouch for: the message itself still stands. */
+function withValidExtras(m: VerbatimMessage): VerbatimMessage {
+  const { trace, pendingNote, ...rest } = m;
+  return {
+    ...rest,
+    ...(trace !== undefined && isTrace(trace) ? { trace } : {}),
+    ...(typeof pendingNote === "string" ? { pendingNote } : {}),
+  };
+}
+
+/** The verbatim messages among `payloads`, skipping malformed points and dropping malformed extras. */
+function verbatimMessages(payloads: Array<Record<string, unknown> | null>): VerbatimMessage[] {
+  return payloads.filter(isVerbatimMessage).map(withValidExtras);
+}
+
 /**
- * Embeds `entry.content` (what was shown, when the model said nothing) and
+ * Embeds `entry.content` (what was shown, when the model said nothing; the
+ * command of a resolved confirmation, when nothing was shown at all) and
  * upserts it as a new point in `collectionName`, payload carrying the full
  * verbatim message.
  */
@@ -135,7 +198,8 @@ export async function appendVerbatimMessage(
   embed: (text: string) => Promise<number[]>,
   entry: VerbatimMessage,
 ): Promise<void> {
-  const vector = await embed(entry.content.trim() !== "" ? entry.content : shownText(entry.content, entry.displays));
+  const shown = entry.content.trim() !== "" ? entry.content : shownText(entry.content, entry.displays);
+  const vector = await embed(shown !== "" ? shown : (entry.confirmation?.command ?? ""));
   await client.upsert(collectionName, {
     points: [
       {
@@ -161,6 +225,7 @@ function isVerbatimMessage(payload: Record<string, unknown> | null): payload is 
       (Array.isArray(payload.displays) && payload.displays.every((d) => typeof d === "string"))) &&
     (payload.calls === undefined || isCallList(payload.calls)) &&
     (payload.interrupted === undefined || payload.interrupted === true) &&
+    (payload.confirmation === undefined || isArchivedConfirmation(payload.confirmation)) &&
     typeof payload.timestamp === "string"
   );
 }
@@ -186,7 +251,7 @@ export async function searchVerbatim(
     limit: query.limit ?? DEFAULT_SEARCH_LIMIT,
     with_payload: true,
   });
-  return results.points.map((r) => r.payload ?? null).filter(isVerbatimMessage).filter(said).map(asSaid).map(withoutCalls);
+  return verbatimMessages(results.points.map((r) => r.payload ?? null)).filter(forModel).filter(said).map(asSaid).map(withoutCalls);
 }
 
 /**
@@ -231,9 +296,9 @@ export async function listVerbatimSessions(
     limit: SESSION_SCAN_LIMIT,
     with_payload: true,
   });
-  const messages = result.points.map((p) => p.payload ?? null).filter(isVerbatimMessage);
+  const messages = verbatimMessages(result.points.map((p) => p.payload ?? null));
   const seen = new Map<string, VerbatimSession>();
-  // The conversations whose preview is still to come: their newest messages were interrupted answers.
+  // The conversations whose preview is still to come: their newest messages showed nothing (an interrupted answer, a resumed confirmation).
   const previewless = new Set<string>();
   for (const m of messages) {
     // desc order → first occurrence is the most recent
@@ -242,7 +307,7 @@ export async function listVerbatimSessions(
       continue;
     }
     const shown = m.interrupted ? "" : shownText(m.content, m.displays);
-    if (m.interrupted) previewless.add(m.sessionKey);
+    if (shown === "") previewless.add(m.sessionKey);
     else previewless.delete(m.sessionKey);
     seen.set(m.sessionKey, {
       sessionKey: m.sessionKey,
@@ -290,7 +355,7 @@ export async function listVerbatimBySession(
     with_payload: true,
   });
   return {
-    messages: result.points.map((p) => p.payload ?? null).filter(isVerbatimMessage).map(asShown),
+    messages: verbatimMessages(result.points.map((p) => p.payload ?? null)).map(asShown),
     nextOffset: result.next_page_offset ?? null,
   };
 }
@@ -316,7 +381,7 @@ export type VerbatimTail = {
  * resumed conversation hands back to the model. Reads at most
  * `TAIL_SCAN_LIMIT` messages, newest first, stops at the first one that
  * doesn't fit, leaves out answers that were only displays (no words to hand
- * back), and drops leading assistant messages, so the tail always
+ * back) and how confirmations were resolved (never in the history), and drops leading assistant messages, so the tail always
  * opens with what the person said. `complete` is true only when every
  * message of the conversation made it in. Empty and incomplete when the
  * client can't scroll.
@@ -340,7 +405,7 @@ export async function listVerbatimTail(
     limit: TAIL_SCAN_LIMIT,
     with_payload: true,
   });
-  const newestFirst = result.points.map((p) => p.payload ?? null).filter(isVerbatimMessage).filter(said);
+  const newestFirst = verbatimMessages(result.points.map((p) => p.payload ?? null)).filter(forModel).filter(said);
   const taken: VerbatimMessage[] = [];
   let chars = 0;
   for (const m of newestFirst) {

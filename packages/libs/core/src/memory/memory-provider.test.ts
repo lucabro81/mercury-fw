@@ -124,6 +124,36 @@ describe("createVerbatimArchiveProvider — captureExchange", () => {
       { userId: "u", sessionKey: "s", role: "assistant", content: "[stopped]", interrupted: true, timestamp: "2026-11-02T10:00:00.000Z" },
     ]);
   });
+
+  // #370: what the person saw of the turn, and how a confirmation was resolved, even with no reply.
+  it("archives the trace, the pending note, and a confirmation's outcome even when nothing was shown", async () => {
+    const upserted: Array<Record<string, unknown>> = [];
+    const client: QdrantClientLike = {
+      getCollections: async () => ({ collections: [] }),
+      createCollection: async () => ({}),
+      upsert: async (_collection, params) => {
+        upserted.push((params.points[0] as { payload: Record<string, unknown> }).payload);
+        return {};
+      },
+      query: async () => ({ points: [] }),
+    };
+    const provider = createVerbatimArchiveProvider({
+      client,
+      collectionName: "verbatim_archive",
+      embed: async () => [1, 2, 3],
+      now: () => new Date("2026-11-03T10:00:00.000Z"),
+    });
+    const trace = [{ type: "tool" as const, label: "Searching", outcome: "success" as const }];
+    const confirmation = { id: "0123456789abcdef", command: "fetch example.org", status: "resume" as const };
+
+    await provider.captureExchange!({ userId: "u", sessionKey: "s", role: "assistant", content: "Pending.", pendingNote: "Pending.", trace });
+    await provider.captureExchange!({ userId: "u", sessionKey: "s", role: "assistant", content: "", confirmation });
+
+    expect(upserted).toEqual([
+      { userId: "u", sessionKey: "s", role: "assistant", content: "Pending.", pendingNote: "Pending.", trace, timestamp: "2026-11-03T10:00:00.000Z" },
+      { userId: "u", sessionKey: "s", role: "assistant", content: "", confirmation, timestamp: "2026-11-03T10:00:00.000Z" },
+    ]);
+  });
 });
 
 describe("createVerbatimArchiveProvider — recall_verbatim tool", () => {
