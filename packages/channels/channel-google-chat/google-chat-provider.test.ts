@@ -1440,6 +1440,32 @@ describe("createSink — login card", () => {
     expect(cards).toHaveLength(1);
   });
 
+  // #211: only the first login of a step got a card, so a step asking for
+  // two left the second service for another round.
+  test("a step asking for two logins sends a card for each, in order", async () => {
+    const cards = await cardsSentFor(messageEvent({ spaceType: "DM" }), (sink) =>
+      sink.onStep?.({
+        toolCalls: [
+          { toolCallId: "1", toolName: "jiraCommand", input: { command: "jira issue list" } },
+          { toolCallId: "2", toolName: "bitbucketCommand", input: { command: "bitbucket pr list" } },
+        ],
+        toolResults: [
+          { toolCallId: "1", toolName: "jiraCommand", output: { ok: false, loginRequired: true, service: "jira", authorizeUrl: LOGIN_URL, error: "log in" } },
+          {
+            toolCallId: "2",
+            toolName: "bitbucketCommand",
+            output: { ok: false, loginRequired: true, service: "bitbucket", authorizeUrl: "https://bb.example/authorize", error: "log in" },
+          },
+        ],
+        content: [],
+      }),
+    );
+    expect(cards.map((c) => c.card)).toEqual([
+      expectedCard,
+      { sections: [{ widgets: [{ buttonList: { buttons: [{ text: "Log in to bitbucket", onClick: { openLink: { url: "https://bb.example/authorize" } } }] } }] }] },
+    ]);
+  });
+
   test("a step that asks for no login sends no login card", async () => {
     const cards = await cardsSentFor(messageEvent({ spaceType: "DM" }), (sink) =>
       sink.onStep?.({
