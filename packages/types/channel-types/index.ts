@@ -349,7 +349,7 @@ export type ChannelI18n = { forRequest: (principal: Principal | null, hint?: str
 export type ChannelHostReads = {
   manifest: (principal: Principal) => Promise<unknown>;
   pendingConfirmations: (principal: Principal) => Promise<unknown>;
-  /** A conversation's durable verbatim transcript, chronological, paginated; empty unless `sessionKey` is one of the person's own. */
+  /** A conversation's durable verbatim transcript, chronological, paginated, each answer with what its turn showed besides the text (`trace`) and each resolved confirmation's outcome; empty unless `sessionKey` is one of the person's own. */
   conversation: (principal: Principal, sessionKey: string, limit: number, offset?: string) => Promise<unknown>;
   /** The person's conversations, most-recently-active first. */
   conversations: (principal: Principal, limit: number) => Promise<unknown>;

@@ -98,6 +98,11 @@ The channel listens inside the container, so the compose file has to publish its
   service, and the turn ends there: its `final` text tells the person to log in and write again. They need
   `HTTP_SURFACE_PUBLIC_URL`, the address people's browsers reach the channel at, because the service sends them
   back to `<HTTP_SURFACE_PUBLIC_URL>/login/callback`.
+- **Past conversations.** `GET /conversation` gives back a conversation's messages in order, so your interface
+  can show it again when the person reopens it. Each answer comes with what the turn showed besides its text, in
+  the order it happened (`trace`): the reasoning, each tool's status line and how it went, the confirmations it
+  asked for, the logins. Each confirmation the person answered has a message of its own saying how it went. So a
+  reopened conversation can look like it did live, not just questions and answers.
 - **Browsers on another origin** can call it: set `HTTP_SURFACE_CORS_ORIGIN` to your interface's origin.
 - **Languages.** The texts the person reads that aren't the model's (a status line, a choice's label, a
   confirmation's reply) come in their language: the one they asked the agent for, else the one the request's
