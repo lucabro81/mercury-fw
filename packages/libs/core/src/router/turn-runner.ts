@@ -526,6 +526,7 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
             )
           : deps.buildTools(turn.sessionKey, key, who, sink.onToolStart, sink.onToolFinish, turn.languageHint),
         pendingNote,
+        loginNote: (services) => t("core.login.note", { services: services.join(", ") }),
         onPendingNote: () => {
           noteUsed = true;
         },
