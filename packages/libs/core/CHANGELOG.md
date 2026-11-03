@@ -1,5 +1,25 @@
 # @mercury-fw/core
 
+## 0.68.0
+
+### Minor Changes
+
+- 148417b: - a step whose tool asks the person to log in ends the turn: no further tool calls
+  - the turn's text closes with `core.login.note`, naming the services to log in to (`core.login.note-any` when none has a name)
+  - `detectLoginRequests(step)` in `@mercury-fw/channel-types`: every login a step asks for, one per link
+  - HTTP channel: one `login` event per service the step asks for
+  - Google Chat: one login card per service the step asks for
+  - **Migration:** apps with their own locale files add `core.login.note` (`{services}`) and `core.login.note-any` to each non-English one
+
+### Patch Changes
+
+- Updated dependencies [148417b]
+  - @mercury-fw/channel-types@0.68.0
+  - @mercury-fw/confirm-engine@0.68.0
+  - @mercury-fw/plugin-types@0.68.0
+  - @mercury-fw/cli-engine@0.68.0
+  - @mercury-fw/utils@0.68.0
+
 ## 0.67.0
 
 ### Minor Changes
