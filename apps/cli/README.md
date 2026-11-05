@@ -162,6 +162,7 @@ mfw memory list
 ```
 
 ```
+conversation_titles  4 points
 episodic_memory  25 points
 semantic_facts  20 points
 tool_corrections  37 points

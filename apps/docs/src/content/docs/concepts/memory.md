@@ -24,7 +24,9 @@ and the conversation goes on from the summary plus the recent messages. Every me
 an **archive**, which a chat interface shows when it reopens a conversation, and which the model can search when it
 needs an exact quote. With each answer the archive also keeps what the person saw while it was being written: the
 model's reasoning, the tools it used, the confirmations it asked for and how the person answered them. That part is
-only for the interface: the model never reads it back.
+only for the interface: the model never reads it back. Next to the archive, each conversation gets a **title**: after
+the first message the person writes, the model names the conversation from that message and its answer, and the
+person can rename it from a chat interface. A title the person chose is never replaced.
 
 After 30 minutes of silence (`SESSION_IDLE_TIMEOUT_MS`), Mercury frees the history. What happens next depends on
 the channel: on Google Chat the next message starts a new conversation, with a recap of the last one as background;
