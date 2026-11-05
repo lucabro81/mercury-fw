@@ -37,7 +37,8 @@ export type QdrantClientLike = {
     name: string,
     params: {
       filter: Record<string, unknown>;
-      order_by: { key: string; direction: "asc" | "desc" };
+      /** Absent for a scroll that only filters (`conversation-titles-store.ts`). */
+      order_by?: { key: string; direction: "asc" | "desc" };
       limit: number;
       /** Opaque pagination cursor (from a prior page's `next_page_offset`). */
       offset?: string | number | Record<string, unknown> | null;
