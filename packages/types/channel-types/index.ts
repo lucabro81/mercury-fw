@@ -407,6 +407,21 @@ export type ChannelSettings = {
   setTimeZone: (principal: Principal, timeZone: string) => Promise<SettingOutcome<string>>;
 };
 
+/** How renaming a conversation came out: the title as saved, or why not, with `notFound` when the conversation isn't one of the person's own. */
+export type RenameOutcome = { ok: true; title: string } | { ok: false; error: string; notFound?: true };
+
+/**
+ * The person's own conversations, for a channel that lists them (the HTTP
+ * surface). `rename` gives the conversation `sessionKey` of the person
+ * `principal` is the title they chose, trimmed, in place of the one it had;
+ * a title the core generates never replaces it. It refuses an empty title, one
+ * longer than 100 characters or with a line break, a conversation that isn't
+ * one of the person's own, and anyone the core doesn't admit.
+ */
+export type ChannelConversations = {
+  rename: (principal: Principal, sessionKey: string, title: string) => Promise<RenameOutcome>;
+};
+
 /**
  * The minimal capabilities every channel gets from the core — the intersection
  * across terminal, HTTP and Google Chat, nothing channel-specific. Anything
@@ -415,7 +430,7 @@ export type ChannelSettings = {
  * these, the channel imports none of them.
  *
  * `env`, `log`, `confirm` and `admit` are the floor every channel relies on.
- * `resolveConfirmation`, `reads`, `authenticate`, `logins`, `linking` and `settings` are optional in-process capabilities that
+ * `resolveConfirmation`, `reads`, `authenticate`, `logins`, `linking`, `settings` and `conversations` are optional in-process capabilities that
  * can't come from `env`: the core populates them, only a channel that needs them
  * (HTTP) reads them, the others ignore them.
  */
@@ -457,6 +472,8 @@ export type ChannelRuntimeContext = {
   linking?: ChannelLinking;
   /** The person's own settings (see `ChannelSettings`); absent on an older core. */
   settings?: ChannelSettings;
+  /** The person's own conversations (see `ChannelConversations`); absent on an older core. */
+  conversations?: ChannelConversations;
   /** The assistant's name (the app's `persona.name`), for what the channel tells people itself (a login page, a card). The core always sets it; absent on an older core. */
   assistantName?: string;
   /** The framework's version (`major.minor.patch`), for a channel that tells people which Mercury they're talking to (HTTP's `/version`). The core always sets it; absent on an older core. */

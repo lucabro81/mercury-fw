@@ -49,6 +49,14 @@ info:
     by the verbatim archive; they degrade to empty when the vector store is
     unreachable).
 
+    A conversation has a title once Mercury has named it, a few seconds after
+    the first turn the person wrote in it, from that first question and its
+    answer (after the next turn if it couldn't, for instance with the model
+    unreachable); it then stays the same. The caller renames one of their
+    conversations with `PATCH /conversation`, and Mercury never replaces a
+    title the person chose. Until there is a title, `title` is absent from
+    both reads and `preview` is what there is to show.
+
     A conversation never ends: sent again with the same `conversationId`, a
     turn continues it however long after. Mercury frees a conversation's
     in-memory history once it has been idle a while; the next turn rebuilds
@@ -273,6 +281,64 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+    patch:
+      summary: Renames one of the caller's conversations
+      description: >
+        Gives the conversation the title the caller chose, trimmed, in place of
+        the one it had; Mercury never replaces it with one it generates. Only a
+        conversation already in the archive (one with a turn) can be renamed.
+        Not there on a core that can't rename conversations.
+      parameters:
+        - name: id
+          in: query
+          required: true
+          description: The caller's `conversationId`, as `/conversations` lists it.
+          schema:
+            type: string
+            pattern: "^[A-Za-z0-9_-]{1,128}$"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title]
+              properties:
+                title:
+                  type: string
+                  description: At most 100 characters once trimmed, on one line.
+      responses:
+        "400":
+          description: Missing or malformed `?id`, a body with no `title`, or a title that is empty, longer than 100 characters or holds a line break.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/NotAdmitted"
+        "404":
+          description: No conversation of the caller's has this id.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          $ref: "#/components/responses/NotAdmitted"
+        "200":
+          description: The title as saved.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, title]
+                properties:
+                  ok:
+                    type: boolean
+                    enum: [true]
+                  title:
+                    type: string
   /conversations:
     get:
       summary: List the caller's conversations (most-recently-active first)
@@ -932,6 +998,9 @@ components:
           oneOf:
             - type: string
             - type: "null"
+        title:
+          type: string
+          description: The conversation's title, Mercury's or the caller's; absent until it has one.
     ConversationSummary:
       type: object
       required: [conversationId, lastTimestamp, preview]
@@ -943,6 +1012,9 @@ components:
         preview:
           type: string
           description: The newest message that shows something, as the person saw it, so the question when the last answer was interrupted.
+        title:
+          type: string
+          description: The conversation's title, Mercury's or the caller's; absent until it has one, when `preview` is what there is to show.
     ConversationList:
       type: object
       required: [ok, conversations]

@@ -2951,3 +2951,97 @@ describe("createTurnRunner: what the person saw of the turn, in the archive (#37
     expect(registered).toEqual([sink.onToolStart, sink.onToolFinish]);
   });
 });
+
+// #214: a conversation is titled after a turn the person wrote, from what the
+// archive kept, without the turn waiting for the model to name it.
+describe("createTurnRunner: titling the conversation", () => {
+  function setup(opts: {
+    run?: (signal: AbortSignal | undefined) => Promise<string>;
+    capture?: () => Promise<void>;
+    title?: () => Promise<void>;
+    resumed?: boolean;
+  } = {}) {
+    const ran: string[] = [];
+    const titled: Array<{ sessionKey: string; userId: string }> = [];
+    const runner = createTurnRunner({
+      model: {} as any,
+      systemPrompts: { singleUser: "s", multiUser: "m" },
+      buildTools: () => ({}),
+      getOrCreateHistory: () => fakeHistory(),
+      trackSession: () => {},
+      registerCaptureCallback: () => {},
+      maybeCapture: async () => {},
+      processToolCorrections: async () => {},
+      logStep: () => {},
+      heartbeat: () => () => {},
+      captureVerbatim: async (msg) => {
+        ran.push(`verbatim:${msg.role}`);
+        await opts.capture?.();
+      },
+      titleConversation: async (sessionKey, userId) => {
+        ran.push("title");
+        titled.push({ sessionKey, userId });
+        await opts.title?.();
+      },
+      ...(opts.resumed ? { takeResumed: () => ({ describe: "fetch a page", toolName: "web_fetch", input: {}, output: {} }) } : {}),
+      runTurnFn: async (_h, _t, deps) => (opts.run ? opts.run(deps.abortSignal) : "the answer"),
+    });
+    return { runner, ran, titled };
+  }
+
+  test("titles the conversation after the person's message and the answer are archived, with the person's key", async () => {
+    const { runner, ran, titled } = setup();
+    await runner(baseTurn({ sessionKey: "sk", principal: verified("users/42"), text: "the question" }), baseSink());
+    expect(ran).toEqual(["verbatim:user", "verbatim:assistant", "title"]);
+    expect(titled).toEqual([{ sessionKey: "sk", userId: "google-chat:users/42" }]);
+  });
+
+  test("doesn't wait for the title: the turn ends while the model is still naming the conversation", async () => {
+    const { runner, ran } = setup({ title: () => new Promise<void>(() => {}) });
+    await runner(baseTurn({ principal: verified("u1") }), baseSink());
+    expect(ran).toEqual(["verbatim:user", "verbatim:assistant", "title"]);
+  });
+
+  test("a title that fails doesn't fail the turn", async () => {
+    const { runner } = setup({ title: async () => Promise.reject(new Error("boom")) });
+    const sink = baseSink();
+    await runner(baseTurn({ principal: verified("u1") }), sink);
+    expect(sink.finalized).toEqual(["the answer"]);
+  });
+
+  test("doesn't title after an opening, where the person wrote nothing", async () => {
+    const { runner, titled } = setup();
+    await runner(baseTurn({ principal: verified("u1"), opening: true, text: "" }), baseSink());
+    expect(titled).toEqual([]);
+  });
+
+  test("doesn't title after a turn resumed by a confirmation", async () => {
+    const { runner, titled } = setup({ resumed: true });
+    await runner(baseTurn({ principal: verified("u1"), text: "", resumeAfterConfirm: true }), baseSink());
+    expect(titled).toEqual([]);
+  });
+
+  test("doesn't title after a turn the person cancelled", async () => {
+    const controller = new AbortController();
+    const { runner, titled } = setup({
+      run: async () => {
+        controller.abort();
+        return "";
+      },
+    });
+    await runner(baseTurn({ principal: verified("u1"), abortSignal: controller.signal }), baseSink());
+    expect(titled).toEqual([]);
+  });
+
+  test("doesn't title when nobody vouched for the person", async () => {
+    const { runner, titled } = setup();
+    await runner(baseTurn({ principal: anonymous("conv-1") }), baseSink());
+    expect(titled).toEqual([]);
+  });
+
+  test("doesn't title when the archive failed: the title is read from it", async () => {
+    const { runner, titled } = setup({ capture: async () => Promise.reject(new Error("qdrant down")) });
+    await runner(baseTurn({ principal: verified("u1") }), baseSink());
+    expect(titled).toEqual([]);
+  });
+});

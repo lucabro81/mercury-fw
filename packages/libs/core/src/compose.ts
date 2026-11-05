@@ -26,6 +26,7 @@ import type { MercuryConfig } from "./config/define-config.ts";
 import { createResumeSlots } from "./session/resume-slots.ts";
 import { createSessionHistory, type SessionHistory, type Message, type ResumedConversation } from "./session/history.ts";
 import { createSummarizer } from "./session/summarizer.ts";
+import { createConversationTitler } from "./session/conversation-titler.ts";
 import { createEpisodicSummarizer } from "./session/episodic-summarizer.ts";
 import { createSemanticFactExtractor } from "./session/semantic-fact-extractor.ts";
 import { buildContextPrimer, primerOptions, type ContextPrimer } from "./session/context-primer.ts";
@@ -61,7 +62,8 @@ import {
   getLastSessionEpisodicSummaries,
   getEpisodicSummariesBySession,
 } from "./memory/episodic-store.ts";
-import { ensureVerbatimCollection, listVerbatimTail } from "./memory/verbatim-archive-store.ts";
+import { ensureVerbatimCollection, listVerbatimBySession, listVerbatimTail } from "./memory/verbatim-archive-store.ts";
+import { ensureTitlesCollection, setTitle, titleOf, titlesOf } from "./memory/conversation-titles-store.ts";
 import { createVerbatimArchiveProvider } from "./memory/memory-provider.ts";
 import { ensureSemanticFactsCollection, storeSemanticFact, searchSemanticFactsByTopic } from "./memory/semantic-facts-store.ts";
 import { ensureToolCorrectionsCollection, storeToolCorrection, searchToolCorrectionsByTopic } from "./memory/tool-corrections-store.ts";
@@ -74,6 +76,7 @@ import { findOrphanCuratedDocs } from "./wiki/orphan-detector.ts";
 import { listWikiFilesInRoots, readWikiFileInRoots, readIndexFile } from "./wiki/wiki-read.ts";
 import { createHostReads } from "./identity/host-reads.ts";
 import { createChannelSettings } from "./identity/channel-settings.ts";
+import { createChannelConversations } from "./identity/channel-conversations.ts";
 import { resolveTimeZone, stripTurnStamp } from "./session/turn-stamp.ts";
 import { bindConfirm } from "./identity/confirm-binding.ts";
 import { createPersonLogins } from "./identity/person-logins.ts";
@@ -300,6 +303,17 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   // How much of a resumed conversation comes back, when its channel sets no
   // budget of its own (see session/resume.ts).
   const resumeMaxChars = parseResumeMaxChars(process.env.SESSION_RESUME_MAX_CHARS);
+  // Conversation titles (#214), next to the archive whose conversations they
+  // name: generated once from a conversation's first exchange, or the person's.
+  const titlesCollection = process.env.QDRANT_TITLES_COLLECTION ?? "conversation_titles";
+  const titleConversation = createConversationTitler({
+    model,
+    readOpening: async (userId, sessionKey) =>
+      (await listVerbatimBySession(qdrant, verbatimCollection, { userId, sessionKey, limit: 10 })).messages,
+    titleOf: (userId, sessionKey) => titleOf(qdrant, titlesCollection, { userId, sessionKey }),
+    setTitle: (userId, sessionKey, title) => setTitle(qdrant, titlesCollection, { userId, sessionKey, title, source: "generated" }),
+    log: (msg) => console.error(msg),
+  });
 
   // Semantic consolidation (D-22/D-34): a separate Qdrant collection from
   // episodic memory above — one point per extracted {topic, value} candidate,
@@ -375,6 +389,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
     async () => {
       await ensureEpisodicCollection(qdrant, episodicCollection, episodicVectorSize);
       await ensureVerbatimCollection(qdrant, verbatimCollection, verbatimVectorSize);
+      await ensureTitlesCollection(qdrant, titlesCollection);
       await ensureSemanticFactsCollection(qdrant, semanticFactsCollection, semanticFactsVectorSize);
       await ensureToolCorrectionsCollection(qdrant, toolCorrectionsCollection, toolCorrectionsVectorSize);
     },
@@ -598,6 +613,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
     // What a resumed conversation brought back is already in memory.
     maybeCapture: (key, history) => sessionCapture.maybeCapture(key, history.getCapturable()),
     captureVerbatim: verbatimProvider.captureExchange,
+    titleConversation,
     processToolCorrections,
     logStep,
     // Appends what the model surfaced via `present` this turn — nothing if it
@@ -649,8 +665,16 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
       preferredName: (key) => profiles.nameOf(key),
       preferredLanguage: (key) => texts.savedLanguage(key),
       preferredTimeZone: (key) => profiles.timeZoneOf(key),
+      titlesOf: (key, sessionKeys) => titlesOf(qdrant, titlesCollection, { userId: key, sessionKeys }),
     }),
     settings: createChannelSettings({ identify: people.identify, setTimeZone: (key, timeZone) => profiles.setTimeZone(key, timeZone) }),
+    // A conversation's title the person chose (#214), for one of their own in the archive.
+    conversations: createChannelConversations({
+      identify: people.identify,
+      owns: async (key, sessionKey) =>
+        (await listVerbatimBySession(qdrant, verbatimCollection, { userId: key, sessionKey, limit: 1 })).messages.length > 0,
+      setTitle: (key, sessionKey, title) => setTitle(qdrant, titlesCollection, { userId: key, sessionKey, title, source: "person" }),
+    }),
     logins: { accept: personLogins.accept, complete: personLogins.complete },
     linking: { start: linking.start },
     assistantName,

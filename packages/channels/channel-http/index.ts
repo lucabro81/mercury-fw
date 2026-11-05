@@ -49,6 +49,7 @@ export const httpChannel: ChannelPlugin = {
       i18n: ctx.i18n,
       ...(ctx.linking === undefined ? {} : { linking: ctx.linking }),
       ...(ctx.settings === undefined ? {} : { settings: ctx.settings }),
+      ...(ctx.conversations === undefined ? {} : { conversations: ctx.conversations }),
       ...(resumeMaxChars === undefined ? {} : { resumeMaxChars }),
       ...(ctx.assistantName === undefined ? {} : { assistantName: ctx.assistantName }),
       ...(ctx.frameworkVersion === undefined ? {} : { version: ctx.frameworkVersion }),

@@ -45,7 +45,7 @@ Mercury keeps four things for every conversation ([Memory](https://lucabro81.git
 
 - **the history**, the conversation as the model gets it, kept in memory while the conversation is active;
 - **its summary**: when the history grows past about 60,000 characters, its older part is replaced by a summary written by the model, and the conversation goes on from the summary plus the recent messages (this is called compaction);
-- **the archive**, every message word for word, kept in the vector store (Qdrant) and never summarized: it's what a UI shows when it reopens a conversation, and what the model can search when it needs an exact quote;
+- **the archive**, every message word for word, kept in the vector store (Qdrant) and never summarized: it's what a UI shows when it reopens a conversation, and what the model can search when it needs an exact quote; next to it, each conversation's **title**, which the model writes after the first message the person sends (again after the next one if it couldn't) and the person can change; a title the person chose is never replaced, and without the model the conversation just has none;
 - **the long-term memory**: short summaries of what was said, asked and decided (never the data a tool returned, which changes), which Mercury uses in later conversations to remember the person.
 
 The history lives in the process's memory, so Mercury frees it once a conversation has been quiet for a while (`SESSION_IDLE_TIMEOUT_MS`, 30 minutes by default). Before freeing it, it writes its summary to the long-term memory.
