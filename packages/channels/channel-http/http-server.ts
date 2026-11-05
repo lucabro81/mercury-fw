@@ -36,6 +36,7 @@ import {
   type Admission,
   type ChannelLinking,
   type ChannelSettings,
+  type ChannelConversations,
 } from "@mercury-fw/channel-types";
 import { englishHttp } from "./messages.ts";
 
@@ -457,10 +458,10 @@ function loginRoutes(
   };
 }
 
-/** A single read route: its `GET` handler plus the shared `OPTIONS` preflight, and on `/me` the `PATCH` saving a setting. */
+/** A single read route: its `GET` handler plus the shared `OPTIONS` preflight, and on `/me` and `/conversation` the `PATCH` changing what it reads. */
 type ReadRoute = {
   GET: (req: Request) => Response | Promise<Response>;
-  /** Only on `/me`, when the core offers the person's settings (`PATCH /me`). */
+  /** On `/me` when the core offers the person's settings (`PATCH /me`), on `/conversation` when it renames conversations (`PATCH /conversation`). */
   PATCH?: (req: Request) => Promise<Response>;
   OPTIONS: () => Response;
 };
@@ -475,7 +476,9 @@ type ReadRoute = {
  * `/turn`, and its session key is built from the caller.
  * `json` JSON-encodes with the CORS headers merged in; `badRequest` does the
  * same for a 400. With `settings`, `/me` also takes a `PATCH` saving the
- * caller's time zone (a UI's settings area), asking `authenticate` first too.
+ * caller's time zone (a UI's settings area), asking `authenticate` first too;
+ * with `conversations`, `/conversation` takes a `PATCH` renaming one of the
+ * caller's conversations, the same way.
  */
 export function readRoutes(
   reads: ChannelHostReads,
@@ -483,6 +486,7 @@ export function readRoutes(
   corsOrigin = "*",
   admit?: AdmitFn,
   settings?: ChannelSettings,
+  conversations?: ChannelConversations,
 ): Record<string, ReadRoute> {
   const cors = corsHeaders(corsOrigin);
   const json = (payload: object, status = 200): Response =>
@@ -500,26 +504,49 @@ export function readRoutes(
   return {
     "/manifest": route(async (_req, principal) => json({ ok: true, manifest: await reads.manifest(principal) })),
     "/confirmations": route(async (_req, principal) => json({ ok: true, pending: await reads.pendingConfirmations(principal) })),
-    "/conversation": route(async (req, principal) => {
-      const url = new URL(req.url);
-      const id = url.searchParams.get("id");
-      if (!id) return badRequest("missing ?id");
-      if (!CONVERSATION_ID.test(id)) return badRequest("invalid conversationId");
-      const limit = Number(url.searchParams.get("limit") ?? "200");
-      const offset = url.searchParams.get("offset") ?? undefined;
-      return json({ ok: true, ...(await reads.conversation(principal, `${principal.id}:${id}`, limit, offset) as object) });
-    }),
+    "/conversation": {
+      ...route(async (req, principal) => {
+        const url = new URL(req.url);
+        const id = url.searchParams.get("id");
+        if (!id) return badRequest("missing ?id");
+        if (!CONVERSATION_ID.test(id)) return badRequest("invalid conversationId");
+        const limit = Number(url.searchParams.get("limit") ?? "200");
+        const offset = url.searchParams.get("offset") ?? undefined;
+        return json({ ok: true, ...(await reads.conversation(principal, `${principal.id}:${id}`, limit, offset) as object) });
+      }),
+      ...(conversations === undefined
+        ? {}
+        : {
+            PATCH: async (req: Request) => {
+              const principal = await caller(req, { authenticate, ...(admit === undefined ? {} : { admit }) }, corsOrigin);
+              if (principal instanceof Response) return principal;
+              const id = new URL(req.url).searchParams.get("id");
+              if (!id) return badRequest("missing ?id");
+              if (!CONVERSATION_ID.test(id)) return badRequest("invalid conversationId");
+              const body = (await req.json().catch(() => null)) as { title?: unknown } | null;
+              if (typeof body?.title !== "string") return badRequest('the body must be {"title": "<text>"}');
+              const renamed = await conversations.rename(principal, `${principal.id}:${id}`, body.title);
+              if (renamed.ok) return json({ ok: true, title: renamed.title });
+              return renamed.notFound ? json({ ok: false, error: renamed.error }, 404) : badRequest(renamed.error);
+            },
+          }),
+    },
     "/conversations": route(async (req, principal) => {
       const limit = Number(new URL(req.url).searchParams.get("limit") ?? "50");
       const { conversations } = (await reads.conversations(principal, limit)) as {
-        conversations: Array<{ sessionKey: string; lastTimestamp: string; preview: string }>;
+        conversations: Array<{ sessionKey: string; lastTimestamp: string; preview: string; title?: string }>;
       };
       const prefix = `${principal.id}:`;
       return json({
         ok: true,
         conversations: conversations
           .filter((c) => c.sessionKey.startsWith(prefix))
-          .map((c) => ({ conversationId: c.sessionKey.slice(prefix.length), lastTimestamp: c.lastTimestamp, preview: c.preview })),
+          .map((c) => ({
+            conversationId: c.sessionKey.slice(prefix.length),
+            lastTimestamp: c.lastTimestamp,
+            preview: c.preview,
+            ...(c.title === undefined ? {} : { title: c.title }),
+          })),
       });
     }),
     "/tool-log": route(async (_req, principal) => json({ ok: true, entries: await reads.toolLog(principal) })),
@@ -604,6 +631,8 @@ export type HttpServerDeps = TurnRequestDeps & {
   linking?: ChannelLinking;
   /** The person's own settings; `PATCH /me` is mounted only with it. */
   settings?: ChannelSettings;
+  /** Renaming the person's conversations; `PATCH /conversation` is mounted only with it. */
+  conversations?: ChannelConversations;
   /** What the pages people read call the assistant. */
   assistantName?: string;
   /** The framework's version; `/version` is mounted only with it. */
@@ -642,7 +671,7 @@ export function startHttpServer(deps: HttpServerDeps): ReturnType<typeof Bun.ser
       },
       "/openapi.yaml": { GET: () => openApiResponse(origin), OPTIONS: () => preflight(origin) },
       ...(deps.version === undefined ? {} : versionRoutes(deps.version, deps.appVersion, origin)),
-      ...(deps.reads ? readRoutes(deps.reads, deps.authenticate, origin, deps.admit, deps.settings) : {}),
+      ...(deps.reads ? readRoutes(deps.reads, deps.authenticate, origin, deps.admit, deps.settings, deps.conversations) : {}),
       ...(deps.completeLogin ? loginRoutes(deps.completeLogin, deps.assistantName, deps.i18n) : {}),
       ...(deps.linking ? linkRoutes({ ...deps, start: deps.linking.start, corsOrigin: origin }) : {}),
     },

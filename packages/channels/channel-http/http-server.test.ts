@@ -1,6 +1,6 @@
 import { describe, it, expect } from "bun:test";
 import { handleTurnRequest, handleConfirmRequest, handleLinkRequest, handleLoginCallback, openApiResponse, readRoutes, startHttpServer } from "./http-server.ts";
-import { type Admission, type Authenticate, type HandleTurn, type InboundTurn, type TurnSink, type ChannelHostReads, type ChannelSettings, type Principal } from "@mercury-fw/channel-types";
+import { type Admission, type Authenticate, type HandleTurn, type InboundTurn, type TurnSink, type ChannelConversations, type ChannelHostReads, type ChannelSettings, type Principal } from "@mercury-fw/channel-types";
 import type { StepInfo } from "@mercury-fw/plugin-types";
 
 /**
@@ -1259,6 +1259,115 @@ describe("GET /conversation", () => {
         { conversationId: "conv-1", lastTimestamp: "t1", preview: "hi" },
       ],
     });
+  });
+});
+
+// #214: a conversation has a title, Mercury's or the person's, and the person renames it.
+describe("conversation titles", () => {
+  const reads: ChannelHostReads = {
+    manifest: async () => ({}),
+    pendingConfirmations: async () => [],
+    conversation: async () => ({ messages: [], nextOffset: null, title: "Issue aperte" }),
+    conversations: async () => ({
+      conversations: [
+        { sessionKey: "alice:conv-2", lastTimestamp: "t2", preview: "later", title: "Issue aperte" },
+        { sessionKey: "alice:conv-1", lastTimestamp: "t1", preview: "hi" },
+      ],
+    }),
+    wikiList: async () => [],
+    wikiRead: async () => "",
+    wikiGrep: async () => [],
+    memoryScroll: async () => ({ points: [] }),
+    toolLog: async () => [],
+    health: async () => ({}),
+  };
+  const patch = (id: string | null, body: string) =>
+    new Request(`http://x/conversation${id === null ? "" : `?id=${encodeURIComponent(id)}`}`, {
+      method: "PATCH",
+      body,
+      headers: { "content-type": "application/json" },
+    });
+  /** A core that records each rename and answers `outcome`. */
+  const renaming = (outcome: Awaited<ReturnType<ChannelConversations["rename"]>>) => {
+    const seen: unknown[] = [];
+    const conversations: ChannelConversations = { rename: async (...args) => (seen.push(args), outcome) };
+    return { seen, conversations };
+  };
+
+  it("GET /conversations carries each conversation's title, when it has one", async () => {
+    const res = await readRoutes(reads, asAlice)["/conversations"]!.GET(new Request("http://x/conversations"));
+    expect(await res.json()).toEqual({
+      ok: true,
+      conversations: [
+        { conversationId: "conv-2", lastTimestamp: "t2", preview: "later", title: "Issue aperte" },
+        { conversationId: "conv-1", lastTimestamp: "t1", preview: "hi" },
+      ],
+    });
+  });
+
+  it("GET /conversation carries the conversation's title", async () => {
+    const res = await readRoutes(reads, asAlice)["/conversation"]!.GET(new Request("http://x/conversation?id=conv-1"));
+    expect(await res.json()).toEqual({ ok: true, messages: [], nextOffset: null, title: "Issue aperte" });
+  });
+
+  it("PATCH /conversation renames the caller's conversation through the core, and answers the title as saved", async () => {
+    const { seen, conversations } = renaming({ ok: true, title: "Le mie issue" });
+    const res = await readRoutes(reads, asAlice, "*", undefined, undefined, conversations)["/conversation"]!.PATCH!(
+      patch("conv-1", JSON.stringify({ title: "  Le mie issue " })),
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers.get("access-control-allow-origin")).toBe("*");
+    expect(await res.json()).toEqual({ ok: true, title: "Le mie issue" });
+    expect(seen).toEqual([[ALICE, "alice:conv-1", "  Le mie issue "]]);
+  });
+
+  it("is 404 for a conversation that isn't the caller's", async () => {
+    const { conversations } = renaming({ ok: false, error: "no such conversation", notFound: true });
+    const res = await readRoutes(reads, asAlice, "*", undefined, undefined, conversations)["/conversation"]!.PATCH!(
+      patch("conv-9", JSON.stringify({ title: "Mia" })),
+    );
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ ok: false, error: "no such conversation" });
+  });
+
+  it("is 400 with the core's reason for a title it refuses", async () => {
+    const { conversations } = renaming({ ok: false, error: "the title is empty" });
+    const res = await readRoutes(reads, asAlice, "*", undefined, undefined, conversations)["/conversation"]!.PATCH!(
+      patch("conv-1", JSON.stringify({ title: "  " })),
+    );
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ ok: false, error: "the title is empty" });
+  });
+
+  it("is 400 without calling the core for a missing or invalid id, or a body without a title", async () => {
+    const { seen, conversations } = renaming({ ok: true, title: "x" });
+    const route = readRoutes(reads, asAlice, "*", undefined, undefined, conversations)["/conversation"]!;
+    const cases: Array<[Request, string]> = [
+      [patch(null, JSON.stringify({ title: "x" })), "missing ?id"],
+      [patch("bob:c", JSON.stringify({ title: "x" })), "invalid conversationId"],
+      [patch("conv-1", "not json"), 'the body must be {"title": "<text>"}'],
+      [patch("conv-1", "{}"), 'the body must be {"title": "<text>"}'],
+      [patch("conv-1", JSON.stringify({ title: 3 })), 'the body must be {"title": "<text>"}'],
+    ];
+    for (const [req, error] of cases) {
+      const res = await route.PATCH!(req);
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({ ok: false, error });
+    }
+    expect(seen).toEqual([]);
+  });
+
+  it("is refused to a caller nobody vouches for, renaming nothing", async () => {
+    const { seen, conversations } = renaming({ ok: true, title: "x" });
+    const res = await readRoutes(reads, refuse, "*", undefined, undefined, conversations)["/conversation"]!.PATCH!(
+      patch("conv-1", JSON.stringify({ title: "Mia" })),
+    );
+    expect(res.status).toBe(401);
+    expect(seen).toEqual([]);
+  });
+
+  it("isn't there on a core that can't rename", () => {
+    expect(readRoutes(reads, asAlice)["/conversation"]!.PATCH).toBeUndefined();
   });
 });
 
