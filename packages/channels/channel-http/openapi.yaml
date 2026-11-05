@@ -51,7 +51,8 @@ info:
 
     A conversation has a title once Mercury has named it, a few seconds after
     the first turn the person wrote in it, from that first question and its
-    answer; it then stays the same. The caller renames one of their
+    answer (after the next turn if it couldn't, for instance with the model
+    unreachable); it then stays the same. The caller renames one of their
     conversations with `PATCH /conversation`, and Mercury never replaces a
     title the person chose. Until there is a title, `title` is absent from
     both reads and `preview` is what there is to show.

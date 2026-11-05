@@ -166,7 +166,7 @@ mercury/                       # repo root
 ├── packages/                  # grouped into per-role buckets; every workspace is @mercury-fw/*
 │   ├── types/
 │   │   ├── plugin-types/          # the shared Plugin contract (tools, version 6) — types + apiVersion + skill/status helpers + the texts a person sees (`Messages`, `Params`, `Translate`), imported by core and plugins
-│   │   └── channel-types/         # the shared ChannelPlugin contract (channels, version 6) — Provider/TurnSink + confirm helpers + the channel's texts (`messages`, `ctx.i18n`, `languageHint`, `FinalizeInfo.pendingNote`) + the turn's `timeZoneHint` and the person's settings (`ctx.settings`), imported by core and channels
+│   │   └── channel-types/         # the shared ChannelPlugin contract (channels, version 6) — Provider/TurnSink + confirm helpers + the channel's texts (`messages`, `ctx.i18n`, `languageHint`, `FinalizeInfo.pendingNote`) + the turn's `timeZoneHint` and the person's settings (`ctx.settings`) + renaming the person's conversations (`ctx.conversations`), imported by core and channels
 │   ├── channels/
 │   │   ├── channel-google-chat/   # Google Chat channel plugin: the registered-app transport (Pub/Sub + REST), loaded by the channel loader
 │   │   └── channel-http/          # HTTP channel plugin: the opt-in conversational HTTP surface (SSE /turn, /confirm, read routes, PATCH /me, PATCH /conversation, OpenAPI) for a custom UI; needs an auth provider

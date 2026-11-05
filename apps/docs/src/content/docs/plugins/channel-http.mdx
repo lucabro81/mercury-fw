@@ -104,7 +104,8 @@ The channel listens inside the container, so the compose file has to publish its
   asked for, the logins. Each confirmation the person answered has a message of its own saying how it went. So a
   reopened conversation can look like it did live, not just questions and answers.
 - **Conversation titles.** A few seconds after the first message the person writes in a conversation, the agent
-  names it from that message and its answer. `GET /conversations` and `GET /conversation` carry it as `title`, absent
+  names it from that message and its answer (after the next message if it couldn't, for instance when the model
+  can't be reached: until then the conversation has no title). `GET /conversations` and `GET /conversation` carry it as `title`, absent
   until there is one (show `preview` meanwhile), and `PATCH /conversation?id=…` with `{ "title": "…" }` renames it
   for the person. The agent never replaces a title the person chose. Read the list again shortly after the first
   turn's stream closes to pick the new title up.

@@ -126,7 +126,7 @@ All `GET`, all JSON, all reporting state already held in-process. They need an a
 
 Conversation history and the conversation list are backed by the durable verbatim archive; they degrade to empty when the vector store is unreachable.
 
-**Titles.** A few seconds after the first turn the person wrote in a conversation, Mercury names it from that first question and its answer, and the title stays the same from then on; the person can rename it (`PATCH /conversation`), and Mercury never replaces a title they chose. `title` is there on both `GET /conversation` and `GET /conversations` once the conversation has one; until then, `preview` is what there is to show. A UI that wants the title of a new conversation reads the list again shortly after the turn's stream closes.
+**Titles.** A few seconds after the first turn the person wrote in a conversation, Mercury names it from that first question and its answer (after the next turn if it couldn't, for instance with the model unreachable: until then the conversation has no title), and the title stays the same from then on; the person can rename it (`PATCH /conversation`), and Mercury never replaces a title they chose. `title` is there on both `GET /conversation` and `GET /conversations` once the conversation has one; until then, `preview` is what there is to show. A UI that wants the title of a new conversation reads the list again shortly after the turn's stream closes.
 
 ## `GET /version`
 
