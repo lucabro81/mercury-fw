@@ -247,6 +247,12 @@ export type TurnRunnerDeps = {
     trace?: TraceEntry[];
     pendingNote?: string;
   }) => Promise<void>;
+  /**
+   * Gives the conversation a title if it has none (#214), from what the
+   * archive kept: called, not awaited, once a turn the person wrote (not an
+   * opening, not a resumed one) is archived, with the person's user key.
+   */
+  titleConversation?: (sessionKey: string, userId: string) => Promise<void>;
   /** `key` is the turn's person: the corrections' status reads in their language. */
   processToolCorrections: (
     steps: StepInfo[],
@@ -711,6 +717,12 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
             ...(seen.length > 0 ? { trace: seen } : {}),
             ...(stoodIn ? { pendingNote } : {}),
           });
+          if (deps.titleConversation && !turn.opening && !resumed) {
+            // Not awaited: neither the answer nor the next turn waits for the title.
+            void deps.titleConversation(turn.sessionKey, key).catch((err) =>
+              console.log(`[titles] failed, turn unaffected: ${String(err instanceof Error ? err.message : err)}`),
+            );
+          }
         } catch (err) {
           console.log(
             `[verbatim-archive] capture failed, turn unaffected: ${String(err instanceof Error ? err.message : err)}`,
