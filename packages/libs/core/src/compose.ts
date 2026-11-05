@@ -76,6 +76,7 @@ import { findOrphanCuratedDocs } from "./wiki/orphan-detector.ts";
 import { listWikiFilesInRoots, readWikiFileInRoots, readIndexFile } from "./wiki/wiki-read.ts";
 import { createHostReads } from "./identity/host-reads.ts";
 import { createChannelSettings } from "./identity/channel-settings.ts";
+import { createChannelConversations } from "./identity/channel-conversations.ts";
 import { resolveTimeZone, stripTurnStamp } from "./session/turn-stamp.ts";
 import { bindConfirm } from "./identity/confirm-binding.ts";
 import { createPersonLogins } from "./identity/person-logins.ts";
@@ -667,6 +668,13 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
       titlesOf: (key, sessionKeys) => titlesOf(qdrant, titlesCollection, { userId: key, sessionKeys }),
     }),
     settings: createChannelSettings({ identify: people.identify, setTimeZone: (key, timeZone) => profiles.setTimeZone(key, timeZone) }),
+    // A conversation's title the person chose (#214), for one of their own in the archive.
+    conversations: createChannelConversations({
+      identify: people.identify,
+      owns: async (key, sessionKey) =>
+        (await listVerbatimBySession(qdrant, verbatimCollection, { userId: key, sessionKey, limit: 1 })).messages.length > 0,
+      setTitle: (key, sessionKey, title) => setTitle(qdrant, titlesCollection, { userId: key, sessionKey, title, source: "person" }),
+    }),
     logins: { accept: personLogins.accept, complete: personLogins.complete },
     linking: { start: linking.start },
     assistantName,
