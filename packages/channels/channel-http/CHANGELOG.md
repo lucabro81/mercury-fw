@@ -1,5 +1,14 @@
 # @mercury-fw/channel-http
 
+## 0.16.0
+
+### Minor Changes
+
+- 07d1ef6: - conversations get a title, generated from the first question and its answer after the first turn the person wrote
+  - channel contract: optional `ctx.conversations` with `rename`, the title the person chose, never replaced by a generated one
+  - `GET /conversations` and `GET /conversation` carry `title` once a conversation has one
+  - `PATCH /conversation?id=<conversationId>` with `{ title }` renames one of the caller's conversations
+
 ## 0.15.1
 
 ### Patch Changes

@@ -1,5 +1,23 @@
 # @mercury-fw/core
 
+## 0.70.0
+
+### Minor Changes
+
+- 07d1ef6: - conversations get a title, generated from the first question and its answer after the first turn the person wrote
+  - channel contract: optional `ctx.conversations` with `rename`, the title the person chose, never replaced by a generated one
+  - `GET /conversations` and `GET /conversation` carry `title` once a conversation has one
+  - `PATCH /conversation?id=<conversationId>` with `{ title }` renames one of the caller's conversations
+
+### Patch Changes
+
+- Updated dependencies [07d1ef6]
+  - @mercury-fw/channel-types@0.70.0
+  - @mercury-fw/confirm-engine@0.70.0
+  - @mercury-fw/plugin-types@0.70.0
+  - @mercury-fw/cli-engine@0.70.0
+  - @mercury-fw/utils@0.70.0
+
 ## 0.69.0
 
 ### Minor Changes
