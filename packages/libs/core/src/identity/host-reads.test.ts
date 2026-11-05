@@ -202,3 +202,93 @@ describe("createHostReads: me", () => {
     expect(await r.me!(alice)).toBeNull();
   });
 });
+
+// #214: a conversation is listed and opened with its title, when it has one.
+describe("createHostReads: conversation titles", () => {
+  const message = (sessionKey: string, content: string, timestamp: string) => ({
+    id: `${sessionKey}-${timestamp}`,
+    payload: { userId: "static:alice", sessionKey, role: "user", content, timestamp },
+  });
+
+  /** Reads over an archive holding `points`, with `titlesOf` as given. */
+  function withArchive(vaultPath: string, points: Array<ReturnType<typeof message>>, titlesOf?: HostReadsDeps["titlesOf"]) {
+    return createHostReads({
+      vaultPath,
+      qdrant: { scroll: async () => ({ points, next_page_offset: null }) } as unknown as HostReadsDeps["qdrant"],
+      collections: { verbatim: "verbatim_archive", episodic: "episodic_memory", semanticFacts: "semantic_facts" },
+      confirmationStore: createConfirmationStore(),
+      manifest: () => ({ plugins: [] }),
+      health: async () => ({ up: true }),
+      ...(titlesOf === undefined ? {} : { titlesOf }),
+    });
+  }
+
+  const archive = [message("alice:b", "seconda", "2026-11-05T11:00:00.000Z"), message("alice:a", "prima", "2026-11-05T10:00:00.000Z")];
+
+  it("lists each conversation with its title, asking for the listed ones only, for the caller", async () => {
+    const asked: Array<{ userId: string; sessionKeys: string[] }> = [];
+    const r = withArchive(await vault(), archive, async (userId, sessionKeys) => {
+      asked.push({ userId, sessionKeys });
+      return new Map([["alice:a", { title: "Issue aperte", source: "generated" as const }]]);
+    });
+    expect(await r.conversations(alice, 20)).toEqual({
+      conversations: [
+        { sessionKey: "alice:b", lastTimestamp: "2026-11-05T11:00:00.000Z", preview: "seconda" },
+        { sessionKey: "alice:a", lastTimestamp: "2026-11-05T10:00:00.000Z", preview: "prima", title: "Issue aperte" },
+      ],
+    });
+    expect(asked).toEqual([{ userId: "static:alice", sessionKeys: ["alice:b", "alice:a"] }]);
+  });
+
+  it("lists the conversations without titles when the titles can't be read", async () => {
+    const r = withArchive(await vault(), archive, async () => {
+      throw new Error("qdrant down");
+    });
+    expect(await r.conversations(alice, 20)).toEqual({
+      conversations: [
+        { sessionKey: "alice:b", lastTimestamp: "2026-11-05T11:00:00.000Z", preview: "seconda" },
+        { sessionKey: "alice:a", lastTimestamp: "2026-11-05T10:00:00.000Z", preview: "prima" },
+      ],
+    });
+  });
+
+  it("doesn't ask for titles when there are no conversations", async () => {
+    let asked = false;
+    const r = withArchive(await vault(), [], async () => {
+      asked = true;
+      return new Map();
+    });
+    expect(await r.conversations(alice, 20)).toEqual({ conversations: [] });
+    expect(asked).toBe(false);
+  });
+
+  it("opens a conversation with its title", async () => {
+    const asked: Array<{ userId: string; sessionKeys: string[] }> = [];
+    const r = withArchive(await vault(), [message("alice:a", "prima", "2026-11-05T10:00:00.000Z")], async (userId, sessionKeys) => {
+      asked.push({ userId, sessionKeys });
+      return new Map([["alice:a", { title: "Le mie issue", source: "person" as const }]]);
+    });
+    const page = (await r.conversation(alice, "alice:a", 50)) as { title?: string; messages: unknown[] };
+    expect(page.title).toBe("Le mie issue");
+    expect(page.messages).toHaveLength(1);
+    expect(asked).toEqual([{ userId: "static:alice", sessionKeys: ["alice:a"] }]);
+  });
+
+  it("opens a conversation without a title when it has none, or the titles can't be read", async () => {
+    const none = withArchive(await vault(), archive, async () => new Map());
+    expect(await none.conversation(alice, "alice:a", 50)).not.toHaveProperty("title");
+    const failing = withArchive(await vault(), archive, async () => {
+      throw new Error("qdrant down");
+    });
+    const page = (await failing.conversation(alice, "alice:a", 50)) as { messages: unknown[] };
+    expect(page).not.toHaveProperty("title");
+    expect(page.messages).toHaveLength(2);
+  });
+
+  it("lists and opens conversations as before on an instance with no titles", async () => {
+    const r = withArchive(await vault(), archive);
+    const list = (await r.conversations(alice, 20)) as { conversations: object[] };
+    expect(list.conversations.every((c) => !("title" in c))).toBe(true);
+    expect(await r.conversation(alice, "alice:a", 50)).not.toHaveProperty("title");
+  });
+});

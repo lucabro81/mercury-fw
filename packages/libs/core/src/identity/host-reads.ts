@@ -16,6 +16,7 @@ import type { ConfirmationStore } from "@mercury-fw/confirm-engine";
 import { scrollCollection, type ScrollableQdrantClient } from "../memory/qdrant-scroll.ts";
 import type { QdrantClientLike } from "../memory/episodic-store.ts";
 import { listVerbatimBySession, listVerbatimSessions } from "../memory/verbatim-archive-store.ts";
+import type { ConversationTitle } from "../memory/conversation-titles-store.ts";
 import { getToolLog } from "../session/tool-log-buffer.ts";
 import { createPeople, type People, type TurnWho } from "./people.ts";
 import { grepVisible, listVisible, readVisible } from "./vault-access.ts";
@@ -37,6 +38,8 @@ export type HostReadsDeps = {
   preferredLanguage?: (key: string) => string | undefined;
   /** The time zone the person with `key` saved (`profiles.ts`); nobody has one when absent. */
   preferredTimeZone?: (key: string) => string | undefined;
+  /** The titles of the person `key`'s conversations `sessionKeys` (`conversation-titles-store.ts`); no conversation has one when absent. */
+  titlesOf?: (key: string, sessionKeys: string[]) => Promise<Map<string, ConversationTitle>>;
 };
 
 /** Builds the per-person `ChannelHostReads` over this instance's vault, Qdrant and stores. */
@@ -54,15 +57,39 @@ export function createHostReads(deps: HostReadsDeps): ChannelHostReads {
       return read({ person: identified.person, operator: identified.operator }, ...args);
     };
   const scope = (who: TurnWho) => ({ vaultPath, key: who.person.key });
+  /** The titles of `sessionKeys` for `who`; none when the instance keeps no titles or they can't be read (enrichment, like the archive). */
+  const titles = async (who: TurnWho, sessionKeys: string[]): Promise<Map<string, ConversationTitle>> => {
+    if (deps.titlesOf === undefined || sessionKeys.length === 0) return new Map();
+    try {
+      return await deps.titlesOf(who.person.key, sessionKeys);
+    } catch (err) {
+      console.error(`[titles] read failed, listed without titles: ${err instanceof Error ? err.message : String(err)}`);
+      return new Map();
+    }
+  };
 
   return {
     manifest: forPerson((who) => deps.manifest(who)),
     health: deps.health,
     pendingConfirmations: forPerson((who) => deps.confirmationStore.pending(who.person.key)),
-    conversation: forPerson((who, sessionKey: string, limit: number, offset?: string) =>
-      listVerbatimBySession(qdrant, collections.verbatim, { userId: who.person.key, sessionKey, limit, offset }),
-    ),
-    conversations: forPerson((who, limit: number) => listVerbatimSessions(qdrant, collections.verbatim, { userId: who.person.key, limit })),
+    conversation: forPerson(async (who, sessionKey: string, limit: number, offset?: string) => {
+      const [page, titled] = await Promise.all([
+        listVerbatimBySession(qdrant, collections.verbatim, { userId: who.person.key, sessionKey, limit, offset }),
+        titles(who, [sessionKey]),
+      ]);
+      const title = titled.get(sessionKey)?.title;
+      return title === undefined ? page : { ...page, title };
+    }),
+    conversations: forPerson(async (who, limit: number) => {
+      const { conversations } = await listVerbatimSessions(qdrant, collections.verbatim, { userId: who.person.key, limit });
+      const titled = await titles(who, conversations.map((c) => c.sessionKey));
+      return {
+        conversations: conversations.map((c) => {
+          const title = titled.get(c.sessionKey)?.title;
+          return title === undefined ? c : { ...c, title };
+        }),
+      };
+    }),
     wikiList: forPerson((who) => listVisible(scope(who))),
     wikiRead: forPerson((who, path: string) => readVisible(scope(who), path).catch(() => null)),
     wikiGrep: forPerson((who, pattern: string) => grepVisible(scope(who), pattern)),

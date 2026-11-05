@@ -63,7 +63,7 @@ import {
   getEpisodicSummariesBySession,
 } from "./memory/episodic-store.ts";
 import { ensureVerbatimCollection, listVerbatimBySession, listVerbatimTail } from "./memory/verbatim-archive-store.ts";
-import { ensureTitlesCollection, setTitle, titleOf } from "./memory/conversation-titles-store.ts";
+import { ensureTitlesCollection, setTitle, titleOf, titlesOf } from "./memory/conversation-titles-store.ts";
 import { createVerbatimArchiveProvider } from "./memory/memory-provider.ts";
 import { ensureSemanticFactsCollection, storeSemanticFact, searchSemanticFactsByTopic } from "./memory/semantic-facts-store.ts";
 import { ensureToolCorrectionsCollection, storeToolCorrection, searchToolCorrectionsByTopic } from "./memory/tool-corrections-store.ts";
@@ -664,6 +664,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
       preferredName: (key) => profiles.nameOf(key),
       preferredLanguage: (key) => texts.savedLanguage(key),
       preferredTimeZone: (key) => profiles.timeZoneOf(key),
+      titlesOf: (key, sessionKeys) => titlesOf(qdrant, titlesCollection, { userId: key, sessionKeys }),
     }),
     settings: createChannelSettings({ identify: people.identify, setTimeZone: (key, timeZone) => profiles.setTimeZone(key, timeZone) }),
     logins: { accept: personLogins.accept, complete: personLogins.complete },
