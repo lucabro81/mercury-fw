@@ -218,7 +218,7 @@ packages/libs/core/
     ├── model/                # Ollama provider, real context-window lookup
     ├── session/               # Layer 1 history + summarizer + agent-turn loop + the system prompt (the plugins offered with their descriptions, their fragments and skill descriptors) + the stamp on each turn (turn-stamp.ts: when and where the person wrote it, the time zone it's in) + the conversation's generated title (conversation-titler.ts)
     ├── config/               # defineMercuryConfig + the MercuryConfig contract (plugins, channels, persona)
-    ├── tools/                 # CLI executor + command parser/allowlist (cli-tool.ts) + config schema/loader/version-check
+    ├── tools/                 # CLI executor + command parser/allowlist (cli-tool.ts) + config schema/loader/version-check + the display channel (display-channel.ts: strips and stashes every plugin tool's display) + the display store and `present`
     ├── plugins/               # generic fail-soft tool-plugin loader (plugin-loader.ts; refuses a plugin with no description, whose `messages` reach outside its name, or named `core`/`app`), what each person is offered (offering.ts: act-as-self, access.plugins, the plugins listed with their descriptions) and the tools acting as Mercury for them (act-as-self.ts), the manifest
     ├── router/
     │   ├── turn-runner.ts      # shared per-turn driver every provider funnels through, one turn at a time per session

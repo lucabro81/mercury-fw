@@ -202,8 +202,8 @@ export type PluginRuntimeContext = {
 /**
  * The per-turn context a `sessionTools` factory receives: the session it's
  * building tools for, and the two core capabilities a tool may need bound to
- * that session — staging a confirm-required action, and stashing a display
- * artifact for the model to `present`. All generic; nothing here is CLI-shaped.
+ * that session: staging a confirm-required action, and stashing a display
+ * artifact for the model to `present` by hand. All generic; nothing here is CLI-shaped.
  */
 export type SessionToolContext = {
   sessionKey: string;
@@ -214,7 +214,9 @@ export type SessionToolContext = {
    * core always sets it; optional so a plugin also builds against an older
    * one, where it has to do without. */
   stageChoices?: StageChoices;
-  /** Stashes a rendered list for the model to `present`, with what it is (`label`: the command that built it), and returns its ref. */
+  /** Stashes a rendered list for the model to `present`, with what it is
+   * (`label`, free text), and returns its ref. A tool returning a `display`
+   * doesn't need it: the core stashes that on its own (see `ToolDisplay`). */
   stashDisplay: (artifact: string, label?: string) => string;
   /** Whom the tools act for, by the person's key, when they act as the
    * person, and whom the turn is for when the plugin acts as no one
