@@ -15,7 +15,11 @@
  * minted for one session (terminal, or a given Google Chat space+sender)
  * can't be surfaced by another. The store is created once and shared
  * across turns, so a ref stays valid for a later "show me that list again"
- * follow-up — session-scoped, not turn-scoped. An entry lives as long as its
+ * follow-up — session-scoped, not turn-scoped. A display that is the answer
+ * itself (`always` in the instance's formatter rule) is stashed already
+ * surfaced (`show`), so it's appended without the model calling `present`. A
+ * turn that fails or is cancelled never takes what it surfaced:
+ * `discardSurfaced` drops those marks so the next turn doesn't append them. An entry lives as long as its
  * conversation: `forget` drops it when the session is closed, at most the 10
  * most recent are kept per session, and a day-long TTL reclaims what no
  * sweep ever closes. Each entry keeps a short label (the command that built
@@ -23,8 +27,9 @@
  * history never keeps the lists.
  */
 export type DisplayStore = {
-  /** Stashes `artifact` for `sessionKey`, with what it is (`label`), and returns a fresh ref. */
-  stash(sessionKey: string, artifact: string, label?: string): string;
+  /** Stashes `artifact` for `sessionKey`, with what it is (`label`), and returns a fresh ref.
+   * With `show`, it's surfaced right away, as if `present` had been called. */
+  stash(sessionKey: string, artifact: string, label?: string, opts?: { show?: boolean }): string;
   /** Marks `ref` to be shown at finalize. Returns `false` if it doesn't
    * exist, belongs to a different session, or has expired. */
   surface(sessionKey: string, ref: string): boolean;
@@ -33,6 +38,10 @@ export type DisplayStore = {
    * unless `surface` is called again) but keeps the entry until its TTL,
    * so a still-valid ref can be surfaced again across turns. */
   takeSurfaced(sessionKey: string): string[];
+  /** Drops the surfaced marks of `sessionKey` that no finalize took (its turn
+   * failed or was cancelled): they aren't appended to a later turn, nor listed
+   * as shown when nothing showed them. The entries stay, to be presented again. */
+  discardSurfaced(sessionKey: string): void;
   /** The lists shown in `sessionKey` and still valid, most recently shown last. */
   shown(sessionKey: string): Array<{ ref: string; label: string }>;
   /** Drops everything `sessionKey` stashed: its conversation is closed. */
@@ -58,6 +67,8 @@ type Entry = {
   surfaced: boolean;
   /** When it was last surfaced; undefined when it never was. */
   shownAt: number | undefined;
+  /** `shownAt` before the pending surface, restored when that surface is discarded. */
+  shownBefore: number | undefined;
   expiresAt: number;
 };
 
@@ -73,14 +84,16 @@ export function createDisplayStore(
   const entries = new Map<string, Entry>();
 
   return {
-    stash(sessionKey, artifact, label = "") {
+    stash(sessionKey, artifact, label = "", opts = {}) {
       const ref = refFn();
+      const show = opts.show === true;
       entries.set(ref, {
         sessionKey,
         artifact,
         label: oneLine(label),
-        surfaced: false,
-        shownAt: undefined,
+        surfaced: show,
+        shownAt: show ? now() : undefined,
+        shownBefore: undefined,
         expiresAt: now() + ttlMs,
       });
       // The one just stashed stays; among the rest, a search the model only
@@ -102,6 +115,7 @@ export function createDisplayStore(
       if (entry.sessionKey !== sessionKey) {
         return false;
       }
+      if (!entry.surfaced) entry.shownBefore = entry.shownAt;
       entry.surfaced = true;
       entry.shownAt = now();
       return true;
@@ -124,6 +138,13 @@ export function createDisplayStore(
         entry.surfaced = false;
       }
       return out;
+    },
+    discardSurfaced(sessionKey) {
+      for (const entry of entries.values()) {
+        if (entry.sessionKey !== sessionKey || !entry.surfaced) continue;
+        entry.surfaced = false;
+        entry.shownAt = entry.shownBefore;
+      }
     },
     shown(sessionKey) {
       const t = now();
