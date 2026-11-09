@@ -59,7 +59,6 @@ export function createBitbucketPlugin(deps: { runCliFn?: typeof runCli } = {}): 
           const { runCommand } = createCliTool(runCliFn, configs, {
             stageConfirmation: sctx.stageConfirmation,
             t: sctx.t,
-            stashDisplay: sctx.stashDisplay,
             person: sctx.person,
             requireLogin: sctx.requireLogin,
           });

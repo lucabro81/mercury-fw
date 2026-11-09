@@ -8,7 +8,6 @@ import {
   type CliConfig,
 } from "@mercury-fw/cli-engine";
 import { createConfirmationStore, createStageConfirmation } from "@mercury-fw/confirm-engine";
-import { createDisplayStore } from "./display-store.ts";
 import type { CliResult } from "@mercury-fw/cli-engine";
 import { englishTexts, type Translate } from "../i18n/i18n.ts";
 
@@ -817,15 +816,12 @@ describe("createCliTool", () => {
   });
 });
 
-// The user-facing artifact a post-processor renders is no longer force-appended
-// at finalize: execute stashes it in the display store and hands the model only
-// a `displayRef` (so the model can choose to `present` it) — never the content.
-describe("createCliTool display staging", () => {
+// The CLI tool returns the display its post-processor attached as it is: the
+// core's display channel (see `display-channel.ts`) stashes it for every
+// plugin tool alike (#375). The model output never carries it either way.
+describe("createCliTool display", () => {
   const searchConfig: CliConfig = {
     allowedPrefixes: [{ prefix: ["issue", "search"], confirm: false, mutating: false }],
-  };
-  const doctorConfig: CliConfig = {
-    allowedPrefixes: [{ prefix: ["doctor"], confirm: false, mutating: false }],
   };
   const renderingPostProcess = (_cmd: unknown, result: CliResult): CliResult =>
     result.ok ? { ok: true, data: result.data, display: { type: "issue-list", items: ["MER-1\nhttps://x"] } } : result;
@@ -838,98 +834,8 @@ describe("createCliTool display staging", () => {
       writeConfirmationNoteFn: async () => {},
     });
   }
-  function opts(displayStore: ReturnType<typeof createDisplayStore>) {
-    return {
-      stageConfirmation: noopStage(),
-      t: english,
-      stashDisplay: (artifact: string, label?: string) => displayStore.stash("terminal", artifact, label),
-    };
-  }
 
-  // #230: the label is what tells the model, a turn later, which list it showed.
-  it("labels the stashed list with the command that built it and how many items it has", async () => {
-    const displayStore = createDisplayStore({ refFn: () => "d1" });
-    const labels: Array<string | undefined> = [];
-    const runCliFn = async (): Promise<CliResult> => ({ ok: true, data: {} });
-    const twoItems = (_cmd: unknown, result: CliResult): CliResult =>
-      result.ok ? { ok: true, data: result.data, display: { type: "issue-list", items: ["MER-1", "MER-2"] } } : result;
-    for (const [postProcess, expected] of [
-      [renderingPostProcess, 'jira issue search --jql "x" (1 item)'],
-      [twoItems, 'jira issue search --jql "x" (2 items)'],
-    ] as const) {
-      const { runCommand } = createCliTool(runCliFn, { jira: searchConfig }, {
-        stageConfirmation: noopStage(),
-        t: english,
-        stashDisplay: (artifact: string, label?: string) => (labels.push(label), displayStore.stash("terminal", artifact, label)),
-        postProcess,
-      });
-      await runCommand.execute({ command: '  jira issue search --jql "x"  ' }, {} as never);
-      // The command as the model wrote it, surrounding spaces trimmed.
-      expect(labels.at(-1)).toBe(expected);
-    }
-  });
-
-  it("stashes the rendered artifact and returns its ref on the result", async () => {
-    const displayStore = createDisplayStore({ refFn: () => "d1" });
-    const runCliFn = async (): Promise<CliResult> => ({ ok: true, data: { issues: [{ key: "MER-1" }] } });
-    const { runCommand } = createCliTool(runCliFn, { jira: searchConfig }, {
-      ...opts(displayStore),
-      postProcess: renderingPostProcess,
-    });
-
-    const result = (await runCommand.execute({ command: 'jira issue search --jql "x"' }, {} as never)) as {
-      displayRef?: string;
-    };
-    expect(result.displayRef).toBe("d1");
-    // the ref really points at the rendered artifact
-    expect(displayStore.surface("terminal", "d1")).toBe(true);
-    expect(displayStore.takeSurfaced("terminal")).toEqual(["MER-1\nhttps://x"]);
-  });
-
-  it("hands the model the displayRef but never the rendered display content", async () => {
-    const displayStore = createDisplayStore({ refFn: () => "d1" });
-    const runCliFn = async (): Promise<CliResult> => ({ ok: true, data: { issues: [] } });
-    const { runCommand } = createCliTool(runCliFn, { jira: searchConfig }, {
-      ...opts(displayStore),
-      postProcess: renderingPostProcess,
-    });
-
-    const result = await runCommand.execute({ command: 'jira issue search --jql "x"' }, {} as never);
-    const modelOutput = await runCommand.toModelOutput?.({
-      toolCallId: "c",
-      input: { command: 'jira issue search --jql "x"' },
-      output: result,
-    } as never);
-    expect(modelOutput).toEqual({ type: "json", value: { ok: true, data: { issues: [] }, displayRef: "d1" } });
-  });
-
-  it("does not stash or add a displayRef for a result with no display", async () => {
-    const displayStore = createDisplayStore({ refFn: () => "d1" });
-    const runCliFn = async (): Promise<CliResult> => ({ ok: true, data: "ok" });
-    const { runCommand } = createCliTool(runCliFn, { jira: doctorConfig }, opts(displayStore));
-
-    const result = (await runCommand.execute({ command: "jira doctor" }, {} as never)) as { displayRef?: string };
-    expect(result.displayRef).toBeUndefined();
-    expect(displayStore.surface("terminal", "d1")).toBe(false);
-  });
-
-  it("does not stash when the display carries no string items (structured, no formatter applied)", async () => {
-    const displayStore = createDisplayStore({ refFn: () => "d1" });
-    const runCliFn = async (): Promise<CliResult> => ({ ok: true, data: {} });
-    const structuredPostProcess = (_cmd: unknown, result: CliResult): CliResult =>
-      result.ok ? { ok: true, data: result.data, display: { type: "issue-list", items: [{ key: "MER-1" }] } } : result;
-    const { runCommand } = createCliTool(runCliFn, { jira: searchConfig }, {
-      ...opts(displayStore),
-      postProcess: structuredPostProcess,
-    });
-
-    const result = (await runCommand.execute({ command: 'jira issue search --jql "x"' }, {} as never)) as {
-      displayRef?: string;
-    };
-    expect(result.displayRef).toBeUndefined();
-  });
-
-  it("leaves execute's return unchanged (no displayRef) when no stashDisplay is wired", async () => {
+  it("returns the post-processor's display as it is, no ref minted", async () => {
     const runCliFn = async (): Promise<CliResult> => ({ ok: true, data: { issues: [] } });
     const { runCommand } = createCliTool(runCliFn, { jira: searchConfig }, {
       stageConfirmation: noopStage(),
@@ -939,5 +845,22 @@ describe("createCliTool display staging", () => {
 
     const result = await runCommand.execute({ command: 'jira issue search --jql "x"' }, {} as never);
     expect(result).toEqual({ ok: true, data: { issues: [] }, display: { type: "issue-list", items: ["MER-1\nhttps://x"] } });
+  });
+
+  it("never hands the model the display", async () => {
+    const runCliFn = async (): Promise<CliResult> => ({ ok: true, data: { issues: [] } });
+    const { runCommand } = createCliTool(runCliFn, { jira: searchConfig }, {
+      stageConfirmation: noopStage(),
+      t: english,
+      postProcess: renderingPostProcess,
+    });
+
+    const result = await runCommand.execute({ command: 'jira issue search --jql "x"' }, {} as never);
+    const modelOutput = await runCommand.toModelOutput?.({
+      toolCallId: "c",
+      input: { command: 'jira issue search --jql "x"' },
+      output: result,
+    } as never);
+    expect(modelOutput).toEqual({ type: "json", value: { ok: true, data: { issues: [] } } });
   });
 });

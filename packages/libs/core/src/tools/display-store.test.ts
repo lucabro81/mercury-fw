@@ -232,3 +232,84 @@ describe("createDisplayStore: labels", () => {
     expect(store.surface("s", "d2")).toBe(true);
   });
 });
+
+// #376: a display that is the answer itself (`always` in the instance's rule)
+// is shown without the model calling `present`: it's stashed already marked.
+describe("createDisplayStore: shown at stash", () => {
+  it("returns a display stashed to show at finalize, in stash order with the presented ones", () => {
+    let n = 0;
+    const store = createDisplayStore({ refFn: () => `d${++n}` });
+    const a = store.stash("terminal", "list-a");
+    store.stash("terminal", "link-b", "build", { show: true });
+    store.stash("terminal", "list-c"); // never shown
+    store.surface("terminal", a);
+
+    expect(store.takeSurfaced("terminal")).toEqual(["list-a", "link-b"]);
+    // consumed like a presented one: a later turn doesn't append it again
+    expect(store.takeSurfaced("terminal")).toEqual([]);
+  });
+
+  it("lists it among the shown ones, and present can show it again later", () => {
+    let n = 0;
+    const store = createDisplayStore({ refFn: () => `d${++n}` });
+    const ref = store.stash("terminal", "link", "build (1 item)", { show: true });
+    store.takeSurfaced("terminal");
+
+    expect(store.shown("terminal")).toEqual([{ ref, label: "build (1 item)" }]);
+    expect(store.surface("terminal", ref)).toBe(true);
+    expect(store.takeSurfaced("terminal")).toEqual(["link"]);
+  });
+
+  it("is not shown in another session", () => {
+    const store = createDisplayStore();
+    store.stash("a", "link", "", { show: true });
+    expect(store.takeSurfaced("b")).toEqual([]);
+    expect(store.takeSurfaced("a")).toEqual(["link"]);
+  });
+});
+
+// A turn that fails or is cancelled never reaches finalize: what it marked to
+// show (presented, or shown at stash) used to stay marked and got appended to
+// the next turn's answer instead.
+describe("createDisplayStore: discardSurfaced", () => {
+  it("drops what was marked to show, keeping the entries to present again", () => {
+    let n = 0;
+    const store = createDisplayStore({ refFn: () => `d${++n}` });
+    const a = store.stash("terminal", "list-a");
+    const b = store.stash("terminal", "link-b", "", { show: true });
+    store.surface("terminal", a);
+
+    store.discardSurfaced("terminal");
+
+    expect(store.takeSurfaced("terminal")).toEqual([]);
+    expect(store.surface("terminal", b)).toBe(true);
+    expect(store.takeSurfaced("terminal")).toEqual(["link-b"]);
+  });
+
+  it("doesn't list as shown what the failed turn never showed, and keeps what an earlier turn did", () => {
+    let n = 0;
+    let now = 0;
+    const store = createDisplayStore({ now: () => now, refFn: () => `d${++n}` });
+    const earlier = store.stash("s", "list-a", "A");
+    store.surface("s", earlier);
+    store.takeSurfaced("s");
+    now = 1;
+    store.surface("s", earlier); // presented again, then the turn fails
+    store.stash("s", "link-b", "B", { show: true });
+
+    store.discardSurfaced("s");
+
+    expect(store.shown("s")).toEqual([{ ref: earlier, label: "A" }]);
+  });
+
+  it("touches only its own session", () => {
+    const store = createDisplayStore();
+    store.stash("a", "link-a", "", { show: true });
+    store.stash("b", "link-b", "", { show: true });
+
+    store.discardSurfaced("a");
+
+    expect(store.takeSurfaced("a")).toEqual([]);
+    expect(store.takeSurfaced("b")).toEqual(["link-b"]);
+  });
+});

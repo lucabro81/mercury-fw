@@ -65,7 +65,6 @@ export function createZitadelPlugin(deps: { runCliFn?: typeof runCli } = {}): Pl
           const { runCommand } = createCliTool(runCliFn, configs, {
             stageConfirmation: sctx.stageConfirmation,
             t: sctx.t,
-            stashDisplay: sctx.stashDisplay,
             person: sctx.person,
             requireLogin: sctx.requireLogin,
           });

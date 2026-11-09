@@ -81,7 +81,6 @@ export function createConfluencePlugin(deps: { runCliFn?: typeof runCli; cliConf
           const { runCommand } = createCliTool(runCliFn, configs, {
             stageConfirmation: sctx.stageConfirmation,
             t: sctx.t,
-            stashDisplay: sctx.stashDisplay,
             postProcess: decoratedPostProcess,
             person: sctx.person,
             requireLogin: sctx.requireLogin,

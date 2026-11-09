@@ -47,7 +47,6 @@ export const atlassianAdminPlugin: Plugin = {
         const { runCommand } = createCliTool(runCli, configs, {
           stageConfirmation: sctx.stageConfirmation,
           t: sctx.t,
-          stashDisplay: sctx.stashDisplay,
         });
         return { atlassianAdminCommand: runCommand };
       },

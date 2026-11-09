@@ -492,16 +492,17 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
     // Each CLI-based plugin owns its tool (jiraCommand, …), built from its own
     // allowlist and post-processor. The core just invokes what they contributed,
     // as the person or as Mercury per the offering (see plugins/offered-tools.ts).
-    const { tools: pluginTools, hasCliTool } = buildOfferedTools(offering, who, {
+    const { tools: pluginTools, hasPluginTools } = buildOfferedTools(offering, who, {
       context: sessionToolContext,
       requireLogin: (service, login, personKey) => personLogins.require(service, login, personKey),
       log: (msg) => console.error(msg),
+      stashDisplay: (artifact, label, opts) => displayStore.stash(sessionKey, artifact, label, opts),
     });
     Object.assign(sessionTools, pluginTools);
 
-    // `present` only makes sense alongside CLI tools: they are what produce the
-    // display artifacts it surfaces. A turn with no CLI tool never sees it.
-    if (hasCliTool) {
+    // `present` only makes sense alongside plugin tools: they are what produce
+    // the display artifacts it surfaces. A turn with none never sees it.
+    if (hasPluginTools) {
       Object.assign(sessionTools, createPresentTool({ sessionKey, store: displayStore }));
     }
 
@@ -619,6 +620,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
     // Appends what the model surfaced via `present` this turn — nothing if it
     // presented nothing.
     takeSurfacedDisplays: (sessionKey) => displayStore.takeSurfaced(sessionKey),
+    discardSurfacedDisplays: (sessionKey) => displayStore.discardSurfaced(sessionKey),
   });
 
   // The confirm capability, bound to this instance's store/vault/note-writer.

@@ -8,22 +8,29 @@
  *
  * - `formatter(rules)` builds a `DisplayHandler` from a `kind → rule` map.
  * - `formatterPlugin(plugin, handler)` wraps a data plugin so every display
- *   its post-processor emits goes through the handler; everything else the
- *   plugin contributes passes through untouched.
+ *   its tools return goes through the handler, a CLI tool's or a typed one's
+ *   alike; everything else the plugin contributes passes through untouched.
  */
-import type { Plugin, CliPostProcessor, CliResult, ToolDisplay, Translate } from "@mercury-fw/plugin-types";
+import type { ExecutableTool, Plugin, PluginRuntimeContributions, ToolDisplay, Translate } from "@mercury-fw/plugin-types";
 
-/** Renders one display into the single text block shown to the user, in the
- * turn's language (`t`), or returns `undefined` when there is nothing to show
- * (no rule for its kind, or an empty list with no empty text). */
-export type DisplayHandler = (display: ToolDisplay, t: Translate) => string | undefined;
+/** What a handler renders one display into: the single text block shown to the
+ * user, and `always` when the display is the answer itself, shown without the
+ * model calling `present`. */
+export type RenderedDisplay = { text: string; always?: true };
+
+/** Renders one display, in the turn's language (`t`), or returns `undefined`
+ * when there is nothing to show (no rule for its kind, or an empty list with no
+ * empty text). */
+export type DisplayHandler = (display: ToolDisplay, t: Translate) => RenderedDisplay | undefined;
 
 /** How one kind of list is rendered: the line for each item, or that plus the
- * text to show when the list is empty. Both may use `t`, the texts of the
- * person the turn is for (an app's own keys in its language files). */
+ * text to show when the list is empty and whether the display is always shown
+ * (`always`: the answer itself, e.g. a link the person asked for, appended
+ * without the model calling `present`). The texts may use `t`, the texts of
+ * the person the turn is for (an app's own keys in its language files). */
 export type FormatterRule<T> =
   | ((item: T, t: Translate) => string)
-  | { item: (item: T, t: Translate) => string; empty?: string | ((t: Translate) => string) };
+  | { item: (item: T, t: Translate) => string; empty?: string | ((t: Translate) => string); always?: true };
 
 /** Items are rendered one per block, separated by a blank line. */
 const ITEM_SEPARATOR = "\n\n";
@@ -41,58 +48,96 @@ export function formatter<D>(rules: { [K in keyof D]?: FormatterRule<D[K]> }): D
     if (rule === undefined) {
       return undefined;
     }
-    const { item, empty } = typeof rule === "function" ? { item: rule, empty: undefined } : rule;
-    if (display.items.length === 0) {
-      return typeof empty === "function" ? empty(t) : empty;
+    const { item, empty, always } = typeof rule === "function" ? { item: rule, empty: undefined, always: undefined } : rule;
+    const text =
+      display.items.length === 0
+        ? typeof empty === "function"
+          ? empty(t)
+          : empty
+        : display.items.map((i) => item(i, t)).join(ITEM_SEPARATOR);
+    if (text === undefined) {
+      return undefined;
     }
-    return display.items.map((i) => item(i, t)).join(ITEM_SEPARATOR);
+    return always ? { text, always } : { text };
   };
 }
 
-/** Applies `handler` to an ok result's display. A rendered block replaces the
- * structured items; an empty list with nothing to show drops the display; a
- * non-empty list with no rule stays structured (so it isn't shown) and is
- * reported through `log`. Non-ok results and results with no display are
- * returned as they are, without calling the handler. */
-function renderDisplay(
-  result: CliResult,
-  handler: DisplayHandler,
-  t: Translate,
-  log: (m: string) => void,
-  pluginName: string,
-): CliResult {
-  if (!result.ok || !result.display) {
-    return result;
+/** A tool's output carrying a display to render: an ok result (`ok: true`)
+ * with a top-level `display`. */
+type DisplayOutput = Record<string, unknown> & { ok: true; display: ToolDisplay };
+
+/** Whether `output` is an ok result with a `display` (see `DisplayOutput`). */
+function hasDisplay(output: unknown): output is DisplayOutput {
+  if (typeof output !== "object" || output === null) return false;
+  const o = output as Record<string, unknown>;
+  const display = o.display as ToolDisplay | undefined;
+  return o.ok === true && typeof display === "object" && display !== null && Array.isArray(display.items);
+}
+
+/** Applies `handler` to an ok output's display. A rendered block replaces the
+ * structured items (marked `always` when the handler says so); an empty list
+ * with nothing to show drops the display; a non-empty list with no rule stays
+ * structured (so it isn't shown) and is reported through `log`. Any other
+ * output is returned as it is, without calling the handler. */
+function renderDisplay(output: unknown, handler: DisplayHandler, t: Translate, log: (m: string) => void, pluginName: string): unknown {
+  if (!hasDisplay(output)) {
+    return output;
   }
-  const text = handler(result.display, t);
-  if (text !== undefined) {
-    return { ...result, display: { ...result.display, items: [text] } };
+  const rendered = handler(output.display, t);
+  if (rendered !== undefined) {
+    const display: ToolDisplay = { type: output.display.type, items: [rendered.text] };
+    if (rendered.always) display.always = true;
+    return { ...output, display };
   }
-  if (result.display.items.length === 0) {
-    const { display: _dropped, ...rest } = result;
+  if (output.display.items.length === 0) {
+    const { display: _dropped, ...rest } = output;
     return rest;
   }
-  log(`[formatter] no rule for "${result.display.type}" lists from plugin "${pluginName}" — list not shown`);
-  return result;
+  log(`[formatter] no rule for "${output.display.type}" lists from plugin "${pluginName}" — list not shown`);
+  return output;
 }
 
 /**
- * Wraps `plugin` so its post-processor's displays are rendered through
+ * Wraps `plugin` so the displays its tools return are rendered through
  * `handler`. Returns a plugin identical to `plugin` except for a `build` that
  * runs the inner `build` (passing the runtime context straight through) and
- * wraps the post-processor it contributes; the wrapped one flows to the
- * plugin's `sessionTools` factory, which the composition hands it to.
+ * wraps its `sessionTools` factory: each tool it builds keeps every field but
+ * `execute`, whose output goes through the handler with the turn's texts. A
+ * CLI tool's display (attached by its post-processor) and a typed tool's take
+ * the same path; the post-processor itself is left as it is.
  */
 export function formatterPlugin(plugin: Plugin, handler: DisplayHandler): Plugin {
   return {
     ...plugin,
     build: (ctx) => {
       const inner = plugin.build ? plugin.build(ctx) : {};
-      const proc = inner.postProcess;
-      const wrapped: CliPostProcessor | undefined = proc
-        ? (cmd, result, t) => renderDisplay(proc(cmd, result, t), handler, t, ctx.log, plugin.name)
-        : undefined;
-      return { ...inner, postProcess: wrapped };
+      const factory = inner.sessionTools;
+      if (factory === undefined) {
+        return inner;
+      }
+      const sessionTools: PluginRuntimeContributions["sessionTools"] = (sctx, postProcess) => {
+        const tools = factory(sctx, postProcess);
+        const wrapped: typeof tools = {};
+        for (const [name, tool] of Object.entries(tools)) {
+          const { execute } = tool;
+          wrapped[name] =
+            execute === undefined
+              ? tool
+              : ({
+                  ...tool,
+                  execute: async (input: unknown, options: unknown) =>
+                    renderDisplay(
+                      await (execute as (i: unknown, o: unknown) => unknown)(input, options),
+                      handler,
+                      sctx.t,
+                      ctx.log,
+                      plugin.name,
+                    ),
+                } as ExecutableTool);
+        }
+        return wrapped;
+      };
+      return { ...inner, sessionTools };
     },
   };
 }

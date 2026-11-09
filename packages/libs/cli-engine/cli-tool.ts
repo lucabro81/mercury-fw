@@ -170,11 +170,6 @@ export function createCliTool(
     postProcess?: CliPostProcessor;
     /** The texts of the turn's person (`SessionToolContext.t`), handed to the post-processor. */
     t: Translate;
-    /** Stashes a post-processor's rendered `display` artifact and returns a ref
-     * the model can `present`. Pre-bound to this turn's session by the
-     * composition root. Optional: with none wired the inline `display` is left
-     * untouched and no `displayRef` is minted. */
-    stashDisplay?: (artifact: string, label?: string) => string;
     /** The person the turn is for (see `SessionToolContext.person`): every
      * command runs as them, with `--user` and the id their CLI knows them by.
      * Absent or `null`: the CLI's own service identity. */
@@ -266,21 +261,8 @@ export function createCliTool(
         ? opts.postProcess({ binary: parsed.binary, args: parsed.args, prefix: match.prefix }, result, opts.t)
         : result;
 
-      // A rendered display artifact is stashed, not returned to be
-      // force-appended: the model gets only a `displayRef` and decides whether
-      // to `present` it. Only string items (what the formatter renders) are
-      // showable; a display still carrying structured items (no formatter
-      // applied) has nothing to stash. With no `stashDisplay` wired, the result
-      // is left exactly as-is.
-      if (opts.stashDisplay && processed.ok && processed.display) {
-        const stringItems = processed.display.items.filter((i): i is string => typeof i === "string");
-        if (stringItems.length > 0) {
-          // What the list is, so the model still knows a turn later.
-          const count = `${stringItems.length} ${stringItems.length === 1 ? "item" : "items"}`;
-          const displayRef = opts.stashDisplay(stringItems.join("\n\n"), `${command.trim()} (${count})`);
-          return { ...processed, displayRef };
-        }
-      }
+      // The display stays on the result: the core's display channel stashes
+      // it and hands the model a ref, for every plugin tool alike.
       return processed;
     },
     toModelOutput: ({ output }) => ({ type: "json", value: omitLoginLinkForModel(omitDisplayForModel(output)) as JSONValue }),

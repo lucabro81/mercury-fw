@@ -85,6 +85,23 @@ formatterPlugin(
 A kind of list with no rule isn't shown at all, and the log says which rule is missing. `mfw create` writes a
 starting rule for every plugin that has lists.
 
+The model decides whether the person sees a list: it calls `present` with the reference when they asked to see it,
+and answers "how many are open?" in prose without it. For some results that choice makes no sense, though: when the
+person asks for the link that opens a search, the link is the answer, and a small model that forgets to show it (or
+retypes a long encoded URL by hand, breaking it) has failed the turn. A rule with `always: true` shows that kind
+every time, after the answer, and the model is told it's already there.
+
+A tool written in code hands over a list the same way a command-line one does, by returning it next to what the
+model reads:
+
+```ts
+execute: async ({ query }) => ({ ok: true, query, display: { type: "search-link", items: [{ url, query }] } }),
+```
+
+Mercury takes `display` out before the model sees the result, so the model reads `query` and a reference, never the
+list itself. The plugin exports the kinds it hands over as a type (as Jira does with `JiraDisplays`), so the app's
+rules for them are checked too.
+
 ## Whose identity a tool uses
 
 A tool that reaches a service does it as someone: as the person asking (they log in to the service through
