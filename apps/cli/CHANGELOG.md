@@ -1,5 +1,13 @@
 # @mercury-fw/cli
 
+## 0.71.0
+
+### Patch Changes
+
+- Updated dependencies [2b08f7e]
+  - @mercury-fw/core@0.71.0
+  - @mercury-fw/utils@0.71.0
+
 ## 0.70.0
 
 ### Patch Changes
