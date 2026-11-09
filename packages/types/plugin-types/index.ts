@@ -54,12 +54,16 @@ export type ExecutableTool = Tool & { execute: NonNullable<Tool["execute"]> };
  * user and — unlike `data` — never placed into the model's context. `type`
  * names the kind of data (e.g. "issue-list"): the key an instance's formatter
  * rules are looked up by, so a plugin should export the kinds it emits as a
- * type mapping each kind to its item shape. `items` are its entries. Kept deliberately generic here so it serves any plugin (a CLI
- * post-processor today, an endpoint/MCP plugin later), not just CLI results.
- * The core strips it before the result reaches the model (see the core's
- * `toModelOutput`) and renders it separately for the user.
+ * type mapping each kind to its item shape. `items` are its entries. Kept
+ * deliberately generic so it serves any plugin: a CLI post-processor's result
+ * or a typed tool's ok output (`{ ok: true, …, display }`) alike. The core
+ * strips it from every plugin tool's output before the model sees it, stashes
+ * it once rendered (the formatter turns `items` into one text) and hands the
+ * model a `displayRef` instead. `always` is set by the formatter when the
+ * instance's rule for the kind says the display is the answer itself: the core
+ * then shows it without the model calling `present`, and tells the model so.
  */
-export type ToolDisplay = { type: string; items: unknown[] };
+export type ToolDisplay = { type: string; items: unknown[]; always?: true };
 
 /**
  * Result of running a CLI command, carrying two explicit channels. On success

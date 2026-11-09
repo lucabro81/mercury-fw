@@ -1,8 +1,8 @@
 /**
  * Tests for the formatter: `formatter(rules)` applies an instance's rule for a
  * display's kind and nothing else, and `formatterPlugin(plugin, handler)` wraps
- * a data plugin's post-processor so every display it emits goes through the
- * handler — passing every other contribution through untouched. Synthetic
+ * the tools a data plugin contributes so every display they return goes
+ * through the handler — passing every other contribution through untouched. Synthetic
  * plugins and item shapes only: this pins the mechanism, not any real plugin.
  */
 import { describe, expect, test } from "bun:test";
@@ -12,9 +12,14 @@ import {
   type PluginRuntimeContributions,
   type PluginRuntimeContext,
   type CliResult,
+  type ExecutableTool,
+  type SessionToolContext,
   type Translate,
 } from "@mercury-fw/plugin-types";
 import { formatter, formatterPlugin } from "./index.ts";
+
+/** A tool as `sessionTools` contributes it. */
+type Tool = ExecutableTool;
 
 type Displays = {
   "thing-list": { id: string; label: string | null };
@@ -29,23 +34,23 @@ const t: Translate = (key, params) => (params ? `${key} ${JSON.stringify(params)
 describe("formatter", () => {
   test("renders each item with the rule for the display's kind, one blank line apart", () => {
     const render = formatter<Displays>({ "thing-list": thingLine });
-    expect(render({ type: "thing-list", items: [{ id: "A", label: "a" }, { id: "B", label: null }] }, t)).toBe("A (a)\n\nB");
+    expect(render({ type: "thing-list", items: [{ id: "A", label: "a" }, { id: "B", label: null }] }, t)).toEqual({ text: "A (a)\n\nB" });
   });
 
   test("picks the rule by kind when several are configured", () => {
     const render = formatter<Displays>({ "thing-list": thingLine, "other-list": (o) => `#${o.n}` });
-    expect(render({ type: "other-list", items: [{ n: 1 }, { n: 2 }] }, t)).toBe("#1\n\n#2");
-    expect(render({ type: "thing-list", items: [{ id: "A", label: null }] }, t)).toBe("A");
+    expect(render({ type: "other-list", items: [{ n: 1 }, { n: 2 }] }, t)).toEqual({ text: "#1\n\n#2" });
+    expect(render({ type: "thing-list", items: [{ id: "A", label: null }] }, t)).toEqual({ text: "A" });
   });
 
   test("accepts a rule in object form, with the same per-item line", () => {
     const render = formatter<Displays>({ "thing-list": { item: thingLine } });
-    expect(render({ type: "thing-list", items: [{ id: "A", label: null }, { id: "B", label: "b" }] }, t)).toBe("A\n\nB (b)");
+    expect(render({ type: "thing-list", items: [{ id: "A", label: null }, { id: "B", label: "b" }] }, t)).toEqual({ text: "A\n\nB (b)" });
   });
 
   test("shows the rule's empty text for an empty list", () => {
     const render = formatter<Displays>({ "thing-list": { item: thingLine, empty: "Nothing here." } });
-    expect(render({ type: "thing-list", items: [] }, t)).toBe("Nothing here.");
+    expect(render({ type: "thing-list", items: [] }, t)).toEqual({ text: "Nothing here." });
   });
 
   // #280: an app's rules write text a person reads, so they get the turn's
@@ -54,8 +59,8 @@ describe("formatter", () => {
     const render = formatter<Displays>({
       "thing-list": { item: (thing, tr) => tr("app.thing", { id: thing.id }), empty: (tr) => tr("app.none") },
     });
-    expect(render({ type: "thing-list", items: [{ id: "A", label: null }] }, t)).toBe('app.thing {"id":"A"}');
-    expect(render({ type: "thing-list", items: [] }, t)).toBe("app.none");
+    expect(render({ type: "thing-list", items: [{ id: "A", label: null }] }, t)).toEqual({ text: 'app.thing {"id":"A"}' });
+    expect(render({ type: "thing-list", items: [] }, t)).toEqual({ text: "app.none" });
   });
 
   test("has nothing to show for an empty list when the rule sets no empty text", () => {
@@ -69,6 +74,19 @@ describe("formatter", () => {
     expect(render({ type: "never-declared", items: [{ x: 1 }] }, t)).toBeUndefined();
   });
 
+  // #376: a kind whose display is the answer itself (a link the person asked
+  // for) is shown without the model calling `present`: the instance says so in
+  // its rule, and the handler carries it next to the text.
+  test("marks the text to show always when the rule says so, the empty text too", () => {
+    const render = formatter<Displays>({ "thing-list": { item: thingLine, empty: "None.", always: true } });
+    expect(render({ type: "thing-list", items: [{ id: "A", label: null }] }, t)).toEqual({ text: "A", always: true });
+    expect(render({ type: "thing-list", items: [] }, t)).toEqual({ text: "None.", always: true });
+  });
+
+  test("has nothing to show for an empty list with no empty text, even when always", () => {
+    expect(formatter<Displays>({ "thing-list": { item: thingLine, always: true } })({ type: "thing-list", items: [] }, t)).toBeUndefined();
+  });
+
   test("rejects, at compile time, a kind the plugin doesn't declare", () => {
     // @ts-expect-error — "thing-lsit" is not a declared kind
     formatter<Displays>({ "thing-lsit": thingLine });
@@ -79,90 +97,129 @@ describe("formatter", () => {
 
 const logs: string[] = [];
 const ctx: PluginRuntimeContext = { model: {} as never, env: {}, log: (m) => logs.push(m) };
-const cmd = { binary: "data", args: [], prefix: [] };
+/** The per-turn context the core hands `sessionTools`; only `t` matters here. */
+const sctx = { sessionKey: "s", t } as unknown as SessionToolContext;
+const callOptions = { toolCallId: "c1", messages: [] };
 
 /** A minimal plugin whose `build` returns exactly the contributions given. */
 function pluginWith(contributions: PluginRuntimeContributions, extra: Partial<Plugin> = {}): Plugin {
   return { apiVersion: PLUGIN_API_VERSION, name: "data", description: "Reads data.", build: () => contributions, ...extra };
 }
 
-/** A plugin whose post-processor always returns `result`. */
-function emitting(result: CliResult): Plugin {
-  return pluginWith({ postProcess: () => result });
+/** A plugin with one tool, `find`, whose `execute` always returns `output`. */
+function emitting(output: unknown, extra: Partial<Plugin> = {}): Plugin {
+  return pluginWith({ sessionTools: () => ({ find: { description: "Finds.", execute: async () => output } as unknown as Tool }) }, extra);
 }
 
+/** Builds `plugin` and runs its tool `name` with `input`, as the core would. */
+async function run(plugin: Plugin, input: unknown = {}, name = "find"): Promise<unknown> {
+  const tools = plugin.build!(ctx).sessionTools!(sctx);
+  return (tools[name]!.execute as (i: unknown, o: unknown) => Promise<unknown>)(input, callOptions);
+}
+
+// #375: a typed tool's display (a plugin with `sessionTools` and no
+// post-processor) went straight to the model, the instance's rules never
+// applied; the formatter now wraps what every tool returns, CLI or typed.
 describe("formatterPlugin", () => {
-  test("replaces an ok result's structured items with the handler's single rendered block", () => {
+  test("replaces an ok result's structured items with the handler's single rendered block", async () => {
     let seen: unknown;
     const decorated = formatterPlugin(
-      emitting({ ok: true, data: { raw: 1 }, display: { type: "thing-list", items: [{ id: "A" }, { id: "B" }] } }),
+      emitting({ ok: true, query: "q", display: { type: "thing-list", items: [{ id: "A" }, { id: "B" }] } }),
       (display) => {
         seen = display;
-        return "RENDERED";
+        return { text: "RENDERED" };
       },
     );
 
-    const result = decorated.build!(ctx).postProcess!(cmd, { ok: true, data: {} }, t);
-
+    expect(await run(decorated)).toEqual({ ok: true, query: "q", display: { type: "thing-list", items: ["RENDERED"] } });
     expect(seen).toEqual({ type: "thing-list", items: [{ id: "A" }, { id: "B" }] });
-    expect(result).toEqual({ ok: true, data: { raw: 1 }, display: { type: "thing-list", items: ["RENDERED"] } });
   });
 
-  test("hands the post-processor the command it was given", () => {
-    let received: unknown;
-    const base = pluginWith({ postProcess: (c, r) => ((received = c), r) });
-    formatterPlugin(base, () => "R").build!(ctx).postProcess!({ binary: "b", args: ["x"], prefix: ["x"] }, { ok: true, data: {} }, t);
-    expect(received).toEqual({ binary: "b", args: ["x"], prefix: ["x"] });
+  test("marks the rendered display to show always when the handler says so", async () => {
+    const decorated = formatterPlugin(emitting({ ok: true, display: { type: "thing-list", items: [{ id: "A" }] } }), () => ({
+      text: "LINK",
+      always: true,
+    }));
+    expect(await run(decorated)).toEqual({ ok: true, display: { type: "thing-list", items: ["LINK"], always: true } });
   });
 
-  test("hands the turn's texts to the post-processor and to the handler", () => {
+  test("hands the handler the turn's texts", async () => {
     const seen: string[] = [];
+    const decorated = formatterPlugin(emitting({ ok: true, display: { type: "thing-list", items: [{ id: "A" }] } }), (_d, tr) => (
+      seen.push(tr("handler")), { text: "R" }
+    ));
+    await run(decorated);
+    expect(seen).toEqual(["handler"]);
+  });
+
+  test("hands the tool the call's input and options, and the factory the session context and post-processor", async () => {
+    let received: unknown[] = [];
+    let factoryArgs: unknown[] = [];
+    const postProcess = (_c: unknown, r: CliResult) => r;
     const base = pluginWith({
-      postProcess: (_c, _r, tr) => {
-        seen.push(tr("inner"));
-        return { ok: true, data: {}, display: { type: "thing-list", items: [{ id: "A" }] } };
+      postProcess,
+      sessionTools: (...args) => {
+        factoryArgs = args;
+        return { find: { execute: async (...a: unknown[]) => ((received = a), { ok: true }) } as Tool };
       },
     });
-    formatterPlugin(base, (_display, tr) => (seen.push(tr("handler")), "R")).build!(ctx).postProcess!(cmd, { ok: true, data: {} }, t);
-    expect(seen).toEqual(["inner", "handler"]);
+    const built = formatterPlugin(base, () => ({ text: "R" })).build!(ctx);
+    const tools = built.sessionTools!(sctx, postProcess);
+    await (tools.find!.execute as (i: unknown, o: unknown) => Promise<unknown>)({ query: "x" }, callOptions);
+
+    expect(received).toEqual([{ query: "x" }, callOptions]);
+    expect(factoryArgs).toEqual([sctx, postProcess]);
+    // The post-processor isn't wrapped any more: what the CLI tool returns is.
+    expect(built.postProcess).toBe(postProcess);
   });
 
-  test("drops the display when the handler has nothing to show for an empty list", () => {
+  test("drops the display when the handler has nothing to show for an empty list", async () => {
     const decorated = formatterPlugin(emitting({ ok: true, data: { raw: 1 }, display: { type: "thing-list", items: [] } }), () => undefined);
-    expect(decorated.build!(ctx).postProcess!(cmd, { ok: true, data: {} }, t)).toEqual({ ok: true, data: { raw: 1 } });
+    expect(await run(decorated)).toEqual({ ok: true, data: { raw: 1 } });
   });
 
-  test("leaves a non-empty display structured, and logs it, when the handler has no rule for its kind", () => {
+  test("leaves a non-empty display structured, and logs it, when the handler has no rule for its kind", async () => {
     logs.length = 0;
-    const emitted: CliResult = { ok: true, data: {}, display: { type: "thing-list", items: [{ id: "A" }] } };
-    const decorated = formatterPlugin(pluginWith({ postProcess: () => emitted }, { name: "jira" }), () => undefined);
+    const emitted = { ok: true, data: {}, display: { type: "thing-list", items: [{ id: "A" }] } };
+    const decorated = formatterPlugin(emitting(emitted, { name: "jira" }), () => undefined);
 
-    expect(decorated.build!(ctx).postProcess!(cmd, { ok: true, data: {} }, t)).toEqual(emitted);
+    expect(await run(decorated)).toEqual(emitted);
     expect(logs).toEqual(['[formatter] no rule for "thing-list" lists from plugin "jira" — list not shown']);
   });
 
-  test("leaves an ok result with no display untouched, handler not called", () => {
+  test("leaves a result with no display, an error, or a non-object untouched, handler not called", async () => {
     let called = false;
-    const decorated = formatterPlugin(emitting({ ok: true, data: { raw: 1 } }), () => ((called = true), "X"));
-    expect(decorated.build!(ctx).postProcess!(cmd, { ok: true, data: {} }, t)).toEqual({ ok: true, data: { raw: 1 } });
+    const handler = () => ((called = true), { text: "X" });
+    expect(await run(formatterPlugin(emitting({ ok: true, data: { raw: 1 } }), handler))).toEqual({ ok: true, data: { raw: 1 } });
+    expect(await run(formatterPlugin(emitting({ ok: false, error: "boom" }), handler))).toEqual({ ok: false, error: "boom" });
+    expect(await run(formatterPlugin(emitting("plain text"), handler))).toBe("plain text");
+    // An error carrying a display is still an error: nothing to render.
+    const failed = { ok: false, error: "boom", display: { type: "thing-list", items: [{ id: "A" }] } };
+    expect(await run(formatterPlugin(emitting(failed), handler))).toEqual(failed);
     expect(called).toBe(false);
   });
 
-  test("leaves an error result untouched, handler not called", () => {
-    let called = false;
-    const decorated = formatterPlugin(emitting({ ok: false, error: "boom" }), () => ((called = true), "X"));
-    expect(decorated.build!(ctx).postProcess!(cmd, { ok: true, data: {} }, t)).toEqual({ ok: false, error: "boom" });
-    expect(called).toBe(false);
+  test("keeps every other field of a tool, and a tool without execute as it is", () => {
+    const toModelOutput = () => ({ type: "text" as const, value: "x" });
+    const bare = { description: "No execute." } as unknown as Tool;
+    const base = pluginWith({
+      sessionTools: () => ({ find: { description: "Finds.", toModelOutput, execute: async () => ({ ok: true }) } as unknown as Tool, bare }),
+    });
+    const tools = formatterPlugin(base, () => ({ text: "R" })).build!(ctx).sessionTools!(sctx);
+
+    expect(tools.find!.description).toBe("Finds.");
+    expect(tools.find!.toModelOutput).toBe(toModelOutput);
+    expect(tools.bare).toBe(bare);
   });
 
   test("passes through every other contribution and top-level field", () => {
     const guard = { statusLabel: () => "g", statusId: "g", shouldRun: () => false, run: async (text: string) => ({ text, outcome: "success" as const }) };
-    const factory = () => ({ myTool: {} as never });
+    const describers = { find: () => "Finding" };
     const base = pluginWith(
-      { postTurnGuards: [guard], sessionTools: factory },
+      { postTurnGuards: [guard], toolStatusDescribers: describers },
       { name: "jira", dependsOn: ["x"], systemPromptFragment: "frag", skills: [{ name: "s", description: "d", body: "b" }] },
     );
-    const decorated = formatterPlugin(base, () => "R");
+    const decorated = formatterPlugin(base, () => ({ text: "R" }));
     const built = decorated.build!(ctx);
 
     expect(decorated.name).toBe("jira");
@@ -170,16 +227,16 @@ describe("formatterPlugin", () => {
     expect(decorated.systemPromptFragment).toBe("frag");
     expect(decorated.skills).toEqual([{ name: "s", description: "d", body: "b" }]);
     expect(built.postTurnGuards).toEqual([guard]);
-    expect(built.sessionTools).toBe(factory);
+    expect(built.toolStatusDescribers).toBe(describers);
   });
 
-  test("a plugin without a post-processor, or without a build, gets none", () => {
-    expect(formatterPlugin(pluginWith({}), () => "R").build!(ctx).postProcess).toBeUndefined();
-    expect(formatterPlugin({ apiVersion: PLUGIN_API_VERSION, name: "n", description: "N." }, () => "R").build!(ctx)).toEqual({ postProcess: undefined });
+  test("a plugin without tools, or without a build, gets none", () => {
+    expect(formatterPlugin(pluginWith({}), () => ({ text: "R" })).build!(ctx).sessionTools).toBeUndefined();
+    expect(formatterPlugin({ apiVersion: PLUGIN_API_VERSION, name: "n", description: "N." }, () => ({ text: "R" })).build!(ctx)).toEqual({});
   });
 
   test("keeps the plugin's name and description", () => {
-    const wrapped = formatterPlugin(pluginWith({}), () => "R");
+    const wrapped = formatterPlugin(pluginWith({}), () => ({ text: "R" }));
     expect(wrapped.name).toBe("data");
     expect(wrapped.description).toBe("Reads data.");
   });
@@ -187,7 +244,7 @@ describe("formatterPlugin", () => {
   test("passes the runtime context through to the inner build", () => {
     let received: PluginRuntimeContext | undefined;
     const base: Plugin = { apiVersion: PLUGIN_API_VERSION, name: "n", description: "N.", build: (c) => ((received = c), {}) };
-    formatterPlugin(base, () => "R").build!(ctx);
+    formatterPlugin(base, () => ({ text: "R" })).build!(ctx);
     expect(received).toBe(ctx);
   });
 });
