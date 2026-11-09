@@ -18,7 +18,13 @@ function plugin(name: string, actsAs: "person" | "mercury", built: SessionToolCo
       login: { start: async () => ({ ok: false, error: "x" }), complete: async () => ({ ok: true }) },
       build: (ctx) => {
         built.push(ctx);
-        return { [`${name}Command`]: { description: `${name} tool`, inputSchema: {} as never, execute: async () => ({ ok: true }) } as unknown as Tool };
+        return {
+          [`${name}Command`]: {
+            description: `${name} tool`,
+            inputSchema: {} as never,
+            execute: async () => ({ ok: true, display: { type: "list", items: [`${name} list`] } }),
+          } as unknown as Tool,
+        };
       },
     },
   };
@@ -28,6 +34,7 @@ const context = { sessionKey: "s", t: (key: string) => key, stageConfirmation: a
 
 function setup(roles: string[], operator = false) {
   const built: SessionToolContext[] = [];
+  const stashed: Array<{ artifact: string; label: string; show: boolean }> = [];
   const logs: string[] = [];
   const logins: Array<[string, string]> = [];
   const plugins = [plugin("jira", "person", built), plugin("admin", "mercury", built), { name: "prompt-only", description: "Only adds to the prompt.", actsAs: "person", skills: [] } as LoadedPlugin];
@@ -39,16 +46,29 @@ function setup(roles: string[], operator = false) {
       return { ok: false, error: "no channel" };
     },
     log: (m) => logs.push(m),
+    stashDisplay: (artifact, label, opts) => (stashed.push({ artifact, label, show: opts.show }), `d${stashed.length}`),
   });
-  return { ...result, built, logs, logins };
+  return { ...result, built, logs, logins, stashed };
 }
 
 describe("buildOfferedTools", () => {
   test("a person without the permission gets the person-acting tools, built for them", () => {
-    const { tools, built, hasCliTool } = setup([]);
+    const { tools, built, hasPluginTools } = setup([]);
     expect(Object.keys(tools)).toEqual(["jiraCommand"]);
     expect(built.map((c) => c.person)).toEqual([{ key: "people:alice" }]);
-    expect(hasCliTool).toBe(true);
+    expect(hasPluginTools).toBe(true);
+  });
+
+  // #375: the core strips and stashes every plugin tool's display, not the
+  // CLI engine alone, so a typed tool's never reaches the model either.
+  test("every tool's display is stashed for the session and only its ref reaches the model, the variants' too", async () => {
+    const { tools, stashed } = setup([ACT_AS_SELF]);
+    expect(await tools.jiraCommand!.execute!({ q: 1 } as never, {} as never)).toEqual({ ok: true, displayRef: "d1" });
+    expect(await tools.jiraCommandAsSelf!.execute!({ q: 2 } as never, {} as never)).toEqual({ ok: true, displayRef: "d2" });
+    expect(stashed).toEqual([
+      { artifact: "jira list", label: 'jiraCommand {"q":1} (1 item)', show: false },
+      { artifact: "jira list", label: 'jiraCommandAsSelf {"q":2} (1 item)', show: false },
+    ]);
   });
 
   test("with the permission: the variant built with no person, renamed and described; the Mercury plugin built with no person", () => {
@@ -91,12 +111,12 @@ describe("buildOfferedTools", () => {
     expect(logins).toHaveLength(1);
   });
 
-  test("no tool-contributing plugin offered: no CLI tool", () => {
+  test("no tool-contributing plugin offered: no plugin tools", () => {
     const who = { person: { key: "k", roles: [] }, operator: false };
     const plugins = [{ name: "prompt-only", description: "Only adds to the prompt.", actsAs: "person", skills: [] } as LoadedPlugin];
-    expect(buildOfferedTools(offeringFor(plugins, { roles: [], operator: false }), who, { context, requireLogin: async () => ({ ok: false, error: "" }), log: () => {} })).toEqual({
+    expect(buildOfferedTools(offeringFor(plugins, { roles: [], operator: false }), who, { context, requireLogin: async () => ({ ok: false, error: "" }), log: () => {}, stashDisplay: () => "d" })).toEqual({
       tools: {},
-      hasCliTool: false,
+      hasPluginTools: false,
     });
   });
 });
@@ -110,6 +130,7 @@ describe("buildOfferedTools: a plugin that acts as no one", () => {
       context,
       requireLogin: async () => ({ ok: false, error: "no channel" }),
       log: () => {},
+      stashDisplay: () => "d",
     });
     return { ...result, built };
   }
