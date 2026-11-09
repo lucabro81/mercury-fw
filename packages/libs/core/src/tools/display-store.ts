@@ -19,11 +19,11 @@
  * itself (`always` in the instance's formatter rule) is stashed already
  * surfaced (`show`), so it's appended without the model calling `present`. A
  * turn that fails or is cancelled never takes what it surfaced:
- * `discardSurfaced` drops those marks so the next turn doesn't append them. An entry lives as long as its
- * conversation: `forget` drops it when the session is closed, at most the 10
- * most recent are kept per session, and a day-long TTL reclaims what no
- * sweep ever closes. Each entry keeps a short label (the command that built
- * it), so `shown` can tell the model which lists it has already shown: the
+ * `discardSurfaced` drops those marks so the next turn doesn't append them.
+ * An entry lives as long as its conversation: `forget` drops it when the
+ * session is closed, at most the 10 most recent are kept per session, and a
+ * day-long TTL reclaims what no sweep ever closes. Each entry keeps a short
+ * label (the tool and input that built it), so `shown` can tell the model which lists it has already shown: the
  * history never keeps the lists.
  */
 export type DisplayStore = {

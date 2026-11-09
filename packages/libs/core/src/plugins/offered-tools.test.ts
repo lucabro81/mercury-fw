@@ -5,6 +5,8 @@ import type { LoadedPlugin } from "./plugin-loader.ts";
 import { ACT_AS_SELF, offeringFor } from "./offering.ts";
 import { AS_SELF_NOTE } from "./act-as-self.ts";
 import { buildOfferedTools } from "./offered-tools.ts";
+import { createCliTool, type CliConfig } from "@mercury-fw/cli-engine";
+import { createDisplayStore } from "../tools/display-store.ts";
 
 /** A plugin whose one tool records the context it was built with. */
 function plugin(name: string, actsAs: "person" | "mercury", built: SessionToolContext[]): LoadedPlugin {
@@ -150,5 +152,46 @@ describe("buildOfferedTools: a plugin that acts as no one", () => {
   test("asking it for a login starts none", async () => {
     const { built } = setupAnyone(false);
     expect(await built[0]!.requireLogin()).toEqual({ ok: false, error: "search says the user isn't logged in, and it has no way to log anyone in." });
+  });
+});
+
+// #375 review: each layer is tested alone; this runs a real CLI tool through
+// the core's display channel into the display store, so a list is stashed
+// exactly once and the model gets only its ref.
+describe("buildOfferedTools: a real CLI tool through the display channel", () => {
+  test("stashes the rendered list once, under the tool's label, and hands back only the ref", async () => {
+    const store = createDisplayStore({ refFn: () => "d1" });
+    const config: CliConfig = { allowedPrefixes: [{ prefix: ["issue", "search"], confirm: false, mutating: false }] };
+    const cli: LoadedPlugin = {
+      name: "jira",
+      description: "Reads Jira.",
+      actsAs: "anyone",
+      skills: [],
+      bundle: {
+        name: "jira",
+        build: (sctx) =>
+          ({
+            jiraCommand: createCliTool(async () => ({ ok: true, data: { issues: 1 } }), { jira: config }, {
+              stageConfirmation: sctx.stageConfirmation,
+              t: sctx.t,
+              postProcess: (_c, r) => (r.ok ? { ...r, display: { type: "issue-list", items: ["MER-1"] } } : r),
+            }).runCommand,
+          }) as Record<string, Tool>,
+      },
+    };
+    const who = { person: { key: "people:alice", roles: [] }, operator: false };
+    const { tools } = buildOfferedTools(offeringFor([cli], { roles: [], operator: false }), who, {
+      context,
+      requireLogin: async () => ({ ok: false, error: "" }),
+      log: () => {},
+      stashDisplay: (artifact, label, opts) => store.stash("s", artifact, label, opts),
+    });
+
+    const output = await tools.jiraCommand!.execute!({ command: "jira issue search" } as never, {} as never);
+
+    expect(output).toEqual({ ok: true, data: { issues: 1 }, displayRef: "d1" });
+    store.surface("s", "d1");
+    expect(store.takeSurfaced("s")).toEqual(["MER-1"]);
+    expect(store.shown("s")).toEqual([{ ref: "d1", label: 'jiraCommand {"command":"jira issue search"} (1 item)' }]);
   });
 });

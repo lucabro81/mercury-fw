@@ -690,8 +690,8 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
     } finally {
       watchdog.stop();
       stopHeartbeat();
-      sink.dispose();
       deps.discardSurfacedDisplays?.(turn.sessionKey);
+      sink.dispose();
       if (cancelled) await archiveInterrupted();
     }
 
