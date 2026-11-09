@@ -43,3 +43,14 @@ describe("createPresentTool description", () => {
     expect(present.description).toContain('or one listed under "Lists already shown" to show it again');
   });
 });
+
+// #376: a result the instance shows always says `shown: true`; the model must
+// neither present it again nor retype what the person already sees.
+describe("createPresentTool description: shown results", () => {
+  it("says a result marked shown is already shown, not to present or repeat", () => {
+    const { present } = createPresentTool({ sessionKey: "s", store: createDisplayStore() });
+    expect(present.description).toContain(
+      "A result with `shown: true` is already shown to the user: don't call present for it and don't repeat its content, write only what goes around it.",
+    );
+  });
+});

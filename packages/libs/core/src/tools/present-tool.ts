@@ -10,7 +10,10 @@
  * always the deterministic one the formatter produced, and the model only
  * decides whether it appears. If the model never calls `present`, nothing is
  * shown — the right outcome for a "how many are open?" question answered in
- * prose. Scoped to the calling session, so it can only surface its own refs.
+ * prose. A display the instance shows always is surfaced without it: its
+ * result says `shown: true`, and this tool's description tells the model not
+ * to present or retype it. Scoped to the calling session, so it can only
+ * surface its own refs.
  */
 import type { ExecutableTool } from "@mercury-fw/plugin-types";
 import { tool } from "ai";
@@ -25,7 +28,8 @@ export function createPresentTool(deps: PresentToolDeps): { present: ExecutableT
       "Show a previously produced artifact (e.g. a list of issues) to the user. Pass the `ref` a prior tool " +
       "result returned (its `displayRef`), or one listed under \"Lists already shown\" to show it again. " +
       "Call this ONLY when the user wants to see the artifact itself; if you " +
-      "are answering in prose (a count, a yes/no, a single field), do NOT call it — the artifact stays hidden.",
+      "are answering in prose (a count, a yes/no, a single field), do NOT call it — the artifact stays hidden. " +
+      "A result with `shown: true` is already shown to the user: don't call present for it and don't repeat its content, write only what goes around it.",
     inputSchema: z.object({ ref: z.string().min(1) }),
     execute: async ({ ref }) => {
       if (!deps.store.surface(deps.sessionKey, ref)) {

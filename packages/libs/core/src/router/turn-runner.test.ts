@@ -8,6 +8,7 @@ import { createSessionLock } from "./session-lock.ts";
 import { ABORTED_MARKER } from "../session/agent-turn.ts";
 import type { StepInfo } from "../session/step-info.ts";
 import { confirmationId } from "../session/turn-trace.ts";
+import { createDisplayStore } from "../tools/display-store.ts";
 
 function fakeHistory(overrides: Partial<SessionHistory> = {}): SessionHistory {
   return {
@@ -506,6 +507,74 @@ describe("createTurnRunner", () => {
 
     expect(sink.finalized).toEqual(["plain reply"]);
   });
+
+  // #376: a display the instance shows always is stashed already surfaced by
+  // the tool; the runner appends it at finalize like a presented one.
+  test("appends a display shown always, after the text, without present", async () => {
+    const store = createDisplayStore();
+    const sink = baseSink();
+    const runner = createTurnRunner({
+      model: {} as any,
+      systemPrompts: { singleUser: "s", multiUser: "m" },
+      buildTools: () => ({}),
+      getOrCreateHistory: () => fakeHistory(),
+      trackSession: () => {},
+      registerCaptureCallback: () => {},
+      maybeCapture: async () => {},
+      processToolCorrections: async () => {},
+      logStep: () => {},
+      takeSurfacedDisplays: (k) => store.takeSurfaced(k),
+      discardSurfacedDisplays: (k) => store.discardSurfaced(k),
+      runTurnFn: async () => {
+        store.stash("sk", "https://catalog/?q=a%20b", "build", { show: true });
+        return "Here's the search.";
+      },
+    });
+
+    await runner(baseTurn({ sessionKey: "sk" }), sink);
+
+    expect(sink.finalized).toEqual(["Here's the search.\n\nhttps://catalog/?q=a%20b"]);
+  });
+
+  // A failed or cancelled turn never reached finalize, and what it marked to
+  // show (presented, or shown always) used to be appended to the next turn's
+  // answer instead.
+  for (const ending of ["failed", "cancelled"] as const) {
+    test(`a ${ending} turn's displays aren't appended to the next turn`, async () => {
+      const store = createDisplayStore();
+      const abort = new AbortController();
+      let first = true;
+      const runner = createTurnRunner({
+        model: {} as any,
+        systemPrompts: { singleUser: "s", multiUser: "m" },
+        buildTools: () => ({}),
+        getOrCreateHistory: () => fakeHistory(),
+        trackSession: () => {},
+        registerCaptureCallback: () => {},
+        maybeCapture: async () => {},
+        processToolCorrections: async () => {},
+        logStep: () => {},
+        takeSurfacedDisplays: (k) => store.takeSurfaced(k),
+        discardSurfacedDisplays: (k) => store.discardSurfaced(k),
+        runTurnFn: async () => {
+          if (!first) return "Second answer.";
+          first = false;
+          store.surface("sk", store.stash("sk", "list-a"));
+          store.stash("sk", "link-b", "", { show: true });
+          if (ending === "cancelled") abort.abort();
+          throw new Error("boom");
+        },
+      });
+
+      const turn = baseTurn({ sessionKey: "sk", ...(ending === "cancelled" ? { abortSignal: abort.signal } : {}) });
+      if (ending === "failed") await expect(runner(turn, baseSink())).rejects.toThrow("boom");
+      else await runner(turn, baseSink());
+      const sink = baseSink();
+      await runner(baseTurn({ sessionKey: "sk" }), sink);
+
+      expect(sink.finalized).toEqual(["Second answer."]);
+    });
+  }
 
   test("passes the turn's sessionKey to takeSurfacedDisplays", async () => {
     const sink = baseSink();

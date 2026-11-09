@@ -296,13 +296,20 @@ export type TurnRunnerDeps = {
   /** Test seam: runs `fn` once after `ms` unless the returned cancel is called first; defaults to `setTimeout`. */
   stallTimer?: (fn: () => void, ms: number) => () => void;
   /**
-   * Returns the display artifacts the model surfaced via `present` this turn
-   * (see `display-store.ts`), in stash order, to append after the model's
-   * text. Absent on an instance with no display store — nothing is appended.
+   * Returns the display artifacts surfaced this turn (see `display-store.ts`),
+   * by the model through `present` or shown always by the instance's rule, in
+   * stash order, to append after the model's text. Absent on an instance with no display store — nothing is appended.
    * The old unconditional splicing of every tool-produced display is gone:
    * an artifact is shown only when the model explicitly presented it.
    */
   takeSurfacedDisplays?: (sessionKey: string) => string[];
+  /**
+   * Drops what this turn marked to show (presented, or shown always) and no
+   * finalize took: called once every turn is over, so a failed or cancelled
+   * turn's displays aren't appended to the next one. A no-op after a
+   * finalize, which already took them.
+   */
+  discardSurfacedDisplays?: (sessionKey: string) => void;
   /**
    * Serialises everything that touches one session: this runner's turns and
    * whatever else the composition root runs on a session (the idle sweep).
@@ -650,8 +657,9 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
       }
       assistantText = correctedText;
 
-      // Append only what the model chose to `present` this turn — never the
-      // whole set of tool-produced displays. Appending (not replacing) keeps
+      // Append only what was surfaced this turn — what the model chose to
+      // `present`, and what the instance shows always — never the whole set
+      // of tool-produced displays. Appending (not replacing) keeps
       // the already-streamed prefix intact, so terminal.ts's safe-slice holds.
       surfacedDisplays = deps.takeSurfacedDisplays?.(turn.sessionKey) ?? [];
       const finalText = shownText(correctedText, surfacedDisplays);
@@ -683,6 +691,7 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
       watchdog.stop();
       stopHeartbeat();
       sink.dispose();
+      deps.discardSurfacedDisplays?.(turn.sessionKey);
       if (cancelled) await archiveInterrupted();
     }
 
