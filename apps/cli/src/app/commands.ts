@@ -51,6 +51,7 @@ export const IDENTITY_CLI = "node_modules/@mercury-fw/core/src/identity/links-cl
 export const RESET_TARGETS = {
   memory: { service: "qdrant", volume: "qdrant-data", what: "Layer-3 memory (every Qdrant collection)" },
   wiki: { service: SERVICE, volume: "wiki-vault", what: "the wiki vault (every note)" },
+  data: { service: SERVICE, volume: "mercury-data", what: "Mercury's own state (account links, profiles, plugins' data, traces)" },
 } as const;
 export type ResetTarget = keyof typeof RESET_TARGETS;
 

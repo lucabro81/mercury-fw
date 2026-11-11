@@ -249,9 +249,9 @@ Examples:
 
   program
     .command("reset")
-    .summary("deletes memory or the wiki, after confirmation")
+    .summary("deletes memory, the wiki or Mercury's state, after confirmation")
     .description(
-      "Deletes for good what the assistant remembers: memory is every Qdrant collection, wiki the whole vault. It asks you to type the app's name first (anything else deletes nothing), then brings the service back up empty.",
+      "Deletes for good what the assistant remembers: memory is every Qdrant collection, wiki the whole vault, data Mercury's own state (account links, profiles, plugins' data, traces). It asks you to type the app's name first (anything else deletes nothing), then brings the service back up empty.",
     )
     .addArgument(new Argument("<target>", "what to delete").choices(Object.keys(RESET_TARGETS)))
     .addHelpText("after", INSIDE_AN_APP)
