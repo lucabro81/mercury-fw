@@ -37,9 +37,10 @@ of its values from these variables; left empty, the model's own value applies.
 | `WIKI_VAULT_PATH` | **Required.** Where the wiki lives: in a scaffolded app, the Docker volume mounted at `/app/wiki-vault`. |
 | `MERCURY_DATA_PATH` | **Required.** Where the agent keeps its own state: the linked accounts, how each person wants to be called, the plugins' data, the traces. In a scaffolded app, the Docker volume mounted at `/app/data`. An agent that used to keep them in the wiki's `.mercury/` folder copies them here on its first start, and leaves the old folder where it is. |
 | `QDRANT_URL` | Qdrant, for the long-term memory (default `http://qdrant:6333`, the service the app's compose file starts). |
-
-The length of the memory's vectors comes from the embedding model, found when the agent starts: older `QDRANT_*_VECTOR_SIZE` variables aren't read anymore.
 | `SESSION_IDLE_TIMEOUT_MS` | How long a quiet conversation keeps its history in memory (default 30 minutes). |
 | `SESSION_RESUME_MAX_CHARS` | How many characters of a reopened conversation come back to the model (default `30000`; `0` turns resuming off). More gives the model more of the past, and makes every answer slower. |
+
+The length of the memory's vectors comes from the embedding model, found when the agent starts: older
+`QDRANT_*_VECTOR_SIZE` variables aren't read anymore.
 
 [Memory](../../concepts/memory/) explains what each of these is for.

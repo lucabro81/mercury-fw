@@ -10,7 +10,7 @@
 - **Breaking:** without `vectorIndex` there is no long-term memory: no conversation summaries, no corrections, no `recall_verbatim` (tool and prompt), idle conversations closed without a summary
 - new package `@mercury-fw/store-qdrant`: `qdrantIndex()`, Qdrant at `QDRANT_URL`, each space the collection of the same name or the one its `QDRANT_*_COLLECTION` names
 - the memory's vector length comes from the embedding model at startup; `QDRANT_*_VECTOR_SIZE` no longer read
-- `GET /memory/scroll` (HTTP) reads the index's spaces by name: `episodic_memory`, `semantic_facts`, `verbatim_archive`
+- `GET /memory/scroll` (HTTP) takes the index's space name (`episodic_memory`, `semantic_facts`, `verbatim_archive`), not the `QDRANT_*_COLLECTION` name; without `vectorIndex` it answers `400`
 - `system.start` trace event: `vectorIndex` (`declared`, `active`)
 - `mfw memory` runs the memory CLI of `@mercury-fw/store-qdrant`
 - `mfw create`: new apps declare `vectorIndex: qdrantIndex()` and depend on `@mercury-fw/store-qdrant`

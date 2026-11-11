@@ -590,7 +590,7 @@ paths:
         - name: collection
           in: query
           required: true
-          description: One of the collections kept per person (the verbatim archive, episodic memory, semantic facts), by its configured name.
+          description: One of the vector index's spaces kept per person, by name (`verbatim_archive`, `episodic_memory`, `semantic_facts`).
           schema:
             type: string
         - name: limit
@@ -618,7 +618,7 @@ paths:
               schema:
                 type: object
         "400":
-          description: Missing `?collection`, or one that isn't kept per person.
+          description: Missing `?collection`, one that isn't kept per person, or an agent with no vector index.
           content:
             application/json:
               schema:

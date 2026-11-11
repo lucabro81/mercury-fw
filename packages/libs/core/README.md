@@ -30,7 +30,7 @@ A scaffolded app's `src/index.ts` (the service) and `src/repl.ts` (the REPL) are
 | `OLLAMA_HOST` | The Ollama-compatible endpoint. Required. |
 | `OLLAMA_MODEL` | The chat model. Required. |
 | `OLLAMA_EMBEDDING_MODEL` | The embedding model for the memory found by meaning (default `nomic-embed-text`); its vectors' length sizes the vector index's spaces. |
-| `QDRANT_URL` | Qdrant, for the conversation archive and the titles (default `http://qdrant:6333`). The vector index reads its own settings: `@mercury-fw/store-qdrant` reads this one too. |
+| `QDRANT_URL` | Qdrant, for the conversation archive and the titles (default `http://qdrant:6333`, also when empty); the vector index (`@mercury-fw/store-qdrant`) reads the same variable. |
 | `WIKI_VAULT_PATH` | Where the wiki lives. Required. |
 | `MERCURY_DATA_PATH` | Where Mercury keeps its own state, on a volume of its own: account links, profiles, the plugins' data, traces and their secret. Required. On the first start with an empty folder, what an older instance kept in the vault's `.mercury/` is copied here; the original is left where it is. |
 | `TURN_STALL_TIMEOUT_MS` | How long a turn on a streaming channel (the HTTP surface) waits for the model's next token or step before it's stopped with an error, "the model sent nothing for N seconds" (default 120000, two minutes; `0` turns it off). A tool that takes long doesn't count: the wait pauses while a tool runs. Without it, a model server that stops sending mid-answer leaves the turn, and its conversation, hanging until the service restarts. |

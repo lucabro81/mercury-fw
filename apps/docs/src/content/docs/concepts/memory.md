@@ -57,5 +57,5 @@ Where the summaries go is the app's **vector index**, `vectorIndex` in its confi
 
 ## When something is missing
 
-Only the history is required. If Qdrant can't be reached, or the wiki is empty, the agent still answers, it just
+Only the history is required. Without a vector index there's no long-term memory at all; if Qdrant can't be reached, or the wiki is empty, the agent still answers, it just
 remembers less.

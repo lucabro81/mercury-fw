@@ -17,6 +17,7 @@ import en from "./locales/en.json";
 import it from "./locales/it.json";
 import pkg from "./package.json";
 import { jsonlTraces } from "@mercury-fw/trace-jsonl";
+import { qdrantIndex } from "@mercury-fw/store-qdrant";
 
 const name = "Hermes";
 
@@ -34,6 +35,7 @@ export default defineMercuryConfig({
   channels: [httpChannel],
   auth: oidcAuth,
   directory: staticDirectory,
+  vectorIndex: qdrantIndex(),
   access: { unknown: "refuse" },
   model: {
     think: envBoolean("OLLAMA_THINK", true),
@@ -192,6 +194,7 @@ Where the record of what the agent does goes, event by event, and how much each 
 
 ```ts
 import { jsonlTraces } from "@mercury-fw/trace-jsonl";
+import { qdrantIndex } from "@mercury-fw/store-qdrant";
 
 traces: { sink: jsonlTraces({ keepDays: 7 }), level: "meta" },
 ```
