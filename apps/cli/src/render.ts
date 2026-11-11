@@ -98,6 +98,18 @@ const CONFIG_HEADER = `/**
 /** The trace sink every new app declares, writing the traces to files in Mercury's data folder. */
 export const TRACE_SINK_PACKAGE = "@mercury-fw/trace-jsonl";
 
+/** The vector index every new app declares: Qdrant, the compose service. */
+export const VECTOR_INDEX_PACKAGE = "@mercury-fw/store-qdrant";
+
+/** The config's `vectorIndex` entry, with what it holds. */
+const VECTOR_INDEX_SECTION = [
+  "  // Where the memory is found by meaning (what past conversations were about,",
+  "  // what the agent learned about each person, the corrections to how a tool",
+  "  // is used, and searching past messages): Qdrant, the compose service.",
+  "  // Remove to keep no memory.",
+  "  vectorIndex: qdrantIndex(),",
+].join("\n");
+
 /** The config's `traces` entry, with what it records and where. */
 const TRACES_SECTION = [
   "  // What the agent does, as events in traces/ in Mercury's data folder:",
@@ -272,6 +284,7 @@ function renderConfig(
     imports.push(`import { ${c.exportName} } from "${c.package}";`);
   }
   imports.push(`import { jsonlTraces } from "${TRACE_SINK_PACKAGE}";`);
+  imports.push(`import { qdrantIndex } from "${VECTOR_INDEX_PACKAGE}";`);
 
   const helpers = withRules.map((t) => `${t.formatter?.helpers}\n\n`).join("");
 
@@ -294,6 +307,7 @@ function renderConfig(
     channelList,
     ...(auth ? [`  auth: ${auth.exportName},`] : []),
     ...(directory ? [`  directory: ${directory.exportName},`] : []),
+    VECTOR_INDEX_SECTION,
     MODEL_SECTION,
     "  i18n: { locales: { en } },",
     TRACES_SECTION,
@@ -337,7 +351,7 @@ function renderPackageJson(
   directory: CatalogEntry | undefined,
 ): string {
   const chosen = [...channels, ...(auth ? [auth] : []), ...tools, ...(directory ? [directory] : [])];
-  const packages = [...new Set(["@mercury-fw/core", TRACE_SINK_PACKAGE, ...chosen.flatMap(entryPackages)])];
+  const packages = [...new Set(["@mercury-fw/core", TRACE_SINK_PACKAGE, VECTOR_INDEX_PACKAGE, ...chosen.flatMap(entryPackages)])];
   if (tools.some((t) => t.formatter)) {
     packages.push("@mercury-fw/formatter");
   }
