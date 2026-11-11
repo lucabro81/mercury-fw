@@ -94,6 +94,7 @@ import { migrateMemoryToUserKeys, migrateVaultToUserAreas } from "./identity/mig
 import { runRawTriagePass, runIndexAndOrphanPass, runContradictionCheckPass } from "./wiki/self-review-runner.ts";
 import { startSelfReviewCron } from "./cron/self-review-cron.ts";
 import { loadTracer } from "./traces/trace-loader.ts";
+import type { Tracer } from "./traces/tracer.ts";
 import { withCompressionEvents } from "./traces/compression-events.ts";
 import { resolve as resolvePath } from "node:path";
 import { homedir } from "node:os";
@@ -133,6 +134,8 @@ export type ComposedApp = {
   ollamaModel: string;
   /** Starts the Layer-3 idle-capture and self-review crons; returns a single stopper for shutdown. */
   startCrons: () => Stoppable;
+  /** Where this instance's trace events go (#23): for the entrypoint's channel report (`loadChannels`) and to flush on shutdown. Records nothing without `traces` in the config. */
+  tracer: Tracer;
 };
 
 /** Reads a required env var, failing fast instead of silently defaulting. */
@@ -219,15 +222,18 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   // logged, and show as their keys.
   // The declared channels' texts too, those of the channels the loader will load.
   const i18n = instanceI18n({ ...loadedPlugins.messages, ...channelMessages(config.channels ?? []) }, config.i18n);
-  for (const line of i18n.report()) console.error(line);
+  const i18nReport = i18n.report();
+  for (const line of i18nReport) console.error(line);
   const texts = createTexts(i18n, (key) => profiles.languageOf(key));
 
+  const loadedDirectory = loadDirectory(config.directory, { env: process.env, log: (msg) => console.error(msg) });
   const people = createPeople({
     links: accountLinks,
-    directory: loadDirectory(config.directory, { env: process.env, log: (msg) => console.error(msg) }),
+    directory: loadedDirectory,
     ...(config.access?.unknown === undefined ? {} : { unknown: config.access.unknown }),
     texts,
     log: (msg) => console.error(msg),
+    emit: (event) => tracer.emit(event),
   });
 
   // Linking a second account to a person, by a code (see identity/linking.ts).
@@ -259,7 +265,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
 
   // People's pending logins to the plugins' services, finished by the channel
   // that receives the provider's redirect.
-  const personLogins = createPersonLogins({ log: (msg) => console.error(msg), assistantName, texts });
+  const personLogins = createPersonLogins({ log: (msg) => console.error(msg), emit: (event) => tracer.emit(event), assistantName, texts });
 
   const histories = new Map<string, SessionHistory>();
   /**
@@ -404,7 +410,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
       await ensureSemanticFactsCollection(qdrant, semanticFactsCollection, semanticFactsVectorSize);
       await ensureToolCorrectionsCollection(qdrant, toolCorrectionsCollection, toolCorrectionsVectorSize);
     },
-    { log: (msg) => console.error(`[memory] ${msg}`) },
+    { log: (msg) => console.error(`[memory] ${msg}`), emit: (event) => tracer.emit(event) },
   );
   // Memory written before the user key gets it, once Qdrant answers.
   void memoryReady.done.then(() =>
@@ -656,6 +662,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   // HTTP's optional in-process capabilities (resolveConfirmation, reads, the
   // declared auth provider and people's logins), which can't come from env; a channel that doesn't
   // need them ignores them.
+  const authenticate = loadAuth(config.auth, { env: process.env, log: (msg) => console.error(msg) });
   const channelRuntime: ChannelRuntimeContext = {
     env: process.env,
     log: (msg) => console.error(msg),
@@ -665,7 +672,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
     // The channel's own texts: the person's language when the core knows who
     // it is, else the hint's, else the default.
     i18n: requestTexts(texts, people.identify),
-    authenticate: loadAuth(config.auth, { env: process.env, log: (msg) => console.error(msg) }),
+    authenticate,
     // Every read but health is scoped to the caller (see identity/host-reads.ts).
     reads: createHostReads({
       identify: people.identify,
@@ -750,7 +757,24 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
     };
   }
 
+  // How this instance started, as one event: the same facts the startup log
+  // prints, structured, with why anything was left out.
+  const declaredAuth = config.auth === undefined ? [] : Array.isArray(config.auth) ? config.auth : [config.auth];
+  tracer.emit({
+    kind: "system.start",
+    framework: frameworkVersion(),
+    ...(appVersion === undefined ? {} : { app: appVersion }),
+    model: ollamaModel,
+    modelSettings: { ...(config.model ?? {}) },
+    plugins: { activated: loadedPlugins.activated, left: loadedPlugins.left },
+    auth: { declared: declaredAuth.map((a) => a.name), active: authenticate !== undefined },
+    directory: typeof loadedDirectory === "string" ? loadedDirectory : loadedDirectory.name,
+    i18n: i18nReport,
+    traceLevel: config.traces?.level ?? "meta",
+  });
+
   return {
+    tracer,
     handleTurn,
     channels: config.channels ?? [],
     channelRuntime,

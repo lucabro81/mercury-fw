@@ -73,6 +73,8 @@ export interface LoadedPlugins {
    * (the manifest), since a plugin's tool is opaque and there's no central
    * config map to infer activation from anymore. */
   activated: string[];
+  /** Every plugin that didn't activate, with why (the same reason the log gives), in the order they were left out. */
+  left: Array<{ name: string; reason: string }>;
 }
 
 /** Everything the loader needs from the composition root: the runtime
@@ -172,10 +174,17 @@ export async function loadPlugins(plugins: Plugin[], ctx: PluginLoadContext): Pr
   const postTurnGuards: PostTurnGuard[] = [];
   const messages: Messages = {};
 
+  const left: Array<{ name: string; reason: string }> = [];
+  /** Logs that `name` didn't activate and why, and keeps it for the startup report. */
+  const leaveOut = (name: string, reason: string, logged = `plugin "${name}" not activated: ${reason}`) => {
+    ctx.log(logged);
+    left.push({ name, reason });
+  };
+
   const { ordered, cyclic } = orderByDependencies(plugins);
   // A plugin caught in a cycle can't be ordered, so it can't load.
   for (const plugin of cyclic) {
-    ctx.log(`plugin "${plugin.name}" not activated: part of or depends on a dependency cycle`);
+    leaveOut(plugin.name, "part of or depends on a dependency cycle");
   }
 
   // Names that fully activated — a dependency must be in here for a dependent
@@ -189,10 +198,7 @@ export async function loadPlugins(plugins: Plugin[], ctx: PluginLoadContext): Pr
     // supports is possible. Refuse it fail-soft rather than run it against a
     // shape it may not match.
     if (plugin.apiVersion !== PLUGIN_API_VERSION) {
-      ctx.log(
-        `plugin "${plugin.name}" not activated: apiVersion ${plugin.apiVersion} ` +
-          `incompatible with this core (supports ${PLUGIN_API_VERSION})`,
-      );
+      leaveOut(plugin.name, `apiVersion ${plugin.apiVersion} incompatible with this core (supports ${PLUGIN_API_VERSION})`);
       continue;
     }
     // Every declared dependency must have fully activated first. Because we
@@ -202,22 +208,20 @@ export async function loadPlugins(plugins: Plugin[], ctx: PluginLoadContext): Pr
     // touching this plugin's own build, so a doomed plugin does no work.
     const missingDeps = (plugin.dependsOn ?? []).filter((dep) => !activated.has(dep));
     if (missingDeps.length > 0) {
-      ctx.log(
-        `plugin "${plugin.name}" not activated: dependency ${missingDeps.map((d) => `"${d}"`).join(", ")} absent or failed`,
-      );
+      leaveOut(plugin.name, `dependency ${missingDeps.map((d) => `"${d}"`).join(", ")} absent or failed`);
       continue;
     }
     // The type asks for it, but a plugin built without the types reaches the
     // loader anyway: the model would have nothing to say about it.
     if (typeof plugin.description !== "string" || plugin.description.trim() === "") {
-      ctx.log(`plugin "${plugin.name}" not activated: it has no description`);
+      leaveOut(plugin.name, "it has no description");
       continue;
     }
     // The prompt lists the plugins one per line: a line break inside would
     // split this one's entry.
     const description = plugin.description.trim();
     if (/[\r\n]/.test(description)) {
-      ctx.log(`plugin "${plugin.name}" not activated: its description isn't one line`);
+      leaveOut(plugin.name, "its description isn't one line");
       continue;
     }
     // A plugin's texts are its own: a key outside its name could shadow
@@ -225,7 +229,7 @@ export async function loadPlugins(plugins: Plugin[], ctx: PluginLoadContext): Pr
     // are taken.
     const textErrors = catalogErrors(plugin.name, plugin.messages ?? {});
     if (textErrors.length > 0) {
-      ctx.log(`plugin "${plugin.name}" not activated: ${textErrors.join("; ")}`);
+      leaveOut(plugin.name, textErrors.join("; "));
       continue;
     }
     try {
@@ -275,9 +279,10 @@ export async function loadPlugins(plugins: Plugin[], ctx: PluginLoadContext): Pr
       // anything that declared `dependsOn` on it.
       activated.add(plugin.name);
     } catch (err) {
-      ctx.log(`plugin "${plugin.name}" failed to load, skipped: ${err instanceof Error ? err.message : String(err)}`);
+      const message = err instanceof Error ? err.message : String(err);
+      leaveOut(plugin.name, `failed to load: ${message}`, `plugin "${plugin.name}" failed to load, skipped: ${message}`);
     }
   }
 
-  return { plugins: loaded, toolStatusDescribers, postTurnGuards, messages, activated: [...activated] };
+  return { plugins: loaded, toolStatusDescribers, postTurnGuards, messages, activated: [...activated], left };
 }

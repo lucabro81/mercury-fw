@@ -151,3 +151,32 @@ describe("channelMessages", () => {
     ).toEqual({ "http.a": "A" });
   });
 });
+
+// #23: which channels started, and which were left out and why, reach the traces.
+describe("loadChannels: the channels event", () => {
+  it("emits one system.channels event: the started ones, the inert ones, the left-out ones with their reason", () => {
+    const events: Array<Record<string, unknown>> = [];
+    loadChannels(
+      [
+        channel("http", () => fakeProvider()),
+        channel("google-chat", () => undefined),
+        channel("old", () => fakeProvider(), CHANNEL_API_VERSION - 1),
+        channel("broken", () => {
+          throw new Error("no credentials");
+        }),
+      ],
+      { runtime: runtimeWith([]), tracer: { emit: (e) => void events.push(e), flush: async () => {} } },
+    );
+    expect(events).toEqual([
+      {
+        kind: "system.channels",
+        started: ["http"],
+        inert: ["google-chat"],
+        left: [
+          { name: "old", reason: `apiVersion ${CHANNEL_API_VERSION - 1} incompatible with this core (supports ${CHANNEL_API_VERSION})` },
+          { name: "broken", reason: "failed to load: no credentials" },
+        ],
+      },
+    ]);
+  });
+});

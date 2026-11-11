@@ -88,6 +88,7 @@ export function bindConfirm(
         });
       } catch (err) {
         console.log(`[verbatim-archive] capture failed, confirmation unaffected: ${String(err instanceof Error ? err.message : err)}`);
+        emit?.({ kind: "system.error", area: "archive", session: sessionKey, person: key, args: { error: String(err instanceof Error ? err.message : err) } });
       }
     }
     return outcome;

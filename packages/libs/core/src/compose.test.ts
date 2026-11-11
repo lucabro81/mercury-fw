@@ -98,6 +98,31 @@ describe("composeMercury", () => {
     );
   });
 
+  // #23: the startup report reaches the traces, structured: what runs, what was left out and why.
+  it("reports how the instance started as a system.start event", async () => {
+    const events: Array<Record<string, unknown>> = [];
+    const sink = {
+      apiVersion: 1,
+      name: "collect",
+      build: () => ({ write: (e: Record<string, unknown>) => void events.push(e), flush: async () => {} }),
+    };
+    const old = { apiVersion: 0, name: "old", description: "an old plugin" };
+    const app = await composeMercury({ plugins: [old], model: { temperature: 0.2 }, version: "1.2.0", traces: { sink } });
+    await app.tracer.flush();
+    const start = events.find((e) => e.kind === "system.start");
+    expect(start).toMatchObject({
+      kind: "system.start",
+      framework: pkg.version,
+      app: "1.2.0",
+      model: "none",
+      modelSettings: { temperature: 0.2 },
+      plugins: { activated: [], left: [{ name: "old", reason: expect.stringContaining("apiVersion 0") }] },
+      auth: { declared: [], active: false },
+      directory: "none",
+      traceLevel: "meta",
+    });
+  });
+
   it("gives channels no app version when the config declares none, or an empty one", async () => {
     for (const config of [{ plugins: [] }, { plugins: [], version: "" }, { plugins: [], version: "  " }] satisfies MercuryConfig[]) {
       const app = await composeMercury(config);

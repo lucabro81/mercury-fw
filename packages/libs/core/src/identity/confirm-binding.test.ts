@@ -180,3 +180,23 @@ describe("bindConfirm: confirmation.resolved in the traces", () => {
     expect(events).toEqual([]);
   });
 });
+
+describe("bindConfirm: an archive failure in the traces", () => {
+  it("is a system.error with the session and the person, and the confirmation still resolves", async () => {
+    const store: ConfirmationStore = createConfirmationStore({ tokenFn: () => "tok1-aaaa" });
+    const events: Array<Record<string, unknown>> = [];
+    const bound = bindConfirm(
+      { store, vaultPath: "/nowhere", writeConfirmationNoteFn: async () => {}, onResume: () => {} },
+      asAlice,
+      undefined,
+      undefined,
+      async () => {
+        throw new Error("qdrant down");
+      },
+      (e) => void events.push(e),
+    );
+    const token = store.stage("s", "static:alice", { describe: "x", run: async () => ({ ok: true, data: null }) });
+    expect(await bound.confirm(token, "s", alice)).toEqual({ text: "Confirmed and done." });
+    expect(events.at(-1)).toEqual({ kind: "system.error", area: "archive", session: "s", person: "static:alice", args: { error: "qdrant down" } });
+  });
+});

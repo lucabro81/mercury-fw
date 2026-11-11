@@ -11,6 +11,7 @@
  * shown. In memory: a restart loses the pending logins, and the person just
  * asks again.
  */
+import type { TraceInput } from "../traces/tracer.ts";
 import type { LoginRequired, PersonLogin } from "@mercury-fw/plugin-types";
 import type { LoginOutcome } from "@mercury-fw/channel-types";
 import { DEFAULT_ASSISTANT_NAME } from "../session/assistant-name.ts";
@@ -34,10 +35,13 @@ export function createPersonLogins({
   log = (message: string) => console.error(message),
   assistantName = DEFAULT_ASSISTANT_NAME,
   texts = englishTexts(),
+  emit,
 }: {
   now?: () => number;
   ttlMs?: number;
   log?: (message: string) => void;
+  /** Where a login that couldn't start or finish goes, as a `system.error` (#23). */
+  emit?: (input: TraceInput) => void;
   assistantName?: string;
   /** The texts of the page the person lands on (`core.login.*`): in their language, or the default for a link nobody's. English when absent. */
   texts?: Texts;
@@ -57,6 +61,7 @@ export function createPersonLogins({
     const started = await login.start(personKey, url);
     if (!started.ok) {
       log(`[login] ${service} login of ${personKey} couldn't start: ${started.error}`);
+      emit?.({ kind: "system.error", area: "login", service, stage: "start", person: personKey, args: { error: started.error } });
       return { ok: false, error: `The user isn't logged in to ${service}, and their login couldn't start: ${started.error}` };
     }
     const result: LoginRequired = {
@@ -101,6 +106,7 @@ export function createPersonLogins({
       const done = await p.login.complete(p.personKey, code, state);
       if (done.ok) return { ok: true, service: p.service };
       log(`[login] ${p.service} login of ${p.personKey} failed: ${done.error}`);
+      emit?.({ kind: "system.error", area: "login", service: p.service, stage: "complete", person: p.personKey, args: { error: done.error } });
       return { ok: false, error: texts.forPerson(p.personKey).t("core.login.failed", { service: p.service, assistant: assistantName }) };
     },
   };

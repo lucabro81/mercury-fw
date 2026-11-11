@@ -314,3 +314,16 @@ describe("identify with account links", () => {
     expect(calls).toEqual(["google-chat:users/1", "google-chat:users/1"]);
   });
 });
+
+// #23: a directory that can't tell who someone is reaches the traces, the person pseudonymised by the tracer.
+describe("identify: a failing directory in the traces", () => {
+  test("is a system.error with the directory's name, the person's key and the error for args", async () => {
+    const events: Array<Record<string, unknown>> = [];
+    const { directory } = directoryOf({}, true);
+    const people = createPeople({ directory: { name: "people", directory }, log: () => {}, emit: (e) => void events.push(e) });
+    await people.identify(alice);
+    expect(events).toEqual([
+      { kind: "system.error", area: "directory", directory: "people", person: "static:alice", args: { error: "directory down" } },
+    ]);
+  });
+});

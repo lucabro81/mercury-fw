@@ -554,6 +554,7 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
         });
       } catch (err) {
         console.log(`[verbatim-archive] capture failed, turn unaffected: ${String(err instanceof Error ? err.message : err)}`);
+        emit({ kind: "system.error", area: "archive", args: { error: String(err instanceof Error ? err.message : err) } }, key);
       }
     }
 
@@ -789,6 +790,7 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
           console.log(
             `[verbatim-archive] capture failed, turn unaffected: ${String(err instanceof Error ? err.message : err)}`,
           );
+          emit({ kind: "system.error", area: "archive", args: { error: String(err instanceof Error ? err.message : err) } }, key);
         }
       }
     }

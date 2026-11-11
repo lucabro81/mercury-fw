@@ -3274,3 +3274,38 @@ describe("the turn id in the archive", () => {
     expect(events[0]!.turn).toBe("turn-7");
   });
 });
+
+// #23: an archive that failed to keep a turn reaches the traces, not only the log.
+describe("an archive failure in the traces", () => {
+  test("is a system.error under the turn's id, with the error for args", async () => {
+    const events: Array<Record<string, unknown>> = [];
+    const runner = createTurnRunner({
+      model: {} as any,
+      systemPrompts: { singleUser: "s", multiUser: "m" },
+      buildTools: () => ({}),
+      getOrCreateHistory: () => fakeHistory(),
+      trackSession: () => {},
+      registerCaptureCallback: () => {},
+      maybeCapture: async () => {},
+      processToolCorrections: async () => {},
+      logStep: () => {},
+      logTurnFn: () => {},
+      heartbeat: () => () => {},
+      tracer: { emit: (e) => void events.push(e), flush: async () => {} },
+      newTurnId: () => "turn-9",
+      captureVerbatim: async () => {
+        throw new Error("qdrant down");
+      },
+      runTurnFn: async () => "reply",
+    });
+    await runner(baseTurn({ principal: verified("u1") }), baseSink());
+    expect(events.find((e) => e.kind === "system.error")).toEqual({
+      kind: "system.error",
+      area: "archive",
+      turn: "turn-9",
+      session: "session-1",
+      person: "google-chat:u1",
+      args: { error: "qdrant down" },
+    });
+  });
+});

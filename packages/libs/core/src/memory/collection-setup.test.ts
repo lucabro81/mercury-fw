@@ -73,3 +73,23 @@ describe("setUpWhenReachable", () => {
     expect(calls).toBe(2);
   });
 });
+
+// #23: the memory store going missing and coming back reach the traces.
+describe("setUpWhenReachable: memory store events", () => {
+  it("emits an error when Qdrant goes missing and a recovery when it's back, once each", async () => {
+    const events: Array<Record<string, unknown>> = [];
+    let calls = 0;
+    const { done } = setUpWhenReachable(
+      async () => {
+        calls++;
+        if (calls < 3) throw new Error("ConnectionRefused");
+      },
+      { log: () => {}, retryMs: 1, emit: (e) => void events.push(e) },
+    );
+    await done;
+    expect(events).toEqual([
+      { kind: "system.error", area: "memory-store", args: { error: "Error: ConnectionRefused" } },
+      { kind: "system.recovered", area: "memory-store" },
+    ]);
+  });
+});
