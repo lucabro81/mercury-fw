@@ -90,6 +90,14 @@ describe("composeMercury", () => {
     );
   });
 
+  // #23: the trace level is a config choice; a value it can't be stops startup instead of tracing something else.
+  it("refuses to start on a trace level that isn't meta or args", async () => {
+    const sink = { apiVersion: 1, name: "none", build: () => ({ write: () => {}, flush: async () => {} }) };
+    await expect(composeMercury({ plugins: [], traces: { sink, level: "full" as "meta" } })).rejects.toThrow(
+      'traces.level must be "meta" or "args"',
+    );
+  });
+
   it("gives channels no app version when the config declares none, or an empty one", async () => {
     for (const config of [{ plugins: [] }, { plugins: [], version: "" }, { plugins: [], version: "  " }] satisfies MercuryConfig[]) {
       const app = await composeMercury(config);

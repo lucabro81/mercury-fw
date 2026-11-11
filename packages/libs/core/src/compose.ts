@@ -93,6 +93,7 @@ import { buildOfferedTools } from "./plugins/offered-tools.ts";
 import { migrateMemoryToUserKeys, migrateVaultToUserAreas } from "./identity/migrate-layout.ts";
 import { runRawTriagePass, runIndexAndOrphanPass, runContradictionCheckPass } from "./wiki/self-review-runner.ts";
 import { startSelfReviewCron } from "./cron/self-review-cron.ts";
+import { loadTracer } from "./traces/trace-loader.ts";
 import { resolve as resolvePath } from "node:path";
 import { homedir } from "node:os";
 import type { Tool } from "ai";
@@ -332,6 +333,13 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   await migrateVaultToUserAreas(wikiVaultPath, (msg) => console.error(`[wiki-vault] ${msg}`)).catch((err: unknown) =>
     console.error(`[wiki-vault] layout migration failed, Mercury starts anyway: ${String(err)}`),
   );
+  // Where the events of what this instance does go (#23): nowhere unless the config declares a sink.
+  const tracer = await loadTracer(config.traces, {
+    env: process.env,
+    log: (msg) => console.error(msg),
+    vaultPath: wikiVaultPath,
+    now: () => Date.now(),
+  });
 
   // Shared by the idle sweep (final capture + close) and by sessionCapture
   // (the two mid-conversation triggers, neither of which closes the session) —

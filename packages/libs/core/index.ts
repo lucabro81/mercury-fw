@@ -28,7 +28,8 @@
 export { composeMercury, type ComposedApp, type ConfirmDeps } from "./src/compose.ts";
 export { loadChannels, type LoadedChannel } from "./src/router/channel-loader.ts";
 export { createTerminalProvider } from "./src/router/terminal-provider.ts";
-export { defineMercuryConfig, type MercuryConfig, type MercuryAccess, type MercuryI18n, type MercuryModel } from "./src/config/define-config.ts";
+export { defineMercuryConfig, type MercuryConfig, type MercuryAccess, type MercuryI18n, type MercuryModel, type MercuryTraces } from "./src/config/define-config.ts";
+export { pseudonymOf, type TraceLevel } from "./src/traces/tracer.ts";
 export { envBoolean, envNumber } from "./src/config/env-value.ts";
 export type { Messages, Texts, Translate } from "./src/i18n/i18n.ts";
 export { DEFAULT_PERSONA_IDENTITY, DEFAULT_PERSONA_TONE, type Persona } from "./src/session/system-prompt.ts";

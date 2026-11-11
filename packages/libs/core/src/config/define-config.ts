@@ -15,6 +15,9 @@ import type { Plugin } from "@mercury-fw/plugin-types";
 import type { AuthPlugin, ChannelPlugin, DirectoryPlugin } from "@mercury-fw/channel-types";
 import type { Persona } from "../session/system-prompt.ts";
 import type { Messages } from "../i18n/i18n.ts";
+import type { MercuryTraces } from "../traces/trace-loader.ts";
+
+export type { MercuryTraces };
 
 /** Who may talk to the instance and what they may use, on top of the directory. */
 export type MercuryAccess = {
@@ -71,7 +74,8 @@ export type MercuryModel = {
  * the directory that tells the core who that is and their roles, who may
  * use what (`access`), the languages it speaks (`i18n`), the assistant's
  * persona (its identity and tone; the defaults when left out), how the main
- * model generates (`model`), plus the app's own version (`version`). */
+ * model generates (`model`), where the traces of what it does go (`traces`),
+ * plus the app's own version (`version`). */
 export type MercuryConfig = {
   plugins: Plugin[];
   model?: MercuryModel;
@@ -81,6 +85,8 @@ export type MercuryConfig = {
   access?: MercuryAccess;
   i18n?: MercuryI18n;
   persona?: Persona;
+  /** Where the events of what the instance does go (`sink`) and how much they carry (`level`: `meta`, the default, or `args`). Left out, nothing is recorded. */
+  traces?: MercuryTraces;
   /** The app's version, as its `package.json` has it (`version: pkg.version`), shown next to the framework's on the HTTP channel's `GET /version`. Shown as is, never changed by Mercury. Left out (or empty), nothing is shown. */
   version?: string;
 };
