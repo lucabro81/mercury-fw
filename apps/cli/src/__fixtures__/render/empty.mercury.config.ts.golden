@@ -45,7 +45,7 @@ export default defineMercuryConfig({
     topK: envNumber("OLLAMA_TOP_K"),
   },
   i18n: { locales: { en } },
-  // What the agent does, as events in .mercury/traces/ on the vault's volume:
+  // What the agent does, as events in traces/ in Mercury's data folder:
   // a file per day, the last 7 days with activity kept. "meta" records names,
   // outcomes and times; "args" also what the tools were given. Remove to record nothing.
   traces: { sink: jsonlTraces(), level: "meta" },
