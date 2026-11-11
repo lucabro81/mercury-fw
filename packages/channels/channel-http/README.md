@@ -4,7 +4,7 @@ Gives a [Mercury](https://github.com/lucabro81/mercury-fw) agent an HTTP surface
 
 On Mercury's documentation site: [its page](https://lucabro81.github.io/mercury-fw/plugins/channel-http/).
 
-This version is written for version 6 of the channel contract, the one that brings the channels' texts in the person's language, and needs the framework at 0.65 or later, the first whose core gives channels the app's version (`GET /version`); since 0.61 the core says when a resumed turn's answer is no longer available (`resume` below). A core with an older contract skips it, and the log says why.
+This version is written for version 7 of the channel contract, the one whose conversation and memory reads are there only when the agent keeps them, and needs the framework at 0.73 or later; since 0.61 the core says when a resumed turn's answer is no longer available (`resume` below). A core with an older contract skips it, and the log says why.
 
 ```bash
 bun add @mercury-fw/channel-http
@@ -99,7 +99,7 @@ Saves the caller's time zone, for a UI's settings: body `{ timeZone }`, an IANA 
 
 ## `PATCH /conversation`
 
-Renames one of the caller's conversations: `?id=<conversationId>`, body `{ title }`; returns `{ ok: true, title }` with the title as saved (trimmed). A title has at most 100 characters, on one line: an empty one, a longer one or one with a line break is `400` with the reason, as are a missing or malformed `id` and a body without `title`. `404` when no conversation of the caller's has that id: only a conversation with at least one turn in the archive can be renamed. Mercury never replaces a title the person chose. Not there on a core that can't rename conversations.
+Renames one of the caller's conversations: `?id=<conversationId>`, body `{ title }`; returns `{ ok: true, title }` with the title as saved (trimmed). A title has at most 100 characters, on one line: an empty one, a longer one or one with a line break is `400` with the reason, as are a missing or malformed `id` and a body without `title`. `404` when no conversation of the caller's has that id: only a conversation with at least one turn in the archive can be renamed. Mercury never replaces a title the person chose. Not there on an agent with no conversation store (`404`).
 
 ## `POST /confirm`
 
@@ -107,7 +107,7 @@ Explicit alternative to re-sending a token as `/turn` `text`. Body `{ token, con
 
 ## Read-only introspection
 
-All `GET`, all JSON, all reporting state already held in-process. They need an authenticated caller and show only what belongs to them: their conversations, confirmations, tool calls and memory, and the wiki as they see it (the team's `curated/` plus their own notes as `personal/`). Someone else's data doesn't exist as far as a caller can tell. `/manifest` lists what the caller is offered (a plugin acting as Mercury only for someone allowed to use it), and only `/health` is the same for everyone.
+All `GET`, all JSON, all reporting state already held in-process. `/conversation` and `/conversations` exist only on an agent with a conversation store, `/memory/scroll` only on one with a vector index: on any other they answer `404`, as an unknown route does. They need an authenticated caller and show only what belongs to them: their conversations, confirmations, tool calls and memory, and the wiki as they see it (the team's `curated/` plus their own notes as `personal/`). Someone else's data doesn't exist as far as a caller can tell. `/manifest` lists what the caller is offered (a plugin acting as Mercury only for someone allowed to use it), and only `/health` is the same for everyone.
 
 | endpoint | `data` on success |
 |---|---|
@@ -117,11 +117,11 @@ All `GET`, all JSON, all reporting state already held in-process. They need an a
 | `GET /confirmations` | `{ pending: [{ sessionKey, summary, expiresAt }] }` — your pending confirmations; tokens are deliberately never included |
 | `GET /me` | `{ name, language, timeZone }` — how you asked the assistant to call you, the language you asked it to use and the time zone you saved, `null` when you never said; `language` and `timeZone` are missing on a core that doesn't know them, and the route isn't there on a core older than this channel |
 | `GET /tool-log` | `{ entries: [...] }` — the tool calls of your recent turns |
-| `GET /health` | `{ uptimeSeconds, memory, qdrantReachable, ollamaReachable }` |
+| `GET /health` | `{ uptimeSeconds, memory, conversationStoreReachable, vectorIndexReachable, ollamaReachable }` — whether each answers, `null` for one the agent doesn't declare |
 | `GET /wiki/list` | `{ files: [...] }` — `curated/...` and `personal/...` paths |
 | `GET /wiki/read?path=<path>` | `{ content }` — a path as `/wiki/list` gives it; `400` if `path` is missing, `404` if it isn't among yours |
 | `GET /wiki/grep?pattern=<regex>` | `{ matches: [...] }` — `400` if `pattern` is missing |
-| `GET /memory/scroll?collection=<name>&limit=<n>&offset=<cursor>` | one page of your points in a space of the vector index kept per person (`verbatim_archive`, `episodic_memory`, `semantic_facts`), each with its whole payload (a verbatim answer's `displays` and `calls` included, and an interrupted answer's `interrupted: true` with the note the model gets in its `content`); `400` for any other, and for every one on an agent with no vector index |
+| `GET /memory/scroll?collection=<name>&limit=<n>&offset=<cursor>` | one page of your points in a space of the vector index kept per person (`verbatim_archive`, `episodic_memory`, `semantic_facts`), each with its whole payload (a verbatim answer's `displays` and `calls` included, and an interrupted answer's `interrupted: true` with the note the model gets in its `content`); `400` for any other |
 | `GET /openapi.yaml` | the OpenAPI document for this surface (`text/yaml`) |
 
 Conversation history and the conversation list are backed by the durable verbatim archive; they degrade to empty when the vector store is unreachable.

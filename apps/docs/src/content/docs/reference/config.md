@@ -17,7 +17,7 @@ import en from "./locales/en.json";
 import it from "./locales/it.json";
 import pkg from "./package.json";
 import { jsonlTraces } from "@mercury-fw/trace-jsonl";
-import { qdrantIndex } from "@mercury-fw/store-qdrant";
+import { qdrantConversations, qdrantIndex } from "@mercury-fw/store-qdrant";
 
 const name = "Hermes";
 
@@ -36,6 +36,7 @@ export default defineMercuryConfig({
   auth: oidcAuth,
   directory: staticDirectory,
   vectorIndex: qdrantIndex(),
+  conversationStore: qdrantConversations(),
   access: { unknown: "refuse" },
   model: {
     think: envBoolean("OLLAMA_THINK", true),
@@ -114,6 +115,20 @@ vectorIndex: qdrantIndex(),
 Left out, the agent keeps no long-term memory: it doesn't summarize conversations, doesn't learn corrections, and
 the model isn't offered the tool that searches past messages. An index that can't start leaves the agent the same
 way, said once in the log; an index that isn't answering yet only delays the memory until it does.
+
+## `conversationStore`
+
+Where every conversation is kept word for word, with its title: what a chat interface shows when it reopens a
+conversation and lists them. See [Memory](../../concepts/memory/#where-its-kept).
+
+```ts
+import { qdrantConversations } from "@mercury-fw/store-qdrant";
+
+conversationStore: qdrantConversations(),
+```
+
+Left out, nothing is archived: no conversation is reopened or listed, there are no titles, and the HTTP channel
+serves no conversation routes. A store that can't start leaves the agent the same way, said once in the log.
 
 ## `access`
 
