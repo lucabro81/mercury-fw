@@ -131,9 +131,14 @@ describe("jsonlTraces", () => {
   test("an event whose time can't be read goes to today's file instead of being lost", async () => {
     const dir = await tempDir();
     const sink = build(dir);
+    // Today before and after the write: a run across midnight UTC lands on one of the two.
+    const before = new Date().toISOString().slice(0, 10);
     sink.write(event("not a time"));
     await sink.flush();
-    expect(await dayFiles(dir)).toEqual([`${new Date().toISOString().slice(0, 10)}.jsonl`]);
+    const after = new Date().toISOString().slice(0, 10);
+    const files = await dayFiles(dir);
+    expect(files).toHaveLength(1);
+    expect([`${before}.jsonl`, `${after}.jsonl`]).toContain(files[0]!);
   });
 
   test("keepDays must be a whole number from 1 up: anything else is a mistake in the config", () => {
