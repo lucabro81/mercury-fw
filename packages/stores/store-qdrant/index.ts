@@ -148,4 +148,4 @@ export function qdrantIndex(): VectorIndexPlugin {
       createQdrantIndex(new QdrantClient({ url: env.QDRANT_URL || "http://qdrant:6333" }), env),
   };
 }
-export { createQdrantConversations, qdrantConversations, titlePointId, type QdrantConversationsClient } from "./conversations.ts";
+export { COPY_DONE_ID, createQdrantConversations, qdrantConversations, titlePointId, type QdrantConversationsClient } from "./conversations.ts";

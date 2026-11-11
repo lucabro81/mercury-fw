@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { CONVERSATION_STORE_API_VERSION } from "@mercury-fw/channel-types";
-import { createQdrantConversations, qdrantConversations, titlePointId, type QdrantConversationsClient } from "./conversations.ts";
+import { COPY_DONE_ID, createQdrantConversations, qdrantConversations, titlePointId, type QdrantConversationsClient } from "./conversations.ts";
 
 type Point = { id: string | number; vector?: number[]; payload: Record<string, unknown> };
 
@@ -19,7 +19,7 @@ function fakeQdrant(collections: Record<string, Point[]> = {}) {
       data.set(name, []);
     },
     createPayloadIndex: async (name, params) => void calls.push(["createPayloadIndex", name, params]),
-    count: async (name) => ({ count: data.get(name)?.length ?? 0 }),
+    retrieve: async (name, params) => (data.get(name) ?? []).filter((p) => params.ids.includes(String(p.id))),
     upsert: async (name, params) => {
       calls.push(["upsert", name, params]);
       const list = data.get(name)!;
@@ -71,6 +71,7 @@ describe("ready", () => {
       ["createCollection", "conversation_titles", { vectors: { size: 1, distance: "Dot" } }],
       ["createPayloadIndex", "conversation_titles", { field_name: "userId", field_schema: "keyword" }],
       ["createPayloadIndex", "conversation_titles", { field_name: "sessionKey", field_schema: "keyword" }],
+      ["upsert", "conversation_messages", { points: [{ id: COPY_DONE_ID, vector: [1], payload: { copiedFrom: "verbatim_archive" } }] }],
     ]);
   });
 
@@ -83,36 +84,52 @@ describe("ready", () => {
 
   // #379: the messages lived in the archive's collection, with their vectors;
   // the first start copies them, same ids, nothing embedded again.
-  test("copies the archive's points into the messages collection, by id, across pages, and says so", async () => {
+  test("copies the archive's points into the messages collection, by id, across pages, says so, and marks the copy done", async () => {
     const archive = Array.from({ length: 300 }, (_, i) => ({ id: `a${i}`, vector: [0.1, 0.2], payload: { userId: "u", n: i } }));
     const { client, data } = fakeQdrant({ verbatim_archive: archive });
     const logs: string[] = [];
     await createQdrantConversations(client, {}, (m) => logs.push(m)).ready();
     const copied = data.get("conversation_messages")!;
-    expect(copied).toHaveLength(300);
+    expect(copied.filter((p) => p.id !== COPY_DONE_ID)).toHaveLength(300);
     expect(copied[0]).toEqual({ id: "a0", vector: [1], payload: { userId: "u", n: 0 } });
+    expect(copied.find((p) => p.id === COPY_DONE_ID)).toEqual({ id: COPY_DONE_ID, vector: [1], payload: { copiedFrom: "verbatim_archive" } });
     expect(logs).toEqual(["copied 300 messages from verbatim_archive into conversation_messages"]);
   });
 
-  test("copies again only what's missing after a copy that stopped halfway, and never once the two match", async () => {
+  // Regression guard: a copy that stopped halfway, with new messages written
+  // since, must still copy the rest: only a finished copy is never done again.
+  test("copies everything again after a copy that stopped halfway, new messages or not, and never once marked done", async () => {
     const archive = [1, 2, 3].map((n) => ({ id: `a${n}`, payload: { n } }));
-    const { client, data } = fakeQdrant({ verbatim_archive: archive, conversation_messages: [{ id: "a1", vector: [1], payload: { n: 1 } }] });
+    const { client, data } = fakeQdrant({
+      verbatim_archive: archive,
+      conversation_messages: [
+        { id: "a1", vector: [1], payload: { n: 1 } },
+        { id: "new1", vector: [1], payload: { n: 10 } },
+        { id: "new2", vector: [1], payload: { n: 11 } },
+      ],
+    });
     const logs: string[] = [];
     const store = createQdrantConversations(client, {}, (m) => logs.push(m));
     await store.ready();
-    expect(data.get("conversation_messages")!.map((p) => p.id)).toEqual(["a1", "a2", "a3"]);
+    expect(data.get("conversation_messages")!.map((p) => p.id)).toEqual(["a1", "new1", "new2", "a2", "a3", COPY_DONE_ID]);
     await store.ready();
     expect(logs).toHaveLength(1);
   });
 
-  test("copies nothing without an archive, or from an archive QDRANT_VERBATIM_COLLECTION names", async () => {
-    const none = fakeQdrant();
-    await createQdrantConversations(none.client, {}, () => {}).ready();
-    expect(none.data.get("conversation_messages")).toEqual([]);
+  test("without an archive there's nothing to copy: the copy is marked done, and an archive made later isn't copied", async () => {
+    const { client, data, calls } = fakeQdrant();
+    const store = createQdrantConversations(client, {}, () => {});
+    await store.ready();
+    expect(data.get("conversation_messages")!.map((p) => p.id)).toEqual([COPY_DONE_ID]);
+    data.set("verbatim_archive", [{ id: "x", payload: { n: 1 } }]);
+    await store.ready();
+    expect(calls.some((c) => c[0] === "scroll" && c[1] === "verbatim_archive")).toBe(false);
+  });
 
+  test("copies from the archive QDRANT_VERBATIM_COLLECTION names", async () => {
     const named = fakeQdrant({ old_archive: [{ id: "x", payload: { n: 1 } }] });
     await createQdrantConversations(named.client, { QDRANT_VERBATIM_COLLECTION: "old_archive" }, () => {}).ready();
-    expect(named.data.get("conversation_messages")!.map((p) => p.id)).toEqual(["x"]);
+    expect(named.data.get("conversation_messages")!.map((p) => p.id)).toEqual(["x", COPY_DONE_ID]);
   });
 });
 

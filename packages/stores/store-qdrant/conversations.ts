@@ -13,9 +13,11 @@
  * Older versions kept the messages in the archive's collection,
  * `verbatim_archive` (`QDRANT_VERBATIM_COLLECTION`), with their vectors: it
  * stays, the vector index's space to search them in. `ready` copies its
- * points into the messages collection, same ids, as long as the messages
- * collection holds fewer points than it, so a copy that stopped halfway
- * resumes and a finished one isn't done again.
+ * points into the messages collection, same ids, and marks the copy done
+ * (`COPY_DONE_ID`) only once all of them are in: a copy that stopped halfway
+ * starts again (writing the same ids again changes nothing), a finished one
+ * is never done again, and on an instance with no archive there's nothing to
+ * copy, ever.
  */
 import { createHash } from "node:crypto";
 import { QdrantClient } from "@qdrant/js-client-rest";
@@ -36,7 +38,7 @@ export type QdrantConversationsClient = {
   getCollections(): Promise<{ collections: Array<{ name: string }> }>;
   createCollection(name: string, params: { vectors: { size: number; distance: "Dot" } }): Promise<unknown>;
   createPayloadIndex(name: string, params: { field_name: string; field_schema: "keyword" | "datetime" }): Promise<unknown>;
-  count(name: string, params: { exact: true }): Promise<{ count: number }>;
+  retrieve(name: string, params: { ids: string[]; with_payload: false }): Promise<Array<{ id: string | number }>>;
   upsert(name: string, params: { points: Array<{ id: string; vector: number[]; payload: Record<string, unknown> }> }): Promise<unknown>;
   scroll(
     name: string,
@@ -58,6 +60,12 @@ const PLACEHOLDER = [1];
 
 /** How many archive points a copy moves per page. */
 const COPY_PAGE = 256;
+
+/**
+ * The id of the point in the messages collection saying the archive's copy is
+ * done. It carries no `userId`, so no read of a person's messages ever sees it.
+ */
+export const COPY_DONE_ID = "00000000-0000-4000-8000-00000000c0de";
 
 /** The id of the point holding the title of `sessionKey` for `userId`: a name-based UUID (version 5 layout) of the two. */
 export function titlePointId(userId: string, sessionKey: string): string {
@@ -115,24 +123,27 @@ export function createQdrantConversations(
     for (const key of ordered) await client.createPayloadIndex(name, { field_name: key, field_schema: "datetime" });
   };
 
-  /** Copies the archive's points the messages collection lacks (see the module comment). */
+  /** Copies the archive's points into the messages collection, once (see the module comment). */
   const copyArchive = async (existing: string[]) => {
-    if (!existing.includes(archiveCollection)) return;
-    const archived = (await client.count(archiveCollection, { exact: true })).count;
-    if ((await client.count(messagesCollection, { exact: true })).count >= archived) return;
-    let offset: QdrantOffset;
-    let copied = 0;
-    do {
-      const page = await client.scroll(archiveCollection, { limit: COPY_PAGE, ...(offset == null ? {} : { offset }), with_payload: true });
-      if (page.points.length > 0) {
-        await client.upsert(messagesCollection, {
-          points: page.points.map((p) => ({ id: String(p.id), vector: PLACEHOLDER, payload: p.payload ?? {} })),
-        });
-      }
-      copied += page.points.length;
-      offset = page.next_page_offset;
-    } while (offset !== null && offset !== undefined);
-    log(`copied ${copied} messages from ${archiveCollection} into ${messagesCollection}`);
+    if ((await client.retrieve(messagesCollection, { ids: [COPY_DONE_ID], with_payload: false })).length > 0) return;
+    if (existing.includes(archiveCollection)) {
+      let offset: QdrantOffset;
+      let copied = 0;
+      do {
+        const page = await client.scroll(archiveCollection, { limit: COPY_PAGE, ...(offset == null ? {} : { offset }), with_payload: true });
+        if (page.points.length > 0) {
+          await client.upsert(messagesCollection, {
+            points: page.points.map((p) => ({ id: String(p.id), vector: PLACEHOLDER, payload: p.payload ?? {} })),
+          });
+        }
+        copied += page.points.length;
+        offset = page.next_page_offset;
+      } while (offset !== null && offset !== undefined);
+      if (copied > 0) log(`copied ${copied} messages from ${archiveCollection} into ${messagesCollection}`);
+    }
+    await client.upsert(messagesCollection, {
+      points: [{ id: COPY_DONE_ID, vector: PLACEHOLDER, payload: { copiedFrom: archiveCollection } }],
+    });
   };
 
   const filterOf = (userId: string, sessionKey?: string): QdrantFilter => ({

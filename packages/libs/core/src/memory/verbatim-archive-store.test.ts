@@ -60,6 +60,16 @@ describe("appendVerbatimMessage", () => {
     expect(embedded).toEqual(["come sta KAN-1?"]);
   });
 
+  // #379: the store is the record, the index derived from it: an index that
+  // fails keeps the message out of the search, never out of the archive.
+  it("keeps the message in the store when the index fails, and says the index failed", async () => {
+    const store = fakeConversationStore();
+    const index = fakeVectorIndex();
+    index.fail = new Error("index down");
+    await expect(appendVerbatimMessage(store, message, { index, embed: async () => [1] })).rejects.toThrow("index down");
+    expect(store.stored.map(({ id: _id, ...m }) => m)).toEqual([message]);
+  });
+
   // #379: without a vector index the archive still keeps what was said; nothing is embedded.
   it("without a search, keeps the message and embeds nothing", async () => {
     const { stored, embedded } = await appended({ ...message, role: "assistant", content: "KAN-1 è In Progress." }, false);
