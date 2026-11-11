@@ -2,7 +2,7 @@
  * Qdrant as Mercury's vector index and conversation store. `qdrantIndex()` is
  * what an app declares as `vectorIndex` in `mercury.config.ts`, and
  * `qdrantConversations()` (`./conversations.ts`) what it declares as
- * `conversationStore`. The index: Each space is a Qdrant collection of
+ * `conversationStore`. In the index each space is a Qdrant collection of
  * cosine vectors, its keyword fields and its ordered (datetime) fields
  * indexed, as the core's `ensure` asks. The core computes the vectors; this
  * package only stores and finds them.
