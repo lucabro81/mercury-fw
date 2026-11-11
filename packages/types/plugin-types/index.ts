@@ -188,8 +188,9 @@ export type PluginRuntimeContext = {
    */
   assistantName?: string;
   /**
-   * A folder for this plugin alone, on the vault's volume (so it survives a
-   * restart) and out of the wiki: `<vault>/.mercury/plugins/<name>/`, created
+   * A folder for this plugin alone, in Mercury's data folder (a volume of its
+   * own, so it survives a restart) and out of the wiki:
+   * `$MERCURY_DATA_PATH/plugins/<name>/`, created
    * by the core before `build()`. What goes inside is the plugin's business;
    * nothing in it reaches the model or the wiki. Two sessions may write at
    * once, so write a temporary file in the folder and rename it over the old

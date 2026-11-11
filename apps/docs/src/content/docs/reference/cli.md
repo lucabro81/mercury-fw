@@ -71,8 +71,8 @@ release of a plugin's command-line tool.
 
 ### `mfw stop`
 
-Stops the app and Qdrant and removes their containers (`docker compose down`). The volumes stay: memory, wiki and
-logins are there at the next start.
+Stops the app and Qdrant and removes their containers (`docker compose down`). The volumes stay: memory, wiki, the
+agent's own state and logins are there at the next start.
 
 ### `mfw restart [--no-cache]`
 
@@ -121,9 +121,9 @@ first where it can (20 by default). Both only read.
 
 ### `mfw reset <memory|wiki>`
 
-Deletes for good the long-term memory (every collection on Qdrant) or the whole wiki. It asks you to type the
-app's name first; anything else deletes nothing. Then it removes the volume and starts the service again on an empty
-one.
+Deletes for good the long-term memory (every collection on Qdrant) or the whole wiki; the linked accounts, the
+profiles and the traces live on a volume of their own and stay. It asks you to type the app's name first; anything
+else deletes nothing. Then it removes the volume and starts the service again on an empty one.
 
 ## People and logins
 

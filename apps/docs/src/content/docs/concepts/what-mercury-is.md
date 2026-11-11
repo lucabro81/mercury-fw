@@ -68,5 +68,5 @@ a broken configuration closes the agent, it never opens it.
 
 An app runs in Docker, on your laptop while you build it and on a server once people use it. `mfw start` builds
 and starts it, `mfw repl` opens a terminal on it, `mfw logs` shows what it's doing. Anything that must survive a
-restart (the wiki, the memory, the logins of the plugins' tools) lives on Docker volumes, never inside the
+restart (the wiki, the memory, the agent's own state, the logins of the plugins' tools) lives on Docker volumes, never inside the
 container.
