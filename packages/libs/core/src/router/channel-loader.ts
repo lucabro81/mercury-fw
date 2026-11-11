@@ -19,6 +19,7 @@
  */
 import { CHANNEL_API_VERSION, type ChannelPlugin, type ChannelRuntimeContext, type Provider } from "@mercury-fw/channel-types";
 import { catalogErrors, type Messages } from "../i18n/i18n.ts";
+import type { Tracer } from "../traces/tracer.ts";
 
 /** Whether the loader would build `channel`: its contract is this core's and its texts are its own. */
 function loadable(channel: ChannelPlugin): boolean {
@@ -33,6 +34,8 @@ export function channelMessages(channels: ChannelPlugin[]): Messages {
 /** Everything the loader needs from the composition root: the runtime context every `build()` gets. */
 export type LoadChannelsContext = {
   runtime: ChannelRuntimeContext;
+  /** Where the `system.channels` event goes (#23): the composed app's `tracer`. None when absent. */
+  tracer?: Tracer;
 };
 
 /** One built channel, kept with its plugin name so the composition root can start it and look it up (e.g. the cron `Notifier`). */
@@ -41,34 +44,39 @@ export type LoadedChannel = { name: string; provider: Provider };
 /** Builds every declared channel in `channels`, returning the providers that actually constructed (skipping incompatible, inert, or failed ones). */
 export function loadChannels(channels: ChannelPlugin[], ctx: LoadChannelsContext): LoadedChannel[] {
   const loaded: LoadedChannel[] = [];
+  const inert: string[] = [];
+  const left: Array<{ name: string; reason: string }> = [];
+  /** Logs that `name` didn't activate and why, and keeps it for the channels event. */
+  const leaveOut = (name: string, reason: string, logged = `channel "${name}" not activated: ${reason}`) => {
+    ctx.runtime.log(logged);
+    left.push({ name, reason });
+  };
 
   for (const channel of channels) {
     if (channel.apiVersion !== CHANNEL_API_VERSION) {
-      ctx.runtime.log(
-        `channel "${channel.name}" not activated: apiVersion ${channel.apiVersion} ` +
-          `incompatible with this core (supports ${CHANNEL_API_VERSION})`,
-      );
+      leaveOut(channel.name, `apiVersion ${channel.apiVersion} incompatible with this core (supports ${CHANNEL_API_VERSION})`);
       continue;
     }
     // A channel's texts are its own, as a plugin's are (see `catalogErrors`).
     const textErrors = catalogErrors(channel.name, channel.messages ?? {});
     if (textErrors.length > 0) {
-      ctx.runtime.log(`channel "${channel.name}" not activated: ${textErrors.join("; ")}`);
+      leaveOut(channel.name, textErrors.join("; "));
       continue;
     }
     try {
       const provider = channel.build(ctx.runtime);
       // undefined = present but inert (this instance isn't configured for it).
       if (provider === undefined) {
+        inert.push(channel.name);
         continue;
       }
       loaded.push({ name: channel.name, provider });
     } catch (err) {
-      ctx.runtime.log(
-        `channel "${channel.name}" failed to load, skipped: ${err instanceof Error ? err.message : String(err)}`,
-      );
+      const message = err instanceof Error ? err.message : String(err);
+      leaveOut(channel.name, `failed to load: ${message}`, `channel "${channel.name}" failed to load, skipped: ${message}`);
     }
   }
 
+  ctx.tracer?.emit({ kind: "system.channels", started: loaded.map((c) => c.name), inert, left });
   return loaded;
 }

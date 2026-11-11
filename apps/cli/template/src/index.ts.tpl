@@ -12,7 +12,7 @@ import mercuryConfig from "../mercury.config.ts";
 
 const app = await composeMercury(mercuryConfig);
 
-const loadedChannels: LoadedChannel[] = loadChannels(app.channels, { runtime: app.channelRuntime });
+const loadedChannels: LoadedChannel[] = loadChannels(app.channels, { runtime: app.channelRuntime, tracer: app.tracer });
 for (const { name, provider } of loadedChannels) {
   await provider.start(app.handleTurn);
   console.error(`[channel] ${name} started`);
@@ -34,6 +34,8 @@ async function shutdown(signal: string): Promise<void> {
     await provider.stop?.();
     console.error(`[shutdown] channel ${name} stopped`);
   }
+  // The last events written before the signal, stored before exiting.
+  await app.tracer.flush();
   process.exit(0);
 }
 process.on("SIGINT", () => void shutdown("SIGINT"));

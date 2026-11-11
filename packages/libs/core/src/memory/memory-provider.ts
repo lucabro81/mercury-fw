@@ -37,6 +37,8 @@ export type VerbatimExchange = {
   pendingNote?: string;
   /** How a staged action was resolved: the message is the reply the person got, empty when the turn resumed instead. */
   confirmation?: ArchivedConfirmation;
+  /** The id of the turn the message belongs to, as the turn's trace events carry it; absent outside a turn (a resolved confirmation). */
+  turnId?: string;
 };
 
 /** Per-turn identity a provider's recall tools are scoped to. `userId` is what makes recall cross-session. */

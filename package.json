@@ -33,6 +33,7 @@
     "packages/channels/*",
     "packages/auth/*",
     "packages/directories/*",
+    "packages/traces/*",
     "packages/tools/*",
     "packages/formatters/*",
     "packages/libs/*",

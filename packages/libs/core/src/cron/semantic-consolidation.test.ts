@@ -523,3 +523,37 @@ describe("defaultConfidenceForCount", () => {
     expect(defaultConfidenceForCount(5, 5)).toBe("high");
   });
 });
+
+// #23: what consolidation decided reaches the traces, so it has to say it.
+describe("the decision a consolidation reports", () => {
+  const INCUMBENT_OF_TWO = ["---", "type: inferred", "source: agent", "confidence: medium", "derived_from:", "  - a", "  - b", "last_reviewed: x", "---", "italiano", ""].join("\n");
+
+  it("written: the dominant value became the note", async () => {
+    const deps = baseDeps({ clusterFn: async () => [entry("italiano", "2026-07-20T09:00:00.000Z")] });
+    expect(await consolidateSemanticFact("google-chat:users/42", "preferred-language", deps)).toBe("written");
+  });
+
+  it("no-dominant: nothing to promote, an empty cluster or a tie", async () => {
+    expect(await consolidateSemanticFact("u", "preferred-language", baseDeps({ clusterFn: async () => [] }))).toBe("no-dominant");
+    const tie = baseDeps({ clusterFn: async () => [entry("italiano", "t1"), entry("english", "t2")] });
+    expect(await consolidateSemanticFact("u", "preferred-language", tie)).toBe("no-dominant");
+  });
+
+  it("kept-incumbent: the note already there has as much support or more", async () => {
+    const deps = baseDeps({ clusterFn: async () => [entry("english", "t1")], incumbent: INCUMBENT_OF_TWO });
+    expect(await consolidateSemanticFact("u", "preferred-language", deps)).toBe("kept-incumbent");
+  });
+
+  it("a tool correction reports the same three decisions", async () => {
+    const correction = (value: string, timestamp: string): ToolCorrectionEntry => ({ tool: "jira", topic: "jql", value, timestamp });
+    const deps = (cluster: ToolCorrectionEntry[], incumbent: string | null = null): ToolCorrectionConsolidationDeps => ({
+      vaultPath: VAULT,
+      clusterFn: async () => cluster,
+      writeNoteFn: fakeWriter(() => {}, incumbent) as ToolCorrectionConsolidationDeps["writeNoteFn"],
+      k: 1,
+    });
+    expect(await consolidateToolCorrection("jira", "jql", deps([correction("quote values", "t1")]))).toBe("written");
+    expect(await consolidateToolCorrection("jira", "jql", deps([]))).toBe("no-dominant");
+    expect(await consolidateToolCorrection("jira", "jql", deps([correction("quote values", "t1")], INCUMBENT_OF_TWO))).toBe("kept-incumbent");
+  });
+});

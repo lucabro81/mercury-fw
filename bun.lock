@@ -400,6 +400,18 @@
         "@mercury-fw/plugin-web-search": ">=0.0.0 <1.0.0",
       },
     },
+    "packages/traces/trace-jsonl": {
+      "name": "@mercury-fw/trace-jsonl",
+      "version": "0.71.0",
+      "dependencies": {
+        "@mercury-fw/channel-types": "workspace:*",
+      },
+      "devDependencies": {
+        "@mercury-fw/typescript-config": "*",
+        "@types/bun": "^1.4.2",
+        "typescript": "^6.0.3",
+      },
+    },
     "packages/types/channel-types": {
       "name": "@mercury-fw/channel-types",
       "version": "0.71.0",
@@ -707,6 +719,8 @@
     "@mercury-fw/plugin-web-search": ["@mercury-fw/plugin-web-search@workspace:packages/tools/plugin-web-search"],
 
     "@mercury-fw/plugin-zitadel": ["@mercury-fw/plugin-zitadel@workspace:packages/tools/plugin-zitadel"],
+
+    "@mercury-fw/trace-jsonl": ["@mercury-fw/trace-jsonl@workspace:packages/traces/trace-jsonl"],
 
     "@mercury-fw/typescript-config": ["@mercury-fw/typescript-config@workspace:packages/config/typescript-config"],
 

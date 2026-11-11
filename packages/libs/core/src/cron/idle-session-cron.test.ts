@@ -441,3 +441,127 @@ describe("startIdleSessionCron", () => {
     expect(summarizeCalls).toBe(1);
   });
 });
+
+// #23: every capture, what consolidation decided and every closed session reach the traces.
+describe("memory events", () => {
+  type Emitted = Record<string, unknown>;
+  const messages: Message[] = [
+    { role: "user", content: "hi" },
+    { role: "assistant", content: "hello" },
+  ];
+
+  it("a capture says what triggered it, how many messages and facts, how long it took; each fact says what consolidation decided", async () => {
+    const events: Emitted[] = [];
+    let clock = 0;
+    await captureSessionToMemory(
+      "static:alice",
+      "sk",
+      messages,
+      NOW,
+      {
+        summarize: async () => {
+          clock += 900;
+          return "ok";
+        },
+        store: async () => {},
+        extractFacts: async () => [
+          { topic: "role", value: "developer" },
+          { topic: "team", value: "platform" },
+        ],
+        storeFact: async () => {},
+        consolidateFact: async (_u, topic) => (topic === "role" ? "written" : "kept-incumbent"),
+        emit: (e) => void events.push(e),
+        clock: () => clock,
+      },
+      "threshold",
+    );
+    expect(events).toEqual([
+      { kind: "memory.consolidate", session: "sk", person: "static:alice", subject: "fact", topic: "role", decision: "written" },
+      { kind: "memory.consolidate", session: "sk", person: "static:alice", subject: "fact", topic: "team", decision: "kept-incumbent" },
+      { kind: "memory.capture", session: "sk", person: "static:alice", trigger: "threshold", messages: 2, facts: 2, durationMs: 900, outcome: "done" },
+    ]);
+  });
+
+  it("a capture that fails says so, with the error for the args level, and the failure still reaches the caller", async () => {
+    const events: Emitted[] = [];
+    await expect(
+      captureSessionToMemory(
+        "static:alice",
+        "sk",
+        messages,
+        NOW,
+        {
+          summarize: async () => "ok",
+          store: async () => {
+            throw new Error("qdrant unreachable");
+          },
+          emit: (e) => void events.push(e),
+          clock: () => 0,
+        },
+        "compress",
+      ),
+    ).rejects.toThrow("qdrant unreachable");
+    expect(events).toEqual([
+      { kind: "memory.capture", session: "sk", person: "static:alice", trigger: "compress", messages: 2, durationMs: 0, outcome: "failed", args: { error: "qdrant unreachable" } },
+    ]);
+  });
+
+  it("a fact whose consolidation throws is a failed decision, the others go on", async () => {
+    const events: Emitted[] = [];
+    await captureSessionToMemory("p", "sk", messages, NOW, {
+      summarize: async () => "ok",
+      store: async () => {},
+      extractFacts: async () => [{ topic: "role", value: "x" }],
+      storeFact: async () => {},
+      consolidateFact: async () => {
+        throw new Error("vault locked");
+      },
+      emit: (e) => void events.push(e),
+      log: () => {},
+      clock: () => 0,
+    });
+    expect(events[0]).toEqual({ kind: "memory.consolidate", session: "sk", person: "p", subject: "fact", topic: "role", decision: "failed", args: { error: "vault locked" } });
+    expect(events[1]).toMatchObject({ kind: "memory.capture", trigger: "idle", outcome: "done" });
+  });
+
+  it("the idle sweep closes a session after its capture, and says so", async () => {
+    const events: Emitted[] = [];
+    const scanner = createIdleSessionScanner();
+    scanner.touch("sk", NOW - TIMEOUT - 1);
+    await runIdleSessionSweep(scanner, NOW, TIMEOUT, {
+      getSession: () => ({ key: "sk", userId: "p", messages }),
+      closeSession: () => {},
+      summarize: async () => "ok",
+      store: async () => {},
+      emit: (e) => void events.push(e),
+      clock: () => 0,
+    });
+    expect(events.map((e) => [e.kind, e.trigger ?? null])).toEqual([
+      ["memory.capture", "idle"],
+      ["session.closed", null],
+    ]);
+    expect(events[1]).toEqual({ kind: "session.closed", session: "sk", person: "p", messages: 2 });
+  });
+});
+
+// #23, review: a failed fact extraction must be told apart from extraction not being configured.
+describe("memory events: a failed extraction", () => {
+  it("the capture is still done, and says the extraction failed, with the error for args", async () => {
+    const events: Array<Record<string, unknown>> = [];
+    await captureSessionToMemory("p", "sk", [{ role: "user", content: "hi" }], NOW, {
+      summarize: async () => "ok",
+      store: async () => {},
+      extractFacts: async () => {
+        throw new Error("model down");
+      },
+      storeFact: async () => {},
+      consolidateFact: async () => "written",
+      emit: (e) => void events.push(e),
+      log: () => {},
+      clock: () => 0,
+    });
+    expect(events).toEqual([
+      { kind: "memory.capture", session: "sk", person: "p", trigger: "idle", messages: 1, extraction: "failed", durationMs: 0, outcome: "done", args: { error: "model down" } },
+    ]);
+  });
+});

@@ -41,6 +41,7 @@ describe("appVersions", () => {
       "@mercury-fw/cli": pkg.version,
       "@mercury-fw/core": pkg.version,
       "@mercury-fw/formatter": pkg.version,
+      "@mercury-fw/trace-jsonl": pkg.version,
       "@mercury-fw/plugin-jira": "0.3.2",
       "@mercury-fw/channel-http": "0.1.4",
     });
@@ -63,6 +64,7 @@ describe("appVersions", () => {
       "@mercury-fw/cli": pkg.version,
       "@mercury-fw/core": "0.35.0-dev",
       "@mercury-fw/formatter": pkg.version,
+      "@mercury-fw/trace-jsonl": pkg.version,
       "@mercury-fw/plugin-jira": "0.3.2",
       "@mercury-fw/auth-static": "0.0.0",
     });

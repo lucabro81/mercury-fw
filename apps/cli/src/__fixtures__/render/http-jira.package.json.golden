@@ -17,7 +17,8 @@
     "@mercury-fw/channel-http": "^0.1.0",
     "@mercury-fw/core": "^0.1.0",
     "@mercury-fw/formatter": "^0.1.0",
-    "@mercury-fw/plugin-jira": "^0.1.0"
+    "@mercury-fw/plugin-jira": "^0.1.0",
+    "@mercury-fw/trace-jsonl": "^0.1.0"
   },
   "devDependencies": {
     "@mercury-fw/cli": "^0.1.0",

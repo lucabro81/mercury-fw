@@ -178,3 +178,51 @@ describe("createConversationTitler", () => {
     expect(saved).toEqual([{ userId: "u1", sessionKey: "u1:a", title: "Issue aperte" }]);
   });
 });
+
+// #23: each titling attempt says how it went in the traces.
+describe("createConversationTitler: title events", () => {
+  function traced(deps: Partial<Parameters<typeof createConversationTitler>[0]> = {}) {
+    const events: Array<Record<string, unknown>> = [];
+    const title = createConversationTitler({
+      model: MODEL,
+      generateTextFn: async () => ({ text: "Issue aperte" }),
+      readOpening: async () => [msg("user", "Quali issue ho aperte?")],
+      titleOf: async () => undefined,
+      setTitle: async () => {},
+      log: () => {},
+      emit: (e) => void events.push(e),
+      ...deps,
+    });
+    return { title, events };
+  }
+
+  it("generated, for the person and the conversation", async () => {
+    const { title, events } = traced();
+    await title("u1:a", "u1");
+    expect(events).toEqual([{ kind: "title", session: "u1:a", person: "u1", outcome: "generated" }]);
+  });
+
+  it("exists, when the conversation already had one", async () => {
+    const { title, events } = traced({ titleOf: async () => ({ title: "Mine", source: "person" }) as ConversationTitle });
+    await title("u1:a", "u1");
+    expect(events).toEqual([{ kind: "title", session: "u1:a", person: "u1", outcome: "exists" }]);
+  });
+
+  it("empty, when there was nothing to title from or the model gave nothing usable", async () => {
+    const nothing = traced({ readOpening: async () => [] });
+    await nothing.title("u1:a", "u1");
+    const blank = traced({ generateTextFn: async () => ({ text: '""' }) });
+    await blank.title("u1:a", "u1");
+    expect([nothing.events[0]?.outcome, blank.events[0]?.outcome]).toEqual(["empty", "empty"]);
+  });
+
+  it("failed, with the error for the args level", async () => {
+    const { title, events } = traced({
+      generateTextFn: async () => {
+        throw new Error("model down");
+      },
+    });
+    await title("u1:a", "u1");
+    expect(events).toEqual([{ kind: "title", session: "u1:a", person: "u1", outcome: "failed", args: { error: "model down" } }]);
+  });
+});

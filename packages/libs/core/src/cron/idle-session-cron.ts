@@ -11,6 +11,11 @@ import type { Message } from "../session/history.ts";
 import type { EpisodicSummary } from "../memory/episodic-store.ts";
 import type { SemanticFact } from "../session/semantic-fact-extractor.ts";
 import type { SemanticFactEntry } from "../memory/semantic-facts-store.ts";
+import type { ConsolidationDecision } from "./semantic-consolidation.ts";
+import type { TraceInput } from "../traces/tracer.ts";
+
+/** What made a capture happen: the idle sweep, the message-count threshold, a Layer-1 compression. */
+export type CaptureTrigger = "idle" | "threshold" | "compress";
 
 export type IdleSession = { key: string; userId: string; messages: Message[] };
 
@@ -38,8 +43,12 @@ export type CaptureDeps = {
    */
   extractFacts?: (messages: Message[]) => Promise<SemanticFact[]>;
   storeFact?: (entry: SemanticFactEntry) => Promise<void>;
-  consolidateFact?: (userId: string, topic: string) => Promise<void>;
+  consolidateFact?: (userId: string, topic: string) => Promise<ConsolidationDecision | void>;
   log?: (msg: string) => void;
+  /** Where the capture's events go (#23): `memory.capture`, `memory.consolidate`, and the sweep's `session.closed`. */
+  emit?: (input: TraceInput) => void;
+  /** Test seam for the capture's duration; defaults to `Date.now`. */
+  clock?: () => number;
 };
 
 /**
@@ -59,28 +68,66 @@ export async function captureSessionToMemory(
   messages: Message[],
   now: number,
   deps: CaptureDeps,
+  trigger: CaptureTrigger = "idle",
 ): Promise<void> {
   const log = deps.log ?? ((msg: string) => console.error(msg));
+  const clock = deps.clock ?? Date.now;
+  const startedAt = clock();
+  const emit = (input: TraceInput) => deps.emit?.({ ...input, session: sessionKey, person: userId });
 
-  const summary = await deps.summarize(messages);
   const timestamp = new Date(now).toISOString();
-  await deps.store({ userId, sessionKey, summary, timestamp });
+  try {
+    const summary = await deps.summarize(messages);
+    await deps.store({ userId, sessionKey, summary, timestamp });
+  } catch (err) {
+    emit({
+      kind: "memory.capture",
+      trigger,
+      messages: messages.length,
+      durationMs: clock() - startedAt,
+      outcome: "failed",
+      args: { error: err instanceof Error ? err.message : String(err) },
+    });
+    throw err;
+  }
 
+  let factCount: number | undefined;
+  let extractionError: string | undefined;
   if (deps.extractFacts && deps.storeFact && deps.consolidateFact) {
     try {
       const facts = await deps.extractFacts(messages);
+      factCount = facts.length;
       for (const fact of facts) {
         try {
           await deps.storeFact({ userId, topic: fact.topic, value: fact.value, timestamp });
-          await deps.consolidateFact(userId, fact.topic);
+          const decision = await deps.consolidateFact(userId, fact.topic);
+          if (decision !== undefined) emit({ kind: "memory.consolidate", subject: "fact", topic: fact.topic, decision });
         } catch (err) {
           log(`semantic fact consolidation failed for ${sessionKey}/${fact.topic}: ${String(err)}`);
+          emit({
+            kind: "memory.consolidate",
+            subject: "fact",
+            topic: fact.topic,
+            decision: "failed",
+            args: { error: err instanceof Error ? err.message : String(err) },
+          });
         }
       }
     } catch (err) {
       log(`semantic fact extraction failed for ${sessionKey}: ${String(err)}`);
+      extractionError = err instanceof Error ? err.message : String(err);
     }
   }
+  emit({
+    kind: "memory.capture",
+    trigger,
+    messages: messages.length,
+    ...(factCount === undefined ? {} : { facts: factCount }),
+    ...(extractionError === undefined ? {} : { extraction: "failed" }),
+    durationMs: clock() - startedAt,
+    outcome: "done",
+    ...(extractionError === undefined ? {} : { args: { error: extractionError } }),
+  });
 }
 
 export type IdleSessionSweepDeps = CaptureDeps & {
@@ -125,10 +172,11 @@ export async function runIdleSessionSweep(
           return;
         }
 
-        await captureSessionToMemory(session.userId, key, session.messages, now, deps);
+        await captureSessionToMemory(session.userId, key, session.messages, now, deps, "idle");
 
         deps.closeSession(key);
         scanner.clear(key);
+        deps.emit?.({ kind: "session.closed", session: key, person: session.userId, messages: session.messages.length });
       });
     } catch (err) {
       log(`idle session sweep failed for ${key}: ${String(err)}`);

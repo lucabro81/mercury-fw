@@ -141,3 +141,62 @@ describe("bindConfirm: how a confirmation was resolved, in the archive", () => {
     expect(await bound.confirm(token, "s", alice)).toEqual({ text: "Confirmed and done." });
   });
 });
+
+// #23: how each staged action was resolved also reaches the traces, by id, never by token.
+describe("bindConfirm: confirmation.resolved in the traces", () => {
+  function traced() {
+    let n = 0;
+    const store: ConfirmationStore = createConfirmationStore({ tokenFn: () => `tok${++n}-aaaa` });
+    const events: Array<Record<string, unknown>> = [];
+    const bound = bindConfirm(
+      { store, vaultPath: "/nowhere", writeConfirmationNoteFn: async () => {}, onResume: () => {} },
+      asAlice,
+      undefined,
+      undefined,
+      undefined,
+      (e) => void events.push(e),
+    );
+    return { store, bound, events };
+  }
+
+  it("a pasted token that ran: its id, its status, the person and the session", async () => {
+    const { store, bound, events } = traced();
+    const token = store.stage("s", "static:alice", { describe: "x", run: async () => ({ ok: true, data: null }) });
+    await bound.confirm(token, "s", alice);
+    expect(events).toEqual([{ kind: "confirmation.resolved", confirmationId: confirmationId(token), status: "ok", session: "s", person: "static:alice" }]);
+    expect(JSON.stringify(events)).not.toContain(token);
+  });
+
+  it("a choice clicked on a card names its status the same way, and one that failed says failed", async () => {
+    const { store, bound, events } = traced();
+    const failing = store.stage("s", "static:alice", { describe: "x", run: async () => ({ ok: false, error: "boom" }) });
+    await bound.resolveConfirmation(failing, "s", alice);
+    expect(events).toEqual([{ kind: "confirmation.resolved", confirmationId: confirmationId(failing), status: "failed", session: "s", person: "static:alice" }]);
+  });
+
+  it("a token nobody staged resolves nothing and leaves no event", async () => {
+    const { bound, events } = traced();
+    await bound.confirm("zzzz-zzzz", "s", alice);
+    expect(events).toEqual([]);
+  });
+});
+
+describe("bindConfirm: an archive failure in the traces", () => {
+  it("is a system.error with the session and the person, and the confirmation still resolves", async () => {
+    const store: ConfirmationStore = createConfirmationStore({ tokenFn: () => "tok1-aaaa" });
+    const events: Array<Record<string, unknown>> = [];
+    const bound = bindConfirm(
+      { store, vaultPath: "/nowhere", writeConfirmationNoteFn: async () => {}, onResume: () => {} },
+      asAlice,
+      undefined,
+      undefined,
+      async () => {
+        throw new Error("qdrant down");
+      },
+      (e) => void events.push(e),
+    );
+    const token = store.stage("s", "static:alice", { describe: "x", run: async () => ({ ok: true, data: null }) });
+    expect(await bound.confirm(token, "s", alice)).toEqual({ text: "Confirmed and done." });
+    expect(events.at(-1)).toEqual({ kind: "system.error", area: "archive", session: "s", person: "static:alice", args: { error: "qdrant down" } });
+  });
+});

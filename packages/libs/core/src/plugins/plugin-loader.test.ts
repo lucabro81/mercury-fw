@@ -486,3 +486,35 @@ describe("loadPlugins: a plugin that acts as no one", () => {
     expect(logs).toEqual([]);
   });
 });
+
+// #23: the startup report in the traces says which plugins were left out, and why.
+describe("loadPlugins: what was left out, and why", () => {
+  it("every plugin that didn't activate is listed with the reason the log gives", async () => {
+    const loaded = await loadPlugins(
+      [
+        plug({ name: "ok" }),
+        plug({ name: "old", apiVersion: PLUGIN_API_VERSION - 1 }),
+        plug({ name: "mute", description: "" }),
+        plug({ name: "needy", dependsOn: ["missing"] }),
+        plug({
+          name: "broken",
+          build: () => {
+            throw new Error("no CLI binary");
+          },
+        }),
+      ],
+      baseCtx(),
+    );
+    expect(loaded.activated).toEqual(["ok"]);
+    expect(loaded.left).toEqual([
+      { name: "old", reason: `apiVersion ${PLUGIN_API_VERSION - 1} incompatible with this core (supports ${PLUGIN_API_VERSION})` },
+      { name: "mute", reason: "it has no description" },
+      { name: "needy", reason: 'dependency "missing" absent or failed' },
+      { name: "broken", reason: "failed to load: no CLI binary" },
+    ]);
+  });
+
+  it("nothing left out, an empty list", async () => {
+    expect((await loadPlugins([plug({ name: "ok" })], baseCtx())).left).toEqual([]);
+  });
+});

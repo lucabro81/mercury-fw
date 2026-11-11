@@ -23,6 +23,7 @@
  * are swept once the cache grows, so an open instance's many visitors don't
  * pile up.
  */
+import type { TraceInput } from "../traces/tracer.ts";
 import type { Admission, Directory, Principal } from "@mercury-fw/channel-types";
 import { userKey } from "./user-key.ts";
 import type { LinkStore } from "./links.ts";
@@ -60,6 +61,8 @@ export type PeopleOptions = {
   ttlMs?: number;
   now?: () => number;
   log?: (msg: string) => void;
+  /** Where a directory failure goes, as a `system.error` (#23). */
+  emit?: (input: TraceInput) => void;
 };
 
 /** Builds `identify` (and its `admit` view) over the declared directory. */
@@ -121,6 +124,7 @@ export function createPeople(opts: PeopleOptions) {
   /** Logs a directory failure and refuses as unavailable. */
   const failed = (name: string, key: string) => (err: unknown): Identified => {
     log(`[identity] directory "${name}" couldn't identify ${key}, refused: ${err instanceof Error ? err.message : String(err)}`);
+    opts.emit?.({ kind: "system.error", area: "directory", directory: name, person: key, args: { error: err instanceof Error ? err.message : String(err) } });
     return unavailable;
   };
 

@@ -166,7 +166,7 @@ mercury/                       # repo root
 ├── packages/                  # grouped into per-role buckets; every workspace is @mercury-fw/*
 │   ├── types/
 │   │   ├── plugin-types/          # the shared Plugin contract (tools, version 6) — types + apiVersion + skill/status helpers + the texts a person sees (`Messages`, `Params`, `Translate`), imported by core and plugins
-│   │   └── channel-types/         # the shared ChannelPlugin contract (channels, version 6) — Provider/TurnSink + confirm helpers + the channel's texts (`messages`, `ctx.i18n`, `languageHint`, `FinalizeInfo.pendingNote`) + the turn's `timeZoneHint` and the person's settings (`ctx.settings`) + renaming the person's conversations (`ctx.conversations`), imported by core and channels
+│   │   └── channel-types/         # the shared ChannelPlugin contract (channels, version 6) — Provider/TurnSink + confirm helpers + the channel's texts (`messages`, `ctx.i18n`, `languageHint`, `FinalizeInfo.pendingNote`) + the turn's `timeZoneHint` and the person's settings (`ctx.settings`) + renaming the person's conversations (`ctx.conversations`) + the providers declared beside the channels (`AuthPlugin`, `DirectoryPlugin`, `TraceSinkPlugin`), imported by core and channels
 │   ├── channels/
 │   │   ├── channel-google-chat/   # Google Chat channel plugin: the registered-app transport (Pub/Sub + REST), loaded by the channel loader
 │   │   └── channel-http/          # HTTP channel plugin: the opt-in conversational HTTP surface (SSE /turn, /confirm, read routes, PATCH /me, PATCH /conversation, OpenAPI) for a custom UI; needs an auth provider
@@ -185,6 +185,8 @@ mercury/                       # repo root
 │   │   └── plugin-zitadel/        # ZITADEL plugin: allowlist + pinned CLI binary (read-only, as the person), plus ZITADEL as the user directory (zitadelDirectory: OIDC subjects, project roles, via the CLI's service user)
 │   ├── formatters/
 │   │   └── formatter/             # @mercury-fw/formatter — applies an instance's per-kind rules to the lists a data plugin emits (formatterPlugin + formatter); holds no format of its own
+│   ├── traces/
+│   │   └── trace-jsonl/           # @mercury-fw/trace-jsonl — the default trace sink: a JSONL file per day on the vault's volume, the last days with activity kept; in the framework's fixed group, what `mfw create` declares
 │   ├── libs/
 │   │   ├── core/                 # @mercury-fw/core — the framework runtime: composeMercury + loaders + engines wiring + turn pipeline. See its own tree below
 │   │   ├── kit/                  # @mercury-fw/kit — the plugin-authoring facade: re-exports plugin-types + channel-types (the future SDK #27 lands here). Apps consume core; authors consume kit
@@ -233,6 +235,7 @@ packages/libs/core/
     ├── credentials/           # at startup, links each plugin-declared CLI login kept outside ~/.config to the credentials volume, and reports one not set up yet
     ├── memory/                # Layer 3 — episodic store (Qdrant), the verbatim archive, the conversation titles (conversation-titles-store.ts)
     ├── wiki/                  # Layer 2 — vault init/read/write (common `curated/` + per-person `users/<key>/`) + vault-cli.ts (maintenance CLI, see Operational notes)
+    ├── traces/                # the events of what the instance does (#23): the tracer, the one place an event is cut to the instance's level and its person and session pseudonymised (tracer.ts), the secret the pseudonyms come from (trace-secret.ts, on the vault's volume), the declared sink's loader, what a model step and a compression become as events
     └── cron/                  # idle-session scanner
 ```
 
@@ -240,7 +243,7 @@ packages/libs/core/
 
 SemVer via [Changesets](https://github.com/changesets/changesets); every package's `CHANGELOG.md` is public, same audience as the READMEs.
 
-- **The framework moves in lockstep**: the Changesets `fixed` group (`.changeset/config.json`) holds core, the contracts, kit, cli-engine, confirm-engine, utils, formatter, the CLI and `create-mercury-agent`, so they always share one version, tagged `vX.Y.Z`. **Plugins, channels and auth providers are versioned on their own** (tagged `<name>@<version>`): their `@mercury-fw/*` dependencies are `peerDependencies` from the framework version that brings the contract they're written for to the end of the `0.x` line (`>=0.54.0 <1.0.0`, the lower bound raised when a contract they build on changes; `workspace:*` as devDependencies for local development), and the real compatibility gate is `apiVersion`, checked at load time. The reference app `mercury` is private and outside the group.
+- **The framework moves in lockstep**: the Changesets `fixed` group (`.changeset/config.json`) holds core, the contracts, kit, cli-engine, confirm-engine, utils, formatter, trace-jsonl, the CLI and `create-mercury-agent`, so they always share one version, tagged `vX.Y.Z`. **Plugins, channels and auth providers are versioned on their own** (tagged `<name>@<version>`): their `@mercury-fw/*` dependencies are `peerDependencies` from the framework version that brings the contract they're written for to the end of the `0.x` line (`>=0.54.0 <1.0.0`, the lower bound raised when a contract they build on changes; `workspace:*` as devDependencies for local development), and the real compatibility gate is `apiVersion`, checked at load time. The reference app `mercury` is private and outside the group.
 - Everything follows the latest minor of its current major: caret ranges for npm dependencies (refreshed with `bun update`, never `--latest`), `bun-version: "1.x"` and `node-version: "24"` in CI, actions on their major tag, images on their major tag (`oven/bun:1`, `qdrant/qdrant:v1`). `devEngines` asks for Bun `^1.4.2` because Turbo refuses a `devEngines.packageManager` without a version. A major upgrade is never part of that: each one gets its own issue, its changelog read and its own verification. An exact pin only once an update breaks something, with the reason next to it.
 - No exact pins on external dependencies: caret ranges, and `bun.lock` is what makes the repo reproducible. A published package with a pinned dependency can't share it with the rest of the app (that's how two `@ai-sdk/provider` copies broke a scaffolded app's typecheck).
 - Every relevant change gets a changeset: `bun run changeset`, naming the packages it actually touches. Changeset descriptions are public text: no `D-XX`/`S-XX`/milestone references, no internal-only context. They are telegraphic: one bullet per change, only what is different for whoever uses the package, no how or why, as `.claude/skills/create-changeset/SKILL.md` describes.

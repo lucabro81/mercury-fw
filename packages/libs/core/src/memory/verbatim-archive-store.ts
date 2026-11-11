@@ -62,7 +62,9 @@ export async function ensureVerbatimCollection(
  * core's stand-in sentence `content` begins with when the turn only staged an
  * action: both for the person, never for the model. `confirmation` marks the
  * message that says how a staged action was resolved, outside any turn: it
- * never goes back to the model either.
+ * never goes back to the model either. `turnId` is the id the turn's trace
+ * events carry, absent on messages archived before it was kept and outside a
+ * turn.
  */
 export type VerbatimMessage = {
   userId: string;
@@ -75,6 +77,7 @@ export type VerbatimMessage = {
   trace?: TraceEntry[];
   pendingNote?: string;
   confirmation?: ArchivedConfirmation;
+  turnId?: string;
   timestamp: string;
 };
 

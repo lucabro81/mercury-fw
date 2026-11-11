@@ -93,6 +93,9 @@ import { buildOfferedTools } from "./plugins/offered-tools.ts";
 import { migrateMemoryToUserKeys, migrateVaultToUserAreas } from "./identity/migrate-layout.ts";
 import { runRawTriagePass, runIndexAndOrphanPass, runContradictionCheckPass } from "./wiki/self-review-runner.ts";
 import { startSelfReviewCron } from "./cron/self-review-cron.ts";
+import { loadTracer } from "./traces/trace-loader.ts";
+import type { Tracer } from "./traces/tracer.ts";
+import { withCompressionEvents } from "./traces/compression-events.ts";
 import { resolve as resolvePath } from "node:path";
 import { homedir } from "node:os";
 import type { Tool } from "ai";
@@ -131,6 +134,8 @@ export type ComposedApp = {
   ollamaModel: string;
   /** Starts the Layer-3 idle-capture and self-review crons; returns a single stopper for shutdown. */
   startCrons: () => Stoppable;
+  /** Where this instance's trace events go (#23): for the entrypoint's channel report (`loadChannels`) and to flush on shutdown. Records nothing without `traces` in the config. */
+  tracer: Tracer;
 };
 
 /** Reads a required env var, failing fast instead of silently defaulting. */
@@ -181,10 +186,15 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
 
   // A plugin's CLI that keeps its login in a folder finds it in place before
   // the plugin loads: on the credentials volume, linked when it's kept elsewhere.
+  // What it reported, also for the startup event: a login not set up yet, a link it couldn't make.
+  const credentialsReport: string[] = [];
   await materializeCliCredentials({
     appDir: process.cwd(),
     homeDir: homedir(),
-    log: (msg) => console.error(msg),
+    log: (msg) => {
+      console.error(msg);
+      credentialsReport.push(msg);
+    },
   });
 
   const loadedPlugins = await loadPlugins(plugins, {
@@ -217,15 +227,18 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   // logged, and show as their keys.
   // The declared channels' texts too, those of the channels the loader will load.
   const i18n = instanceI18n({ ...loadedPlugins.messages, ...channelMessages(config.channels ?? []) }, config.i18n);
-  for (const line of i18n.report()) console.error(line);
+  const i18nReport = i18n.report();
+  for (const line of i18nReport) console.error(line);
   const texts = createTexts(i18n, (key) => profiles.languageOf(key));
 
+  const loadedDirectory = loadDirectory(config.directory, { env: process.env, log: (msg) => console.error(msg) });
   const people = createPeople({
     links: accountLinks,
-    directory: loadDirectory(config.directory, { env: process.env, log: (msg) => console.error(msg) }),
+    directory: loadedDirectory,
     ...(config.access?.unknown === undefined ? {} : { unknown: config.access.unknown }),
     texts,
     log: (msg) => console.error(msg),
+    emit: (event) => tracer.emit(event),
   });
 
   // Linking a second account to a person, by a code (see identity/linking.ts).
@@ -257,7 +270,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
 
   // People's pending logins to the plugins' services, finished by the channel
   // that receives the provider's redirect.
-  const personLogins = createPersonLogins({ log: (msg) => console.error(msg), assistantName, texts });
+  const personLogins = createPersonLogins({ log: (msg) => console.error(msg), emit: (event) => tracer.emit(event), assistantName, texts });
 
   const histories = new Map<string, SessionHistory>();
   /**
@@ -270,7 +283,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
     let history = histories.get(key);
     if (!history) {
       history = createSessionHistory(
-        summarize,
+        withCompressionEvents(summarize, { emit: (event) => tracer.emit({ ...event, session: key }), now: () => Date.now() }),
         trackForCapture
           ? (messages) => sessionCapture.onCompress(key, messages)
           : undefined,
@@ -313,6 +326,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
     titleOf: (userId, sessionKey) => titleOf(qdrant, titlesCollection, { userId, sessionKey }),
     setTitle: (userId, sessionKey, title) => setTitle(qdrant, titlesCollection, { userId, sessionKey, title, source: "generated" }),
     log: (msg) => console.error(msg),
+    emit: (event) => tracer.emit(event),
   });
 
   // Semantic consolidation (D-22/D-34): a separate Qdrant collection from
@@ -332,6 +346,13 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   await migrateVaultToUserAreas(wikiVaultPath, (msg) => console.error(`[wiki-vault] ${msg}`)).catch((err: unknown) =>
     console.error(`[wiki-vault] layout migration failed, Mercury starts anyway: ${String(err)}`),
   );
+  // Where the events of what this instance does go (#23): nowhere unless the config declares a sink.
+  const tracer = await loadTracer(config.traces, {
+    env: process.env,
+    log: (msg) => console.error(msg),
+    vaultPath: wikiVaultPath,
+    now: () => Date.now(),
+  });
 
   // Shared by the idle sweep (final capture + close) and by sessionCapture
   // (the two mid-conversation triggers, neither of which closes the session) —
@@ -348,6 +369,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
         writeInferredNoteFn: writeInferredNote,
       }),
     log: (msg) => console.error(`[cron] ${msg}`),
+    emit: (event) => tracer.emit(event),
   };
 
   // How many new messages (since the last capture) a live tracked session needs
@@ -368,7 +390,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   // Who each tracked session belongs to and how much of it is already in
   // memory; mirrors the rest at the two mid-conversation triggers.
   const sessionCapture = createSessionCapture({
-    capture: (userId, sessionKey, messages) => captureSessionToMemory(userId, sessionKey, messages, Date.now(), captureDeps),
+    capture: (userId, sessionKey, messages, trigger) => captureSessionToMemory(userId, sessionKey, messages, Date.now(), captureDeps, trigger),
     threshold: MESSAGE_COUNT_CAPTURE_THRESHOLD,
     texts,
     describe: (pending, t) =>
@@ -393,7 +415,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
       await ensureSemanticFactsCollection(qdrant, semanticFactsCollection, semanticFactsVectorSize);
       await ensureToolCorrectionsCollection(qdrant, toolCorrectionsCollection, toolCorrectionsVectorSize);
     },
-    { log: (msg) => console.error(`[memory] ${msg}`) },
+    { log: (msg) => console.error(`[memory] ${msg}`), emit: (event) => tracer.emit(event) },
   );
   // Memory written before the user key gets it, once Qdrant answers.
   void memoryReady.done.then(() =>
@@ -443,11 +465,20 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
       try {
         const timestamp = new Date().toISOString();
         await storeToolCorrection(qdrant, toolCorrectionsCollection, embed, { ...correction, timestamp });
-        await consolidateToolCorrection(correction.tool, correction.topic, toolCorrectionConsolidationDeps);
+        const decision = await consolidateToolCorrection(correction.tool, correction.topic, toolCorrectionConsolidationDeps);
         onToolFinish?.(correctionId, "success");
+        tracer.emit({ kind: "memory.correction", person: key, binary: correction.tool, topic: correction.topic, decision, outcome: "done" });
       } catch (err) {
         console.error(`[capture] procedural correction failed for ${correction.tool}/${correction.topic}: ${String(err)}`);
         onToolFinish?.(correctionId, "failed");
+        tracer.emit({
+          kind: "memory.correction",
+          person: key,
+          binary: correction.tool,
+          topic: correction.topic,
+          outcome: "failed",
+          args: { error: err instanceof Error ? err.message : String(err) },
+        });
       }
     }
   }
@@ -564,6 +595,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   // A streaming turn whose model goes silent is stopped (#240); checked here so a bad value stops the app at startup.
   const stallTimeoutMs = parseStallTimeoutMs(process.env.TURN_STALL_TIMEOUT_MS);
   const handleTurn = createTurnRunner({
+    tracer,
     takeResumed: (sessionKey) => resumes.take(sessionKey),
     sessionLock,
     model,
@@ -635,16 +667,17 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   // HTTP's optional in-process capabilities (resolveConfirmation, reads, the
   // declared auth provider and people's logins), which can't come from env; a channel that doesn't
   // need them ignores them.
+  const authenticate = loadAuth(config.auth, { env: process.env, log: (msg) => console.error(msg) });
   const channelRuntime: ChannelRuntimeContext = {
     env: process.env,
     log: (msg) => console.error(msg),
     // How a confirmation was resolved goes to the archive with the conversation (#370).
-    ...bindConfirm(confirmDeps, people.identify, linking.redeem, texts, verbatimProvider.captureExchange),
+    ...bindConfirm(confirmDeps, people.identify, linking.redeem, texts, verbatimProvider.captureExchange, (event) => tracer.emit(event)),
     admit: people.admit,
     // The channel's own texts: the person's language when the core knows who
     // it is, else the hint's, else the default.
     i18n: requestTexts(texts, people.identify),
-    authenticate: loadAuth(config.auth, { env: process.env, log: (msg) => console.error(msg) }),
+    authenticate,
     // Every read but health is scoped to the caller (see identity/host-reads.ts).
     reads: createHostReads({
       identify: people.identify,
@@ -719,6 +752,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
       runIndexAndOrphan: (orphans) => runIndexAndOrphanPass({ vaultPath: wikiVaultPath, model, orphans }),
       runContradictionCheck: () => runContradictionCheckPass({ vaultPath: wikiVaultPath, model }),
       log: (msg) => console.error(`[cron] ${msg}`),
+      emit: (event) => tracer.emit(event),
     });
     return {
       stop: () => {
@@ -728,7 +762,25 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
     };
   }
 
+  // How this instance started, as one event: the same facts the startup log
+  // prints, structured, with why anything was left out.
+  const declaredAuth = config.auth === undefined ? [] : Array.isArray(config.auth) ? config.auth : [config.auth];
+  tracer.emit({
+    kind: "system.start",
+    framework: frameworkVersion(),
+    ...(appVersion === undefined ? {} : { app: appVersion }),
+    model: ollamaModel,
+    modelSettings: { ...(config.model ?? {}) },
+    plugins: { activated: loadedPlugins.activated, left: loadedPlugins.left },
+    auth: { declared: declaredAuth.map((a) => a.name), active: authenticate !== undefined },
+    directory: typeof loadedDirectory === "string" ? loadedDirectory : loadedDirectory.name,
+    i18n: i18nReport,
+    credentials: credentialsReport,
+    traceLevel: config.traces?.level ?? "meta",
+  });
+
   return {
+    tracer,
     handleTurn,
     channels: config.channels ?? [],
     channelRuntime,

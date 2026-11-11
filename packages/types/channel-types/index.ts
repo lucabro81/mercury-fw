@@ -6,8 +6,8 @@
  * for (`detectLoginRequests`, `detectLoginRequired`, `loginLinkText`), and
  * the channel-plugin system (`ChannelPlugin`/`ChannelRuntimeContext`/
  * `CHANNEL_API_VERSION`), and the providers a config declares beside the
- * channels: who is calling (`AuthPlugin`) and who that is to Mercury
- * (`DirectoryPlugin`). The stateful half of confirmation (`ConfirmationStore`,
+ * channels: who is calling (`AuthPlugin`), who that is to Mercury
+ * (`DirectoryPlugin`) and where its traces go (`TraceSinkPlugin`). The stateful half of confirmation (`ConfirmationStore`,
  * `resolveConfirmation`) stays in the core and reaches a channel via
  * `ctx.confirm`.
  */
@@ -285,6 +285,44 @@ export type DirectoryPlugin = {
   apiVersion: number;
   name: string;
   build: (ctx: { env: Record<string, string | undefined>; log: (msg: string) => void }) => Directory;
+};
+
+/** Trace-sink contract version: the core refuses a sink with a different `apiVersion`, and then records no traces. */
+export const TRACE_SINK_API_VERSION = 1;
+
+/**
+ * One thing Mercury did, as a sink receives it: `kind` names it (`turn.start`,
+ * `model.step`, `tool.call`, …), `at` is when (ISO 8601), and the ids tie it to
+ * the turn or background job it belongs to. The core has already applied the
+ * instance's trace level and replaced `person` and `session` with pseudonyms
+ * before a sink sees it, so a sink stores what it gets as it is.
+ */
+export type TraceEvent = {
+  at: string;
+  kind: string;
+  turn?: string;
+  job?: string;
+  session?: string;
+  person?: string;
+  [field: string]: unknown;
+};
+
+/** Where events go. `write` must not throw or block the caller; `flush`
+ * resolves once everything written so far is stored. */
+export type TraceSink = {
+  write: (event: TraceEvent) => void;
+  flush: () => Promise<void>;
+};
+
+/**
+ * A trace sink, declared as `traces.sink` in `mercury.config.ts`. `build` gets
+ * `dir`, a folder on the instance's volume that is the sink's own, and throws
+ * when it can't work: the core then records no traces and starts anyway.
+ */
+export type TraceSinkPlugin = {
+  apiVersion: number;
+  name: string;
+  build: (ctx: { env: Record<string, string | undefined>; log: (msg: string) => void; dir: string }) => TraceSink;
 };
 
 /** Whether the core talks to `principal`: `unknown` when the directory doesn't

@@ -19,6 +19,13 @@ import type { ToolCorrectionEntry } from "../memory/tool-corrections-store.ts";
 type ClusterFn = (key: string, topic: string, limit: number) => Promise<SemanticFactEntry[]>;
 type Confidence = "low" | "medium" | "high";
 
+/**
+ * What a consolidation did: `written` when the dominant value became the note,
+ * `no-dominant` when nothing could be promoted (no candidate, or a tie),
+ * `kept-incumbent` when the note already there has as much support or more.
+ */
+export type ConsolidationDecision = "written" | "no-dominant" | "kept-incumbent";
+
 export type ConsolidationDeps = {
   vaultPath: string;
   clusterFn: ClusterFn;
@@ -111,21 +118,21 @@ function incumbentCount(text: string | null): number {
 /**
  * Re-clusters `topic` for the person `key`, and promotes the dominant value to
  * a wiki note if it beats the current incumbent's count. No-op if the
- * cluster is empty or has no single dominant value. `key` is the user key,
+ * cluster is empty or has no single dominant value, and says which it was. `key` is the user key,
  * the same one Qdrant's facts carry and the vault's area is named after.
  */
-export async function consolidateSemanticFact(key: string, topic: string, deps: ConsolidationDeps): Promise<void> {
+export async function consolidateSemanticFact(key: string, topic: string, deps: ConsolidationDeps): Promise<ConsolidationDecision> {
   const k = deps.k ?? DEFAULT_CONSOLIDATION_K;
   const confidenceForCount = deps.confidenceForCount ?? defaultConfidenceForCount;
   const cluster = (await deps.clusterFn(key, topic, k)).filter((e) => e.topic === topic);
 
   const dominant = dominantValue(cluster);
   if (!dominant) {
-    return;
+    return "no-dominant";
   }
 
   const now = deps.now ?? (() => new Date().toISOString());
-  await deps.writeInferredNoteFn(
+  const written = await deps.writeInferredNoteFn(
     deps.vaultPath,
     key,
     topic,
@@ -137,6 +144,7 @@ export async function consolidateSemanticFact(key: string, topic: string, deps: 
     dominant.value,
     { when: (current) => dominant.supportingTimestamps.length > incumbentCount(current) },
   );
+  return written ? "written" : "kept-incumbent";
 }
 
 /**
@@ -151,18 +159,18 @@ export async function consolidateToolCorrection(
   tool: string,
   topic: string,
   deps: ToolCorrectionConsolidationDeps,
-): Promise<void> {
+): Promise<ConsolidationDecision> {
   const k = deps.k ?? DEFAULT_CONSOLIDATION_K;
   const confidenceForCount = deps.confidenceForCount ?? defaultConfidenceForCount;
   const cluster = (await deps.clusterFn(tool, topic, k)).filter((e) => e.topic === topic);
 
   const dominant = dominantValue(cluster);
   if (!dominant) {
-    return;
+    return "no-dominant";
   }
 
   const now = deps.now ?? (() => new Date().toISOString());
-  await deps.writeNoteFn(
+  const written = await deps.writeNoteFn(
     deps.vaultPath,
     tool,
     topic,
@@ -174,4 +182,5 @@ export async function consolidateToolCorrection(
     dominant.value,
     { when: (current) => dominant.supportingTimestamps.length > incumbentCount(current) },
   );
+  return written ? "written" : "kept-incumbent";
 }

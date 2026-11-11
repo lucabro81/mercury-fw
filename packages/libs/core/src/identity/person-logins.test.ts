@@ -193,3 +193,24 @@ describe("createPersonLogins", () => {
     expect(logs).toEqual(["[login] jira login of static:alice failed: jira exited with code 1: code expired"]);
   });
 });
+
+// #23: a login that couldn't start or finish reaches the traces, the person pseudonymised by the tracer.
+describe("createPersonLogins: login errors in the traces", () => {
+  it("a start and a completion that fail are each a system.error with the service, the person and the stage", async () => {
+    const events: Array<Record<string, unknown>> = [];
+    const login: PersonLogin = {
+      start: async () => ({ ok: true, authorizeUrl: "https://auth/1", state: "st-1" }),
+      complete: async () => ({ ok: false, error: "invalid code" }),
+    };
+    const failing: PersonLogin = { start: async () => ({ ok: false, error: "no user app" }), complete: async () => ({ ok: true }) };
+    const logins = createPersonLogins({ log: () => {}, emit: (e) => void events.push(e) });
+    logins.accept("https://cb");
+    await logins.require("confluence", failing, "static:alice");
+    await logins.require("jira", login, "static:alice");
+    await logins.complete("st-1", "code");
+    expect(events).toEqual([
+      { kind: "system.error", area: "login", service: "confluence", stage: "start", person: "static:alice", args: { error: "no user app" } },
+      { kind: "system.error", area: "login", service: "jira", stage: "complete", person: "static:alice", args: { error: "invalid code" } },
+    ]);
+  });
+});

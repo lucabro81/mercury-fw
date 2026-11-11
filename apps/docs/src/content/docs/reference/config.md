@@ -16,6 +16,7 @@ import { staticDirectory } from "@mercury-fw/directory-static";
 import en from "./locales/en.json";
 import it from "./locales/it.json";
 import pkg from "./package.json";
+import { jsonlTraces } from "@mercury-fw/trace-jsonl";
 
 const name = "Hermes";
 
@@ -41,6 +42,7 @@ export default defineMercuryConfig({
     topK: envNumber("OLLAMA_TOP_K"),
   },
   i18n: { defaultLocale: "it", locales: { en, it } },
+  traces: { sink: jsonlTraces(), level: "meta" },
   version: pkg.version,
 });
 ```
@@ -166,6 +168,25 @@ An empty or missing variable gives the fallback: with none, as for the three num
 the model's own value applies. Write one to have a default of your own, `envNumber("OLLAMA_TEMPERATURE", 0.2)`. Text
 that isn't a number, or isn't `true` or `false`, stops the agent at startup with the variable's name. The variables are
 listed in [Environment variables](../environment/#the-model).
+
+## `traces`
+
+Where the record of what the agent does goes, event by event, and how much each event carries. See
+[Traces](../../concepts/traces/).
+
+```ts
+import { jsonlTraces } from "@mercury-fw/trace-jsonl";
+
+traces: { sink: jsonlTraces({ keepDays: 7 }), level: "meta" },
+```
+
+- `sink` is where the events go: `jsonlTraces()` writes a file per day on the vault's volume, keeping the last
+  `keepDays` days with activity (7 when left out).
+- `level` is `meta` (names, outcomes, durations, sizes; the default) or `args` (also what the tools were given, the
+  summary of an action waiting for confirmation, and the error messages). Anything else stops the agent at startup.
+
+Left out, nothing is recorded. A sink that can't start (a read-only volume, say) leaves the agent without traces,
+said once in the log, and the agent starts anyway.
 
 ## `version`
 
