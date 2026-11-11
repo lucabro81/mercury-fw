@@ -97,6 +97,22 @@ recognizes the caller decides). The HTTP channel doesn't start without one. See
 Who the people are, and their roles. Without one, a person is whoever the channel says, with no roles; with one, the
 agent talks only to the people it knows, and to nobody while the directory can't be reached.
 
+## `vectorIndex`
+
+Where the long-term memory is found by meaning: the summaries of past conversations, what the agent learned about
+each person, the corrections to how a tool is used, and searching past messages. See
+[Memory](../../concepts/memory/).
+
+```ts
+import { qdrantIndex } from "@mercury-fw/store-qdrant";
+
+vectorIndex: qdrantIndex(),
+```
+
+Left out, the agent keeps no long-term memory: it doesn't summarize conversations, doesn't learn corrections, and
+the model isn't offered the tool that searches past messages. An index that can't start leaves the agent the same
+way, said once in the log; an index that isn't answering yet only delays the memory until it does.
+
 ## `access`
 
 Who may talk to the agent and use what, on top of the directory.

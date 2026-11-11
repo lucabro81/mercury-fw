@@ -17,7 +17,7 @@ An agent built on Mercury can do what its plugins let it do and nothing else: ea
 
 The orchestration sits directly on the AI SDK, with no agent framework in between, and the model is whatever an Ollama-compatible endpoint serves (`OLLAMA_HOST`, `OLLAMA_MODEL`). An action a plugin marks as irreversible never runs on the model's word: Mercury stages it and hands back a one-time token, and it runs only when that token comes back (a button click on Google Chat, the pasted token in the terminal).
 
-Memory, as it stands today, has three layers: the conversation history, a wiki the agent reads and writes, and an episodic store on Qdrant. The history is what the agent needs to work at all, the other two enrich it and fail soft when they're unreachable. How memory becomes composable like the rest is still open ([#30](https://github.com/lucabro81/mercury-fw/issues/30)). Every person gets their own: the wiki has a common area the whole team reads and an area per person, and memory, conversations and pending confirmations are theirs alone (the [core README](packages/libs/core/README.md) has the details).
+Memory, as it stands today, has three layers: the conversation history, a wiki the agent reads and writes, and an episodic memory in the vector index the app declares (Qdrant, in a new app). The history is what the agent needs to work at all, the other two enrich it and fail soft when they're unreachable. How memory becomes composable like the rest is still open ([#30](https://github.com/lucabro81/mercury-fw/issues/30)). Every person gets their own: the wiki has a common area the whole team reads and an area per person, and memory, conversations and pending confirmations are theirs alone (the [core README](packages/libs/core/README.md) has the details).
 
 ## Quick start
 
@@ -97,6 +97,7 @@ The framework, released together under one version:
 | [`create-mercury-agent`](apps/create-mercury-agent) | What `bun create mercury-agent` runs. |
 | [`@mercury-fw/formatter`](packages/formatters/formatter) | Applies an app's rules to the lists a plugin hands over. |
 | [`@mercury-fw/trace-jsonl`](packages/traces/trace-jsonl) | The trace sink `mfw create` declares: the events of what the agent does, a JSONL file per day, the last days with activity kept. |
+| [`@mercury-fw/store-qdrant`](packages/stores/store-qdrant) | Qdrant as the vector index `mfw create` declares: where the agent's memory is found by meaning. |
 | [`@mercury-fw/kit`](packages/libs/kit) | For plugin authors: the plugin and channel contracts in one import. |
 | [`@mercury-fw/plugin-types`](packages/types/plugin-types), [`@mercury-fw/channel-types`](packages/types/channel-types) | The contracts a tool plugin and a channel implement. |
 | [`@mercury-fw/cli-engine`](packages/libs/cli-engine) | For plugins that work through a CLI: parsing, allowlist, execution, confirmation staging. |
