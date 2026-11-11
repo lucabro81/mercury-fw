@@ -119,6 +119,7 @@ describe("composeMercury", () => {
       plugins: { activated: [], left: [{ name: "old", reason: expect.stringContaining("apiVersion 0") }] },
       auth: { declared: [], active: false },
       directory: "none",
+      credentials: expect.any(Array),
       traceLevel: "meta",
     });
   });

@@ -3309,3 +3309,66 @@ describe("an archive failure in the traces", () => {
     });
   });
 });
+
+// #23, review: the stalled ending and a turn that stood in with the pending note are traced too.
+describe("traces of a turn: stalled, and stood in", () => {
+  function deps(overrides: Partial<TurnRunnerDeps>, events: Array<Record<string, unknown>>): TurnRunnerDeps {
+    return {
+      model: {} as any,
+      systemPrompts: { singleUser: "s", multiUser: "m" },
+      buildTools: () => ({}),
+      getOrCreateHistory: () => fakeHistory(),
+      trackSession: () => {},
+      registerCaptureCallback: () => {},
+      maybeCapture: async () => {},
+      processToolCorrections: async () => {},
+      logStep: () => {},
+      logTurnFn: () => {},
+      heartbeat: () => () => {},
+      tracer: { emit: (e) => void events.push(e), flush: async () => {} },
+      newTurnId: () => "turn-s",
+      ...overrides,
+    };
+  }
+
+  test("a turn whose model went silent ends stalled", async () => {
+    const events: Array<Record<string, unknown>> = [];
+    const timers: Array<() => void> = [];
+    const runner = createTurnRunner(
+      deps(
+        {
+          stallTimeoutMs: 1000,
+          stallTimer: (fn) => {
+            timers.push(fn);
+            return () => {};
+          },
+          runTurnFn: (_h, _t, d) =>
+            new Promise<string>((_, reject) => {
+              d.abortSignal?.addEventListener("abort", () => reject(new Error("aborted")));
+              queueMicrotask(() => timers.at(-1)!());
+            }),
+        },
+        events,
+      ),
+    );
+    await expect(runner(baseTurn(), baseSink({ onTextChunk: () => {} }))).rejects.toThrow("the model sent nothing");
+    expect(events.at(-1)).toMatchObject({ kind: "turn.end", turn: "turn-s", outcome: "stalled" });
+  });
+
+  test("a turn the core's pending note stood in for says so", async () => {
+    const events: Array<Record<string, unknown>> = [];
+    const runner = createTurnRunner(
+      deps(
+        {
+          runTurnFn: async (_h, _t, d) => {
+            d.onPendingNote?.();
+            return d.pendingNote!;
+          },
+        },
+        events,
+      ),
+    );
+    await runner(baseTurn(), baseSink());
+    expect(events.at(-1)).toMatchObject({ kind: "turn.end", outcome: "done", stoodIn: true });
+  });
+});

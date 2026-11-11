@@ -125,3 +125,19 @@ describe("noopTracer", () => {
     await noopTracer.flush();
   });
 });
+
+// #23, review: the envelope belongs to the tracer, so a field an emitter writes can't replace it.
+describe("createTracer: the envelope", () => {
+  test("a field named at or kind in what's emitted never replaces the envelope's", () => {
+    const events: TraceEvent[] = [];
+    const tracer = createTracer({
+      sink: { write: (e) => events.push(e), flush: async () => {} },
+      level: "meta",
+      secret: SECRET,
+      now: () => NOW,
+      log: () => {},
+    });
+    tracer.emit({ kind: "turn.start", at: "1999-01-01T00:00:00.000Z" } as never);
+    expect(events[0]).toEqual({ at: "2026-11-11T09:30:00.000Z", kind: "turn.start" });
+  });
+});

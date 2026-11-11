@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { chmod, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { TRACE_SINK_API_VERSION, type TraceEvent, type TraceSink } from "@mercury-fw/channel-types";
@@ -7,11 +7,7 @@ import { jsonlTraces } from "./index.ts";
 
 const dirs: string[] = [];
 afterEach(async () => {
-  while (dirs.length > 0) {
-    const dir = dirs.pop()!;
-    await chmod(dir, 0o700).catch(() => {});
-    await rm(dir, { recursive: true, force: true });
-  }
+  while (dirs.length > 0) await rm(dirs.pop()!, { recursive: true, force: true });
 });
 
 async function tempDir(): Promise<string> {
@@ -116,12 +112,13 @@ describe("jsonlTraces", () => {
     expect((await readdir(dir)).sort()).toEqual(["2026-01-01.jsonl.bak", "2026-11-03.jsonl", "notes.txt"]);
   });
 
+  // Review of #23: a folder made read-only still takes writes as root, as in Docker CI; a path that is a file never does.
   test("a write that fails never throws to the caller, is logged once, and flush still resolves", async () => {
     const dir = await tempDir();
+    const notAFolder = join(dir, "traces");
+    await writeFile(notAFolder, "a file where the folder should be");
     const logs: string[] = [];
-    const sink = build(dir, 7, logs);
-    await sink.flush();
-    await chmod(dir, 0o500);
+    const sink = build(notAFolder, 7, logs);
     expect(() => {
       sink.write(event("2026-11-11T09:00:00.000Z"));
       sink.write(event("2026-11-11T09:00:01.000Z"));
@@ -129,6 +126,14 @@ describe("jsonlTraces", () => {
     await sink.flush();
     expect(logs).toHaveLength(1);
     expect(logs[0]).toContain("[traces]");
+  });
+
+  test("an event whose time can't be read goes to today's file instead of being lost", async () => {
+    const dir = await tempDir();
+    const sink = build(dir);
+    sink.write(event("not a time"));
+    await sink.flush();
+    expect(await dayFiles(dir)).toEqual([`${new Date().toISOString().slice(0, 10)}.jsonl`]);
   });
 
   test("keepDays must be a whole number from 1 up: anything else is a mistake in the config", () => {

@@ -92,6 +92,7 @@ export async function captureSessionToMemory(
   }
 
   let factCount: number | undefined;
+  let extractionError: string | undefined;
   if (deps.extractFacts && deps.storeFact && deps.consolidateFact) {
     try {
       const facts = await deps.extractFacts(messages);
@@ -114,6 +115,7 @@ export async function captureSessionToMemory(
       }
     } catch (err) {
       log(`semantic fact extraction failed for ${sessionKey}: ${String(err)}`);
+      extractionError = err instanceof Error ? err.message : String(err);
     }
   }
   emit({
@@ -121,8 +123,10 @@ export async function captureSessionToMemory(
     trigger,
     messages: messages.length,
     ...(factCount === undefined ? {} : { facts: factCount }),
+    ...(extractionError === undefined ? {} : { extraction: "failed" }),
     durationMs: clock() - startedAt,
     outcome: "done",
+    ...(extractionError === undefined ? {} : { args: { error: extractionError } }),
   });
 }
 

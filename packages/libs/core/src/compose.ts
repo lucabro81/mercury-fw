@@ -186,10 +186,15 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
 
   // A plugin's CLI that keeps its login in a folder finds it in place before
   // the plugin loads: on the credentials volume, linked when it's kept elsewhere.
+  // What it reported, also for the startup event: a login not set up yet, a link it couldn't make.
+  const credentialsReport: string[] = [];
   await materializeCliCredentials({
     appDir: process.cwd(),
     homeDir: homedir(),
-    log: (msg) => console.error(msg),
+    log: (msg) => {
+      console.error(msg);
+      credentialsReport.push(msg);
+    },
   });
 
   const loadedPlugins = await loadPlugins(plugins, {
@@ -770,6 +775,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
     auth: { declared: declaredAuth.map((a) => a.name), active: authenticate !== undefined },
     directory: typeof loadedDirectory === "string" ? loadedDirectory : loadedDirectory.name,
     i18n: i18nReport,
+    credentials: credentialsReport,
     traceLevel: config.traces?.level ?? "meta",
   });
 

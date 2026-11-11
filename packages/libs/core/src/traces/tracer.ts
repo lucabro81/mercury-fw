@@ -56,7 +56,8 @@ export function createTracer(deps: {
   let failureLogged = false;
 
   function shape(input: TraceInput): TraceEvent {
-    const { kind, person, session, args, ...rest } = input;
+    // `at` is the tracer's: one the emitter wrote is dropped, never kept over it.
+    const { kind, person, session, args, at: _ignored, ...rest } = input;
     const event: TraceEvent = { at: new Date(deps.now()).toISOString(), kind, ...rest };
     if (session !== undefined) event.session = pseudonymOf(deps.secret, session);
     if (person !== undefined) event.person = pseudonymOf(deps.secret, person);

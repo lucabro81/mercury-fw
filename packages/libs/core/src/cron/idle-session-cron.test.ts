@@ -543,3 +543,25 @@ describe("memory events", () => {
     expect(events[1]).toEqual({ kind: "session.closed", session: "sk", person: "p", messages: 2 });
   });
 });
+
+// #23, review: a failed fact extraction must be told apart from extraction not being configured.
+describe("memory events: a failed extraction", () => {
+  it("the capture is still done, and says the extraction failed, with the error for args", async () => {
+    const events: Array<Record<string, unknown>> = [];
+    await captureSessionToMemory("p", "sk", [{ role: "user", content: "hi" }], NOW, {
+      summarize: async () => "ok",
+      store: async () => {},
+      extractFacts: async () => {
+        throw new Error("model down");
+      },
+      storeFact: async () => {},
+      consolidateFact: async () => "written",
+      emit: (e) => void events.push(e),
+      log: () => {},
+      clock: () => 0,
+    });
+    expect(events).toEqual([
+      { kind: "memory.capture", session: "sk", person: "p", trigger: "idle", messages: 1, extraction: "failed", durationMs: 0, outcome: "done", args: { error: "model down" } },
+    ]);
+  });
+});
