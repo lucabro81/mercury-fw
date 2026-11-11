@@ -33,6 +33,8 @@ bin
 # Volumes / persisted data (Qdrant, wiki vault, etc.)
 data
 volumes
+# …but not the core's source folder of that name.
+!packages/libs/core/src/data/
 
 # Logs
 *.log
