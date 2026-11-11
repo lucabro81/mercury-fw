@@ -35,6 +35,7 @@
         "@mercury-fw/plugin-jira": "workspace:*",
         "@mercury-fw/plugin-web-search": "workspace:*",
         "@mercury-fw/plugin-zitadel": "workspace:*",
+        "@mercury-fw/store-qdrant": "workspace:*",
         "@mercury-fw/typescript-config": "*",
         "@mercury-fw/web-search-searxng": "workspace:*",
         "@types/bun": "^1.4.2",
@@ -173,7 +174,7 @@
         "typescript": "^6.0.3",
       },
       "peerDependencies": {
-        "@mercury-fw/channel-types": ">=0.68.0 <1.0.0",
+        "@mercury-fw/channel-types": ">=0.70.0 <1.0.0",
       },
     },
     "packages/config/typescript-config": {
