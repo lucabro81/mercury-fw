@@ -1,82 +1,23 @@
 /**
- * Layer 3 (Qdrant) episodic storage: one point per closed,
- * summarized session — a raw, dated "what happened", not an
- * interpretation. Consolidation into semantic memory (per-topic
- * promotion into the wiki) is a separate, later concern that
- * reads from this collection; this module only ever writes to it.
- *
- * `QdrantClientLike` describes only the subset of `@qdrant/js-client-rest`'s
- * `QdrantClient` this file actually calls — real client instances satisfy
- * it structurally, tests use a plain object instead of a real connection.
+ * Layer 3 episodic storage: one point per closed, summarized session in the
+ * vector index's `episodic_memory` space — a raw, dated "what happened", not
+ * an interpretation. Consolidation into semantic memory (per-topic promotion
+ * into the wiki) is a separate, later concern; this module only writes the
+ * summaries and reads them back.
  */
-export type QdrantClientLike = {
-  getCollections(): Promise<{ collections: Array<{ name: string }> }>;
-  createCollection(
-    name: string,
-    params: { vectors: { size: number; distance: "Cosine" | "Euclid" | "Dot" | "Manhattan" } },
-  ): Promise<unknown>;
-  upsert(
-    name: string,
-    params: { points: Array<{ id: string; vector: number[]; payload: Record<string, unknown> }> },
-  ): Promise<unknown>;
-  /** @qdrant/js-client-rest 1.19 removed `search` in favour of the universal
-   * `query` endpoint: the vector moves to `query`, and results come back under
-   * `.points` instead of as a bare array. */
-  query(
-    name: string,
-    params: { query: number[]; filter: Record<string, unknown>; limit: number; with_payload: boolean },
-  ): Promise<{ points: Array<{ id: string | number; score: number; payload?: Record<string, unknown> | null }> }>;
-  /**
-   * Optional — not part of the similarity-search surface every caller
-   * needs, only used by `getLastSessionEpisodicSummaries` below. Optional
-   * so `semantic-facts-store.ts`/`tool-corrections-store.ts` (which share
-   * this type but never call `scroll`) don't need a stub in every test
-   * fixture.
-   */
-  scroll?(
-    name: string,
-    params: {
-      filter: Record<string, unknown>;
-      /** Absent for a scroll that only filters (`conversation-titles-store.ts`). */
-      order_by?: { key: string; direction: "asc" | "desc" };
-      limit: number;
-      /** Opaque pagination cursor (from a prior page's `next_page_offset`). */
-      offset?: string | number | Record<string, unknown> | null;
-      /** Whether to return point payloads (`listVerbatimBySession` needs them). */
-      with_payload?: boolean;
-    },
-  ): Promise<{
-    points: Array<{ id: string | number; payload?: Record<string, unknown> | null }>;
-    next_page_offset?: string | number | Record<string, unknown> | null;
-  }>;
-  /** Optional — same reasoning as `scroll` above: only `ensureEpisodicCollection` needs it. */
-  createPayloadIndex?(name: string, params: { field_name: string; field_schema: "datetime" | "keyword" }): Promise<unknown>;
-};
+import type { VectorIndex } from "@mercury-fw/channel-types";
+
+/** The vector index's space the episodic summaries live in. */
+export const EPISODIC_SPACE = "episodic_memory";
 
 /**
- * Creates `collectionName` (cosine distance, `vectorSize`-dim) if it
- * doesn't already exist, then ensures the `timestamp`/`userId`/`sessionKey`
- * payload indexes exist regardless — `getLastSessionEpisodicSummaries`'s
- * `order_by`/filter scroll queries fail with an HTTP 400 without them.
- * Idempotent either way (Qdrant no-ops re-creating an existing index), so
- * safe to call on every startup, including against a collection that
- * predates this fix.
+ * Makes sure the episodic space exists with `dimensions`-long vectors and the
+ * fields its reads filter (`userId`, `sessionKey`) and order (`timestamp`)
+ * on — `getLastSessionEpisodicSummaries`' ordered, filtered scroll fails
+ * without them. Idempotent, safe on every startup.
  */
-export async function ensureEpisodicCollection(
-  client: QdrantClientLike,
-  collectionName: string,
-  vectorSize: number,
-): Promise<void> {
-  const { collections } = await client.getCollections();
-  if (!collections.some((c) => c.name === collectionName)) {
-    await client.createCollection(collectionName, { vectors: { size: vectorSize, distance: "Cosine" } });
-  }
-  if (client.createPayloadIndex) {
-    await client.createPayloadIndex(collectionName, { field_name: "timestamp", field_schema: "datetime" });
-    await client.createPayloadIndex(collectionName, { field_name: "userId", field_schema: "keyword" });
-    // For getEpisodicSummariesBySession's per-conversation filter.
-    await client.createPayloadIndex(collectionName, { field_name: "sessionKey", field_schema: "keyword" });
-  }
+export async function ensureEpisodicSpace(index: VectorIndex, dimensions: number): Promise<void> {
+  await index.ensure(EPISODIC_SPACE, { dimensions, keys: ["userId", "sessionKey"], ordered: ["timestamp"] });
 }
 
 export type EpisodicSummary = {
@@ -86,23 +27,14 @@ export type EpisodicSummary = {
   timestamp: string;
 };
 
-/** Embeds `entry.summary` and upserts it as a new point in `collectionName`, payload carrying the full entry. */
+/** Embeds `entry.summary` and stores it as a new point, payload carrying the full entry. */
 export async function storeEpisodicSummary(
-  client: QdrantClientLike,
-  collectionName: string,
+  index: VectorIndex,
   embed: (text: string) => Promise<number[]>,
   entry: EpisodicSummary,
 ): Promise<void> {
   const vector = await embed(entry.summary);
-  await client.upsert(collectionName, {
-    points: [
-      {
-        id: crypto.randomUUID(),
-        vector,
-        payload: { ...entry },
-      },
-    ],
-  });
+  await index.upsert(EPISODIC_SPACE, [{ id: crypto.randomUUID(), vector, payload: { ...entry } }]);
 }
 
 const DEFAULT_SEARCH_LIMIT = 5;
@@ -126,19 +58,17 @@ function isEpisodicSummary(payload: Record<string, unknown> | null): payload is 
  * or promotes anything.
  */
 export async function searchEpisodicMemory(
-  client: QdrantClientLike,
-  collectionName: string,
+  index: VectorIndex,
   embed: (text: string) => Promise<number[]>,
   query: { userId: string; queryText: string; limit?: number },
 ): Promise<EpisodicSummary[]> {
   const vector = await embed(query.queryText);
-  const results = await client.query(collectionName, {
-    query: vector,
-    filter: { must: [{ key: "userId", match: { value: query.userId } }] },
+  const results = await index.query(EPISODIC_SPACE, {
+    vector,
+    where: { userId: query.userId },
     limit: query.limit ?? DEFAULT_SEARCH_LIMIT,
-    with_payload: true,
   });
-  return results.points.map((r) => r.payload ?? null).filter(isEpisodicSummary);
+  return results.map((r) => r.payload).filter(isEpisodicSummary);
 }
 
 const DEFAULT_SESSION_LIMIT = 3;
@@ -149,22 +79,15 @@ const DEFAULT_SESSION_LIMIT = 3;
  * single most recent entry. Used to seed a brand-new session's context
  * primer with "what happened last time"; not similarity-scoped like
  * `searchEpisodicMemory` (there's no query yet to compare against at
- * session start). Returns an empty array (never throws) if the client
- * doesn't support `scroll`, or if the user has no prior episodic entries —
- * this is enrichment, the caller must work fine without it.
+ * session start). Empty when the user has no prior episodic entries.
  */
 export async function getLastSessionEpisodicSummaries(
-  client: QdrantClientLike,
-  collectionName: string,
+  index: VectorIndex,
   query: { userId: string; limit?: number },
 ): Promise<EpisodicSummary[]> {
-  if (!client.scroll) {
-    return [];
-  }
-
-  const latest = await client.scroll(collectionName, {
-    filter: { must: [{ key: "userId", match: { value: query.userId } }] },
-    order_by: { key: "timestamp", direction: "desc" },
+  const latest = await index.scroll(EPISODIC_SPACE, {
+    where: { userId: query.userId },
+    orderBy: { key: "timestamp", direction: "desc" },
     limit: 1,
   });
   const mostRecent = latest.points[0]?.payload ?? null;
@@ -172,17 +95,12 @@ export async function getLastSessionEpisodicSummaries(
     return [];
   }
 
-  const session = await client.scroll(collectionName, {
-    filter: {
-      must: [
-        { key: "userId", match: { value: query.userId } },
-        { key: "sessionKey", match: { value: mostRecent.sessionKey } },
-      ],
-    },
-    order_by: { key: "timestamp", direction: "desc" },
+  const session = await index.scroll(EPISODIC_SPACE, {
+    where: { userId: query.userId, sessionKey: mostRecent.sessionKey },
+    orderBy: { key: "timestamp", direction: "desc" },
     limit: query.limit ?? DEFAULT_SESSION_LIMIT,
   });
-  return session.points.map((p) => p.payload ?? null).filter(isEpisodicSummary);
+  return session.points.map((p) => p.payload).filter(isEpisodicSummary);
 }
 
 /** How many summaries of one conversation `getEpisodicSummariesBySession` reads at most. */
@@ -191,26 +109,16 @@ const SESSION_SUMMARIES_LIMIT = 100;
 /**
  * The episodic summaries of one conversation (`sessionKey`) of the person
  * `userId`, oldest first — what a resumed conversation knows of its part
- * that no longer fits verbatim. Empty when the client can't scroll.
+ * that no longer fits verbatim.
  */
 export async function getEpisodicSummariesBySession(
-  client: QdrantClientLike,
-  collectionName: string,
+  index: VectorIndex,
   query: { userId: string; sessionKey: string },
 ): Promise<EpisodicSummary[]> {
-  if (!client.scroll) {
-    return [];
-  }
-  const result = await client.scroll(collectionName, {
-    filter: {
-      must: [
-        { key: "userId", match: { value: query.userId } },
-        { key: "sessionKey", match: { value: query.sessionKey } },
-      ],
-    },
-    order_by: { key: "timestamp", direction: "asc" },
+  const result = await index.scroll(EPISODIC_SPACE, {
+    where: { userId: query.userId, sessionKey: query.sessionKey },
+    orderBy: { key: "timestamp", direction: "asc" },
     limit: SESSION_SUMMARIES_LIMIT,
-    with_payload: true,
   });
-  return result.points.map((p) => p.payload ?? null).filter(isEpisodicSummary);
+  return result.points.map((p) => p.payload).filter(isEpisodicSummary);
 }

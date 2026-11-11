@@ -12,7 +12,7 @@
  * eventual retirement of the file-based cli-configs are deliberately not here.
  */
 import type { Plugin } from "@mercury-fw/plugin-types";
-import type { AuthPlugin, ChannelPlugin, DirectoryPlugin } from "@mercury-fw/channel-types";
+import type { AuthPlugin, ChannelPlugin, DirectoryPlugin, VectorIndexPlugin } from "@mercury-fw/channel-types";
 import type { Persona } from "../session/system-prompt.ts";
 import type { Messages } from "../i18n/i18n.ts";
 import type { MercuryTraces } from "../traces/trace-loader.ts";
@@ -71,7 +71,8 @@ export type MercuryModel = {
  * active), each loaded by its own loader, the auth providers that tell a
  * channel like HTTP who is calling (one, or several tried in order; that
  * channel won't start without one),
- * the directory that tells the core who that is and their roles, who may
+ * the directory that tells the core who that is and their roles, the vector
+ * index the memory is found in (`vectorIndex`; none, no memory), who may
  * use what (`access`), the languages it speaks (`i18n`), the assistant's
  * persona (its identity and tone; the defaults when left out), how the main
  * model generates (`model`), where the traces of what it does go (`traces`),
@@ -82,6 +83,8 @@ export type MercuryConfig = {
   channels?: ChannelPlugin[];
   auth?: AuthPlugin | AuthPlugin[];
   directory?: DirectoryPlugin;
+  /** Where what's found by meaning is kept: the episodic memory, the semantic facts, the procedural corrections and `recall_verbatim`'s search. Left out, none of them runs. */
+  vectorIndex?: VectorIndexPlugin;
   access?: MercuryAccess;
   i18n?: MercuryI18n;
   persona?: Persona;

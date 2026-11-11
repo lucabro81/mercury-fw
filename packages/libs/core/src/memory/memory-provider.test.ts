@@ -1,6 +1,7 @@
 import { describe, it, expect } from "bun:test";
 import { createVerbatimArchiveProvider } from "./memory-provider.ts";
-import type { QdrantClientLike } from "./episodic-store.ts";
+import type { QdrantClientLike } from "./qdrant-client.ts";
+import { fakeVectorIndex } from "./__fixtures__/fake-vector-index.ts";
 
 describe("createVerbatimArchiveProvider — captureExchange", () => {
   it("stamps the timestamp from the injected clock and appends the verbatim message to the store", async () => {
@@ -157,36 +158,28 @@ describe("createVerbatimArchiveProvider — captureExchange", () => {
 });
 
 describe("createVerbatimArchiveProvider — recall_verbatim tool", () => {
-  it("searches the archive scoped to the context's userId and returns the matched messages", async () => {
-    let queryArgs: { collection: string; params: Record<string, unknown> } | undefined;
-    const client: QdrantClientLike = {
-      getCollections: async () => ({ collections: [] }),
-      createCollection: async () => ({}),
-      upsert: async () => ({}),
-      query: async (collection, params) => {
-        queryArgs = { collection, params: params as Record<string, unknown> };
-        return {
-          points: [
-            {
-              id: "p1",
-              score: 0.9,
-              payload: {
-                userId: "users/42",
-                sessionKey: "spaces/X:users/42",
-                role: "assistant",
-                content: "la settimana scorsa KAN-1 era In Review",
-                timestamp: "2026-09-15T09:00:00.000Z",
-              },
-            },
-          ],
-        };
-      },
-    };
-    const provider = createVerbatimArchiveProvider({
-      client,
-      collectionName: "verbatim_archive",
-      embed: async (text: string) => [text.length, 0, 0],
+  const unusedClient: QdrantClientLike = {
+    getCollections: async () => ({ collections: [] }),
+    createCollection: async () => ({}),
+    upsert: async () => ({}),
+    query: async () => ({ points: [] }),
+  };
+  const said = {
+    userId: "users/42",
+    sessionKey: "spaces/X:users/42",
+    role: "assistant",
+    content: "la settimana scorsa KAN-1 era In Review",
+    timestamp: "2026-09-15T09:00:00.000Z",
+  };
+
+  it("searches the index scoped to the context's userId and returns the matched messages", async () => {
+    const index = fakeVectorIndex({
+      verbatim_archive: [
+        { id: "p1", vector: [1, 0, 0], payload: said },
+        { id: "p2", vector: [1, 0, 0], payload: { ...said, userId: "users/7", content: "not yours" } },
+      ],
     });
+    const provider = createVerbatimArchiveProvider({ client: unusedClient, collectionName: "verbatim_archive", embed: async () => [1, 0, 0], index });
 
     const tools = provider.sessionTools!({ sessionKey: "spaces/X:users/42", userId: "users/42" });
     const result = (await tools.recall_verbatim!.execute!({ query: "cosa dicevamo di KAN-1" }, {} as never)) as {
@@ -194,40 +187,23 @@ describe("createVerbatimArchiveProvider — recall_verbatim tool", () => {
       messages: unknown[];
     };
 
-    expect(queryArgs?.collection).toBe("verbatim_archive");
-    expect(queryArgs?.params.filter).toEqual({ must: [{ key: "userId", match: { value: "users/42" } }] });
-    expect(result.ok).toBe(true);
-    expect(result.messages).toEqual([
-      {
-        userId: "users/42",
-        sessionKey: "spaces/X:users/42",
-        role: "assistant",
-        content: "la settimana scorsa KAN-1 era In Review",
-        timestamp: "2026-09-15T09:00:00.000Z",
-      },
-    ]);
+    expect(result).toEqual({ ok: true, messages: [said] });
   });
 
-  it("forwards a custom limit to the store search", async () => {
-    let receivedLimit: number | undefined;
-    const client: QdrantClientLike = {
-      getCollections: async () => ({ collections: [] }),
-      createCollection: async () => ({}),
-      upsert: async () => ({}),
-      query: async (_collection, params) => {
-        receivedLimit = (params as { limit: number }).limit;
-        return { points: [] };
-      },
-    };
-    const provider = createVerbatimArchiveProvider({
-      client,
-      collectionName: "verbatim_archive",
-      embed: async () => [0, 0, 0],
-    });
+  it("forwards a custom limit to the search", async () => {
+    const index = fakeVectorIndex();
+    const provider = createVerbatimArchiveProvider({ client: unusedClient, collectionName: "verbatim_archive", embed: async () => [0], index });
 
     const tools = provider.sessionTools!({ sessionKey: "s", userId: "users/42" });
     await tools.recall_verbatim!.execute!({ query: "x", limit: 3 }, {} as never);
 
-    expect(receivedLimit).toBe(3);
+    expect((index.calls[0]![2] as { limit: number }).limit).toBe(3);
+  });
+
+  // Without a vector index nothing can find past messages by meaning: the
+  // model isn't offered a tool that would always come back empty.
+  it("offers no recall_verbatim without a vector index", () => {
+    const provider = createVerbatimArchiveProvider({ client: unusedClient, collectionName: "verbatim_archive", embed: async () => [0] });
+    expect(provider.sessionTools!({ sessionKey: "s", userId: "users/42" })).toEqual({});
   });
 });

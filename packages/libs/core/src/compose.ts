@@ -57,17 +57,24 @@ import { createReadSkillTool } from "./session/read-skill-tool.ts";
 import { createIdleSessionScanner } from "./cron/idle-session-scanner.ts";
 import { startIdleSessionCron, captureSessionToMemory, type CaptureDeps } from "./cron/idle-session-cron.ts";
 import {
-  ensureEpisodicCollection,
+  EPISODIC_SPACE,
+  ensureEpisodicSpace,
   storeEpisodicSummary,
   getLastSessionEpisodicSummaries,
   getEpisodicSummariesBySession,
 } from "./memory/episodic-store.ts";
-import { ensureVerbatimCollection, listVerbatimBySession, listVerbatimTail } from "./memory/verbatim-archive-store.ts";
+import { VERBATIM_SPACE, ensureVerbatimCollection, listVerbatimBySession, listVerbatimTail } from "./memory/verbatim-archive-store.ts";
 import { ensureTitlesCollection, setTitle, titleOf, titlesOf } from "./memory/conversation-titles-store.ts";
 import { createVerbatimArchiveProvider } from "./memory/memory-provider.ts";
-import { ensureSemanticFactsCollection, storeSemanticFact, searchSemanticFactsByTopic } from "./memory/semantic-facts-store.ts";
-import { ensureToolCorrectionsCollection, storeToolCorrection, searchToolCorrectionsByTopic } from "./memory/tool-corrections-store.ts";
-import { setUpWhenReachable } from "./memory/collection-setup.ts";
+import { SEMANTIC_FACTS_SPACE, ensureSemanticFactsSpace, storeSemanticFact, searchSemanticFactsByTopic } from "./memory/semantic-facts-store.ts";
+import {
+  TOOL_CORRECTIONS_SPACE,
+  ensureToolCorrectionsSpace,
+  storeToolCorrection,
+  searchToolCorrectionsByTopic,
+} from "./memory/tool-corrections-store.ts";
+import { embeddingDimensions, setUpWhenReachable } from "./memory/collection-setup.ts";
+import { loadVectorIndex } from "./data/vector-index-loader.ts";
 import { consolidateSemanticFact, consolidateToolCorrection, type ToolCorrectionConsolidationDeps } from "./cron/semantic-consolidation.ts";
 import { createToolCorrectionExtractor } from "./session/tool-correction-extractor.ts";
 import { createEmbedder } from "./memory/embedder.ts";
@@ -272,6 +279,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
         plugins: offering.plugins,
         skills: offering.skills,
         persona: config.persona,
+        recallVerbatim: vectorIndex !== undefined,
       });
       prompts = { singleUser: built.system, multiUser: built.chatSystem };
       promptsByOffering.set(offering.signature, prompts);
@@ -295,7 +303,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
     if (!history) {
       history = createSessionHistory(
         withCompressionEvents(summarize, { emit: (event) => tracer.emit({ ...event, session: key }), now: () => Date.now() }),
-        trackForCapture
+        trackForCapture && vectorIndex !== undefined
           ? (messages) => sessionCapture.onCompress(key, messages)
           : undefined,
         primer,
@@ -315,15 +323,21 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   const embeddingModel = provider.textEmbeddingModel(process.env.OLLAMA_EMBEDDING_MODEL ?? "nomic-embed-text");
   const embed = createEmbedder(embeddingModel);
   const qdrant = new QdrantClient({ url: process.env.QDRANT_URL ?? "http://qdrant:6333" });
-  const episodicCollection = process.env.QDRANT_EPISODIC_COLLECTION ?? "episodic_memory";
-  const episodicVectorSize = Number(process.env.QDRANT_EPISODIC_VECTOR_SIZE ?? "768");
+  // Where what's found by meaning lives (the episodes, the facts, the
+  // corrections, the archive's search): the declared vector index. Without
+  // one Mercury keeps no memory and offers no recall.
+  const vectorIndex = loadVectorIndex(config.vectorIndex, { env: process.env, log: (msg) => console.error(`[memory] ${msg}`) });
 
   // Verbatim conversation archive (#4): a distinct collection holding the raw
   // user<->model exchange, lossless and durable — separate from the lossy
   // Layer-1 window and the derived episodic summaries above.
   const verbatimCollection = process.env.QDRANT_VERBATIM_COLLECTION ?? "verbatim_archive";
-  const verbatimVectorSize = Number(process.env.QDRANT_VERBATIM_VECTOR_SIZE ?? "768");
-  const verbatimProvider = createVerbatimArchiveProvider({ client: qdrant, collectionName: verbatimCollection, embed });
+  const verbatimProvider = createVerbatimArchiveProvider({
+    client: qdrant,
+    collectionName: verbatimCollection,
+    embed,
+    ...(vectorIndex === undefined ? {} : { index: vectorIndex }),
+  });
   // How much of a resumed conversation comes back, when its channel sets no
   // budget of its own (see session/resume.ts).
   const resumeMaxChars = parseResumeMaxChars(process.env.SESSION_RESUME_MAX_CHARS);
@@ -340,11 +354,9 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
     emit: (event) => tracer.emit(event),
   });
 
-  // Semantic consolidation (D-22/D-34): a separate Qdrant collection from
-  // episodic memory above — one point per extracted {topic, value} candidate,
-  // vector embedded on the topic alone (see semantic-facts-store.ts for why).
-  const semanticFactsCollection = process.env.QDRANT_SEMANTIC_FACTS_COLLECTION ?? "semantic_facts";
-  const semanticFactsVectorSize = Number(process.env.QDRANT_SEMANTIC_FACTS_VECTOR_SIZE ?? "768");
+  // Semantic consolidation (D-22/D-34): a separate space from the episodic
+  // memory above — one point per extracted {topic, value} candidate, vector
+  // embedded on the topic alone (see semantic-facts-store.ts for why).
   const extractFacts = createSemanticFactExtractor(model);
 
   // Idempotent self-heal: the vault lives on a named Docker volume, empty on
@@ -366,18 +378,24 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   });
   if (migratedState.length > 0) tracer.emit({ kind: "system.migrated", area: "data-folder", entries: migratedState });
 
+  /** The index, for what runs only when there's one (capture, corrections). */
+  const requireIndex = () => {
+    if (vectorIndex === undefined) throw new Error("no vector index");
+    return vectorIndex;
+  };
+
   // Shared by the idle sweep (final capture + close) and by sessionCapture
   // (the two mid-conversation triggers, neither of which closes the session) —
   // one definition of "how to capture", reused everywhere.
   const captureDeps: CaptureDeps = {
     summarize: episodicSummarize,
-    store: (entry) => storeEpisodicSummary(qdrant, episodicCollection, embed, entry),
+    store: (entry) => storeEpisodicSummary(requireIndex(), embed, entry),
     extractFacts,
-    storeFact: (entry) => storeSemanticFact(qdrant, semanticFactsCollection, embed, entry),
+    storeFact: (entry) => storeSemanticFact(requireIndex(), embed, entry),
     consolidateFact: (userId, topic) =>
       consolidateSemanticFact(userId, topic, {
         vaultPath: wikiVaultPath,
-        clusterFn: (u, t, limit) => searchSemanticFactsByTopic(qdrant, semanticFactsCollection, embed, { userId: u, topic: t, limit }),
+        clusterFn: (u, t, limit) => searchSemanticFactsByTopic(requireIndex(), embed, { userId: u, topic: t, limit }),
         writeInferredNoteFn: writeInferredNote,
       }),
     log: (msg) => console.error(`[cron] ${msg}`),
@@ -409,39 +427,42 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
       t("core.status.capture-detail", {
         count: pending.length,
         preview: previewMessages(pending, MESSAGE_PREVIEW_CHARS),
-        collection: episodicCollection,
+        collection: EPISODIC_SPACE,
       }),
   });
 
   // Procedural corrections (punto 2/Fase D): per-turn, not per-idle-session —
   // the tool-call trace only exists in memory for the duration of its turn.
-  const toolCorrectionsCollection = process.env.QDRANT_TOOL_CORRECTIONS_COLLECTION ?? "tool_corrections";
-  const toolCorrectionsVectorSize = Number(process.env.QDRANT_TOOL_CORRECTIONS_VECTOR_SIZE ?? "768");
-  // Every Layer-3 collection, set up in the background: Mercury starts even
-  // while Qdrant isn't answering yet, and memory switches on once it does.
+  // Every Layer-3 space and collection, set up in the background: Mercury
+  // starts even while the index or the embedding model isn't answering yet,
+  // and memory switches on once they do. The spaces are as long as the
+  // embedding model's vectors.
   const memoryReady = setUpWhenReachable(
     async () => {
-      await ensureEpisodicCollection(qdrant, episodicCollection, episodicVectorSize);
-      await ensureVerbatimCollection(qdrant, verbatimCollection, verbatimVectorSize);
+      const dimensions = await embeddingDimensions(embed);
+      if (vectorIndex !== undefined) {
+        await ensureEpisodicSpace(vectorIndex, dimensions);
+        await ensureSemanticFactsSpace(vectorIndex, dimensions);
+        await ensureToolCorrectionsSpace(vectorIndex, dimensions);
+      }
+      await ensureVerbatimCollection(qdrant, verbatimCollection, dimensions);
       await ensureTitlesCollection(qdrant, titlesCollection);
-      await ensureSemanticFactsCollection(qdrant, semanticFactsCollection, semanticFactsVectorSize);
-      await ensureToolCorrectionsCollection(qdrant, toolCorrectionsCollection, toolCorrectionsVectorSize);
     },
     { log: (msg) => console.error(`[memory] ${msg}`), emit: (event) => tracer.emit(event) },
   );
-  // Memory written before the user key gets it, once Qdrant answers.
-  void memoryReady.done.then(() =>
-    migrateMemoryToUserKeys(qdrant, [episodicCollection, semanticFactsCollection, verbatimCollection], (msg) =>
-      console.error(`[memory] ${msg}`),
-    ),
-  );
+  // Memory written before the user key gets it, once the index answers.
+  if (vectorIndex !== undefined) {
+    const index = vectorIndex;
+    void memoryReady.done.then(() =>
+      migrateMemoryToUserKeys(index, [EPISODIC_SPACE, SEMANTIC_FACTS_SPACE, VERBATIM_SPACE], (msg) => console.error(`[memory] ${msg}`)),
+    );
+  }
   const extractToolCorrections = createToolCorrectionExtractor(model, undefined, {
     log: (msg) => console.error(`[cron] ${msg}`),
   });
   const toolCorrectionConsolidationDeps: ToolCorrectionConsolidationDeps = {
     vaultPath: wikiVaultPath,
-    clusterFn: (tool, topic, limit) =>
-      searchToolCorrectionsByTopic(qdrant, toolCorrectionsCollection, embed, { tool, topic, limit }),
+    clusterFn: (tool, topic, limit) => searchToolCorrectionsByTopic(requireIndex(), embed, { tool, topic, limit }),
     writeNoteFn: writeToolCorrectionNote,
     // A single confirmed correction is already a strong signal — unlike
     // identity/preference facts (DEFAULT_CONSOLIDATION_K = 3). k: 1 fires
@@ -461,6 +482,8 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
     onToolFinish: TurnSink["onToolFinish"] | undefined,
     key: string,
   ): Promise<void> {
+    // Without an index there's nowhere to keep a correction: nothing to extract.
+    if (vectorIndex === undefined) return;
     const corrections = await extractToolCorrections(steps);
     const { t } = texts.forPerson(key);
     for (const correction of corrections) {
@@ -470,13 +493,13 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
         t("core.status.correction-detail", {
           tool: correction.tool,
           topic: correction.topic,
-          collection: toolCorrectionsCollection,
+          collection: TOOL_CORRECTIONS_SPACE,
         }),
         correctionId,
       );
       try {
         const timestamp = new Date().toISOString();
-        await storeToolCorrection(qdrant, toolCorrectionsCollection, embed, { ...correction, timestamp });
+        await storeToolCorrection(vectorIndex, embed, { ...correction, timestamp });
         const decision = await consolidateToolCorrection(correction.tool, correction.topic, toolCorrectionConsolidationDeps);
         onToolFinish?.(correctionId, "success");
         tracer.emit({ kind: "memory.correction", person: key, binary: correction.tool, topic: correction.topic, decision, outcome: "done" });
@@ -631,7 +654,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
           { userId, sessionKey: key, maxChars: resumeBudget(resume, resumeMaxChars) },
           {
             readTail: (q) => listVerbatimTail(qdrant, verbatimCollection, q),
-            readSummaries: (q) => getEpisodicSummariesBySession(qdrant, episodicCollection, q),
+            readSummaries: async (q) => (vectorIndex === undefined ? [] : getEpisodicSummariesBySession(vectorIndex, q)),
             log: (msg) => console.error(msg),
           },
           timeZone,
@@ -640,7 +663,8 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
         // one (#233): the person opened a new one on purpose.
         const primer = await buildContextPrimer(userId, {
           vaultPath: wikiVaultPath,
-          getLastSessionEntries: (uid) => getLastSessionEpisodicSummaries(qdrant, episodicCollection, { userId: uid }),
+          getLastSessionEntries: async (uid) =>
+            vectorIndex === undefined ? [] : getLastSessionEpisodicSummaries(vectorIndex, { userId: uid }),
           listWikiFilesInRootsFn: listWikiFilesInRoots,
           readWikiFileInRootsFn: readWikiFileInRoots,
           readIndexFileFn: readIndexFile,
@@ -656,7 +680,10 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
     },
     registerCaptureCallback: (key, onToolStart, onToolFinish) => sessionCapture.registerCallbacks(key, { onToolStart, onToolFinish }),
     // What a resumed conversation brought back is already in memory.
-    maybeCapture: (key, history) => sessionCapture.maybeCapture(key, history.getCapturable()),
+    // Without an index there's no memory to mirror the conversation to.
+    maybeCapture: async (key, history) => {
+      if (vectorIndex !== undefined) await sessionCapture.maybeCapture(key, history.getCapturable());
+    },
     captureVerbatim: verbatimProvider.captureExchange,
     titleConversation,
     processToolCorrections,
@@ -695,7 +722,8 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
       identify: people.identify,
       vaultPath: wikiVaultPath,
       qdrant,
-      collections: { verbatim: verbatimCollection, episodic: episodicCollection, semanticFacts: semanticFactsCollection },
+      collections: { verbatim: verbatimCollection },
+      ...(vectorIndex === undefined ? {} : { index: vectorIndex }),
       confirmationStore,
       // What the caller is offered, nothing more.
       manifest: (who) => {
@@ -751,6 +779,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
           await sessionLock.run(key, fn);
         },
         ...captureDeps,
+        capture: vectorIndex !== undefined,
       },
       {
         idleTimeoutMs: Number(process.env.SESSION_IDLE_TIMEOUT_MS ?? String(30 * 60_000)),
@@ -786,6 +815,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
     plugins: { activated: loadedPlugins.activated, left: loadedPlugins.left },
     auth: { declared: declaredAuth.map((a) => a.name), active: authenticate !== undefined },
     directory: typeof loadedDirectory === "string" ? loadedDirectory : loadedDirectory.name,
+    vectorIndex: { declared: config.vectorIndex?.name ?? null, active: vectorIndex !== undefined },
     i18n: i18nReport,
     credentials: credentialsReport,
     traceLevel: config.traces?.level ?? "meta",

@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { initVault } from "../wiki/vault-init.ts";
-import { legacyUserKey, migrateMemoryToUserKeys, migrateVaultToUserAreas, type MigrationQdrant } from "./migrate-layout.ts";
+import { legacyUserKey, migrateMemoryToUserKeys, migrateVaultToUserAreas, type MigrationIndex } from "./migrate-layout.ts";
 
 const tempDirs: string[] = [];
 afterEach(async () => {
@@ -146,36 +146,34 @@ describe("migrateVaultToUserAreas", () => {
   });
 });
 
-/** A Qdrant fake holding `points` per collection, paging scrolls by `pageSize`, recording every setPayload. */
-function fakeQdrant(points: Record<string, string[]>, pageSize = 2) {
-  const updates: Array<{ collection: string; userId: string; key: string }> = [];
-  const client: MigrationQdrant = {
-    scroll: async (collection, params) => {
-      const all = points[collection];
-      if (all === undefined) throw new Error(`Not found: Collection ${collection} doesn't exist`);
-      const start = typeof params.offset === "number" ? params.offset : 0;
+/** An index fake holding the `userId`s of each space's points, paging scrolls by `pageSize`, recording every setPayload. */
+function fakeIndex(points: Record<string, string[]>, pageSize = 2) {
+  const updates: Array<{ space: string; userId: string; key: string }> = [];
+  const index: MigrationIndex = {
+    scroll: async (space, q) => {
+      const all = points[space];
+      if (all === undefined) throw new Error(`Not found: Collection ${space} doesn't exist`);
+      const start = q.cursor === undefined ? 0 : Number(q.cursor);
       const page = all.slice(start, start + pageSize);
-      return {
-        points: page.map((userId, i) => ({ id: start + i, payload: { userId } })),
-        next_page_offset: start + pageSize < all.length ? start + pageSize : null,
-      };
+      const next = start + pageSize < all.length ? String(start + pageSize) : undefined;
+      const result = { points: page.map((userId, i) => ({ id: String(start + i), payload: { userId } })) };
+      return next === undefined ? result : { ...result, next };
     },
-    setPayload: async (collection, params) => {
-      const userId = params.filter.must[0]!.match.value;
-      const key = params.payload.userId;
-      updates.push({ collection, userId, key });
-      points[collection] = points[collection]!.map((u) => (u === userId ? key : u));
-      return {};
+    setPayload: async (space, q) => {
+      const userId = q.where.userId!;
+      const key = q.payload.userId as string;
+      updates.push({ space, userId, key });
+      points[space] = points[space]!.map((u) => (u === userId ? key : u));
     },
   };
-  return { client, updates };
+  return { index, updates };
 }
 
 describe("migrateMemoryToUserKeys", () => {
-  const collections = ["episodic_memory", "semantic_facts", "verbatim_archive"];
+  const spaces = ["episodic_memory", "semantic_facts", "verbatim_archive"];
 
-  it("rewrites every legacy userId it can attribute to its user key, across pages and collections", async () => {
-    const { client, updates } = fakeQdrant({
+  it("rewrites every legacy userId it can attribute to its user key, across pages and spaces", async () => {
+    const { index, updates } = fakeIndex({
       episodic_memory: ["users/42", "users/42", "users/7"],
       semantic_facts: ["users/42"],
       // The archive stored the id encoded.
@@ -183,39 +181,39 @@ describe("migrateMemoryToUserKeys", () => {
     });
     const logs: string[] = [];
 
-    await migrateMemoryToUserKeys(client, collections, (m) => logs.push(m));
+    await migrateMemoryToUserKeys(index, spaces, (m) => logs.push(m));
 
     expect(updates).toEqual([
-      { collection: "episodic_memory", userId: "users/42", key: "google-chat:users/42" },
-      { collection: "episodic_memory", userId: "users/7", key: "google-chat:users/7" },
-      { collection: "semantic_facts", userId: "users/42", key: "google-chat:users/42" },
-      { collection: "verbatim_archive", userId: "users%2F42", key: "google-chat:users/42" },
-      { collection: "verbatim_archive", userId: "users%2F7", key: "google-chat:users/7" },
+      { space: "episodic_memory", userId: "users/42", key: "google-chat:users/42" },
+      { space: "episodic_memory", userId: "users/7", key: "google-chat:users/7" },
+      { space: "semantic_facts", userId: "users/42", key: "google-chat:users/42" },
+      { space: "verbatim_archive", userId: "users%2F42", key: "google-chat:users/42" },
+      { space: "verbatim_archive", userId: "users%2F7", key: "google-chat:users/7" },
     ]);
     expect(logs).toEqual(["rewrote 5 legacy userIds to user keys"]);
   });
 
   it("leaves user keys alone and what it can't attribute, saying so once per id", async () => {
-    const { client, updates } = fakeQdrant({
+    const { index, updates } = fakeIndex({
       episodic_memory: ["google-chat:users/42", "alice", "alice"],
       semantic_facts: [],
       verbatim_archive: ["static:bob"],
     });
     const logs: string[] = [];
 
-    await migrateMemoryToUserKeys(client, collections, (m) => logs.push(m));
+    await migrateMemoryToUserKeys(index, spaces, (m) => logs.push(m));
 
     expect(updates).toEqual([]);
     expect(logs).toEqual(['episodic_memory: left userId "alice" as it is: can\'t tell whose it is (an id without its provider)']);
   });
 
-  it("goes on with the other collections when one fails, and says which", async () => {
-    const { client, updates } = fakeQdrant({ semantic_facts: ["users/42"], verbatim_archive: [] });
+  it("goes on with the other spaces when one fails, and says which", async () => {
+    const { index, updates } = fakeIndex({ semantic_facts: ["users/42"], verbatim_archive: [] });
     const logs: string[] = [];
 
-    await migrateMemoryToUserKeys(client, collections, (m) => logs.push(m));
+    await migrateMemoryToUserKeys(index, spaces, (m) => logs.push(m));
 
-    expect(updates).toEqual([{ collection: "semantic_facts", userId: "users/42", key: "google-chat:users/42" }]);
+    expect(updates).toEqual([{ space: "semantic_facts", userId: "users/42", key: "google-chat:users/42" }]);
     expect(logs[0]).toStartWith("episodic_memory: migration skipped: ");
     expect(logs[1]).toBe("rewrote 1 legacy userIds to user keys");
   });

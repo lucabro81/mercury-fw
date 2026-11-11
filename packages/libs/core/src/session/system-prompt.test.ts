@@ -156,6 +156,33 @@ describe("buildSystemPrompt preferred name", () => {
   });
 });
 
+// #379: recall_verbatim exists only with a vector index; a prompt naming an
+// absent tool sends the model after it.
+describe("buildSystemPrompt recall_verbatim", () => {
+  const base = { pluginFragments: [], plugins: [], skills: [], multiUserChannel: false };
+
+  it("describes recall_verbatim by default, as the goldens have it", () => {
+    expect(buildSystemPrompt(base)).toContain("You have access to the recall_verbatim tool.");
+  });
+
+  it("leaves recall_verbatim out entirely when the instance has no recall", () => {
+    const prompt = buildSystemPrompt({ ...base, recallVerbatim: false });
+    expect(prompt).not.toContain("recall_verbatim");
+    // Only that block goes: the one on what ran in this conversation stays.
+    expect(prompt).toContain("You have access to the recall_tool_calls tool.");
+    const withRecall = buildSystemPrompt(base);
+    const start = withRecall.indexOf("\nYou have access to the recall_verbatim tool.");
+    const end = withRecall.indexOf("use recall_verbatim for what was said in past ones.") + "use recall_verbatim for what was said in past ones.".length;
+    expect(withRecall.slice(0, start) + withRecall.slice(end)).toBe(prompt);
+  });
+
+  it("passes through buildSystemPrompts to both prompts", () => {
+    const built = buildSystemPrompts({ pluginFragments: [], plugins: [], skills: [], persona: undefined, recallVerbatim: false });
+    expect(built.system).not.toContain("recall_verbatim");
+    expect(built.chatSystem).not.toContain("recall_verbatim");
+  });
+});
+
 /**
  * The persona is the instance's: its identity replaces the opening line and its
  * tone replaces the closing block, each in the slot the default occupies, and

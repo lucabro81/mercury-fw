@@ -9,7 +9,7 @@ import {
   titlePointId,
   titlesOf,
 } from "./conversation-titles-store.ts";
-import type { QdrantClientLike } from "./episodic-store.ts";
+import type { QdrantClientLike } from "./qdrant-client.ts";
 
 /** A fake client keeping upserted points by id, whose scroll applies the `userId` + `sessionKey` filters the store sends. */
 function fakeClient(opts: { scroll?: boolean } = {}) {

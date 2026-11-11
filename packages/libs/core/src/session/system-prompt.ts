@@ -53,6 +53,8 @@ export function buildSystemPrompt(opts: {
   skills: Skill[];
   multiUserChannel: boolean;
   persona?: Persona;
+  /** Whether the session has `recall_verbatim` (it needs a vector index); described when left out. */
+  recallVerbatim?: boolean;
 }): string {
   const assistantName = assistantNameOf(opts.persona);
   // Right after the identity: what the line on every message is, whatever the plugins.
@@ -131,7 +133,7 @@ export function buildSystemPrompt(opts: {
       "- If asked what you actually ran/queried/did earlier in this same conversation, call recall_tool_calls and quote it verbatim — your earlier turns show which tools you called and how they went, but not what they returned, so reconstructing from memory instead of calling this tool risks getting it wrong.",
     ].join("\n"),
   );
-  lines.push(
+  if (opts.recallVerbatim !== false) lines.push(
     [
       "You have access to the recall_verbatim tool.",
       "DO:",
@@ -172,6 +174,7 @@ export function buildSystemPrompts(opts: {
   skills: Skill[];
   /** Required even when undefined, so a caller can't silently drop the instance's persona. */
   persona: Persona | undefined;
+  recallVerbatim?: boolean;
 }): { system: string; chatSystem: string } {
   return {
     system: buildSystemPrompt({ ...opts, multiUserChannel: false }),

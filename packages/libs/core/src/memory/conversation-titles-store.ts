@@ -12,7 +12,7 @@
  * the vector is a constant of one dimension, and reads are filtered scrolls.
  */
 import { createHash } from "node:crypto";
-import type { QdrantClientLike } from "./episodic-store.ts";
+import type { QdrantClientLike } from "./qdrant-client.ts";
 
 /** Who gave a conversation its title: the model, or the person. */
 export type TitleSource = "generated" | "person";
