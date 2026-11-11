@@ -39,7 +39,7 @@ The service is headless (channels and background jobs); to talk to the agent fro
 mfw repl
 ```
 
-Inside an app, `mfw` runs the app's own CLI (a devDependency, at the framework's version) whenever the global one is another version: besides starting and stopping the app it follows the logs, opens a shell in the container, reads and writes the wiki, reads the memory on Qdrant and resets either. The [`@mercury-fw/cli` README](apps/cli/README.md) documents every command, and every flag for scaffolding without the questions.
+Inside an app, `mfw` runs the app's own CLI (a devDependency, at the framework's version) whenever the global one is another version: besides starting and stopping the app it follows the logs, opens a shell in the container, reads and writes the wiki, reads the memory on Qdrant, and resets the memory, the wiki or Mercury's own state. The [`@mercury-fw/cli` README](apps/cli/README.md) documents every command, and every flag for scaffolding without the questions.
 
 ## Composing an app
 

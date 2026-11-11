@@ -123,7 +123,9 @@ first where it can (20 by default). Both only read.
 
 Deletes for good the long-term memory (every collection on Qdrant), the whole wiki, or the agent's own state (`data`:
 the linked accounts, the profiles, the plugins' data, the traces). Each lives on a volume of its own, and the others
-stay. It asks you to type the app's name first; anything else deletes nothing. Then it removes the volume and starts the service again on an empty one.
+stay. It asks you to type the app's name first; anything else deletes nothing. Then it removes the volume and starts
+the service again on an empty one. An app whose compose file has no `mercury-data` volume yet gets an error for
+`data`, before any question.
 
 ## People and logins
 
