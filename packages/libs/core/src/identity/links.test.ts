@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm, writeFile, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Principal } from "@mercury-fw/channel-types";
-import { createLinkStore } from "./links.ts";
+import { createLinkStore, linksPath } from "./links.ts";
 
 const dirs: string[] = [];
 afterEach(async () => {
@@ -17,6 +17,12 @@ async function tempPath(): Promise<string> {
 }
 
 const alice = { id: "alice", provider: "static" as const };
+
+describe("linksPath", () => {
+  test("lives in the data folder, out of the model's reach", () => {
+    expect(linksPath("/data")).toBe("/data/identity-links.json");
+  });
+});
 
 describe("createLinkStore", () => {
   test("knows no link before anything is written, and no file is needed for that", async () => {

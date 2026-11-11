@@ -3,9 +3,8 @@
  * belongs to the person another principal is, because they proved they hold
  * both (see `linking.ts`) or the operator said so (`mfw identity link`).
  *
- * Kept in one JSON file on the vault's volume, outside every path the model and
- * the HTTP reads can reach and out of the vault's git (see `vault-init.ts`),
- * written whole and atomically. The file is reread whenever it changed on
+ * Kept in one JSON file in the data folder (`../data/data-dir.ts`), outside
+ * every path the model and the HTTP reads can reach, written whole and atomically. The file is reread whenever it changed on
  * disk, so a change made from another process (`mfw identity`) reaches the
  * running service. An unreadable file applies no link: each identity is then
  * on its own, which never gives anyone more than they had.
@@ -14,9 +13,9 @@ import { mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "no
 import { dirname, resolve } from "node:path";
 import type { Principal } from "@mercury-fw/channel-types";
 
-/** Where the account links live on the vault's volume (`vault-init.ts` keeps `.mercury/` out of its git). */
-export function linksPath(vaultPath: string): string {
-  return resolve(vaultPath, ".mercury", "identity-links.json");
+/** Where the account links live in the data folder (`../data/data-dir.ts`). */
+export function linksPath(dataPath: string): string {
+  return resolve(dataPath, "identity-links.json");
 }
 
 /** Who an identity belongs to: the owner's principal, as the core identifies it. */

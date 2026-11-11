@@ -16,8 +16,8 @@ async function tempVault(): Promise<string> {
 }
 
 describe("traceSecretPath", () => {
-  test("lives in the vault's .mercury folder, out of the model's reach and the vault's git", () => {
-    expect(traceSecretPath("/vault")).toBe("/vault/.mercury/trace-secret");
+  test("lives in the data folder, out of the model's reach", () => {
+    expect(traceSecretPath("/data")).toBe("/data/trace-secret");
   });
 });
 

@@ -7,18 +7,18 @@
  * it follows the person across their conversations, and the owner when
  * accounts are linked.
  *
- * Kept like the account links (`links.ts`): one JSON file on the vault's
- * volume, outside every path the model and the HTTP reads can reach and out
- * of the vault's git, written whole and atomically, reread whenever it changed
+ * Kept like the account links (`links.ts`): one JSON file in the data
+ * folder (`../data/data-dir.ts`), outside every path the model and the HTTP
+ * reads can reach, written whole and atomically, reread whenever it changed
  * on disk. An unreadable file gives nobody a name and is never written over.
  */
 import { mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { timeZoneName } from "../session/turn-stamp.ts";
 
-/** Where the people's settings live on the vault's volume (`vault-init.ts` keeps `.mercury/` out of its git). */
-export function profilesPath(vaultPath: string): string {
-  return resolve(vaultPath, ".mercury", "profiles.json");
+/** Where the people's settings live in the data folder (`../data/data-dir.ts`). */
+export function profilesPath(dataPath: string): string {
+  return resolve(dataPath, "profiles.json");
 }
 
 const MAX_NAME_LENGTH = 80;

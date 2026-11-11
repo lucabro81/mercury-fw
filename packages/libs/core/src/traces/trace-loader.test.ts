@@ -38,29 +38,29 @@ describe("loadTracer", () => {
   test("no traces declared: the no-op tracer, silently, and nothing written on the volume", async () => {
     const vault = await tempVault();
     const logs: string[] = [];
-    const tracer = await loadTracer(undefined, { env: {}, log: (m) => logs.push(m), vaultPath: vault, now: () => NOW });
+    const tracer = await loadTracer(undefined, { env: {}, log: (m) => logs.push(m), dataPath: vault, now: () => NOW });
     expect(tracer).toBe(noopTracer);
     expect(logs).toEqual([]);
     await expect(stat(traceSecretPath(vault))).rejects.toThrow();
   });
 
-  test("builds the sink with the env, the logger and its own folder under .mercury/traces, which exists", async () => {
+  test("builds the sink with the env, the logger and its own folder, traces/ in the data folder, which exists", async () => {
     const vault = await tempVault();
     const { plugin, built } = collectingPlugin();
     const env = { X: "1" };
     const log = () => {};
-    await loadTracer({ sink: plugin }, { env, log, vaultPath: vault, now: () => NOW });
+    await loadTracer({ sink: plugin }, { env, log, dataPath: vault, now: () => NOW });
     expect(built).toHaveLength(1);
     expect(built[0]!.env).toBe(env);
     expect(built[0]!.log).toBe(log);
-    expect(built[0]!.dir).toBe(join(vault, ".mercury", "traces"));
+    expect(built[0]!.dir).toBe(join(vault, "traces"));
     expect((await stat(built[0]!.dir)).isDirectory()).toBe(true);
   });
 
   test("the level defaults to meta: args don't reach the sink", async () => {
     const vault = await tempVault();
     const { plugin, events } = collectingPlugin();
-    const tracer = await loadTracer({ sink: plugin }, { env: {}, log: () => {}, vaultPath: vault, now: () => NOW });
+    const tracer = await loadTracer({ sink: plugin }, { env: {}, log: () => {}, dataPath: vault, now: () => NOW });
     tracer.emit({ kind: "tool.call", args: { input: "x" } });
     expect(events).toEqual([{ at: "2026-11-11T09:30:00.000Z", kind: "tool.call" }]);
   });
@@ -68,7 +68,7 @@ describe("loadTracer", () => {
   test("the declared level is applied, and pseudonyms use the secret stored on the volume", async () => {
     const vault = await tempVault();
     const { plugin, events } = collectingPlugin();
-    const tracer = await loadTracer({ sink: plugin, level: "args" }, { env: {}, log: () => {}, vaultPath: vault, now: () => NOW });
+    const tracer = await loadTracer({ sink: plugin, level: "args" }, { env: {}, log: () => {}, dataPath: vault, now: () => NOW });
     tracer.emit({ kind: "tool.call", person: "static:bob", args: { input: "x" } });
     const secret = (await readFile(traceSecretPath(vault), "utf8")).trim();
     expect(events).toEqual([{ at: "2026-11-11T09:30:00.000Z", kind: "tool.call", person: pseudonymOf(secret, "static:bob"), args: { input: "x" } }]);
@@ -78,7 +78,7 @@ describe("loadTracer", () => {
     const vault = await tempVault();
     const { plugin } = collectingPlugin();
     await expect(
-      loadTracer({ sink: plugin, level: "full" as "meta" }, { env: {}, log: () => {}, vaultPath: vault, now: () => NOW }),
+      loadTracer({ sink: plugin, level: "full" as "meta" }, { env: {}, log: () => {}, dataPath: vault, now: () => NOW }),
     ).rejects.toThrow('traces.level must be "meta" or "args"');
   });
 
@@ -86,7 +86,7 @@ describe("loadTracer", () => {
     const vault = await tempVault();
     const logs: string[] = [];
     const { plugin, built } = collectingPlugin(TRACE_SINK_API_VERSION + 1);
-    const tracer = await loadTracer({ sink: plugin }, { env: {}, log: (m) => logs.push(m), vaultPath: vault, now: () => NOW });
+    const tracer = await loadTracer({ sink: plugin }, { env: {}, log: (m) => logs.push(m), dataPath: vault, now: () => NOW });
     expect(tracer).toBe(noopTracer);
     expect(built).toHaveLength(0);
     expect(logs).toEqual([
@@ -104,7 +104,7 @@ describe("loadTracer", () => {
         throw new Error("read-only volume");
       }),
     };
-    const tracer = await loadTracer({ sink: plugin }, { env: {}, log: (m) => logs.push(m), vaultPath: vault, now: () => NOW });
+    const tracer = await loadTracer({ sink: plugin }, { env: {}, log: (m) => logs.push(m), dataPath: vault, now: () => NOW });
     expect(tracer).toBe(noopTracer);
     expect(logs).toEqual(['trace sink "broken" failed to load: read-only volume']);
   });
@@ -112,11 +112,11 @@ describe("loadTracer", () => {
   test("an unusable trace secret leaves traces off, logged, without building the sink", async () => {
     const vault = await tempVault();
     const { mkdir, writeFile } = await import("node:fs/promises");
-    await mkdir(join(vault, ".mercury"), { recursive: true });
+    await mkdir(vault, { recursive: true });
     await writeFile(traceSecretPath(vault), "garbage\n");
     const logs: string[] = [];
     const { plugin, built } = collectingPlugin();
-    const tracer = await loadTracer({ sink: plugin }, { env: {}, log: (m) => logs.push(m), vaultPath: vault, now: () => NOW });
+    const tracer = await loadTracer({ sink: plugin }, { env: {}, log: (m) => logs.push(m), dataPath: vault, now: () => NOW });
     expect(tracer).toBe(noopTracer);
     expect(built).toHaveLength(0);
     expect(logs).toHaveLength(1);

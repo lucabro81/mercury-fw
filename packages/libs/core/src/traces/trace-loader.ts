@@ -18,15 +18,15 @@ import { createTracer, noopTracer, type TraceLevel, type Tracer } from "./tracer
 /** What an app declares as `traces`: where events go, and how much they carry (`meta` when left out). */
 export type MercuryTraces = { sink: TraceSinkPlugin; level?: TraceLevel };
 
-/** The folder a sink gets on the vault's volume (`vault-init.ts` keeps `.mercury/` out of its git). */
-export function traceDir(vaultPath: string): string {
-  return resolve(vaultPath, ".mercury", "traces");
+/** The folder a sink gets: `traces/` in the data folder (`../data/data-dir.ts`). */
+export function traceDir(dataPath: string): string {
+  return resolve(dataPath, "traces");
 }
 
 /** The tracer for `traces`, or `noopTracer` when there's none or it can't be used (see the module comment). */
 export async function loadTracer(
   traces: MercuryTraces | undefined,
-  ctx: { env: Record<string, string | undefined>; log: (msg: string) => void; vaultPath: string; now: () => number },
+  ctx: { env: Record<string, string | undefined>; log: (msg: string) => void; dataPath: string; now: () => number },
 ): Promise<Tracer> {
   if (traces === undefined) return noopTracer;
   const level = traces.level ?? "meta";
@@ -43,13 +43,13 @@ export async function loadTracer(
   }
   let secret: string;
   try {
-    secret = await loadTraceSecret(ctx.vaultPath);
+    secret = await loadTraceSecret(ctx.dataPath);
   } catch (err) {
     ctx.log(`trace sink "${sink.name}": traces off, no trace secret: ${err instanceof Error ? err.message : String(err)}`);
     return noopTracer;
   }
   try {
-    const dir = traceDir(ctx.vaultPath);
+    const dir = traceDir(ctx.dataPath);
     await mkdir(dir, { recursive: true });
     const built = sink.build({ env: ctx.env, log: ctx.log, dir });
     return createTracer({ sink: built, level, secret, now: ctx.now, log: ctx.log });

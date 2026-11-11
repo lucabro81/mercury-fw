@@ -16,8 +16,8 @@ async function tempPath(): Promise<string> {
 }
 
 describe("profilesPath", () => {
-  test("lives in the vault's .mercury folder, out of the model's reach and the vault's git", () => {
-    expect(profilesPath("/vault")).toBe("/vault/.mercury/profiles.json");
+  test("lives in the data folder, out of the model's reach", () => {
+    expect(profilesPath("/data")).toBe("/data/profiles.json");
   });
 });
 
