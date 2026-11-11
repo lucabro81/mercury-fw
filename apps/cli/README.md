@@ -19,7 +19,7 @@ On Mercury's documentation site: [the `mfw` reference](https://lucabro81.github.
   - [`mfw memory list`](#mfw-memory-list)
   - [`mfw memory read <collection> [--limit N]`](#mfw-memory-read-collection---limit-n)
   - [`mfw identity links`, `link`, `unlink`](#mfw-identity-links-link-unlink)
-  - [`mfw reset <memory|wiki>`](#mfw-reset-memorywiki)
+  - [`mfw reset <memory|wiki|data>`](#mfw-reset-memorywikidata)
   - [`mfw credentials setup <plugin>`](#mfw-credentials-setup-plugin)
   - [`mfw credentials check <plugin>`](#mfw-credentials-check-plugin)
   - [`mfw credentials reset <plugin> [--user <key>]`](#mfw-credentials-reset-plugin---user-key)
@@ -188,18 +188,19 @@ mfw identity link google-chat:users/123 oidc:3123
 mfw identity unlink google-chat:users/123
 ```
 
-### `mfw reset <memory|wiki>`
+### `mfw reset <memory|wiki|data>`
 
-Deletes for good what the assistant remembers: `memory` is every collection on Qdrant, `wiki` the whole vault (the linked accounts, the profiles and the traces are in Mercury's data folder, on a volume of their own, and stay). It reads the volume's real name from the compose file, tells you which one is about to go, and asks you to type the app's name (the `name` in `package.json`); anything else, an empty answer, a `y` or closing the input included, deletes nothing and exits 1. Once confirmed it stops the service using the volume, removes its container and the volume, and starts the service again on an empty one (`docker compose stop`, `rm -f`, `docker volume rm`, `up -d`). After `memory`, a running app is restarted too (`docker compose restart mercury`), since it sets up its collections only when it starts.
+Deletes for good what the assistant remembers: `memory` is every collection on Qdrant, `wiki` the whole vault, `data` Mercury's own state (the linked accounts, the profiles, the plugins' data, the traces), each on a volume of its own. An app whose compose file has no `mercury-data` volume yet has nothing for `data` to delete: the command says so before asking anything. It reads the volume's real name from the compose file, tells you which one is about to go, and asks you to type the app's name (the `name` in `package.json`); anything else, an empty answer, a `y` or closing the input included, deletes nothing and exits 1. Once confirmed it stops the service using the volume, removes its container and the volume, and starts the service again on an empty one (`docker compose stop`, `rm -f`, `docker volume rm`, `up -d`). After `memory`, a running app is restarted too (`docker compose restart mercury`), since it sets up its collections only when it starts.
 
 If a step fails once the service is stopped (the volume still in use by a one-off container, say), it stops there and says the service is down: `mfw start` brings it back.
 
 ```bash
 mfw reset memory
 mfw reset wiki
+mfw reset data
 ```
 
-Useful for clearing out test data; the other layer isn't touched.
+Useful for clearing out test data; the other volumes aren't touched.
 
 ### `mfw credentials setup <plugin>`
 
