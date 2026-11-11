@@ -277,6 +277,19 @@
         "typescript": "^6.0.3",
       },
     },
+    "packages/stores/store-qdrant": {
+      "name": "@mercury-fw/store-qdrant",
+      "version": "0.72.0",
+      "dependencies": {
+        "@mercury-fw/channel-types": "workspace:*",
+        "@qdrant/js-client-rest": "^1.19.0",
+      },
+      "devDependencies": {
+        "@mercury-fw/typescript-config": "*",
+        "@types/bun": "^1.4.2",
+        "typescript": "^6.0.3",
+      },
+    },
     "packages/tools/plugin-atlassian-admin": {
       "name": "@mercury-fw/plugin-atlassian-admin",
       "version": "0.5.1",
@@ -719,6 +732,8 @@
     "@mercury-fw/plugin-web-search": ["@mercury-fw/plugin-web-search@workspace:packages/tools/plugin-web-search"],
 
     "@mercury-fw/plugin-zitadel": ["@mercury-fw/plugin-zitadel@workspace:packages/tools/plugin-zitadel"],
+
+    "@mercury-fw/store-qdrant": ["@mercury-fw/store-qdrant@workspace:packages/stores/store-qdrant"],
 
     "@mercury-fw/trace-jsonl": ["@mercury-fw/trace-jsonl@workspace:packages/traces/trace-jsonl"],
 

@@ -13,6 +13,7 @@
       "@mercury-fw/utils",
       "@mercury-fw/formatter",
       "@mercury-fw/trace-jsonl",
+      "@mercury-fw/store-qdrant",
       "@mercury-fw/cli",
       "create-mercury-agent"
     ]
