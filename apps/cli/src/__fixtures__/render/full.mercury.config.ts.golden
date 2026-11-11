@@ -21,6 +21,7 @@ import { googleChatChannel } from "@mercury-fw/channel-google-chat";
 import { httpChannel } from "@mercury-fw/channel-http";
 import { oidcAuth } from "@mercury-fw/auth-oidc";
 import { jsonlTraces } from "@mercury-fw/trace-jsonl";
+import { qdrantIndex } from "@mercury-fw/store-qdrant";
 
 /** The assistant's name: what the persona calls it, and every text the model reads. */
 const name = "Mercury";
@@ -61,6 +62,11 @@ export default defineMercuryConfig({
   ],
   channels: [googleChatChannel, httpChannel],
   auth: oidcAuth,
+  // Where the memory is found by meaning (what past conversations were about,
+  // what the agent learned about each person, the corrections to how a tool
+  // is used, and searching past messages): Qdrant, the compose service.
+  // Remove to keep no memory.
+  vectorIndex: qdrantIndex(),
   // How the main model generates, each value from .env: left empty, the
   // model's own applies (thinking stays on).
   model: {

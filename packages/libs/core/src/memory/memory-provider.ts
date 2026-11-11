@@ -13,7 +13,8 @@
 import { tool, type Tool } from "ai";
 import { z } from "zod";
 import { appendVerbatimMessage, searchVerbatim, shownText, type ArchivedConfirmation } from "./verbatim-archive-store.ts";
-import type { QdrantClientLike } from "./episodic-store.ts";
+import type { VectorIndex } from "@mercury-fw/channel-types";
+import type { QdrantClientLike } from "./qdrant-client.ts";
 import type { CallRecord } from "../session/call-record.ts";
 import type { TraceEntry } from "../session/turn-trace.ts";
 
@@ -62,6 +63,8 @@ export type VerbatimArchiveProviderDeps = {
   client: QdrantClientLike;
   collectionName: string;
   embed: (text: string) => Promise<number[]>;
+  /** Where `recall_verbatim` searches; without one the provider offers no recall. */
+  index?: VectorIndex;
   /** Test seam; defaults to `() => new Date()`. The provider owns the durable ordering timestamp. */
   now?: () => Date;
 };
@@ -71,10 +74,10 @@ const RECALL_MAX_LIMIT = 20;
 
 /**
  * Builds the verbatim-archive provider: captures every user/assistant
- * message verbatim to its Qdrant collection, and exposes a
- * `recall_verbatim` tool that similarity-searches that archive scoped to
- * the calling user — letting a later session resurface what was actually
- * said before, beyond the live history window.
+ * message verbatim to its Qdrant collection and, when there's a vector
+ * index, exposes a `recall_verbatim` tool that searches that archive by
+ * meaning, scoped to the calling user — letting a later session resurface
+ * what was actually said before, beyond the live history window.
  */
 export function createVerbatimArchiveProvider(deps: VerbatimArchiveProviderDeps): MemoryProvider {
   const now = deps.now ?? (() => new Date());
@@ -92,7 +95,9 @@ export function createVerbatimArchiveProvider(deps: VerbatimArchiveProviderDeps)
         timestamp: now().toISOString(),
       });
     },
-    sessionTools: (ctx) => {
+    sessionTools: (ctx): Record<string, Tool> => {
+      const index = deps.index;
+      if (index === undefined) return {};
       const recall_verbatim = tool({
         description:
           "Search the durable verbatim archive of what you and this user actually said in earlier " +
@@ -103,7 +108,7 @@ export function createVerbatimArchiveProvider(deps: VerbatimArchiveProviderDeps)
           limit: z.number().int().positive().max(RECALL_MAX_LIMIT).optional(),
         }),
         execute: async ({ query, limit }) => {
-          const messages = await searchVerbatim(deps.client, deps.collectionName, deps.embed, {
+          const messages = await searchVerbatim(index, deps.embed, {
             userId: ctx.userId,
             queryText: query,
             limit: limit ?? RECALL_DEFAULT_LIMIT,

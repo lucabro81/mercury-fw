@@ -325,6 +325,60 @@ export type TraceSinkPlugin = {
   build: (ctx: { env: Record<string, string | undefined>; log: (msg: string) => void; dir: string }) => TraceSink;
 };
 
+/** Vector-index contract version: the core refuses an index with a different `apiVersion`, and then runs without one. */
+export const VECTOR_INDEX_API_VERSION = 1;
+
+/** Equality filters on a space's keyword fields: every field must hold exactly that value. */
+export type VectorWhere = Record<string, string>;
+
+/** A point of a space: its id (a UUID), its vector and what it carries. */
+export type VectorPoint = { id: string; vector: number[]; payload: Record<string, unknown> };
+
+/**
+ * What a space needs: the length of its vectors, the payload fields it's
+ * filtered on (`keys`) and those it's ordered by (`ordered`, ISO 8601 times).
+ */
+export type VectorSpaceSpec = { dimensions: number; keys?: string[]; ordered?: string[] };
+
+/**
+ * Where the core keeps what it finds by meaning: named spaces of points, each
+ * a vector and a payload. The core computes the vectors; the index keeps them,
+ * finds the nearest ones (`query`), lists points in an order (`scroll`) and
+ * rewrites payload fields (`setPayload`), always within the points `where`
+ * selects. A scroll is paged by the opaque `cursor` the previous page gave as
+ * `next`. Every method may reject when the index can't be reached: the core
+ * treats that as the index being away for now.
+ */
+export type VectorIndex = {
+  /** Creates `space` when it's missing, and the indexes its fields need; idempotent. */
+  ensure: (space: string, spec: VectorSpaceSpec) => Promise<void>;
+  upsert: (space: string, points: VectorPoint[]) => Promise<void>;
+  /** The `limit` points nearest to `vector`, nearest first. */
+  query: (
+    space: string,
+    q: { vector: number[]; where?: VectorWhere; limit: number },
+  ) => Promise<Array<{ id: string; score: number; payload: Record<string, unknown> }>>;
+  scroll: (
+    space: string,
+    q: { where?: VectorWhere; orderBy?: { key: string; direction: "asc" | "desc" }; limit: number; cursor?: string },
+  ) => Promise<{ points: Array<{ id: string; payload: Record<string, unknown> }>; next?: string }>;
+  /** Sets `payload`'s fields on every point `where` selects, keeping the rest. */
+  setPayload: (space: string, q: { where: VectorWhere; payload: Record<string, unknown> }) => Promise<void>;
+  /** Whether the index answers now, and why not when it doesn't. */
+  health: () => Promise<{ ok: boolean; detail?: string }>;
+};
+
+/**
+ * A vector index, declared as `vectorIndex` in `mercury.config.ts`. `build`
+ * reads its own settings from `env` and throws when it can't work: the core
+ * then runs without an index (no episodes, facts, corrections or recall).
+ */
+export type VectorIndexPlugin = {
+  apiVersion: number;
+  name: string;
+  build: (ctx: { env: Record<string, string | undefined>; log: (msg: string) => void }) => VectorIndex;
+};
+
 /** Whether the core talks to `principal`: `unknown` when the directory doesn't
  * know them and the instance is closed, `unavailable` when it couldn't tell.
  * `message` is what to tell them. */

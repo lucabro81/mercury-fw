@@ -5,6 +5,7 @@ import { dirname, join } from "node:path";
 import type { Principal } from "@mercury-fw/channel-types";
 import { createConfirmationStore } from "@mercury-fw/confirm-engine";
 import { getToolLog, recordStep, resetToolLogForTest } from "../session/tool-log-buffer.ts";
+import { fakeVectorIndex } from "../memory/__fixtures__/fake-vector-index.ts";
 import { createHostReads, type HostReadsDeps } from "./host-reads.ts";
 
 const tempDirs: string[] = [];
@@ -38,6 +39,7 @@ async function vault(): Promise<string> {
 /** The reads over `vaultPath`, with a Qdrant fake that records every scroll. */
 function reads(vaultPath: string, overrides: Partial<HostReadsDeps> = {}) {
   const scrolls: Scroll[] = [];
+  const index = fakeVectorIndex();
   const confirmationStore = createConfirmationStore();
   const deps: HostReadsDeps = {
     vaultPath,
@@ -47,13 +49,14 @@ function reads(vaultPath: string, overrides: Partial<HostReadsDeps> = {}) {
         return { points: [], next_page_offset: null };
       },
     } as unknown as HostReadsDeps["qdrant"],
-    collections: { verbatim: "verbatim_archive", episodic: "episodic_memory", semanticFacts: "semantic_facts" },
+    collections: { verbatim: "verbatim_archive" },
+    index,
     confirmationStore,
     manifest: () => ({ plugins: [] }),
     health: async () => ({ up: true }),
     ...overrides,
   };
-  return { reads: createHostReads(deps), scrolls, confirmationStore };
+  return { reads: createHostReads(deps), scrolls, index, confirmationStore };
 }
 
 describe("createHostReads", () => {
@@ -100,20 +103,43 @@ describe("createHostReads", () => {
     }
   });
 
-  it("scrolls only the per-person collections, filtered to the caller; null for any other collection", async () => {
-    const { reads: r, scrolls } = reads(await vault());
-    for (const collection of ["verbatim_archive", "episodic_memory", "semantic_facts"]) {
-      await r.memoryScroll(alice, collection, 10, undefined);
+  it("scrolls only the per-person spaces of the vector index, filtered to the caller; null for any other", async () => {
+    const { reads: r, index } = reads(await vault());
+    index.spaces.set("episodic_memory", [
+      { id: "a", vector: [1], payload: { userId: "static:alice", summary: "mine" } },
+      { id: "b", vector: [1], payload: { userId: "static:bob", summary: "bob's" } },
+    ]);
+    for (const space of ["verbatim_archive", "episodic_memory", "semantic_facts"]) {
+      await r.memoryScroll(alice, space, 10, undefined);
     }
-    expect(scrolls.map((s) => [s.collection, s.params.filter])).toEqual(
-      ["verbatim_archive", "episodic_memory", "semantic_facts"].map((c) => [
-        c,
-        { must: [{ key: "userId", match: { value: "static:alice" } }] },
-      ]),
+    expect(index.calls).toEqual(
+      ["verbatim_archive", "episodic_memory", "semantic_facts"].map((space) => ["scroll", space, { where: { userId: "static:alice" }, limit: 10 }]),
     );
+    expect(await r.memoryScroll(alice, "episodic_memory", 10, undefined)).toEqual({
+      points: [{ id: "a", payload: { userId: "static:alice", summary: "mine" } }],
+      nextOffset: null,
+    });
     expect(await r.memoryScroll(alice, "tool_corrections", 10, undefined)).toBeNull();
     expect(await r.memoryScroll(alice, "anything_else", 10, undefined)).toBeNull();
-    expect(scrolls).toHaveLength(3);
+  });
+
+  it("pages a space with the cursor the previous page gave", async () => {
+    const { reads: r, index } = reads(await vault());
+    index.spaces.set(
+      "semantic_facts",
+      [1, 2, 3].map((n) => ({ id: `f${n}`, vector: [1], payload: { userId: "static:alice", n } })),
+    );
+    const first = (await r.memoryScroll(alice, "semantic_facts", 2, undefined)) as { points: unknown[]; nextOffset: string | null };
+    expect(first.points).toHaveLength(2);
+    expect(first.nextOffset).toBe("2");
+    const second = (await r.memoryScroll(alice, "semantic_facts", 2, first.nextOffset!)) as { points: unknown[]; nextOffset: string | null };
+    expect(second).toEqual({ points: [{ id: "f3", payload: { userId: "static:alice", n: 3 } }], nextOffset: null });
+  });
+
+  // Without a vector index nothing of the memory is kept: there's nothing to scroll.
+  it("scrolls nothing without a vector index", async () => {
+    const { reads: r } = reads(await vault(), { index: undefined });
+    expect(await r.memoryScroll(alice, "episodic_memory", 10, undefined)).toBeNull();
   });
 
   it("lists only the caller's pending confirmations and tool calls", async () => {
@@ -215,7 +241,7 @@ describe("createHostReads: conversation titles", () => {
     return createHostReads({
       vaultPath,
       qdrant: { scroll: async () => ({ points, next_page_offset: null }) } as unknown as HostReadsDeps["qdrant"],
-      collections: { verbatim: "verbatim_archive", episodic: "episodic_memory", semanticFacts: "semantic_facts" },
+      collections: { verbatim: "verbatim_archive" },
       confirmationStore: createConfirmationStore(),
       manifest: () => ({ plugins: [] }),
       health: async () => ({ up: true }),

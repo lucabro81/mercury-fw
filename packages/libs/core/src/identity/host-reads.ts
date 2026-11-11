@@ -11,10 +11,12 @@
  * person, anything at all for someone the core doesn't admit. The channel
  * turns that into its own "not found" or "bad request".
  */
-import type { ChannelHostReads, Principal } from "@mercury-fw/channel-types";
+import type { ChannelHostReads, Principal, VectorIndex } from "@mercury-fw/channel-types";
 import type { ConfirmationStore } from "@mercury-fw/confirm-engine";
-import { scrollCollection, type ScrollableQdrantClient } from "../memory/qdrant-scroll.ts";
-import type { QdrantClientLike } from "../memory/episodic-store.ts";
+import { EPISODIC_SPACE } from "../memory/episodic-store.ts";
+import { SEMANTIC_FACTS_SPACE } from "../memory/semantic-facts-store.ts";
+import { VERBATIM_SPACE } from "../memory/verbatim-archive-store.ts";
+import type { QdrantClientLike } from "../memory/qdrant-client.ts";
 import { listVerbatimBySession, listVerbatimSessions } from "../memory/verbatim-archive-store.ts";
 import type { ConversationTitle } from "../memory/conversation-titles-store.ts";
 import { getToolLog } from "../session/tool-log-buffer.ts";
@@ -23,9 +25,11 @@ import { grepVisible, listVisible, readVisible } from "./vault-access.ts";
 
 export type HostReadsDeps = {
   vaultPath: string;
-  qdrant: QdrantClientLike & ScrollableQdrantClient;
-  /** The collections whose points carry a person's `userId`: the only ones `memoryScroll` opens. */
-  collections: { verbatim: string; episodic: string; semanticFacts: string };
+  qdrant: QdrantClientLike;
+  /** The archive's collection on Qdrant. */
+  collections: { verbatim: string };
+  /** Where `memoryScroll` reads; without one there's no memory to scroll. */
+  index?: VectorIndex;
   confirmationStore: ConfirmationStore;
   /** The manifest of what `who` is offered. */
   manifest: (who: TurnWho) => unknown;
@@ -42,10 +46,11 @@ export type HostReadsDeps = {
   titlesOf?: (key: string, sessionKeys: string[]) => Promise<Map<string, ConversationTitle>>;
 };
 
-/** Builds the per-person `ChannelHostReads` over this instance's vault, Qdrant and stores. */
+/** Builds the per-person `ChannelHostReads` over this instance's vault, Qdrant, vector index and stores. */
 export function createHostReads(deps: HostReadsDeps): ChannelHostReads {
   const { vaultPath, qdrant, collections } = deps;
-  const perPerson = new Set([collections.verbatim, collections.episodic, collections.semanticFacts]);
+  // The spaces whose points carry a person's `userId`: the only ones `memoryScroll` opens.
+  const perPerson = new Set([VERBATIM_SPACE, EPISODIC_SPACE, SEMANTIC_FACTS_SPACE]);
   const identify = deps.identify ?? createPeople({ directory: "none" }).identify;
 
   /** Runs `read` for the person `principal` is, or answers `null` when the core doesn't admit them. */
@@ -93,9 +98,15 @@ export function createHostReads(deps: HostReadsDeps): ChannelHostReads {
     wikiList: forPerson((who) => listVisible(scope(who))),
     wikiRead: forPerson((who, path: string) => readVisible(scope(who), path).catch(() => null)),
     wikiGrep: forPerson((who, pattern: string) => grepVisible(scope(who), pattern)),
-    memoryScroll: forPerson((who, collection: string, limit: number, offset?: string) =>
-      perPerson.has(collection) ? scrollCollection(qdrant, collection, { limit, offset, userId: who.person.key }) : null,
-    ),
+    memoryScroll: forPerson(async (who, space: string, limit: number, offset?: string) => {
+      if (deps.index === undefined || !perPerson.has(space)) return null;
+      const page = await deps.index.scroll(space, {
+        where: { userId: who.person.key },
+        limit,
+        ...(offset === undefined ? {} : { cursor: offset }),
+      });
+      return { points: page.points, nextOffset: page.next ?? null };
+    }),
     toolLog: forPerson((who) => getToolLog({ owner: who.person.key })),
     me: forPerson((who) => ({
       name: deps.preferredName?.(who.person.key) ?? null,

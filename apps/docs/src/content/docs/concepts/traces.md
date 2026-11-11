@@ -57,7 +57,7 @@ What gets recorded:
 | `title` | A conversation got its title, or why it didn't. |
 | `review.pass` | A pass of the nightly wiki review: ran or skipped, how long, how it went. |
 | `session.closed` | A quiet conversation was saved and freed. |
-| `system.start`, `system.channels` | The agent started: model, plugins and channels running, and the ones left out with the reason. |
+| `system.start`, `system.channels` | The agent started: model, plugins and channels running, and the ones left out with the reason; whether it has a vector index. |
 | `system.migrated` | The agent copied state an older version kept elsewhere: which area, and what it copied. |
 | `system.error`, `system.recovered` | Something failed without stopping the agent (the memory store unreachable, a login that didn't finish), and when it came back. |
 

@@ -13,6 +13,7 @@
  */
 import { mkdir, readdir, readFile, rename, rm, rmdir } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
+import type { VectorIndex } from "@mercury-fw/channel-types";
 import { changeVaultAndCommit } from "../wiki/wiki-note.ts";
 import { userArea } from "./user-key.ts";
 
@@ -114,61 +115,46 @@ export async function migrateVaultToUserAreas(vaultPath: string, log: (msg: stri
   }
 }
 
-type ScrollOffset = string | number | Record<string, unknown> | null | undefined;
+/** The slice of the vector index the memory migration uses. */
+export type MigrationIndex = Pick<VectorIndex, "scroll" | "setPayload">;
 
-/** The slice of the Qdrant client the memory migration uses. */
-export type MigrationQdrant = {
-  scroll(
-    collection: string,
-    params: { limit: number; offset?: ScrollOffset; with_payload: string[]; with_vector: false },
-  ): Promise<{ points: Array<{ payload?: Record<string, unknown> | null }>; next_page_offset?: ScrollOffset }>;
-  setPayload(
-    collection: string,
-    params: { payload: { userId: string }; filter: { must: Array<{ key: string; match: { value: string } }> }; wait: boolean },
-  ): Promise<unknown>;
-};
-
-/** The distinct `userId`s in `collection`, scrolling every page. */
-async function userIdsIn(client: MigrationQdrant, collection: string): Promise<string[]> {
+/** The distinct `userId`s in `space`, scrolling every page. */
+async function userIdsIn(index: MigrationIndex, space: string): Promise<string[]> {
   const ids = new Set<string>();
-  let offset: ScrollOffset;
+  let cursor: string | undefined;
   do {
-    const page = await client.scroll(collection, { limit: 256, offset, with_payload: ["userId"], with_vector: false });
+    const page = await index.scroll(space, { limit: 256, ...(cursor === undefined ? {} : { cursor }) });
     for (const point of page.points) {
-      const userId = point.payload?.userId;
+      const userId = point.payload.userId;
       if (typeof userId === "string") ids.add(userId);
     }
-    offset = page.next_page_offset;
-  } while (offset !== null && offset !== undefined);
+    cursor = page.next;
+  } while (cursor !== undefined);
   return [...ids];
 }
 
-/** Rewrites every legacy `userId` in `collections` that can be attributed to its user key. */
+/** Rewrites every legacy `userId` in `spaces` that can be attributed to its user key. */
 export async function migrateMemoryToUserKeys(
-  client: MigrationQdrant,
-  collections: string[],
+  index: MigrationIndex,
+  spaces: string[],
   log: (msg: string) => void,
 ): Promise<void> {
   let rewritten = 0;
-  for (const collection of collections) {
+  for (const space of spaces) {
     try {
-      for (const userId of await userIdsIn(client, collection)) {
+      for (const userId of await userIdsIn(index, space)) {
         // Every user key has a ":", no legacy id did.
         if (userId.includes(":")) continue;
         const key = legacyUserKey(userId);
         if (key === undefined) {
-          log(`${collection}: left userId "${userId}" as it is: ${UNATTRIBUTABLE}`);
+          log(`${space}: left userId "${userId}" as it is: ${UNATTRIBUTABLE}`);
           continue;
         }
-        await client.setPayload(collection, {
-          payload: { userId: key },
-          filter: { must: [{ key: "userId", match: { value: userId } }] },
-          wait: true,
-        });
+        await index.setPayload(space, { where: { userId }, payload: { userId: key } });
         rewritten += 1;
       }
     } catch (err) {
-      log(`${collection}: migration skipped: ${String(err)}`);
+      log(`${space}: migration skipped: ${String(err)}`);
     }
   }
   if (rewritten > 0) log(`rewrote ${rewritten} legacy userIds to user keys`);

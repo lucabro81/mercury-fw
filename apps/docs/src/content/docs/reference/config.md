@@ -17,6 +17,7 @@ import en from "./locales/en.json";
 import it from "./locales/it.json";
 import pkg from "./package.json";
 import { jsonlTraces } from "@mercury-fw/trace-jsonl";
+import { qdrantIndex } from "@mercury-fw/store-qdrant";
 
 const name = "Hermes";
 
@@ -34,6 +35,7 @@ export default defineMercuryConfig({
   channels: [httpChannel],
   auth: oidcAuth,
   directory: staticDirectory,
+  vectorIndex: qdrantIndex(),
   access: { unknown: "refuse" },
   model: {
     think: envBoolean("OLLAMA_THINK", true),
@@ -96,6 +98,22 @@ recognizes the caller decides). The HTTP channel doesn't start without one. See
 
 Who the people are, and their roles. Without one, a person is whoever the channel says, with no roles; with one, the
 agent talks only to the people it knows, and to nobody while the directory can't be reached.
+
+## `vectorIndex`
+
+Where the long-term memory is found by meaning: the summaries of past conversations, what the agent learned about
+each person, the corrections to how a tool is used, and searching past messages. See
+[Memory](../../concepts/memory/).
+
+```ts
+import { qdrantIndex } from "@mercury-fw/store-qdrant";
+
+vectorIndex: qdrantIndex(),
+```
+
+Left out, the agent keeps no long-term memory: it doesn't summarize conversations, doesn't learn corrections, and
+the model isn't offered the tool that searches past messages. An index that can't start leaves the agent the same
+way, said once in the log; an index that isn't answering yet only delays the memory until it does.
 
 ## `access`
 

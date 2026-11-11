@@ -1,160 +1,59 @@
-import { describe, it, expect } from "bun:test";
-import { ensureToolCorrectionsCollection, storeToolCorrection, searchToolCorrectionsByTopic } from "./tool-corrections-store.ts";
-import type { QdrantClientLike } from "./episodic-store.ts";
+import { describe, expect, it } from "bun:test";
+import { TOOL_CORRECTIONS_SPACE, ensureToolCorrectionsSpace, searchToolCorrectionsByTopic, storeToolCorrection } from "./tool-corrections-store.ts";
+import { fakeVectorIndex } from "./__fixtures__/fake-vector-index.ts";
 
-describe("ensureToolCorrectionsCollection", () => {
-  it("creates the collection if it doesn't already exist", async () => {
-    let created: unknown;
-    const client: QdrantClientLike = {
-      getCollections: async () => ({ collections: [] }),
-      createCollection: async (name, params) => {
-        created = { name, params };
-        return {};
-      },
-      upsert: async () => ({}),
-      query: async () => ({ points: [] }),
-    };
+const correction = (tool: string, topic: string, value: string) => ({ tool, topic, value, timestamp: "2026-07-20T10:00:00.000Z" });
 
-    await ensureToolCorrectionsCollection(client, "tool_corrections", 768);
-
-    expect(created).toEqual({ name: "tool_corrections", params: { vectors: { size: 768, distance: "Cosine" } } });
-  });
-
-  it("does not recreate a collection that already exists", async () => {
-    let createCalls = 0;
-    const client: QdrantClientLike = {
-      getCollections: async () => ({ collections: [{ name: "tool_corrections" }] }),
-      createCollection: async () => {
-        createCalls++;
-        return {};
-      },
-      upsert: async () => ({}),
-      query: async () => ({ points: [] }),
-    };
-
-    await ensureToolCorrectionsCollection(client, "tool_corrections", 768);
-
-    expect(createCalls).toBe(0);
+describe("ensureToolCorrectionsSpace", () => {
+  it("asks for the space with its dimensions", async () => {
+    const index = fakeVectorIndex();
+    await ensureToolCorrectionsSpace(index, 768);
+    expect(index.calls).toEqual([["ensure", "tool_corrections", { dimensions: 768 }]]);
+    expect(TOOL_CORRECTIONS_SPACE).toBe("tool_corrections");
   });
 });
 
 describe("storeToolCorrection", () => {
-  it("embeds only the topic, not the value, and upserts the full payload", async () => {
-    let upserted: { collection: string; points: unknown[] } | undefined;
-    const client: QdrantClientLike = {
-      getCollections: async () => ({ collections: [] }),
-      createCollection: async () => ({}),
-      upsert: async (collection, params) => {
-        upserted = { collection, points: params.points };
-        return {};
-      },
-      query: async () => ({ points: [] }),
-    };
-    const embed = async (text: string) => [text.length, 0, 0];
-
-    await storeToolCorrection(client, "tool_corrections", embed, {
-      tool: "jira",
-      topic: "select-prefix",
-      value: "ogni --select deve iniziare per issues.",
-      timestamp: "2026-07-25T12:00:00.000Z",
-    });
-
-    expect(upserted?.collection).toBe("tool_corrections");
-    const point = upserted!.points[0] as { vector: number[]; payload: Record<string, unknown> };
-    expect(point.vector).toEqual([13, 0, 0]); // "select-prefix".length
-    expect(point.payload).toEqual({
-      tool: "jira",
-      topic: "select-prefix",
-      value: "ogni --select deve iniziare per issues.",
-      timestamp: "2026-07-25T12:00:00.000Z",
-    });
+  it("embeds only the topic, not the value, and stores the full entry as payload", async () => {
+    const index = fakeVectorIndex();
+    const embedded: string[] = [];
+    await storeToolCorrection(index, async (text) => (embedded.push(text), [1, 0]), correction("jira", "jql", "use project = KAN"));
+    expect(embedded).toEqual(["jql"]);
+    const [stored] = index.spaces.get("tool_corrections")!;
+    expect(stored!.vector).toEqual([1, 0]);
+    expect(stored!.payload).toEqual(correction("jira", "jql", "use project = KAN"));
   });
 });
 
 describe("searchToolCorrectionsByTopic", () => {
-  it("embeds the query topic, searches scoped to tool, and maps payloads back", async () => {
-    let receivedArgs: { collection: string; params: unknown } | undefined;
-    const client: QdrantClientLike = {
-      getCollections: async () => ({ collections: [] }),
-      createCollection: async () => ({}),
-      upsert: async () => ({}),
-      query: async (collection, params) => {
-        receivedArgs = { collection, params };
-        return {
-          points: [
-            {
-              id: "p1",
-              score: 0.95,
-              payload: { tool: "jira", topic: "select-prefix", value: "v", timestamp: "2026-07-20T09:00:00.000Z" },
-            },
-          ],
-        };
-      },
-    };
-    const embed = async (text: string) => [text.length, 0, 0];
-
-    const results = await searchToolCorrectionsByTopic(client, "tool_corrections", embed, {
-      tool: "jira",
-      topic: "select-prefix",
+  it("embeds the query topic and searches only that tool's corrections, nearest first", async () => {
+    const index = fakeVectorIndex({
+      tool_corrections: [
+        { id: "a", vector: [0, 1], payload: correction("jira", "fields", "x") },
+        { id: "b", vector: [1, 0], payload: correction("jira", "jql", "y") },
+        { id: "c", vector: [1, 0], payload: correction("bitbucket", "jql", "z") },
+      ],
     });
+    const embedded: string[] = [];
+    const found = await searchToolCorrectionsByTopic(index, async (t) => (embedded.push(t), [1, 0]), { tool: "jira", topic: "jql" });
+    expect(embedded).toEqual(["jql"]);
+    expect(found).toEqual([correction("jira", "jql", "y"), correction("jira", "fields", "x")]);
+    expect(index.calls).toEqual([["query", "tool_corrections", { vector: [1, 0], where: { tool: "jira" }, limit: 5 }]]);
+  });
 
-    expect(receivedArgs?.collection).toBe("tool_corrections");
-    expect(receivedArgs?.params).toEqual({
-      query: [13, 0, 0],
-      filter: { must: [{ key: "tool", match: { value: "jira" } }] },
-      limit: 5,
-      with_payload: true,
+  it("asks for a custom limit instead of the default", async () => {
+    const index = fakeVectorIndex();
+    await searchToolCorrectionsByTopic(index, async () => [1], { tool: "jira", topic: "t", limit: 3 });
+    expect((index.calls[0]![2] as { limit: number }).limit).toBe(3);
+  });
+
+  it("skips points with a malformed payload instead of throwing", async () => {
+    const index = fakeVectorIndex({
+      tool_corrections: [
+        { id: "a", vector: [1], payload: { tool: "jira" } },
+        { id: "b", vector: [1], payload: correction("jira", "jql", "y") },
+      ],
     });
-    expect(results).toEqual([{ tool: "jira", topic: "select-prefix", value: "v", timestamp: "2026-07-20T09:00:00.000Z" }]);
-  });
-
-  it("respects a custom limit instead of the default", async () => {
-    let receivedLimit: number | undefined;
-    const client: QdrantClientLike = {
-      getCollections: async () => ({ collections: [] }),
-      createCollection: async () => ({}),
-      upsert: async () => ({}),
-      query: async (_collection, params) => {
-        receivedLimit = params.limit;
-        return { points: [] };
-      },
-    };
-    const embed = async () => [0, 0, 0];
-
-    await searchToolCorrectionsByTopic(client, "tool_corrections", embed, { tool: "jira", topic: "x", limit: 1 });
-
-    expect(receivedLimit).toBe(1);
-  });
-
-  it("skips results with a missing or malformed payload instead of throwing", async () => {
-    const client: QdrantClientLike = {
-      getCollections: async () => ({ collections: [] }),
-      createCollection: async () => ({}),
-      upsert: async () => ({}),
-      query: async () => ({
-        points: [
-          { id: "p1", score: 0.9, payload: null },
-          { id: "p2", score: 0.8, payload: { topic: "x" } },
-          { id: "p3", score: 0.7, payload: { tool: "jira", topic: "y", value: "v", timestamp: "2026-07-15T09:00:00.000Z" } },
-        ],
-      }),
-    };
-    const embed = async () => [0, 0, 0];
-
-    const results = await searchToolCorrectionsByTopic(client, "tool_corrections", embed, { tool: "jira", topic: "x" });
-
-    expect(results).toEqual([{ tool: "jira", topic: "y", value: "v", timestamp: "2026-07-15T09:00:00.000Z" }]);
-  });
-
-  it("returns an empty array when nothing matches", async () => {
-    const client: QdrantClientLike = {
-      getCollections: async () => ({ collections: [] }),
-      createCollection: async () => ({}),
-      upsert: async () => ({}),
-      query: async () => ({ points: [] }),
-    };
-    const embed = async () => [0, 0, 0];
-
-    expect(await searchToolCorrectionsByTopic(client, "tool_corrections", embed, { tool: "jira", topic: "x" })).toEqual([]);
+    expect(await searchToolCorrectionsByTopic(index, async () => [1], { tool: "jira", topic: "jql" })).toEqual([correction("jira", "jql", "y")]);
   });
 });

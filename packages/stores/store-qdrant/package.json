@@ -1,0 +1,40 @@
+{
+  "name": "@mercury-fw/store-qdrant",
+  "version": "0.72.0",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lucabro81/mercury-fw.git",
+    "directory": "packages/stores/store-qdrant"
+  },
+  "files": [
+    "*.ts",
+    "dist",
+    "CHANGELOG.md",
+    "!**/*.test.ts"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "exports": {
+    ".": {
+      "mercury-fw-source": "./index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./index.ts"
+    }
+  },
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@mercury-fw/channel-types": "workspace:*",
+    "@qdrant/js-client-rest": "^1.19.0"
+  },
+  "devDependencies": {
+    "@mercury-fw/typescript-config": "*",
+    "@types/bun": "^1.4.2",
+    "typescript": "^6.0.3"
+  }
+}

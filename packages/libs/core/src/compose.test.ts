@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import pkg from "../package.json";
 import { composeMercury } from "./compose.ts";
+import { fakeVectorIndex } from "./memory/__fixtures__/fake-vector-index.ts";
 import type { MercuryConfig } from "./config/define-config.ts";
 
 // Nothing listens on these: Qdrant and Ollama fail soft, and composing never
@@ -209,6 +210,22 @@ describe("composeMercury", () => {
       credentials: expect.any(Array),
       traceLevel: "meta",
     });
+  });
+
+  // #379: the start says whether the instance has a vector index, the one its memory and recall need.
+  it("reports the vector index in system.start: none declared, declared and active, declared and left out", async () => {
+    const index = (apiVersion: number) => ({ apiVersion, name: "fake", build: () => fakeVectorIndex() });
+    const cases: Array<[MercuryConfig["vectorIndex"], unknown]> = [
+      [undefined, { declared: null, active: false }],
+      [index(1), { declared: "fake", active: true }],
+      [index(99), { declared: "fake", active: false }],
+    ];
+    for (const [vectorIndex, expected] of cases) {
+      const { sink, events } = collectingSink();
+      const app = await composeMercury({ plugins: [], traces: { sink }, ...(vectorIndex === undefined ? {} : { vectorIndex }) });
+      await app.tracer.flush();
+      expect(events.find((e) => e.kind === "system.start")?.vectorIndex).toEqual(expected);
+    }
   });
 
   it("gives channels no app version when the config declares none, or an empty one", async () => {

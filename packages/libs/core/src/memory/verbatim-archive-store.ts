@@ -13,12 +13,20 @@
  * ever appends and reads; nothing here evicts (retention bounding is a
  * separate, later concern).
  *
- * Reuses `episodic-store.ts`'s structural `QdrantClientLike` — the same
- * subset of the real client every store in this directory shares.
+ * Writes and reads go to Qdrant through `./qdrant-client.ts`; the search by
+ * meaning (`searchVerbatim`) goes through the vector index, whose
+ * `verbatim_archive` space is the archive's own collection.
  */
-import type { QdrantClientLike } from "./episodic-store.ts";
+import type { VectorIndex } from "@mercury-fw/channel-types";
+import type { QdrantClientLike } from "./qdrant-client.ts";
 import type { CallRecord } from "../session/call-record.ts";
 import type { TraceEntry } from "../session/turn-trace.ts";
+
+/**
+ * The vector index's space the archived messages are searched in: the
+ * archive's own collection, whose points already carry their vectors.
+ */
+export const VERBATIM_SPACE = "verbatim_archive";
 
 /**
  * Creates `collectionName` (cosine distance, `vectorSize`-dim) if it
@@ -241,19 +249,17 @@ function isVerbatimMessage(payload: Record<string, unknown> | null): payload is 
  * (each carries its own `timestamp`).
  */
 export async function searchVerbatim(
-  client: QdrantClientLike,
-  collectionName: string,
+  index: VectorIndex,
   embed: (text: string) => Promise<number[]>,
   query: { userId: string; queryText: string; limit?: number },
 ): Promise<VerbatimMessage[]> {
   const vector = await embed(query.queryText);
-  const results = await client.query(collectionName, {
-    query: vector,
-    filter: { must: [{ key: "userId", match: { value: query.userId } }] },
+  const results = await index.query(VERBATIM_SPACE, {
+    vector,
+    where: { userId: query.userId },
     limit: query.limit ?? DEFAULT_SEARCH_LIMIT,
-    with_payload: true,
   });
-  return verbatimMessages(results.points.map((r) => r.payload ?? null)).filter(forModel).filter(said).map(asSaid).map(withoutCalls);
+  return verbatimMessages(results.map((r) => r.payload)).filter(forModel).filter(said).map(asSaid).map(withoutCalls);
 }
 
 /**

@@ -38,12 +38,13 @@ const GOOGLE_CHAT_PACKAGE = "@mercury-fw/channel-google-chat";
 /** The app's service, the one the image builds. */
 const SERVICE = "mercury";
 
-/** The core's maintenance CLIs, from the container's working directory (the
- * app's folder, where node_modules/@mercury-fw/core is). A path and not a bin:
- * a monorepo image installs before copying the sources, and Bun doesn't link a
- * bin whose file isn't there yet. The core moves in lockstep with this CLI. */
+/** The framework's maintenance CLIs, from the container's working directory
+ * (the app's folder, where node_modules/@mercury-fw/* is): the core's, and the
+ * memory's in its Qdrant package. A path and not a bin: a monorepo image
+ * installs before copying the sources, and Bun doesn't link a bin whose file
+ * isn't there yet. Both packages move in lockstep with this CLI. */
 export const VAULT_CLI = "node_modules/@mercury-fw/core/src/wiki/vault-cli.ts";
-export const MEMORY_CLI = "node_modules/@mercury-fw/core/src/memory/memory-cli.ts";
+export const MEMORY_CLI = "node_modules/@mercury-fw/store-qdrant/memory-cli.ts";
 export const IDENTITY_CLI = "node_modules/@mercury-fw/core/src/identity/links-cli.ts";
 
 /** What `mfw reset` can wipe: the compose service using the volume, the

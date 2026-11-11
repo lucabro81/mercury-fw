@@ -17,6 +17,7 @@ const versions: Record<string, string> = {
   "@mercury-fw/core": "0.1.0",
   "@mercury-fw/formatter": "0.1.0",
   "@mercury-fw/trace-jsonl": "0.1.0",
+  "@mercury-fw/store-qdrant": "0.1.0",
   "@mercury-fw/channel-google-chat": "0.1.0",
   "@mercury-fw/channel-http": "0.1.0",
   "@mercury-fw/auth-oidc": "0.1.0",
@@ -321,9 +322,13 @@ describe("renderApp: package.json", () => {
     }
   });
 
-  test("nothing chosen: only the core and its trace sink, no trustedDependencies", () => {
+  test("nothing chosen: only the core, its trace sink and its vector index, no trustedDependencies", () => {
     const pkg = JSON.parse(renderApp(EMPTY).get("package.json") ?? "");
-    expect(pkg.dependencies).toEqual({ "@mercury-fw/core": "^0.1.0", "@mercury-fw/trace-jsonl": "^0.1.0" });
+    expect(pkg.dependencies).toEqual({
+      "@mercury-fw/core": "^0.1.0",
+      "@mercury-fw/store-qdrant": "^0.1.0",
+      "@mercury-fw/trace-jsonl": "^0.1.0",
+    });
     expect(pkg.trustedDependencies).toBeUndefined();
   });
 
@@ -438,7 +443,7 @@ function evaluatedConfig(config: string): { persona: { name: string; identity: s
   // The imports are dropped: the language file's stands in as the empty file it
   // is, the package.json's as a manifest with a version, the core's env helpers
   // as an empty environment.
-  const body = `const en = {};\nconst pkg = { version: "0.1.0" };\nconst envBoolean = (_, fallback) => fallback;\nconst envNumber = (_, fallback) => fallback;\nconst jsonlTraces = () => ({});\n${config.replace(/^import .*$/gm, "").replace("export default defineMercuryConfig(", "return (")}`;
+  const body = `const en = {};\nconst pkg = { version: "0.1.0" };\nconst envBoolean = (_, fallback) => fallback;\nconst envNumber = (_, fallback) => fallback;\nconst jsonlTraces = () => ({});\nconst qdrantIndex = () => ({});\n${config.replace(/^import .*$/gm, "").replace("export default defineMercuryConfig(", "return (")}`;
   return new Function(body)();
 }
 

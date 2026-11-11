@@ -141,11 +141,14 @@ export type IdleSessionSweepDeps = CaptureDeps & {
    * the work runs directly.
    */
   withSession?: (key: string, fn: () => Promise<void>) => Promise<void>;
+  /** `false` closes idle sessions without capturing them: an instance that keeps no memory. Captures when left out. */
+  capture?: boolean;
 };
 
 /**
  * Runs one sweep at `now`: every session `scanner` reports idle (past
- * `idleTimeoutMs`) gets captured (`captureSessionToMemory`) and closed,
+ * `idleTimeoutMs`) gets captured (`captureSessionToMemory`, unless
+ * `deps.capture` is `false`) and closed,
  * then cleared from `scanner`. A failure capturing is logged and leaves
  * that session's tracking untouched (retried on the next sweep) — it must
  * never stop the sweep from processing the others (hard-won convention:
@@ -172,7 +175,7 @@ export async function runIdleSessionSweep(
           return;
         }
 
-        await captureSessionToMemory(session.userId, key, session.messages, now, deps, "idle");
+        if (deps.capture !== false) await captureSessionToMemory(session.userId, key, session.messages, now, deps, "idle");
 
         deps.closeSession(key);
         scanner.clear(key);

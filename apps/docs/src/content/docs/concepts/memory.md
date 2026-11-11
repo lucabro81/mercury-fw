@@ -49,9 +49,13 @@ the summaries related to what the person is asking and gives them to the model a
 remembers the person. Finding "related" summaries is what the **embedding model** is for: it turns text into numbers
 that are close when the meaning is close.
 
+Where the summaries go is the app's **vector index**, `vectorIndex` in its config: Qdrant, in an app made with
+`mfw create`. An app that declares none keeps no long-term memory at all (see
+[the config reference](../../reference/config/#vectorindex)).
+
 `mfw memory` lists and reads what's stored.
 
 ## When something is missing
 
-Only the history is required. If Qdrant can't be reached, or the wiki is empty, the agent still answers, it just
+Only the history is required. Without a vector index there's no long-term memory at all; if Qdrant can't be reached, or the wiki is empty, the agent still answers, it just
 remembers less.

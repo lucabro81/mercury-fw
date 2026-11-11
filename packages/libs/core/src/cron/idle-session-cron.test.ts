@@ -318,6 +318,30 @@ describe("runIdleSessionSweep", () => {
   });
 });
 
+// #379: an instance without a vector index keeps no memory: an idle session
+// is closed without a summary (no call to the model) and without storing it.
+describe("runIdleSessionSweep without memory", () => {
+  it("closes and clears an idle session without summarizing or storing it", async () => {
+    const scanner = createIdleSessionScanner();
+    scanner.touch("spaces/X:users/1", NOW - TIMEOUT);
+    const called: string[] = [];
+    const events: Array<Record<string, unknown>> = [];
+
+    await runIdleSessionSweep(scanner, NOW, TIMEOUT, {
+      capture: false,
+      getSession: (key) => ({ key, userId: "users/1", messages: [{ role: "user", content: "hi" }] }),
+      summarize: async () => (called.push("summarize"), "x"),
+      store: async () => void called.push("store"),
+      closeSession: (key) => void called.push(`close ${key}`),
+      emit: (event) => void events.push(event as Record<string, unknown>),
+    });
+
+    expect(called).toEqual(["close spaces/X:users/1"]);
+    expect(scanner.scanIdle(NOW, TIMEOUT)).toEqual([]);
+    expect(events).toEqual([{ kind: "session.closed", session: "spaces/X:users/1", person: "users/1", messages: 1 }]);
+  });
+});
+
 describe("runIdleSessionSweep under a session lock", () => {
   it("captures and closes each session inside withSession", async () => {
     const scanner = createIdleSessionScanner();

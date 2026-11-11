@@ -8,7 +8,13 @@ import {
   listVerbatimTail,
   shownText,
 } from "./verbatim-archive-store.ts";
-import type { QdrantClientLike } from "./episodic-store.ts";
+import type { QdrantClientLike } from "./qdrant-client.ts";
+import { fakeVectorIndex } from "./__fixtures__/fake-vector-index.ts";
+
+/** An index whose verbatim_archive space holds `payloads`, all equally near any query. */
+function indexWith(payloads: Array<Record<string, unknown>>) {
+  return fakeVectorIndex({ verbatim_archive: payloads.map((payload, i) => ({ id: `p${i}`, vector: [1], payload })) });
+}
 
 describe("ensureVerbatimCollection", () => {
   it("creates the collection if it doesn't already exist", async () => {
@@ -169,126 +175,56 @@ describe("appendVerbatimMessage", () => {
 });
 
 describe("searchVerbatim", () => {
-  it("embeds queryText, searches scoped to userId, and maps payloads back to VerbatimMessage", async () => {
-    let receivedArgs: { collection: string; params: unknown } | undefined;
-    const client: QdrantClientLike = {
-      getCollections: async () => ({ collections: [] }),
-      createCollection: async () => ({}),
-      upsert: async () => ({}),
-      query: async (collection, params) => {
-        receivedArgs = { collection, params };
-        return {
-          points: [
-            {
-              id: "p1",
-              score: 0.88,
-              payload: {
-                userId: "users/42",
-                sessionKey: "spaces/X:users/42",
-                role: "user",
-                content: "la settimana scorsa dicevamo di KAN-1",
-                timestamp: "2026-09-15T09:00:00.000Z",
-              },
-            },
-          ],
-        };
-      },
-    };
+  const message = (content: string, extra: Record<string, unknown> = {}) => ({
+    userId: "users/42",
+    sessionKey: "spaces/X:users/42",
+    role: "user",
+    content,
+    timestamp: "2026-09-15T09:00:00.000Z",
+    ...extra,
+  });
+
+  it("embeds queryText, searches only the person's archived messages, nearest first", async () => {
+    const index = fakeVectorIndex({
+      verbatim_archive: [
+        { id: "p1", vector: [1, 0, 0], payload: message("la settimana scorsa dicevamo di KAN-1") },
+        { id: "p2", vector: [1, 0, 0], payload: message("someone else's", { userId: "users/7" }) },
+      ],
+    });
     const embed = async (text: string) => [text.length, 0, 0];
 
-    const results = await searchVerbatim(client, "verbatim_archive", embed, {
-      userId: "users/42",
-      queryText: "cosa dicevamo di KAN-1",
-    });
+    const results: unknown[] = await searchVerbatim(index, embed, { userId: "users/42", queryText: "cosa dicevamo di KAN-1" });
 
-    expect(receivedArgs?.collection).toBe("verbatim_archive");
-    expect(receivedArgs?.params).toEqual({
-      query: ["cosa dicevamo di KAN-1".length, 0, 0],
-      filter: { must: [{ key: "userId", match: { value: "users/42" } }] },
-      limit: 5,
-      with_payload: true,
+    expect(index.calls).toEqual([
+      ["query", "verbatim_archive", { vector: ["cosa dicevamo di KAN-1".length, 0, 0], where: { userId: "users/42" }, limit: 5 }],
+    ]);
+    expect(results).toEqual([message("la settimana scorsa dicevamo di KAN-1")]);
+  });
+
+  it("asks for a custom limit instead of the default", async () => {
+    const index = fakeVectorIndex();
+    await searchVerbatim(index, async () => [0], { userId: "users/42", queryText: "x", limit: 10 });
+    expect((index.calls[0]![2] as { limit: number }).limit).toBe(10);
+  });
+
+  // A malformed point could exist from an older schema: skip rather than
+  // crash or return a malformed VerbatimMessage.
+  it("skips points with a malformed payload instead of throwing", async () => {
+    const index = fakeVectorIndex({
+      verbatim_archive: [
+        { id: "p2", vector: [1], payload: { content: 42 } },
+        { id: "p3", vector: [1], payload: message("hi", { role: "captain" }) },
+        { id: "p4", vector: [1], payload: message("valid one", { role: "assistant", sessionKey: "terminal" }) },
+      ],
     });
+    const results: unknown[] = await searchVerbatim(index, async () => [1], { userId: "users/42", queryText: "x" });
     expect(results).toEqual([
-      {
-        userId: "users/42",
-        sessionKey: "spaces/X:users/42",
-        role: "user",
-        content: "la settimana scorsa dicevamo di KAN-1",
-        timestamp: "2026-09-15T09:00:00.000Z",
-      },
+      message("valid one", { role: "assistant", sessionKey: "terminal" }),
     ]);
   });
 
-  it("respects a custom limit instead of the default", async () => {
-    let receivedLimit: number | undefined;
-    const client: QdrantClientLike = {
-      getCollections: async () => ({ collections: [] }),
-      createCollection: async () => ({}),
-      upsert: async () => ({}),
-      query: async (_collection, params) => {
-        receivedLimit = params.limit;
-        return { points: [] };
-      },
-    };
-    const embed = async () => [0, 0, 0];
-
-    await searchVerbatim(client, "verbatim_archive", embed, { userId: "users/42", queryText: "x", limit: 10 });
-
-    expect(receivedLimit).toBe(10);
-  });
-
-  // Qdrant allows a null payload on a point, and a malformed one could
-  // exist from an older schema — skip rather than crash or return a
-  // malformed VerbatimMessage.
-  it("skips results with a missing or malformed payload instead of throwing", async () => {
-    const client: QdrantClientLike = {
-      getCollections: async () => ({ collections: [] }),
-      createCollection: async () => ({}),
-      upsert: async () => ({}),
-      query: async () => ({
-        points: [
-          { id: "p1", score: 0.9, payload: null },
-          { id: "p2", score: 0.8, payload: { content: 42 } }, // wrong type
-          { id: "p3", score: 0.7, payload: { userId: "users/42", sessionKey: "t", role: "captain", content: "hi", timestamp: "2026-09-15T09:00:00.000Z" } }, // invalid role
-          {
-            id: "p4",
-            score: 0.6,
-            payload: {
-              userId: "users/42",
-              sessionKey: "terminal",
-              role: "assistant",
-              content: "valid one",
-              timestamp: "2026-09-15T09:00:00.000Z",
-            },
-          },
-        ],
-      }),
-    };
-    const embed = async () => [0, 0, 0];
-
-    const results = await searchVerbatim(client, "verbatim_archive", embed, { userId: "users/42", queryText: "x" });
-
-    expect(results).toEqual([
-      {
-        userId: "users/42",
-        sessionKey: "terminal",
-        role: "assistant",
-        content: "valid one",
-        timestamp: "2026-09-15T09:00:00.000Z",
-      },
-    ]);
-  });
-
-  it("returns an empty array when nothing matches", async () => {
-    const client: QdrantClientLike = {
-      getCollections: async () => ({ collections: [] }),
-      createCollection: async () => ({}),
-      upsert: async () => ({}),
-      query: async () => ({ points: [] }),
-    };
-    const embed = async () => [0, 0, 0];
-
-    expect(await searchVerbatim(client, "verbatim_archive", embed, { userId: "users/42", queryText: "x" })).toEqual([]);
+  it("is empty when nothing matches", async () => {
+    expect(await searchVerbatim(fakeVectorIndex(), async () => [0], { userId: "users/42", queryText: "x" })).toEqual([]);
   });
 });
 
@@ -706,7 +642,7 @@ describe("the displays a turn showed", () => {
   });
 
   it("searchVerbatim, what recall_verbatim hands the model, keeps the answer only", async () => {
-    const results = await searchVerbatim(clientWith([answer]), "verbatim_archive", async () => [1], {
+    const results = await searchVerbatim(indexWith([answer]), async () => [1], {
       userId: "static:alice",
       queryText: "issue",
     });
@@ -749,8 +685,7 @@ describe("the displays a turn showed", () => {
 
   it("searchVerbatim leaves out an answer that was only displays", async () => {
     const results = await searchVerbatim(
-      clientWith([{ ...answer, content: "" }, question]),
-      "verbatim_archive",
+      indexWith([{ ...answer, content: "" }, question]),
       async () => [1],
       { userId: "static:alice", queryText: "issue" },
     );
@@ -858,7 +793,7 @@ describe("the tool calls an answer was written from (#352)", () => {
   });
 
   it("searchVerbatim, what recall_verbatim hands the model, leaves the calls out", async () => {
-    const results = await searchVerbatim(clientWith([answer]), "verbatim_archive", async () => [1], {
+    const results = await searchVerbatim(indexWith([answer]), async () => [1], {
       userId: "static:alice",
       queryText: "issue",
     });
@@ -1083,7 +1018,7 @@ describe("what the person saw of the turn besides its text (#370)", () => {
   });
 
   it("searchVerbatim, what recall_verbatim hands the model, leaves out the trace, the pending note and the outcomes", async () => {
-    const results = await searchVerbatim(clientWith([answer, outcome, resumedOutcome]), "verbatim_archive", async () => [1], {
+    const results = await searchVerbatim(indexWith([answer, outcome, resumedOutcome]), async () => [1], {
       userId: "static:alice",
       queryText: "KAN-1",
     });

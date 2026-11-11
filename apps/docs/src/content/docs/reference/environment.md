@@ -40,4 +40,7 @@ of its values from these variables; left empty, the model's own value applies.
 | `SESSION_IDLE_TIMEOUT_MS` | How long a quiet conversation keeps its history in memory (default 30 minutes). |
 | `SESSION_RESUME_MAX_CHARS` | How many characters of a reopened conversation come back to the model (default `30000`; `0` turns resuming off). More gives the model more of the past, and makes every answer slower. |
 
+The length of the memory's vectors comes from the embedding model, found when the agent starts: older
+`QDRANT_*_VECTOR_SIZE` variables aren't read anymore.
+
 [Memory](../../concepts/memory/) explains what each of these is for.

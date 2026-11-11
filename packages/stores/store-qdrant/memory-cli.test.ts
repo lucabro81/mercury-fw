@@ -1,5 +1,5 @@
 /**
- * The core's memory CLI, what `mfw memory` runs in the app's container: lists
+ * The memory CLI, what `mfw memory` runs in the app's container: lists
  * Qdrant's collections and reads a collection's points, read-only, against a
  * fake client. Output is asserted exactly: it's what a maintainer reads.
  */

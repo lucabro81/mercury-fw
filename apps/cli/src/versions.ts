@@ -7,7 +7,13 @@
 import pkg from "../package.json";
 
 /** The framework packages a new app can depend on: always at the CLI's version. */
-export const FRAMEWORK_PACKAGES = ["@mercury-fw/cli", "@mercury-fw/core", "@mercury-fw/formatter", "@mercury-fw/trace-jsonl"];
+export const FRAMEWORK_PACKAGES = [
+  "@mercury-fw/cli",
+  "@mercury-fw/core",
+  "@mercury-fw/formatter",
+  "@mercury-fw/store-qdrant",
+  "@mercury-fw/trace-jsonl",
+];
 
 /** The registry asked when `MFW_REGISTRY` doesn't name another. */
 export const DEFAULT_REGISTRY = "https://registry.npmjs.org";

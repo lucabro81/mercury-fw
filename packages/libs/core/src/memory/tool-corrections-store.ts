@@ -1,25 +1,20 @@
 /**
- * Layer 3 (Qdrant) procedural-correction staging — separate collection
+ * Layer 3 procedural-correction staging — separate space
  * from `semantic-facts-store.ts`: that one is keyed by userId (a fact
  * about a specific person), this one is keyed by tool (a fact about a
- * CLI, true for whoever uses it next). Kept as its own collection rather
+ * CLI, true for whoever uses it next). Kept as its own space rather
  * than overloading `semantic-facts-store.ts`'s `userId` field with a tool
  * name — a tool name in a field called `userId` would be a standing
- * source of confusion for anyone reading this collection later.
+ * source of confusion for anyone reading this space later.
  */
-import type { QdrantClientLike } from "./episodic-store.ts";
+import type { VectorIndex } from "@mercury-fw/channel-types";
 
-/** Creates `collectionName` (cosine distance, `vectorSize`-dim) if it doesn't already exist — safe to call on every startup. */
-export async function ensureToolCorrectionsCollection(
-  client: QdrantClientLike,
-  collectionName: string,
-  vectorSize: number,
-): Promise<void> {
-  const { collections } = await client.getCollections();
-  if (collections.some((c) => c.name === collectionName)) {
-    return;
-  }
-  await client.createCollection(collectionName, { vectors: { size: vectorSize, distance: "Cosine" } });
+/** The vector index's space the corrections live in. */
+export const TOOL_CORRECTIONS_SPACE = "tool_corrections";
+
+/** Makes sure the space exists with `dimensions`-long vectors; idempotent, safe on every startup. */
+export async function ensureToolCorrectionsSpace(index: VectorIndex, dimensions: number): Promise<void> {
+  await index.ensure(TOOL_CORRECTIONS_SPACE, { dimensions });
 }
 
 export type ToolCorrectionEntry = {
@@ -31,15 +26,12 @@ export type ToolCorrectionEntry = {
 
 /** Embeds `entry.topic` alone (never `topic + value`), same reasoning as `storeSemanticFact` — upserts a new point, never an update-in-place. */
 export async function storeToolCorrection(
-  client: QdrantClientLike,
-  collectionName: string,
+  index: VectorIndex,
   embed: (text: string) => Promise<number[]>,
   entry: ToolCorrectionEntry,
 ): Promise<void> {
   const vector = await embed(entry.topic);
-  await client.upsert(collectionName, {
-    points: [{ id: crypto.randomUUID(), vector, payload: { ...entry } }],
-  });
+  await index.upsert(TOOL_CORRECTIONS_SPACE, [{ id: crypto.randomUUID(), vector, payload: { ...entry } }]);
 }
 
 const DEFAULT_SEARCH_LIMIT = 5;
@@ -56,17 +48,11 @@ function isToolCorrectionEntry(payload: Record<string, unknown> | null): payload
 
 /** Past corrections for a specific tool, clustered by topic similarity — filters by `tool` so one tool's corrections never leak into another's cluster. */
 export async function searchToolCorrectionsByTopic(
-  client: QdrantClientLike,
-  collectionName: string,
+  index: VectorIndex,
   embed: (text: string) => Promise<number[]>,
   query: { tool: string; topic: string; limit?: number },
 ): Promise<ToolCorrectionEntry[]> {
   const vector = await embed(query.topic);
-  const results = await client.query(collectionName, {
-    query: vector,
-    filter: { must: [{ key: "tool", match: { value: query.tool } }] },
-    limit: query.limit ?? DEFAULT_SEARCH_LIMIT,
-    with_payload: true,
-  });
-  return results.points.map((r) => r.payload ?? null).filter(isToolCorrectionEntry);
+  const results = await index.query(TOOL_CORRECTIONS_SPACE, { vector, where: { tool: query.tool }, limit: query.limit ?? DEFAULT_SEARCH_LIMIT });
+  return results.map((r) => r.payload).filter(isToolCorrectionEntry);
 }

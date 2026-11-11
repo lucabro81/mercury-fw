@@ -1,557 +1,168 @@
 import { describe, it, expect } from "bun:test";
+import type { VectorPoint } from "@mercury-fw/channel-types";
 import {
-  ensureEpisodicCollection,
+  EPISODIC_SPACE,
+  ensureEpisodicSpace,
   storeEpisodicSummary,
   searchEpisodicMemory,
   getLastSessionEpisodicSummaries,
   getEpisodicSummariesBySession,
-  type QdrantClientLike,
 } from "./episodic-store.ts";
+import { fakeVectorIndex } from "./__fixtures__/fake-vector-index.ts";
 
-describe("ensureEpisodicCollection", () => {
-  it("creates the collection if it doesn't already exist", async () => {
-    let created: unknown;
-    const client: QdrantClientLike = {
-      getCollections: async () => ({ collections: [] }),
-      createCollection: async (name, params) => {
-        created = { name, params };
-        return {};
-      },
-      upsert: async () => ({}),
-      query: async () => ({ points: [] }),
-    };
+const embed = async (text: string) => [text.length, 1, 0];
 
-    await ensureEpisodicCollection(client, "episodic_memory", 768);
+function point(id: string, payload: Record<string, unknown>, vector: number[] = [1, 0, 0]): VectorPoint {
+  return { id, vector, payload };
+}
 
-    expect(created).toEqual({
-      name: "episodic_memory",
-      params: { vectors: { size: 768, distance: "Cosine" } },
-    });
-  });
+const summary = (sessionKey: string, text: string, timestamp: string, userId = "users/42") => ({
+  userId,
+  sessionKey,
+  summary: text,
+  timestamp,
+});
 
-  it("does not recreate a collection that already exists", async () => {
-    let createCalls = 0;
-    const client: QdrantClientLike = {
-      getCollections: async () => ({ collections: [{ name: "episodic_memory" }] }),
-      createCollection: async () => {
-        createCalls++;
-        return {};
-      },
-      upsert: async () => ({}),
-      query: async () => ({ points: [] }),
-    };
-
-    await ensureEpisodicCollection(client, "episodic_memory", 768);
-
-    expect(createCalls).toBe(0);
-  });
-
+describe("ensureEpisodicSpace", () => {
   // Regression test: a fresh episodic_memory collection with no payload
-  // indexes made getLastSessionEpisodicSummaries's order_by/filter scroll
-  // queries fail with an HTTP 400 the first time a brand-new deployment's
-  // context primer ran — Qdrant requires an index for both. Observed live
-  // twice (once per fresh Qdrant volume) before this fix; previously
-  // worked around by hand via the REST API instead of in code.
-  it("creates the timestamp, userId and sessionKey payload indexes when creating a new collection", async () => {
-    const indexCalls: Array<{ name: string; params: unknown }> = [];
-    const client: QdrantClientLike = {
-      getCollections: async () => ({ collections: [] }),
-      createCollection: async () => ({}),
-      upsert: async () => ({}),
-      query: async () => ({ points: [] }),
-      createPayloadIndex: async (name, params) => {
-        indexCalls.push({ name, params });
-        return {};
-      },
-    };
-
-    await ensureEpisodicCollection(client, "episodic_memory", 768);
-
-    expect(indexCalls).toEqual([
-      { name: "episodic_memory", params: { field_name: "timestamp", field_schema: "datetime" } },
-      { name: "episodic_memory", params: { field_name: "userId", field_schema: "keyword" } },
-      { name: "episodic_memory", params: { field_name: "sessionKey", field_schema: "keyword" } },
+  // indexes made getLastSessionEpisodicSummaries's ordered/filtered scroll
+  // fail the first time a brand-new deployment's context primer ran. The
+  // space asks for every field it's filtered and ordered on.
+  it("asks for the space with its dimensions, filtered on userId and sessionKey, ordered on timestamp", async () => {
+    const index = fakeVectorIndex();
+    await ensureEpisodicSpace(index, 768);
+    expect(index.calls).toEqual([
+      ["ensure", "episodic_memory", { dimensions: 768, keys: ["userId", "sessionKey"], ordered: ["timestamp"] }],
     ]);
-  });
-
-  // The self-healing case: a collection created before this fix existed
-  // (or by any other means) never got its indexes — ensuring them must
-  // not be conditional on "did we just create the collection".
-  it("creates the payload indexes even when the collection already exists", async () => {
-    const indexCalls: Array<{ name: string; params: unknown }> = [];
-    const client: QdrantClientLike = {
-      getCollections: async () => ({ collections: [{ name: "episodic_memory" }] }),
-      createCollection: async () => ({}),
-      upsert: async () => ({}),
-      query: async () => ({ points: [] }),
-      createPayloadIndex: async (name, params) => {
-        indexCalls.push({ name, params });
-        return {};
-      },
-    };
-
-    await ensureEpisodicCollection(client, "episodic_memory", 768);
-
-    expect(indexCalls).toHaveLength(3);
-  });
-
-  // createPayloadIndex is optional on QdrantClientLike (same reasoning as
-  // `scroll`) — a minimal test double for a caller that doesn't care about
-  // indexes must not be forced to stub it.
-  it("does not throw when the client doesn't support createPayloadIndex", async () => {
-    const client: QdrantClientLike = {
-      getCollections: async () => ({ collections: [] }),
-      createCollection: async () => ({}),
-      upsert: async () => ({}),
-      query: async () => ({ points: [] }),
-    };
-
-    await expect(ensureEpisodicCollection(client, "episodic_memory", 768)).resolves.toBeUndefined();
+    expect(EPISODIC_SPACE).toBe("episodic_memory");
   });
 });
 
 describe("storeEpisodicSummary", () => {
-  it("upserts a point with the embedded summary and the full payload", async () => {
-    let upserted: { collection: string; points: unknown[] } | undefined;
-    const client: QdrantClientLike = {
-      getCollections: async () => ({ collections: [] }),
-      createCollection: async () => ({}),
-      upsert: async (collection, params) => {
-        upserted = { collection, points: params.points };
-        return {};
-      },
-      query: async () => ({ points: [] }),
-    };
-    const embed = async (text: string) => [text.length, 0, 0];
+  it("upserts one point with the embedded summary and the full entry as payload", async () => {
+    const index = fakeVectorIndex();
+    const entry = summary("spaces/X:users/42", "discussed KAN-1 status", "2026-07-17T12:00:00.000Z");
 
-    await storeEpisodicSummary(client, "episodic_memory", embed, {
-      userId: "users/42",
-      sessionKey: "spaces/X:users/42",
-      summary: "discussed KAN-1 status",
-      timestamp: "2026-07-17T12:00:00.000Z",
-    });
+    await storeEpisodicSummary(index, embed, entry);
 
-    expect(upserted?.collection).toBe("episodic_memory");
-    expect(upserted?.points).toHaveLength(1);
-    const point = upserted!.points[0] as { id: string; vector: number[]; payload: Record<string, unknown> };
-    expect(point.vector).toEqual([22, 0, 0]);
-    expect(point.payload).toEqual({
-      userId: "users/42",
-      sessionKey: "spaces/X:users/42",
-      summary: "discussed KAN-1 status",
-      timestamp: "2026-07-17T12:00:00.000Z",
-    });
-    expect(typeof point.id).toBe("string");
+    const [stored] = index.spaces.get("episodic_memory")!;
+    expect(index.spaces.get("episodic_memory")).toHaveLength(1);
+    expect(stored!.vector).toEqual([22, 1, 0]);
+    expect(stored!.payload).toEqual(entry);
+    expect(stored!.id).toMatch(/^[0-9a-f-]{36}$/);
   });
 });
 
 // The narrow need this serves: "how many times have I already notified
-// this user about this item" — not a general-purpose semantic
-// consolidation/pattern-extraction engine (that doesn't exist here).
-// Filters by
-// userId so one user's history never leaks into another's notification
-// tone/frequency reasoning.
+// this user about this item". Filtered by userId so one user's history never
+// leaks into another's.
 describe("searchEpisodicMemory", () => {
-  it("embeds queryText, searches scoped to userId, and maps payloads back to EpisodicSummary", async () => {
-    let receivedArgs: { collection: string; params: unknown } | undefined;
-    const client: QdrantClientLike = {
-      getCollections: async () => ({ collections: [] }),
-      createCollection: async () => ({}),
-      upsert: async () => ({}),
-      query: async (collection, params) => {
-        receivedArgs = { collection, params };
-        return {
-          points: [
-            {
-              id: "p1",
-              score: 0.91,
-              payload: {
-                userId: "users/42",
-                sessionKey: "spaces/X:users/42",
-                summary: "Mercury ha notificato KAN-1 il 2026-07-15",
-                timestamp: "2026-07-15T09:00:00.000Z",
-              },
-            },
-          ],
-        };
-      },
-    };
-    const embed = async (text: string) => [text.length, 0, 0];
-
-    const results = await searchEpisodicMemory(client, "episodic_memory", embed, {
-      userId: "users/42",
-      queryText: "notifiche per KAN-1",
+  it("embeds the query, searches only the person's summaries, nearest first", async () => {
+    const index = fakeVectorIndex({
+      episodic_memory: [
+        point("a", summary("s1", "far", "2026-07-01T00:00:00.000Z"), [0, 1, 0]),
+        point("b", summary("s2", "near", "2026-07-02T00:00:00.000Z"), [1, 0, 0]),
+        point("c", summary("s3", "someone else's", "2026-07-03T00:00:00.000Z", "users/7"), [1, 0, 0]),
+      ],
     });
 
-    expect(receivedArgs?.collection).toBe("episodic_memory");
-    expect(receivedArgs?.params).toEqual({
-      query: [19, 0, 0],
-      filter: { must: [{ key: "userId", match: { value: "users/42" } }] },
-      limit: 5,
-      with_payload: true,
+    const found = await searchEpisodicMemory(index, async () => [1, 0, 0], { userId: "users/42", queryText: "KAN-1" });
+
+    expect(found).toEqual([summary("s2", "near", "2026-07-02T00:00:00.000Z"), summary("s1", "far", "2026-07-01T00:00:00.000Z")]);
+    expect(index.calls).toEqual([["query", "episodic_memory", { vector: [1, 0, 0], where: { userId: "users/42" }, limit: 5 }]]);
+  });
+
+  it("asks for a custom limit instead of the default", async () => {
+    const index = fakeVectorIndex();
+    await searchEpisodicMemory(index, embed, { userId: "users/42", queryText: "x", limit: 12 });
+    expect((index.calls[0]![2] as { limit: number }).limit).toBe(12);
+  });
+
+  it("skips points with a malformed payload instead of throwing", async () => {
+    const index = fakeVectorIndex({
+      episodic_memory: [point("a", { userId: "users/42" }), point("b", summary("s", "ok", "2026-07-01T00:00:00.000Z"))],
     });
-    expect(results).toEqual([
-      {
-        userId: "users/42",
-        sessionKey: "spaces/X:users/42",
-        summary: "Mercury ha notificato KAN-1 il 2026-07-15",
-        timestamp: "2026-07-15T09:00:00.000Z",
-      },
+    expect(await searchEpisodicMemory(index, embed, { userId: "users/42", queryText: "x" })).toEqual([
+      summary("s", "ok", "2026-07-01T00:00:00.000Z"),
     ]);
-  });
-
-  it("respects a custom limit instead of the default", async () => {
-    let receivedLimit: number | undefined;
-    const client: QdrantClientLike = {
-      getCollections: async () => ({ collections: [] }),
-      createCollection: async () => ({}),
-      upsert: async () => ({}),
-      query: async (_collection, params) => {
-        receivedLimit = params.limit;
-        return { points: [] };
-      },
-    };
-    const embed = async () => [0, 0, 0];
-
-    await searchEpisodicMemory(client, "episodic_memory", embed, { userId: "users/42", queryText: "x", limit: 2 });
-
-    expect(receivedLimit).toBe(2);
-  });
-
-  // Qdrant allows a null payload on a point — skip it rather than crash
-  // or return a malformed EpisodicSummary.
-  it("skips results with a missing or malformed payload instead of throwing", async () => {
-    const client: QdrantClientLike = {
-      getCollections: async () => ({ collections: [] }),
-      createCollection: async () => ({}),
-      upsert: async () => ({}),
-      query: async () => ({
-        points: [
-          { id: "p1", score: 0.9, payload: null },
-          { id: "p2", score: 0.8, payload: { summary: 42 } }, // wrong type
-          {
-            id: "p3",
-            score: 0.7,
-            payload: {
-              userId: "users/42",
-              sessionKey: "terminal",
-              summary: "valid one",
-              timestamp: "2026-07-15T09:00:00.000Z",
-            },
-          },
-        ],
-      }),
-    };
-    const embed = async () => [0, 0, 0];
-
-    const results = await searchEpisodicMemory(client, "episodic_memory", embed, { userId: "users/42", queryText: "x" });
-
-    expect(results).toEqual([
-      { userId: "users/42", sessionKey: "terminal", summary: "valid one", timestamp: "2026-07-15T09:00:00.000Z" },
-    ]);
-  });
-
-  it("returns an empty array when nothing matches", async () => {
-    const client: QdrantClientLike = {
-      getCollections: async () => ({ collections: [] }),
-      createCollection: async () => ({}),
-      upsert: async () => ({}),
-      query: async () => ({ points: [] }),
-    };
-    const embed = async () => [0, 0, 0];
-
-    expect(await searchEpisodicMemory(client, "episodic_memory", embed, { userId: "users/42", queryText: "x" })).toEqual(
-      [],
-    );
   });
 });
 
-// Not similarity-scoped like searchEpisodicMemory: this answers "what
-// happened last time", used to seed a brand-new session's context primer —
-// there's no query yet to compare against at session start.
 describe("getLastSessionEpisodicSummaries", () => {
-  it("finds the most recent entry, then returns entries scoped exactly to its own sessionKey", async () => {
-    const calls: unknown[] = [];
-    const client: QdrantClientLike = {
-      getCollections: async () => ({ collections: [] }),
-      createCollection: async () => ({}),
-      upsert: async () => ({}),
-      query: async () => ({ points: [] }),
-      scroll: async (_collection, params) => {
-        calls.push(params);
-        if (calls.length === 1) {
-          return {
-            points: [
-              {
-                id: "p-latest",
-                payload: {
-                  userId: "users/42",
-                  sessionKey: "spaces/X:users/42:session-B",
-                  summary: "closed session summary A",
-                  timestamp: "2026-07-25T18:00:00.000Z",
-                },
-              },
-            ],
-          };
-        }
-        return {
-          points: [
-            {
-              id: "p2",
-              payload: {
-                userId: "users/42",
-                sessionKey: "spaces/X:users/42:session-B",
-                summary: "closed session summary B",
-                timestamp: "2026-07-25T17:50:00.000Z",
-              },
-            },
-            {
-              id: "p1",
-              payload: {
-                userId: "users/42",
-                sessionKey: "spaces/X:users/42:session-B",
-                summary: "closed session summary A",
-                timestamp: "2026-07-25T18:00:00.000Z",
-              },
-            },
-          ],
-        };
-      },
-    };
-
-    const results = await getLastSessionEpisodicSummaries(client, "episodic_memory", { userId: "users/42" });
-
-    expect(calls[0]).toEqual({
-      filter: { must: [{ key: "userId", match: { value: "users/42" } }] },
-      order_by: { key: "timestamp", direction: "desc" },
-      limit: 1,
-    });
-    expect(calls[1]).toEqual({
-      filter: {
-        must: [
-          { key: "userId", match: { value: "users/42" } },
-          { key: "sessionKey", match: { value: "spaces/X:users/42:session-B" } },
-        ],
-      },
-      order_by: { key: "timestamp", direction: "desc" },
-      limit: 3,
-    });
-    expect(results).toEqual([
-      {
-        userId: "users/42",
-        sessionKey: "spaces/X:users/42:session-B",
-        summary: "closed session summary B",
-        timestamp: "2026-07-25T17:50:00.000Z",
-      },
-      {
-        userId: "users/42",
-        sessionKey: "spaces/X:users/42:session-B",
-        summary: "closed session summary A",
-        timestamp: "2026-07-25T18:00:00.000Z",
-      },
-    ]);
-  });
-
-  it("returns an empty array when the user has no episodic history at all", async () => {
-    const client: QdrantClientLike = {
-      getCollections: async () => ({ collections: [] }),
-      createCollection: async () => ({}),
-      upsert: async () => ({}),
-      query: async () => ({ points: [] }),
-      scroll: async () => ({ points: [] }),
-    };
-
-    expect(await getLastSessionEpisodicSummaries(client, "episodic_memory", { userId: "users/42" })).toEqual([]);
-  });
-
-  it("respects a custom limit on the session-scoped fetch instead of the default", async () => {
-    let callCount = 0;
-    let secondCallLimit: number | undefined;
-    const client: QdrantClientLike = {
-      getCollections: async () => ({ collections: [] }),
-      createCollection: async () => ({}),
-      upsert: async () => ({}),
-      query: async () => ({ points: [] }),
-      scroll: async (_collection, params) => {
-        callCount++;
-        if (callCount === 1) {
-          return {
-            points: [
-              {
-                id: "p1",
-                payload: {
-                  userId: "users/42",
-                  sessionKey: "spaces/X:users/42",
-                  summary: "s",
-                  timestamp: "2026-07-25T18:00:00.000Z",
-                },
-              },
-            ],
-          };
-        }
-        secondCallLimit = params.limit;
-        return { points: [] };
-      },
-    };
-
-    await getLastSessionEpisodicSummaries(client, "episodic_memory", { userId: "users/42", limit: 5 });
-
-    expect(secondCallLimit).toBe(5);
-  });
-
-  // Regression guard: the session boundary must be enforced by the query
-  // sent to Qdrant (server-side filter), not just assumed — otherwise an
-  // unrelated earlier session's entries could leak into a brand-new
-  // session's primer just because they're also "recent".
-  it("scopes the second query to the most recent entry's own sessionKey, not a hardcoded or reused one", async () => {
-    let callCount = 0;
-    let secondCallFilter: unknown;
-    const client: QdrantClientLike = {
-      getCollections: async () => ({ collections: [] }),
-      createCollection: async () => ({}),
-      upsert: async () => ({}),
-      query: async () => ({ points: [] }),
-      scroll: async (_collection, params) => {
-        callCount++;
-        if (callCount === 1) {
-          return {
-            points: [
-              {
-                id: "p1",
-                payload: {
-                  userId: "users/42",
-                  sessionKey: "spaces/X:users/42:session-C",
-                  summary: "latest",
-                  timestamp: "2026-07-25T18:00:00.000Z",
-                },
-              },
-            ],
-          };
-        }
-        secondCallFilter = params.filter;
-        return { points: [] };
-      },
-    };
-
-    await getLastSessionEpisodicSummaries(client, "episodic_memory", { userId: "users/42" });
-
-    expect(secondCallFilter).toEqual({
-      must: [
-        { key: "userId", match: { value: "users/42" } },
-        { key: "sessionKey", match: { value: "spaces/X:users/42:session-C" } },
+  const seeded = () =>
+    fakeVectorIndex({
+      episodic_memory: [
+        point("1", summary("session-A", "older session", "2026-07-20T10:00:00.000Z")),
+        point("2", summary("session-B", "B first", "2026-07-25T17:00:00.000Z")),
+        point("3", summary("session-B", "B last", "2026-07-25T18:00:00.000Z")),
+        point("4", summary("session-C", "someone else's newer one", "2026-07-26T00:00:00.000Z", "users/7")),
       ],
     });
-  });
 
-  it("returns an empty array without erroring when the client doesn't support scroll", async () => {
-    const client: QdrantClientLike = {
-      getCollections: async () => ({ collections: [] }),
-      createCollection: async () => ({}),
-      upsert: async () => ({}),
-      query: async () => ({ points: [] }),
-    };
-
-    expect(await getLastSessionEpisodicSummaries(client, "episodic_memory", { userId: "users/42" })).toEqual([]);
-  });
-
-  it("skips malformed payloads in the session-scoped results instead of throwing", async () => {
-    let callCount = 0;
-    const client: QdrantClientLike = {
-      getCollections: async () => ({ collections: [] }),
-      createCollection: async () => ({}),
-      upsert: async () => ({}),
-      query: async () => ({ points: [] }),
-      scroll: async () => {
-        callCount++;
-        if (callCount === 1) {
-          return {
-            points: [
-              {
-                id: "p1",
-                payload: {
-                  userId: "users/42",
-                  sessionKey: "spaces/X:users/42",
-                  summary: "latest",
-                  timestamp: "2026-07-25T18:00:00.000Z",
-                },
-              },
-            ],
-          };
-        }
-        return {
-          points: [
-            { id: "bad", payload: null },
-            {
-              id: "good",
-              payload: {
-                userId: "users/42",
-                sessionKey: "spaces/X:users/42",
-                summary: "latest",
-                timestamp: "2026-07-25T18:00:00.000Z",
-              },
-            },
-          ],
-        };
-      },
-    };
-
-    const results = await getLastSessionEpisodicSummaries(client, "episodic_memory", { userId: "users/42" });
-
-    expect(results).toEqual([
-      {
-        userId: "users/42",
-        sessionKey: "spaces/X:users/42",
-        summary: "latest",
-        timestamp: "2026-07-25T18:00:00.000Z",
-      },
+  it("returns the person's most recent session's entries only, newest first", async () => {
+    expect(await getLastSessionEpisodicSummaries(seeded(), { userId: "users/42" })).toEqual([
+      summary("session-B", "B last", "2026-07-25T18:00:00.000Z"),
+      summary("session-B", "B first", "2026-07-25T17:00:00.000Z"),
     ]);
+  });
+
+  // Regression guard: the session boundary is enforced by the query the
+  // index gets, not assumed — otherwise an earlier session's entries could
+  // leak into a brand-new session's primer just because they're also recent.
+  it("scopes the second scroll to the most recent entry's own sessionKey", async () => {
+    const index = seeded();
+    await getLastSessionEpisodicSummaries(index, { userId: "users/42", limit: 2 });
+    expect(index.calls).toEqual([
+      ["scroll", "episodic_memory", { where: { userId: "users/42" }, orderBy: { key: "timestamp", direction: "desc" }, limit: 1 }],
+      [
+        "scroll",
+        "episodic_memory",
+        { where: { userId: "users/42", sessionKey: "session-B" }, orderBy: { key: "timestamp", direction: "desc" }, limit: 2 },
+      ],
+    ]);
+  });
+
+  it("is empty when the person has no episodic history", async () => {
+    expect(await getLastSessionEpisodicSummaries(fakeVectorIndex(), { userId: "users/42" })).toEqual([]);
+  });
+
+  it("is empty when the most recent point is malformed, and skips malformed ones in the session", async () => {
+    const malformedLatest = fakeVectorIndex({ episodic_memory: [point("x", { userId: "users/42", timestamp: "2026-08-01T00:00:00.000Z" })] });
+    expect(await getLastSessionEpisodicSummaries(malformedLatest, { userId: "users/42" })).toEqual([]);
+
+    const index = fakeVectorIndex({
+      episodic_memory: [
+        point("1", { userId: "users/42", sessionKey: "B", timestamp: "2026-07-25T17:00:00.000Z" }),
+        point("2", summary("B", "ok", "2026-07-25T18:00:00.000Z")),
+      ],
+    });
+    expect(await getLastSessionEpisodicSummaries(index, { userId: "users/42" })).toEqual([summary("B", "ok", "2026-07-25T18:00:00.000Z")]);
   });
 });
 
 describe("getEpisodicSummariesBySession", () => {
-  const entry = (summary: string, second: number) => ({
-    userId: "static:alice",
-    sessionKey: "alice:conv-1",
-    summary,
-    timestamp: `2026-10-12T10:00:0${second}.000Z`,
-  });
-
-  it("returns the summaries of one conversation of the person, oldest first", async () => {
-    let received: Record<string, unknown> | undefined;
-    const client: QdrantClientLike = {
-      getCollections: async () => ({ collections: [] }),
-      createCollection: async () => ({}),
-      upsert: async () => ({}),
-      query: async () => ({ points: [] }),
-      scroll: async (_collection, params) => {
-        received = params;
-        return { points: [{ id: "a", payload: entry("primo", 1) }, { id: "b", payload: null }, { id: "c", payload: entry("secondo", 2) }] };
-      },
-    };
-
-    const summaries = await getEpisodicSummariesBySession(client, "episodic_memory", { userId: "static:alice", sessionKey: "alice:conv-1" });
-
-    expect(received).toEqual({
-      filter: {
-        must: [
-          { key: "userId", match: { value: "static:alice" } },
-          { key: "sessionKey", match: { value: "alice:conv-1" } },
-        ],
-      },
-      order_by: { key: "timestamp", direction: "asc" },
-      limit: 100,
-      with_payload: true,
+  it("returns the summaries of one conversation of the person, oldest first, skipping malformed ones", async () => {
+    const index = fakeVectorIndex({
+      episodic_memory: [
+        point("b", summary("alice:conv-1", "secondo", "2026-10-12T10:00:02.000Z", "static:alice")),
+        point("x", { userId: "static:alice", sessionKey: "alice:conv-1" }),
+        point("a", summary("alice:conv-1", "primo", "2026-10-12T10:00:01.000Z", "static:alice")),
+        point("o", summary("alice:conv-2", "altra", "2026-10-12T10:00:00.000Z", "static:alice")),
+      ],
     });
-    expect(summaries).toEqual([entry("primo", 1), entry("secondo", 2)]);
-  });
 
-  it("is empty when the client has no scroll support", async () => {
-    const client: QdrantClientLike = {
-      getCollections: async () => ({ collections: [] }),
-      createCollection: async () => ({}),
-      upsert: async () => ({}),
-      query: async () => ({ points: [] }),
-    };
-    expect(await getEpisodicSummariesBySession(client, "episodic_memory", { userId: "static:alice", sessionKey: "alice:conv-1" })).toEqual([]);
+    const summaries = await getEpisodicSummariesBySession(index, { userId: "static:alice", sessionKey: "alice:conv-1" });
+
+    expect(summaries).toEqual([
+      summary("alice:conv-1", "primo", "2026-10-12T10:00:01.000Z", "static:alice"),
+      summary("alice:conv-1", "secondo", "2026-10-12T10:00:02.000Z", "static:alice"),
+    ]);
+    expect(index.calls).toEqual([
+      [
+        "scroll",
+        "episodic_memory",
+        { where: { userId: "static:alice", sessionKey: "alice:conv-1" }, orderBy: { key: "timestamp", direction: "asc" }, limit: 100 },
+      ],
+    ]);
   });
 });

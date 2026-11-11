@@ -129,11 +129,11 @@ describe("vault and memory", () => {
     ]);
   });
 
-  test("memory passes its subcommand and arguments to the core's memory CLI", async () => {
+  test("memory passes its subcommand and arguments to the memory CLI of the Qdrant package", async () => {
     const f = fake();
     await appCommands(APP, f.deps).memory(["read", "episodic_memory", "--limit", "5"]);
     expect(f.runs()).toEqual([
-      ["docker", "compose", "run", "--rm", "-T", "mercury", "bun", "node_modules/@mercury-fw/core/src/memory/memory-cli.ts", "read", "episodic_memory", "--limit", "5"],
+      ["docker", "compose", "run", "--rm", "-T", "mercury", "bun", "node_modules/@mercury-fw/store-qdrant/memory-cli.ts", "read", "episodic_memory", "--limit", "5"],
     ]);
   });
 
