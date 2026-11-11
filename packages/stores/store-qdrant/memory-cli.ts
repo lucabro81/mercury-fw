@@ -129,7 +129,7 @@ export async function runMemoryCli(argv: string[], { client, out, err }: Io): Pr
 }
 
 if (import.meta.main) {
-  const client = new QdrantClient({ url: process.env.QDRANT_URL ?? "http://qdrant:6333" });
+  const client = new QdrantClient({ url: process.env.QDRANT_URL || "http://qdrant:6333" });
   process.exit(
     await runMemoryCli(process.argv.slice(2), {
       client,

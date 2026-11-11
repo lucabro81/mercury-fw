@@ -194,7 +194,6 @@ Where the record of what the agent does goes, event by event, and how much each 
 
 ```ts
 import { jsonlTraces } from "@mercury-fw/trace-jsonl";
-import { qdrantIndex } from "@mercury-fw/store-qdrant";
 
 traces: { sink: jsonlTraces({ keepDays: 7 }), level: "meta" },
 ```
