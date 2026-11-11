@@ -92,7 +92,7 @@ mfw start --no-cache
 
 ### `mfw stop`
 
-Stops the app and Qdrant and removes their containers (`docker compose down`). The volumes stay, so memory, the wiki and the CLI credentials are all there on the next start.
+Stops the app and Qdrant and removes their containers (`docker compose down`). The volumes stay, so memory, the wiki, Mercury's own state (the data folder) and the CLI credentials are all there on the next start.
 
 ```bash
 mfw stop
