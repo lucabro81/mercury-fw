@@ -494,6 +494,8 @@ export function readRoutes(
   const badRequest = (message: string): Response => json({ ok: false, error: message }, 400);
   const requireParam = (req: Request, name: string): string | null => new URL(req.url).searchParams.get(name);
   const options = () => preflight(corsOrigin);
+  // Read once, so each stays narrowed inside its routes.
+  const { conversation, conversations: listConversations, memoryScroll } = reads;
   const route = (GET: (req: Request, principal: Principal) => Response | Promise<Response>): ReadRoute => ({
     GET: async (req) => {
       const principal = await caller(req, { authenticate, ...(admit === undefined ? {} : { admit }) }, corsOrigin);
@@ -504,51 +506,56 @@ export function readRoutes(
   return {
     "/manifest": route(async (_req, principal) => json({ ok: true, manifest: await reads.manifest(principal) })),
     "/confirmations": route(async (_req, principal) => json({ ok: true, pending: await reads.pendingConfirmations(principal) })),
-    "/conversation": {
-      ...route(async (req, principal) => {
-        const url = new URL(req.url);
-        const id = url.searchParams.get("id");
-        if (!id) return badRequest("missing ?id");
-        if (!CONVERSATION_ID.test(id)) return badRequest("invalid conversationId");
-        const limit = Number(url.searchParams.get("limit") ?? "200");
-        const offset = url.searchParams.get("offset") ?? undefined;
-        return json({ ok: true, ...(await reads.conversation(principal, `${principal.id}:${id}`, limit, offset) as object) });
-      }),
-      ...(conversations === undefined
-        ? {}
-        : {
-            PATCH: async (req: Request) => {
-              const principal = await caller(req, { authenticate, ...(admit === undefined ? {} : { admit }) }, corsOrigin);
-              if (principal instanceof Response) return principal;
-              const id = new URL(req.url).searchParams.get("id");
+    // The conversations, on an instance that keeps them.
+    ...(conversation === undefined || listConversations === undefined
+      ? {}
+      : {
+          "/conversation": {
+            ...route(async (req, principal) => {
+              const url = new URL(req.url);
+              const id = url.searchParams.get("id");
               if (!id) return badRequest("missing ?id");
               if (!CONVERSATION_ID.test(id)) return badRequest("invalid conversationId");
-              const body = (await req.json().catch(() => null)) as { title?: unknown } | null;
-              if (typeof body?.title !== "string") return badRequest('the body must be {"title": "<text>"}');
-              const renamed = await conversations.rename(principal, `${principal.id}:${id}`, body.title);
-              if (renamed.ok) return json({ ok: true, title: renamed.title });
-              return renamed.notFound ? json({ ok: false, error: renamed.error }, 404) : badRequest(renamed.error);
-            },
+              const limit = Number(url.searchParams.get("limit") ?? "200");
+              const offset = url.searchParams.get("offset") ?? undefined;
+              return json({ ok: true, ...(await conversation(principal, `${principal.id}:${id}`, limit, offset) as object) });
+            }),
+            ...(conversations === undefined
+              ? {}
+              : {
+                  PATCH: async (req: Request) => {
+                    const principal = await caller(req, { authenticate, ...(admit === undefined ? {} : { admit }) }, corsOrigin);
+                    if (principal instanceof Response) return principal;
+                    const id = new URL(req.url).searchParams.get("id");
+                    if (!id) return badRequest("missing ?id");
+                    if (!CONVERSATION_ID.test(id)) return badRequest("invalid conversationId");
+                    const body = (await req.json().catch(() => null)) as { title?: unknown } | null;
+                    if (typeof body?.title !== "string") return badRequest('the body must be {"title": "<text>"}');
+                    const renamed = await conversations.rename(principal, `${principal.id}:${id}`, body.title);
+                    if (renamed.ok) return json({ ok: true, title: renamed.title });
+                    return renamed.notFound ? json({ ok: false, error: renamed.error }, 404) : badRequest(renamed.error);
+                  },
+                }),
+          },
+          "/conversations": route(async (req, principal) => {
+            const limit = Number(new URL(req.url).searchParams.get("limit") ?? "50");
+            const { conversations } = (await listConversations(principal, limit)) as {
+              conversations: Array<{ sessionKey: string; lastTimestamp: string; preview: string; title?: string }>;
+            };
+            const prefix = `${principal.id}:`;
+            return json({
+              ok: true,
+              conversations: conversations
+                .filter((c) => c.sessionKey.startsWith(prefix))
+                .map((c) => ({
+                  conversationId: c.sessionKey.slice(prefix.length),
+                  lastTimestamp: c.lastTimestamp,
+                  preview: c.preview,
+                  ...(c.title === undefined ? {} : { title: c.title }),
+                })),
+            });
           }),
-    },
-    "/conversations": route(async (req, principal) => {
-      const limit = Number(new URL(req.url).searchParams.get("limit") ?? "50");
-      const { conversations } = (await reads.conversations(principal, limit)) as {
-        conversations: Array<{ sessionKey: string; lastTimestamp: string; preview: string; title?: string }>;
-      };
-      const prefix = `${principal.id}:`;
-      return json({
-        ok: true,
-        conversations: conversations
-          .filter((c) => c.sessionKey.startsWith(prefix))
-          .map((c) => ({
-            conversationId: c.sessionKey.slice(prefix.length),
-            lastTimestamp: c.lastTimestamp,
-            preview: c.preview,
-            ...(c.title === undefined ? {} : { title: c.title }),
-          })),
-      });
-    }),
+        }),
     "/tool-log": route(async (_req, principal) => json({ ok: true, entries: await reads.toolLog(principal) })),
     // Who the caller is to the core, on a core that can say.
     ...(reads.me === undefined
@@ -593,15 +600,20 @@ export function readRoutes(
       if (!pattern) return badRequest("missing ?pattern");
       return json({ ok: true, matches: await reads.wikiGrep(principal, pattern) });
     }),
-    "/memory/scroll": route(async (req, principal) => {
-      const url = new URL(req.url);
-      const collection = url.searchParams.get("collection");
-      if (!collection) return badRequest("missing ?collection");
-      const limit = Number(url.searchParams.get("limit") ?? "50");
-      const offset = url.searchParams.get("offset") ?? undefined;
-      const page = await reads.memoryScroll(principal, collection, limit, offset);
-      return page === null ? badRequest(`unknown collection: ${collection}`) : json({ ok: true, ...(page as object) });
-    }),
+    // The memory, on an instance with a vector index.
+    ...(memoryScroll === undefined
+      ? {}
+      : {
+          "/memory/scroll": route(async (req, principal) => {
+            const url = new URL(req.url);
+            const collection = url.searchParams.get("collection");
+            if (!collection) return badRequest("missing ?collection");
+            const limit = Number(url.searchParams.get("limit") ?? "50");
+            const offset = url.searchParams.get("offset") ?? undefined;
+            const page = await memoryScroll(principal, collection, limit, offset);
+            return page === null ? badRequest(`unknown collection: ${collection}`) : json({ ok: true, ...(page as object) });
+          }),
+        }),
   };
 }
 

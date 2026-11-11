@@ -767,6 +767,42 @@ describe("openApiResponse", () => {
   });
 });
 
+// #379: a route exists only for what the instance keeps: the conversations
+// with a conversation store, the memory with a vector index.
+describe("read routes the instance has", () => {
+  const base: ChannelHostReads = {
+    manifest: async () => ({ plugins: [] }),
+    pendingConfirmations: async () => [],
+    wikiList: async () => [],
+    wikiRead: async () => "",
+    wikiGrep: async () => [],
+    toolLog: async () => [],
+    health: async () => ({}),
+  };
+  const conversations = { rename: async () => ({ ok: true as const, title: "t" }) };
+
+  it("leaves out /conversation, /conversations and /memory/scroll when the core gives no reads for them", () => {
+    const routes = readRoutes(base, asAlice, "*", undefined, undefined, conversations);
+    expect(Object.keys(routes)).not.toContain("/conversation");
+    expect(Object.keys(routes)).not.toContain("/conversations");
+    expect(Object.keys(routes)).not.toContain("/memory/scroll");
+    expect(Object.keys(routes)).toContain("/manifest");
+  });
+
+  it("serves each when its read is there", () => {
+    const routes = readRoutes(
+      {
+        ...base,
+        conversation: async () => ({ messages: [] }),
+        conversations: async () => ({ conversations: [] }),
+        memoryScroll: async () => ({ points: [] }),
+      },
+      asAlice,
+    );
+    expect(Object.keys(routes)).toEqual(expect.arrayContaining(["/conversation", "/conversations", "/memory/scroll"]));
+  });
+});
+
 // A browser UI on another origin (the separate custom-UI project) can only call
 // this surface if it answers CORS preflight and echoes an allow-origin header.
 describe("CORS", () => {

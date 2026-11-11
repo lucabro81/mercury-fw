@@ -33,7 +33,7 @@ describe("httpChannel", () => {
   // version and be loaded. The literal is the contract this code was written for.
   it("declares the http name at channel api version 6", () => {
     expect(httpChannel.name).toBe("http");
-    expect(httpChannel.apiVersion).toBe(6);
+    expect(httpChannel.apiVersion).toBe(7);
   });
 
   it("declares its texts in English, every key under http.", () => {
