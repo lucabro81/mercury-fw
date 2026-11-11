@@ -1,6 +1,7 @@
 {
   "name": "@mercury-fw/trace-jsonl",
-  "version": "0.0.0",
+  "version": "0.71.0",
+  "type": "module",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -16,15 +17,6 @@
   "publishConfig": {
     "access": "public"
   },
-  "peerDependencies": {
-    "@mercury-fw/channel-types": ">=0.72.0 <1.0.0"
-  },
-  "devDependencies": {
-    "@mercury-fw/channel-types": "workspace:*",
-    "@mercury-fw/typescript-config": "*",
-    "@types/bun": "^1.4.2",
-    "typescript": "^6.0.3"
-  },
   "exports": {
     ".": {
       "mercury-fw-source": "./index.ts",
@@ -35,5 +27,13 @@
   "scripts": {
     "test": "bun test",
     "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@mercury-fw/channel-types": "workspace:*"
+  },
+  "devDependencies": {
+    "@mercury-fw/typescript-config": "*",
+    "@types/bun": "^1.4.2",
+    "typescript": "^6.0.3"
   }
 }

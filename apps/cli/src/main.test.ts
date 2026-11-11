@@ -91,6 +91,7 @@ const versions: Record<string, string> = {
   "@mercury-fw/cli": cliVersion(),
   "@mercury-fw/core": cliVersion(),
   "@mercury-fw/formatter": cliVersion(),
+  "@mercury-fw/trace-jsonl": cliVersion(),
   "@mercury-fw/channel-http": PLUGIN_VERSION,
   "@mercury-fw/auth-static": PLUGIN_VERSION,
   "@mercury-fw/plugin-jira": PLUGIN_VERSION,
@@ -218,6 +219,7 @@ describe("mfw create --local-packages", () => {
     await pack(packs, "http.tgz", "@mercury-fw/channel-http", "0.3.0");
     await pack(packs, "static.tgz", "@mercury-fw/auth-static", "0.0.0");
     await pack(packs, "kit.tgz", "@mercury-fw/kit", "0.35.0");
+    await pack(packs, "traces.tgz", "@mercury-fw/trace-jsonl", "0.35.0");
     const { asked, server } = emptyRegistry();
     try {
       const dir = join(base, "demo");
@@ -230,6 +232,7 @@ describe("mfw create --local-packages", () => {
         "@mercury-fw/auth-static": "^0.0.0",
         "@mercury-fw/channel-http": "^0.3.0",
         "@mercury-fw/core": "^0.35.0",
+        "@mercury-fw/trace-jsonl": "^0.35.0",
       });
       // Named after their content in the app (#169).
       const named = (file: string) =>
@@ -239,8 +242,9 @@ describe("mfw create --local-packages", () => {
         "@mercury-fw/channel-http": `file:./.packs/${named("http.tgz")}`,
         "@mercury-fw/core": `file:./.packs/${named("core.tgz")}`,
         "@mercury-fw/kit": `file:./.packs/${named("kit.tgz")}`,
+        "@mercury-fw/trace-jsonl": `file:./.packs/${named("traces.tgz")}`,
       });
-      expect(readdirSync(join(dir, ".packs")).sort()).toEqual(["core.tgz", "http.tgz", "kit.tgz", "static.tgz"].map(named));
+      expect(readdirSync(join(dir, ".packs")).sort()).toEqual(["core.tgz", "http.tgz", "kit.tgz", "static.tgz", "traces.tgz"].map(named));
     } finally {
       server.stop(true);
     }

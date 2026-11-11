@@ -83,11 +83,23 @@ const CONFIG_HEADER = `/**
  * provider when a channel needs one, how the lists its plugins hand over read,
  * the assistant's persona and the languages it speaks (\`i18n\`: a file per
  * language in \`locales/\`, \`en.json\` overriding the English texts) and its version
- * (\`version\`, its \`package.json\`'s, shown on the HTTP channel's \`/version\`). The entrypoints
+ * (\`version\`, its \`package.json\`'s, shown on the HTTP channel's \`/version\`) and where
+ * the traces of what it does go (\`traces\`). The entrypoints
  * (\`src/index.ts\`, \`src/repl.ts\`) hand this config to \`composeMercury\`.
  *
  * Every tool plugin and channel declared here is active.
  */`;
+
+/** The trace sink every new app declares, writing the traces to files on the vault's volume. */
+export const TRACE_SINK_PACKAGE = "@mercury-fw/trace-jsonl";
+
+/** The config's `traces` entry, with what it records and where. */
+const TRACES_SECTION = [
+  "  // What the agent does, as events in .mercury/traces/ on the vault's volume:",
+  "  // a file per day, the last 7 days with activity kept. \"meta\" records names,",
+  "  // outcomes and times; \"args\" also what the tools were given. Remove to record nothing.",
+  '  traces: { sink: jsonlTraces(), level: "meta" },',
+].join("\n");
 
 /** Builds every file of the new app. Throws on an invalid app name, an empty
  * assistant name or role, an id the catalog doesn't have, or a package with no
@@ -254,6 +266,7 @@ function renderConfig(
   for (const c of [...channels, ...(auth ? [auth] : []), ...(directory ? [directory] : [])]) {
     imports.push(`import { ${c.exportName} } from "${c.package}";`);
   }
+  imports.push(`import { jsonlTraces } from "${TRACE_SINK_PACKAGE}";`);
 
   const helpers = withRules.map((t) => `${t.formatter?.helpers}\n\n`).join("");
 
@@ -278,6 +291,7 @@ function renderConfig(
     ...(directory ? [`  directory: ${directory.exportName},`] : []),
     MODEL_SECTION,
     "  i18n: { locales: { en } },",
+    TRACES_SECTION,
     VERSION_COMMENT,
     "  version: pkg.version,",
     "});",
@@ -318,7 +332,7 @@ function renderPackageJson(
   directory: CatalogEntry | undefined,
 ): string {
   const chosen = [...channels, ...(auth ? [auth] : []), ...tools, ...(directory ? [directory] : [])];
-  const packages = [...new Set(["@mercury-fw/core", ...chosen.flatMap(entryPackages)])];
+  const packages = [...new Set(["@mercury-fw/core", TRACE_SINK_PACKAGE, ...chosen.flatMap(entryPackages)])];
   if (tools.some((t) => t.formatter)) {
     packages.push("@mercury-fw/formatter");
   }

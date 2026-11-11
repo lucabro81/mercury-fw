@@ -12,6 +12,7 @@
       "@mercury-fw/confirm-engine",
       "@mercury-fw/utils",
       "@mercury-fw/formatter",
+      "@mercury-fw/trace-jsonl",
       "@mercury-fw/cli",
       "create-mercury-agent"
     ]

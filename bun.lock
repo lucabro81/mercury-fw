@@ -402,15 +402,14 @@
     },
     "packages/traces/trace-jsonl": {
       "name": "@mercury-fw/trace-jsonl",
-      "version": "0.0.0",
-      "devDependencies": {
+      "version": "0.71.0",
+      "dependencies": {
         "@mercury-fw/channel-types": "workspace:*",
+      },
+      "devDependencies": {
         "@mercury-fw/typescript-config": "*",
         "@types/bun": "^1.4.2",
         "typescript": "^6.0.3",
-      },
-      "peerDependencies": {
-        "@mercury-fw/channel-types": ">=0.72.0 <1.0.0",
       },
     },
     "packages/types/channel-types": {
