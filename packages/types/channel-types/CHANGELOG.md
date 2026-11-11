@@ -1,5 +1,15 @@
 # @mercury-fw/channel-types
 
+## 0.72.0
+
+### Minor Changes
+
+- 468cb12: - add the trace sink contract: `TraceSinkPlugin`, `TraceSink`, `TraceEvent`, `TRACE_SINK_API_VERSION`
+
+### Patch Changes
+
+- @mercury-fw/plugin-types@0.72.0
+
 ## 0.71.0
 
 ### Patch Changes
