@@ -33,6 +33,8 @@ import { createPeople, type Identified, type TurnWho } from "../identity/people.
 export type { TurnWho };
 import { createSessionLock, type SessionLock } from "./session-lock.ts";
 import { englishTexts, type Translate } from "../i18n/i18n.ts";
+import { noopTracer, type TraceInput, type Tracer } from "../traces/tracer.ts";
+import { stepEvents } from "../traces/step-events.ts";
 
 /** Appended to a one-to-one turn's prompt when the person said how they want to be called. */
 export const PREFERRED_NAME_NOTE = (name: string): string =>
@@ -282,6 +284,10 @@ export type TurnRunnerDeps = {
   logPostTurnGuardFn?: (message: string) => void;
   /** Test seam; defaults to `Date.now`. */
   now?: () => number;
+  /** Where the turn's events go (#23): its start and end, each model step and tool call, the guards; nowhere when absent. */
+  tracer?: Tracer;
+  /** Test seam: the id tying a turn's events (and its archived messages) together; defaults to a random UUID. */
+  newTurnId?: () => string;
   /** Where the turn log goes (start, end, failure, still running); defaults to stderr. */
   logTurnFn?: (line: string) => void;
   /** Test seam: runs `fn` every `ms` until the returned stop is called; defaults to `setInterval`. */
@@ -361,10 +367,16 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
     // What the person sees of the turn besides its text, kept with the answer (#370).
     const trace = createTurnTrace(channelSink);
     const sink = trace.sink;
+    const turnId = (deps.newTurnId ?? (() => crypto.randomUUID()))();
+    const tracer = deps.tracer ?? noopTracer;
+    /** Emits `input` as one of this turn's events, with the person once they're known. */
+    const emit = (input: TraceInput, person?: string) =>
+      tracer.emit({ ...input, turn: turnId, session: turn.sessionKey, ...(person === undefined ? {} : { person }) });
     // Someone the core won't talk to gets the refusal, and nothing of theirs
     // is created: no history, no capture.
     const identified = await identify(turn.principal, turn.languageHint);
     if (!identified.ok) {
+      emit({ kind: "turn.end", outcome: "refused" });
       try {
         await sink.finalize(identified.message);
       } finally {
@@ -378,6 +390,16 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
     // for Layer-3 capture.
     const key = who.person.key;
     const tracked = !who.operator;
+    emit(
+      {
+        kind: "turn.start",
+        channel: turn.channel,
+        opening: turn.opening === true,
+        resumed: turn.resumeAfterConfirm === true,
+        multiUser: turn.multiUser,
+      },
+      key,
+    );
     // The turn's texts that aren't the model's: the pending note, the guards'.
     const t = deps.translatorFor?.(key, turn.languageHint) ?? englishTexts().forPerson(undefined).t;
     const pendingNote = t("core.pending.note");
@@ -390,6 +412,7 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
     // Speaking first is only for someone it doesn't know yet, one to one:
     // otherwise an opening says nothing and leaves nothing behind.
     if (turn.opening && (turn.multiUser || name !== undefined)) {
+      emit({ kind: "turn.end", outcome: "opening-skipped" }, key);
       try {
         await sink.finalize("");
       } finally {
@@ -401,6 +424,7 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
     // Nothing kept to resume with (already taken, expired, or lost to a
     // restart): said, since an empty answer reads like the model's.
     if (turn.resumeAfterConfirm && resumed === undefined) {
+      emit({ kind: "turn.end", outcome: "resume-gone" }, key);
       try {
         await sink.finalize(t("core.resume.gone"));
       } finally {
@@ -442,6 +466,23 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
     let answerChars = 0;
     let toolCalls = 0;
     let finish: { reason: string; error?: string } | undefined;
+    /** The turn's last event: how it ended and what it took. */
+    const endTurn = (outcome: string, args?: Record<string, unknown>) =>
+      emit(
+        {
+          kind: "turn.end",
+          outcome,
+          durationMs: now() - startedAt,
+          steps: steps.length,
+          toolCalls,
+          answerChars: answerLength(assistantText, answerChars),
+          reasoningChars,
+          ...(finish === undefined ? {} : { finishReason: finish.reason }),
+          stoodIn,
+          ...(args === undefined ? {} : { args }),
+        },
+        key,
+      );
     logTurn(`${turn.logPrefix}[turn] start${turn.opening ? " (opening)" : ""}`);
     const stopHeartbeat = (
       deps.heartbeat ??
@@ -591,6 +632,7 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
           steps.push(step);
           toolCalls += step.toolCalls.length;
           deps.logStep(turn.logPrefix, step);
+          for (const event of stepEvents(step)) emit(event, key);
           (deps.recordStepFn ?? recordStep)(turn.channel, turn.sessionKey, key, step);
           sink.onStep?.(step);
         },
@@ -614,6 +656,7 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
       // of it is guarded, delivered or archived.
       if (turn.abortSignal?.aborted) {
         logTurn(`${turn.logPrefix}[turn] cancelled after ${seconds()}s`);
+        endTurn("cancelled");
         cancelled = true;
         return;
       }
@@ -640,12 +683,14 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
           started = true;
           const guarded = await guard.run(correctedText, guardSteps, t);
           sink.onToolFinish?.(guard.statusId, guarded.outcome);
+          emit({ kind: "guard.run", guard: guard.statusId, outcome: guarded.outcome, changed: guarded.text !== correctedText }, key);
           if (guarded.log !== undefined) {
             logPostTurnGuard(guarded.log);
           }
           correctedText = guarded.text;
         } catch (err) {
           if (started) sink.onToolFinish?.(guard.statusId, "failed");
+          emit({ kind: "guard.run", guard: guard.statusId, outcome: "failed", changed: false, args: { error: String(err instanceof Error ? err.message : err) } }, key);
           logPostTurnGuard(
             `[post-turn-guard] guard "${guard.statusId}" threw, kept text unchanged: ${String(err instanceof Error ? err.message : err)}`,
           );
@@ -669,6 +714,7 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
       stoodIn = noteUsed && correctedText.startsWith(pendingNote);
       if (stoodIn) await sink.finalize(finalText, { pendingNote });
       else await sink.finalize(finalText);
+      endTurn("done");
       logTurn(
         `${turn.logPrefix}[turn] done in ${seconds()}s: ${count(steps.length, "step")}, ${count(toolCalls, "tool call")}, reasoning ${reasoningChars} chars, answer ${answerLength(assistantText, answerChars)} chars${finish ? `, finish ${finish.reason}` : ""}`,
       );
@@ -677,14 +723,17 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
       if (stalled && !turn.abortSignal?.aborted) {
         const message = stallMessage(stallMs);
         logTurn(`${turn.logPrefix}[turn] stalled after ${seconds()}s: ${message}`);
+        endTurn("stalled");
         throw err instanceof Error && err.message === message ? err : new Error(message);
       }
       // A cancel isn't a failure: the channel that asked for it knows.
       if (turn.abortSignal?.aborted) {
         logTurn(`${turn.logPrefix}[turn] cancelled after ${seconds()}s`);
+        endTurn("cancelled");
         cancelled = true;
         return;
       }
+      endTurn("failed", { error: err instanceof Error ? err.message : String(err) });
       logTurn(`${turn.logPrefix}[turn] failed after ${seconds()}s: ${err instanceof Error ? err.message : String(err)}`);
       throw err;
     } finally {

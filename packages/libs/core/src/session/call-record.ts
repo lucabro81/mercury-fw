@@ -48,7 +48,7 @@ function cut(text: string, max: number): string {
 }
 
 /** `value` with every string longer than `INPUT_STRING_MAX` cut, objects and arrays walked. */
-function cutStrings(value: unknown): unknown {
+export function cutStrings(value: unknown): unknown {
   if (typeof value === "string") return cut(value, INPUT_STRING_MAX);
   if (Array.isArray(value)) return value.map(cutStrings);
   if (value !== null && typeof value === "object") {
@@ -84,7 +84,7 @@ function countOf(output: unknown): number | undefined {
 }
 
 /** An error, whatever shape it came in, as text. */
-function errorText(error: unknown): string {
+export function errorText(error: unknown): string {
   if (error instanceof Error) return error.message;
   return typeof error === "string" ? error : (JSON.stringify(error) ?? String(error));
 }

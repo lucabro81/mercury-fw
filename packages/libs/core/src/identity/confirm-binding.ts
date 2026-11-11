@@ -19,6 +19,7 @@ import { confirmationId } from "../session/turn-trace.ts";
 import { createPeople, type People } from "./people.ts";
 import { isLinkCode, type Linking } from "./linking.ts";
 import { englishTexts, type Texts, type Translate } from "../i18n/i18n.ts";
+import type { TraceInput } from "../traces/tracer.ts";
 
 /**
  * What the person is told about a resolved confirmation, in `t`'s language;
@@ -44,7 +45,8 @@ export function confirmReply(outcome: ConfirmOutcome, t: Translate): ConfirmRepl
  * `confirm` and `resolveConfirmation` over `deps`, each resolving as the person
  * `identify` says the caller is, replying in their language (`texts`, English
  * when absent), and archiving how a resolved token went through `archive`
- * (the verbatim archive's capture), when given.
+ * (the verbatim archive's capture), when given, and as a
+ * `confirmation.resolved` event through `emit` (the tracer's), when given.
  */
 export function bindConfirm(
   deps: Omit<ConfirmDeps, "owner">,
@@ -52,6 +54,7 @@ export function bindConfirm(
   redeemLink?: Linking["redeem"],
   texts: Texts = englishTexts(),
   archive?: (exchange: VerbatimExchange) => Promise<void>,
+  emit?: (input: TraceInput) => void,
 ): Required<Pick<ChannelRuntimeContext, "confirm" | "resolveConfirmation">> {
   /**
    * Resolves `token` for the person `key` and, once it resolved, archives the
@@ -67,6 +70,9 @@ export function bindConfirm(
   ) {
     let resolved: ResolvedAction | undefined;
     const outcome = await resolveConfirmation(token, sessionKey, { ...deps, owner: key, onResolved: (action) => (resolved = action) });
+    if (resolved !== undefined) {
+      emit?.({ kind: "confirmation.resolved", confirmationId: confirmationId(resolved.token), status: resolved.status, session: sessionKey, person: key });
+    }
     if (archive && tracked && resolved !== undefined) {
       try {
         await archive({

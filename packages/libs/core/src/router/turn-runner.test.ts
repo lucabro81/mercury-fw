@@ -3114,3 +3114,127 @@ describe("createTurnRunner: titling the conversation", () => {
     expect(titled).toEqual([]);
   });
 });
+
+// #23: every turn leaves its events in the traces, tied together by one turn id.
+describe("traces of a turn", () => {
+  type Emitted = Record<string, unknown> & { kind: string };
+
+  function traced(overrides: Partial<TurnRunnerDeps> = {}) {
+    const events: Emitted[] = [];
+    let clock = 1_000;
+    const deps: TurnRunnerDeps = {
+      model: {} as any,
+      systemPrompts: { singleUser: "s", multiUser: "m" },
+      buildTools: () => ({}),
+      getOrCreateHistory: () => fakeHistory(),
+      trackSession: () => {},
+      registerCaptureCallback: () => {},
+      maybeCapture: async () => {},
+      processToolCorrections: async () => {},
+      logStep: () => {},
+      logTurnFn: () => {},
+      heartbeat: () => () => {},
+      now: () => clock,
+      tracer: { emit: (e) => void events.push(e as Emitted), flush: async () => {} },
+      newTurnId: () => "turn-1",
+      runTurnFn: async () => {
+        clock += 2_500;
+        return "reply";
+      },
+      ...overrides,
+    };
+    return { runner: createTurnRunner(deps), events };
+  }
+
+  test("a turn that ends well: turn.start, then turn.end with the same turn id, session and person, and what it took", async () => {
+    const { runner, events } = traced();
+    await runner(baseTurn({ principal: verified("u1"), sessionKey: "sk" }), baseSink());
+    expect(events).toEqual([
+      { kind: "turn.start", turn: "turn-1", session: "sk", person: "google-chat:u1", channel: "test-channel", opening: false, resumed: false, multiUser: false },
+      {
+        kind: "turn.end",
+        turn: "turn-1",
+        session: "sk",
+        person: "google-chat:u1",
+        outcome: "done",
+        durationMs: 2500,
+        steps: 0,
+        toolCalls: 0,
+        answerChars: 5,
+        reasoningChars: 0,
+        stoodIn: false,
+      },
+    ]);
+  });
+
+  test("each model step adds its events between start and end, under the turn's id", async () => {
+    const step = { toolCalls: [], toolResults: [], content: [], stepNumber: 0 } as unknown as StepInfo;
+    const { runner, events } = traced({
+      runTurnFn: async (_h, _i, deps) => {
+        deps.onStepFinish?.(step);
+        return "reply";
+      },
+    });
+    await runner(baseTurn({ sessionKey: "sk" }), baseSink());
+    expect(events.map((e) => e.kind)).toEqual(["turn.start", "model.step", "turn.end"]);
+    expect(events[1]).toMatchObject({ kind: "model.step", turn: "turn-1", session: "sk", step: 0, toolCalls: 0 });
+    expect(events[2]).toMatchObject({ steps: 1 });
+  });
+
+  test("a turn that fails ends failed, with the error kept for the args level only", async () => {
+    const { runner, events } = traced({
+      runTurnFn: async () => {
+        throw new Error("model unreachable");
+      },
+    });
+    await expect(runner(baseTurn(), baseSink())).rejects.toThrow("model unreachable");
+    expect(events.at(-1)).toMatchObject({ kind: "turn.end", outcome: "failed", args: { error: "model unreachable" } });
+  });
+
+  test("a turn its channel stopped ends cancelled", async () => {
+    const abort = new AbortController();
+    const { runner, events } = traced({
+      runTurnFn: async () => {
+        abort.abort();
+        return "partial";
+      },
+    });
+    await runner(baseTurn({ abortSignal: abort.signal }), baseSink());
+    expect(events.at(-1)).toMatchObject({ kind: "turn.end", outcome: "cancelled" });
+  });
+
+  test("someone the core won't talk to: only turn.end, refused, with no person", async () => {
+    const { runner, events } = traced({ identify: async () => ({ ok: false, reason: "unknown", message: "no" }) });
+    await runner(baseTurn({ sessionKey: "sk" }), baseSink());
+    expect(events).toEqual([{ kind: "turn.end", turn: "turn-1", session: "sk", outcome: "refused" }]);
+  });
+
+  test("an opening that says nothing and a resume with nothing kept end without reaching the model", async () => {
+    const opening = traced({ preferredName: () => "Ada" });
+    await opening.runner(baseTurn({ opening: true }), baseSink());
+    expect(opening.events.at(-1)).toMatchObject({ kind: "turn.end", outcome: "opening-skipped" });
+
+    const resume = traced({ takeResumed: () => undefined });
+    await resume.runner(baseTurn({ resumeAfterConfirm: true }), baseSink());
+    expect(resume.events.at(-1)).toMatchObject({ kind: "turn.end", outcome: "resume-gone" });
+  });
+
+  test("a post-turn guard that ran says so, and whether it changed the answer", async () => {
+    const guard: PostTurnGuard = {
+      statusLabel: () => "Checking…",
+      statusId: "issue-list",
+      shouldRun: () => true,
+      run: async (text) => ({ text: `${text}!`, outcome: "success" }),
+    };
+    const { runner, events } = traced({ postTurnGuards: [guard] });
+    await runner(baseTurn(), baseSink());
+    expect(events.find((e) => e.kind === "guard.run")).toMatchObject({ turn: "turn-1", guard: "issue-list", outcome: "success", changed: true });
+  });
+
+  test("without a tracer nothing is emitted and the turn runs as before", async () => {
+    const { runner } = traced({ tracer: undefined });
+    const sink = baseSink();
+    await runner(baseTurn(), sink);
+    expect(sink.finalized).toEqual(["reply"]);
+  });
+});

@@ -94,6 +94,7 @@ import { migrateMemoryToUserKeys, migrateVaultToUserAreas } from "./identity/mig
 import { runRawTriagePass, runIndexAndOrphanPass, runContradictionCheckPass } from "./wiki/self-review-runner.ts";
 import { startSelfReviewCron } from "./cron/self-review-cron.ts";
 import { loadTracer } from "./traces/trace-loader.ts";
+import { withCompressionEvents } from "./traces/compression-events.ts";
 import { resolve as resolvePath } from "node:path";
 import { homedir } from "node:os";
 import type { Tool } from "ai";
@@ -271,7 +272,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
     let history = histories.get(key);
     if (!history) {
       history = createSessionHistory(
-        summarize,
+        withCompressionEvents(summarize, { emit: (event) => tracer.emit({ ...event, session: key }), now: () => Date.now() }),
         trackForCapture
           ? (messages) => sessionCapture.onCompress(key, messages)
           : undefined,
@@ -572,6 +573,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   // A streaming turn whose model goes silent is stopped (#240); checked here so a bad value stops the app at startup.
   const stallTimeoutMs = parseStallTimeoutMs(process.env.TURN_STALL_TIMEOUT_MS);
   const handleTurn = createTurnRunner({
+    tracer,
     takeResumed: (sessionKey) => resumes.take(sessionKey),
     sessionLock,
     model,
@@ -647,7 +649,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
     env: process.env,
     log: (msg) => console.error(msg),
     // How a confirmation was resolved goes to the archive with the conversation (#370).
-    ...bindConfirm(confirmDeps, people.identify, linking.redeem, texts, verbatimProvider.captureExchange),
+    ...bindConfirm(confirmDeps, people.identify, linking.redeem, texts, verbatimProvider.captureExchange, (event) => tracer.emit(event)),
     admit: people.admit,
     // The channel's own texts: the person's language when the core knows who
     // it is, else the hint's, else the default.
