@@ -3,6 +3,7 @@
 "@mercury-fw/core": minor
 "@mercury-fw/store-qdrant": minor
 "@mercury-fw/cli": minor
+"@mercury-fw/channel-http": patch
 ---
 
 - vector-index contract: `VectorIndexPlugin`, `VectorIndex`, `VectorPoint`, `VectorSpaceSpec`, `VectorWhere`, `VECTOR_INDEX_API_VERSION`
