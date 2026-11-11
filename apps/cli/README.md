@@ -162,7 +162,7 @@ mfw memory list
 ```
 
 ```
-conversation_messages  112 points
+conversation_messages  113 points
 conversation_titles  4 points
 episodic_memory  25 points
 semantic_facts  20 points
@@ -172,7 +172,7 @@ verbatim_archive  112 points
 
 ### `mfw memory read <collection> [--limit N]`
 
-Prints a collection's points, each as its id followed by one line per payload field. Newest first where the collection has a timestamp index (the episodic memory, the conversation messages and the verbatim archive do); in Qdrant's own order otherwise, and it says so. `--limit` defaults to 20. Read-only.
+Prints a collection's points, each as its id followed by one line per payload field. Newest first where the collection has a timestamp index (the episodic memory, the conversation messages and the verbatim archive do; `conversation_messages` also holds one point with no person, marking the copy of an older archive done); in Qdrant's own order otherwise, and it says so. `--limit` defaults to 20. Read-only.
 
 ```bash
 mfw memory read episodic_memory
