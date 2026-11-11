@@ -10,6 +10,11 @@ import type { StepInfo } from "../session/step-info.ts";
 import { confirmationId } from "../session/turn-trace.ts";
 import { createDisplayStore } from "../tools/display-store.ts";
 
+/** An archived message without its turn id, for the tests about everything else it carries (the id has its own test). */
+function archivedFields<T extends { turnId?: string }>({ turnId: _turnId, ...rest }: T): Omit<T, "turnId"> {
+  return rest;
+}
+
 function fakeHistory(overrides: Partial<SessionHistory> = {}): SessionHistory {
   return {
     addUserMessage: async () => {},
@@ -1217,7 +1222,7 @@ describe("createTurnRunner", () => {
         processToolCorrections: async () => {},
         logStep: () => {},
         captureVerbatim: async (msg) => {
-          captured.push(msg);
+          captured.push(archivedFields(msg));
         },
         runTurnFn: async () => "the answer",
       });
@@ -1303,7 +1308,7 @@ describe("createTurnRunner", () => {
         logStep: () => {},
         takeSurfacedDisplays: () => ["MER-1\nhttps://x"],
         captureVerbatim: async (msg) => {
-          captured.push(msg);
+          captured.push(archivedFields(msg));
         },
         runTurnFn: async () => "Here you go.",
       });
@@ -1343,7 +1348,7 @@ describe("createTurnRunner", () => {
         processToolCorrections: async () => {},
         logStep: () => {},
         captureVerbatim: async (msg) => {
-          captured.push(msg);
+          captured.push(archivedFields(msg));
         },
         runTurnFn: async () => "Two comments.",
       });
@@ -1713,7 +1718,7 @@ describe("createTurnRunner: preferred name and opening turn", () => {
       processToolCorrections: async () => {},
       logStep: () => {},
       captureVerbatim: async (msg) => {
-        captured.push(msg);
+        captured.push(archivedFields(msg));
       },
       preferredName: () => undefined,
       runTurnFn: async () => {
@@ -2757,7 +2762,7 @@ describe("createTurnRunner: what a cancelled turn leaves in the archive", () => 
       heartbeat: () => () => {},
       captureVerbatim: async (msg) => {
         if (opts.failingCapture) throw new Error("qdrant down");
-        captured.push(msg);
+        captured.push(archivedFields(msg));
       },
       takeResumed: () => resumed,
       runTurnFn: async (h, text) => {
@@ -2882,7 +2887,7 @@ describe("createTurnRunner: what the person saw of the turn, in the archive (#37
       heartbeat: () => () => {},
       translatorFor: () => (key) => key,
       ...(opts.guard ? { postTurnGuards: [opts.guard] } : {}),
-      captureVerbatim: async (msg) => void captured.push(msg),
+      captureVerbatim: async (msg) => void captured.push(archivedFields(msg)),
       runTurnFn: async (h, text, deps) => {
         await h.addUserMessage(text);
         deps.onReasoningChunk?.("Look it ", "r1");
@@ -2994,7 +2999,7 @@ describe("createTurnRunner: what the person saw of the turn, in the archive (#37
       logStep: () => {},
       logTurnFn: () => {},
       heartbeat: () => () => {},
-      captureVerbatim: async (msg) => void captured.push(msg),
+      captureVerbatim: async (msg) => void captured.push(archivedFields(msg)),
       runTurnFn: async (h, text, deps) => {
         await h.addUserMessage(text);
         deps.onReasoningChunk?.("halfway", "r1");
@@ -3236,5 +3241,36 @@ describe("traces of a turn", () => {
     const sink = baseSink();
     await runner(baseTurn(), sink);
     expect(sink.finalized).toEqual(["reply"]);
+  });
+});
+
+// #23: the turn id in the traces finds the turn's messages in the archive.
+describe("the turn id in the archive", () => {
+  test("both archived messages of a turn carry the id its events carry", async () => {
+    const archived: Array<{ role: string; turnId?: string }> = [];
+    const events: Array<Record<string, unknown>> = [];
+    const runner = createTurnRunner({
+      model: {} as any,
+      systemPrompts: { singleUser: "s", multiUser: "m" },
+      buildTools: () => ({}),
+      getOrCreateHistory: () => fakeHistory(),
+      trackSession: () => {},
+      registerCaptureCallback: () => {},
+      maybeCapture: async () => {},
+      processToolCorrections: async () => {},
+      logStep: () => {},
+      logTurnFn: () => {},
+      heartbeat: () => () => {},
+      tracer: { emit: (e) => void events.push(e), flush: async () => {} },
+      newTurnId: () => "turn-7",
+      captureVerbatim: async (msg) => void archived.push(msg),
+      runTurnFn: async () => "reply",
+    });
+    await runner(baseTurn({ principal: verified("u1") }), baseSink());
+    expect(archived.map((m) => [m.role, m.turnId])).toEqual([
+      ["user", "turn-7"],
+      ["assistant", "turn-7"],
+    ]);
+    expect(events[0]!.turn).toBe("turn-7");
   });
 });

@@ -248,6 +248,8 @@ export type TurnRunnerDeps = {
     interrupted?: true;
     trace?: TraceEntry[];
     pendingNote?: string;
+    /** The turn's id, as its trace events carry it (#23). */
+    turnId?: string;
   }) => Promise<void>;
   /**
    * Gives the conversation a title if it has none (#214), from what the
@@ -538,7 +540,7 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
       if (last === lastBefore || last?.content !== ABORTED_MARKER) return;
       try {
         if (!resumed) {
-          await deps.captureVerbatim({ sessionKey: turn.sessionKey, userId: key, role: "user", content: turn.text });
+          await deps.captureVerbatim({ sessionKey: turn.sessionKey, userId: key, role: "user", content: turn.text, turnId });
         }
         const seen = trace.entries();
         await deps.captureVerbatim({
@@ -547,6 +549,7 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
           role: "assistant",
           content: ABORTED_MARKER,
           interrupted: true,
+          turnId,
           ...(seen.length > 0 ? { trace: seen } : {}),
         });
       } catch (err) {
@@ -759,7 +762,7 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
         try {
           // An opening's cue and a resumed turn's line aren't something the person said.
           if (!turn.opening && !resumed) {
-            await deps.captureVerbatim({ sessionKey: turn.sessionKey, userId: key, role: "user", content: turn.text });
+            await deps.captureVerbatim({ sessionKey: turn.sessionKey, userId: key, role: "user", content: turn.text, turnId });
           }
           // The calls the answer was written from, as the history recorded them.
           const answer = history.getMessages().at(-1);
@@ -770,6 +773,7 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
             userId: key,
             role: "assistant",
             content: assistantText,
+            turnId,
             ...(surfacedDisplays.length > 0 ? { displays: surfacedDisplays } : {}),
             ...(calls !== undefined ? { calls } : {}),
             ...(seen.length > 0 ? { trace: seen } : {}),
