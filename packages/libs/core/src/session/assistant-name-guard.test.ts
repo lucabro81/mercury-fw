@@ -32,7 +32,7 @@ function coreTools(): Record<string, Tool> {
     ...createProfileTools({ store: { nameOf: () => undefined, setName: (_k, n) => n, languageOf: () => undefined, setLanguage: (_k, l) => l, timeZoneOf: () => undefined, setTimeZone: (_k, z) => z }, key: "static:alice" }),
     ...createReadSkillTool([{ name: "jira", description: "Jira.", body: "body" }]),
     ...createPresentTool({ sessionKey: "s", store: createDisplayStore() }),
-    ...createVerbatimArchiveProvider({ client: {} as never, collectionName: "c", embed: async () => [] }).sessionTools!({
+    ...createVerbatimArchiveProvider({ store: {} as never, index: {} as never, embed: async () => [] }).sessionTools!({
       sessionKey: "s",
       userId: "static:alice",
     }),

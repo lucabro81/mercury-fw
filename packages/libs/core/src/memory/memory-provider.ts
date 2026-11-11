@@ -13,8 +13,7 @@
 import { tool, type Tool } from "ai";
 import { z } from "zod";
 import { appendVerbatimMessage, searchVerbatim, shownText, type ArchivedConfirmation } from "./verbatim-archive-store.ts";
-import type { VectorIndex } from "@mercury-fw/channel-types";
-import type { QdrantClientLike } from "./qdrant-client.ts";
+import type { ConversationStore, VectorIndex } from "@mercury-fw/channel-types";
 import type { CallRecord } from "../session/call-record.ts";
 import type { TraceEntry } from "../session/turn-trace.ts";
 
@@ -60,10 +59,10 @@ export type MemoryProvider = {
 };
 
 export type VerbatimArchiveProviderDeps = {
-  client: QdrantClientLike;
-  collectionName: string;
+  /** Where every message is kept. */
+  store: ConversationStore;
   embed: (text: string) => Promise<number[]>;
-  /** Where `recall_verbatim` searches; without one the provider offers no recall. */
+  /** Where messages are indexed and `recall_verbatim` searches; without one nothing is embedded and the provider offers no recall. */
   index?: VectorIndex;
   /** Test seam; defaults to `() => new Date()`. The provider owns the durable ordering timestamp. */
   now?: () => Date;
@@ -74,9 +73,9 @@ const RECALL_MAX_LIMIT = 20;
 
 /**
  * Builds the verbatim-archive provider: captures every user/assistant
- * message verbatim to its Qdrant collection and, when there's a vector
- * index, exposes a `recall_verbatim` tool that searches that archive by
- * meaning, scoped to the calling user — letting a later session resurface
+ * message verbatim to the conversation store and, when there's a vector
+ * index, indexes it there and exposes a `recall_verbatim` tool that searches
+ * the archive by meaning, scoped to the calling user — letting a later session resurface
  * what was actually said before, beyond the live history window.
  */
 export function createVerbatimArchiveProvider(deps: VerbatimArchiveProviderDeps): MemoryProvider {
@@ -90,10 +89,11 @@ export function createVerbatimArchiveProvider(deps: VerbatimArchiveProviderDeps)
       if (shownText(exchange.content, exchange.displays).trim() === "" && exchange.confirmation === undefined) {
         return;
       }
-      await appendVerbatimMessage(deps.client, deps.collectionName, deps.embed, {
-        ...exchange,
-        timestamp: now().toISOString(),
-      });
+      await appendVerbatimMessage(
+        deps.store,
+        { ...exchange, timestamp: now().toISOString() },
+        deps.index === undefined ? undefined : { index: deps.index, embed: deps.embed },
+      );
     },
     sessionTools: (ctx): Record<string, Tool> => {
       const index = deps.index;

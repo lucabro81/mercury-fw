@@ -1,6 +1,5 @@
 import { describe, it, expect } from "bun:test";
 import {
-  ensureVerbatimCollection,
   appendVerbatimMessage,
   searchVerbatim,
   listVerbatimBySession,
@@ -8,7 +7,8 @@ import {
   listVerbatimTail,
   shownText,
 } from "./verbatim-archive-store.ts";
-import type { QdrantClientLike } from "./qdrant-client.ts";
+import type { ConversationStore, StoredMessage } from "@mercury-fw/channel-types";
+import { fakeConversationStore } from "./__fixtures__/fake-conversation-store.ts";
 import { fakeVectorIndex } from "./__fixtures__/fake-vector-index.ts";
 
 /** An index whose verbatim_archive space holds `payloads`, all equally near any query. */
@@ -16,161 +16,55 @@ function indexWith(payloads: Array<Record<string, unknown>>) {
   return fakeVectorIndex({ verbatim_archive: payloads.map((payload, i) => ({ id: `p${i}`, vector: [1], payload })) });
 }
 
-describe("ensureVerbatimCollection", () => {
-  it("creates the collection if it doesn't already exist", async () => {
-    let created: unknown;
-    const client: QdrantClientLike = {
-      getCollections: async () => ({ collections: [] }),
-      createCollection: async (name, params) => {
-        created = { name, params };
-        return {};
-      },
-      upsert: async () => ({}),
-      query: async () => ({ points: [] }),
-    };
+/** A store whose reads hand back `payloads` as they are (in the order a store gives them), recording each read's query. */
+function storeWith(payloads: Array<Record<string, unknown>>, received: { query?: unknown } = {}): ConversationStore {
+  const messages = payloads.map((p, i) => ({ id: `p${i}`, ...p }) as StoredMessage);
+  return {
+    ready: async () => {},
+    append: async () => {},
+    messages: async (q) => ((received.query = q), { messages }),
+    recent: async (q) => ((received.query = q), messages),
+    setTitle: async () => {},
+    titles: async () => [],
+    health: async () => ({ ok: true }),
+  };
+}
 
-    await ensureVerbatimCollection(client, "verbatim_archive", 768);
-
-    expect(created).toEqual({
-      name: "verbatim_archive",
-      params: { vectors: { size: 768, distance: "Cosine" } },
-    });
-  });
-
-  it("does not recreate a collection that already exists", async () => {
-    let createCalls = 0;
-    const client: QdrantClientLike = {
-      getCollections: async () => ({ collections: [{ name: "verbatim_archive" }] }),
-      createCollection: async () => {
-        createCalls++;
-        return {};
-      },
-      upsert: async () => ({}),
-      query: async () => ({ points: [] }),
-    };
-
-    await ensureVerbatimCollection(client, "verbatim_archive", 768);
-
-    expect(createCalls).toBe(0);
-  });
-
-  // searchVerbatim filters by userId; listVerbatimBySession filters by
-  // sessionKey and orders by timestamp. Each needs its own payload index
-  // (keyword for the equality filters, datetime for the order_by), or the
-  // query fails with an HTTP 400. Ensured unconditionally (not only on fresh
-  // creation) so a collection made before this self-heals — same reasoning as
-  // episodic-store's index guard.
-  it("creates the userId, sessionKey and timestamp payload indexes when creating a new collection", async () => {
-    const indexCalls: Array<{ name: string; params: unknown }> = [];
-    const client: QdrantClientLike = {
-      getCollections: async () => ({ collections: [] }),
-      createCollection: async () => ({}),
-      upsert: async () => ({}),
-      query: async () => ({ points: [] }),
-      createPayloadIndex: async (name, params) => {
-        indexCalls.push({ name, params });
-        return {};
-      },
-    };
-
-    await ensureVerbatimCollection(client, "verbatim_archive", 768);
-
-    expect(indexCalls).toEqual([
-      { name: "verbatim_archive", params: { field_name: "userId", field_schema: "keyword" } },
-      { name: "verbatim_archive", params: { field_name: "sessionKey", field_schema: "keyword" } },
-      { name: "verbatim_archive", params: { field_name: "timestamp", field_schema: "datetime" } },
-    ]);
-  });
-
-  it("creates the payload indexes even when the collection already exists", async () => {
-    const indexCalls: Array<{ name: string; params: unknown }> = [];
-    const client: QdrantClientLike = {
-      getCollections: async () => ({ collections: [{ name: "verbatim_archive" }] }),
-      createCollection: async () => ({}),
-      upsert: async () => ({}),
-      query: async () => ({ points: [] }),
-      createPayloadIndex: async (name, params) => {
-        indexCalls.push({ name, params });
-        return {};
-      },
-    };
-
-    await ensureVerbatimCollection(client, "verbatim_archive", 768);
-
-    expect(indexCalls).toHaveLength(3);
-  });
-
-  it("does not throw when the client doesn't support createPayloadIndex", async () => {
-    const client: QdrantClientLike = {
-      getCollections: async () => ({ collections: [] }),
-      createCollection: async () => ({}),
-      upsert: async () => ({}),
-      query: async () => ({ points: [] }),
-    };
-
-    await expect(ensureVerbatimCollection(client, "verbatim_archive", 768)).resolves.toBeUndefined();
-  });
-});
+/** Appends `entry` to a store and an index: what the store kept, what the index got and what was embedded. */
+async function appended(entry: Parameters<typeof appendVerbatimMessage>[1], withIndex = true) {
+  const store = fakeConversationStore();
+  const index = fakeVectorIndex();
+  const embedded: string[] = [];
+  const embed = async (text: string) => (embedded.push(text), [1]);
+  await appendVerbatimMessage(store, entry, withIndex ? { index, embed } : undefined);
+  return { stored: store.stored, indexed: index.spaces.get("verbatim_archive") ?? [], embedded };
+}
 
 describe("appendVerbatimMessage", () => {
-  it("embeds the message content and upserts a point with the full verbatim payload", async () => {
-    let upserted: { collection: string; points: unknown[] } | undefined;
-    const client: QdrantClientLike = {
-      getCollections: async () => ({ collections: [] }),
-      createCollection: async () => ({}),
-      upsert: async (collection, params) => {
-        upserted = { collection, points: params.points };
-        return {};
-      },
-      query: async () => ({ points: [] }),
-    };
-    const embed = async (text: string) => [text.length, 0, 0];
+  const message = {
+    userId: "users/42",
+    sessionKey: "spaces/X:users/42",
+    role: "user" as const,
+    content: "come sta KAN-1?",
+    timestamp: "2026-09-22T12:00:00.000Z",
+  };
 
-    await appendVerbatimMessage(client, "verbatim_archive", embed, {
-      userId: "users/42",
-      sessionKey: "spaces/X:users/42",
-      role: "user",
-      content: "come sta KAN-1?",
-      timestamp: "2026-09-22T12:00:00.000Z",
-    });
+  it("keeps the message in the store under a new id, and indexes it under the same id with its content embedded", async () => {
+    const { stored, indexed, embedded } = await appended(message);
 
-    expect(upserted?.collection).toBe("verbatim_archive");
-    expect(upserted?.points).toHaveLength(1);
-    const point = upserted!.points[0] as { id: string; vector: number[]; payload: Record<string, unknown> };
-    expect(point.vector).toEqual(["come sta KAN-1?".length, 0, 0]);
-    expect(point.payload).toEqual({
-      userId: "users/42",
-      sessionKey: "spaces/X:users/42",
-      role: "user",
-      content: "come sta KAN-1?",
-      timestamp: "2026-09-22T12:00:00.000Z",
-    });
-    expect(typeof point.id).toBe("string");
+    expect(stored).toHaveLength(1);
+    const { id, ...kept } = stored[0]!;
+    expect(id).toMatch(/^[0-9a-f-]{36}$/);
+    expect(kept).toEqual(message);
+    expect(indexed).toEqual([{ id, vector: [1], payload: message }]);
+    expect(embedded).toEqual(["come sta KAN-1?"]);
   });
 
-  it("embeds the assistant role's content just the same", async () => {
-    let payload: Record<string, unknown> | undefined;
-    const client: QdrantClientLike = {
-      getCollections: async () => ({ collections: [] }),
-      createCollection: async () => ({}),
-      upsert: async (_collection, params) => {
-        payload = (params.points[0] as { payload: Record<string, unknown> }).payload;
-        return {};
-      },
-      query: async () => ({ points: [] }),
-    };
-    const embed = async () => [1, 2, 3];
-
-    await appendVerbatimMessage(client, "verbatim_archive", embed, {
-      userId: "users/42",
-      sessionKey: "terminal",
-      role: "assistant",
-      content: "KAN-1 è In Progress.",
-      timestamp: "2026-09-22T12:00:05.000Z",
-    });
-
-    expect(payload?.role).toBe("assistant");
-    expect(payload?.content).toBe("KAN-1 è In Progress.");
+  // #379: without a vector index the archive still keeps what was said; nothing is embedded.
+  it("without a search, keeps the message and embeds nothing", async () => {
+    const { stored, embedded } = await appended({ ...message, role: "assistant", content: "KAN-1 è In Progress." }, false);
+    expect(stored.map(({ id: _id, ...m }) => m)).toEqual([{ ...message, role: "assistant", content: "KAN-1 è In Progress." }]);
+    expect(embedded).toEqual([]);
   });
 });
 
@@ -230,151 +124,66 @@ describe("searchVerbatim", () => {
 
 describe("listVerbatimBySession", () => {
   const msg = (sessionKey: string, role: "user" | "assistant", content: string, timestamp: string) => ({
-    userId: "u",
+    userId: "static:alice",
     sessionKey,
     role,
     content,
     timestamp,
   });
 
-  it("scrolls the session's messages filtered by the person and the sessionKey, ordered by timestamp ascending", async () => {
-    let received: { collection: string; params: Record<string, unknown> } | undefined;
-    const client: QdrantClientLike = {
-      getCollections: async () => ({ collections: [] }),
-      createCollection: async () => ({}),
-      upsert: async () => ({}),
-      query: async () => ({ points: [] }),
-      scroll: async (collection, params) => {
-        received = { collection, params };
-        return {
-          points: [
-            { id: "p1", payload: msg("conv-1", "user", "ciao", "2026-09-22T12:00:00.000Z") },
-            { id: "p2", payload: msg("conv-1", "assistant", "ciao a te", "2026-09-22T12:00:01.000Z") },
-          ],
-          next_page_offset: "cursor-2",
-        };
-      },
-    };
+  it("reads the person's conversation oldest first, each message without its id, with the next page's cursor", async () => {
+    const store = fakeConversationStore([
+      msg("conv-1", "assistant", "ciao a te", "2026-09-22T12:00:01.000Z"),
+      msg("conv-1", "user", "ciao", "2026-09-22T12:00:00.000Z"),
+      msg("conv-1", "user", "e poi?", "2026-09-22T12:00:02.000Z"),
+      msg("conv-2", "user", "another conversation", "2026-09-22T12:00:00.500Z"),
+    ]);
 
-    const result = await listVerbatimBySession(client, "verbatim_archive", { userId: "static:alice", sessionKey: "conv-1", limit: 50 });
+    const result = await listVerbatimBySession(store, { userId: "static:alice", sessionKey: "conv-1", limit: 2 });
 
-    expect(received?.collection).toBe("verbatim_archive");
-    expect(received?.params).toEqual({
-      filter: {
-        must: [
-          { key: "userId", match: { value: "static:alice" } },
-          { key: "sessionKey", match: { value: "conv-1" } },
-        ],
-      },
-      order_by: { key: "timestamp", direction: "asc" },
-      limit: 50,
-      offset: undefined,
-      with_payload: true,
-    });
+    expect(store.calls).toEqual([["messages", { userId: "static:alice", sessionKey: "conv-1", order: "asc", limit: 2 }]]);
     expect(result).toEqual({
-      messages: [
-        msg("conv-1", "user", "ciao", "2026-09-22T12:00:00.000Z"),
-        msg("conv-1", "assistant", "ciao a te", "2026-09-22T12:00:01.000Z"),
-      ],
-      nextOffset: "cursor-2",
+      messages: [msg("conv-1", "user", "ciao", "2026-09-22T12:00:00.000Z"), msg("conv-1", "assistant", "ciao a te", "2026-09-22T12:00:01.000Z")],
+      nextOffset: "2",
     });
   });
 
-  it("forwards the pagination offset and reports null when there is no next page", async () => {
-    let receivedOffset: unknown;
-    const client: QdrantClientLike = {
-      getCollections: async () => ({ collections: [] }),
-      createCollection: async () => ({}),
-      upsert: async () => ({}),
-      query: async () => ({ points: [] }),
-      scroll: async (_collection, params) => {
-        receivedOffset = params.offset;
-        return { points: [] };
-      },
-    };
-
-    const result = await listVerbatimBySession(client, "verbatim_archive", { userId: "static:alice",
-      sessionKey: "conv-1",
-      limit: 10,
-      offset: "cursor-1",
-    });
-
-    expect(receivedOffset).toBe("cursor-1");
-    expect(result).toEqual({ messages: [], nextOffset: null });
+  it("forwards the cursor and reports null when there is no next page", async () => {
+    const store = fakeConversationStore([msg("conv-1", "user", "a", "t1"), msg("conv-1", "user", "b", "t2")]);
+    const result = await listVerbatimBySession(store, { userId: "static:alice", sessionKey: "conv-1", limit: 10, offset: "1" });
+    expect(store.calls).toEqual([["messages", { userId: "static:alice", sessionKey: "conv-1", order: "asc", limit: 10, cursor: "1" }]]);
+    expect(result).toEqual({ messages: [msg("conv-1", "user", "b", "t2")], nextOffset: null });
   });
 
-  it("skips malformed points instead of returning them", async () => {
-    const client: QdrantClientLike = {
-      getCollections: async () => ({ collections: [] }),
-      createCollection: async () => ({}),
-      upsert: async () => ({}),
-      query: async () => ({ points: [] }),
-      scroll: async () => ({
-        points: [
-          { id: "p1", payload: null },
-          { id: "p2", payload: { content: 42 } },
-          { id: "p3", payload: msg("conv-1", "assistant", "valid", "2026-09-22T12:00:02.000Z") },
-        ],
-      }),
-    };
-
-    const result = await listVerbatimBySession(client, "verbatim_archive", { userId: "static:alice", sessionKey: "conv-1", limit: 50 });
-
+  it("skips malformed messages instead of returning them", async () => {
+    const result = await listVerbatimBySession(
+      storeWith([{ content: 42 }, msg("conv-1", "assistant", "valid", "2026-09-22T12:00:02.000Z")]),
+      { userId: "static:alice", sessionKey: "conv-1", limit: 50 },
+    );
     expect(result.messages).toEqual([msg("conv-1", "assistant", "valid", "2026-09-22T12:00:02.000Z")]);
-  });
-
-  it("returns empty when the client has no scroll support", async () => {
-    const client: QdrantClientLike = {
-      getCollections: async () => ({ collections: [] }),
-      createCollection: async () => ({}),
-      upsert: async () => ({}),
-      query: async () => ({ points: [] }),
-    };
-
-    expect(await listVerbatimBySession(client, "verbatim_archive", { userId: "static:alice", sessionKey: "conv-1", limit: 50 })).toEqual({
-      messages: [],
-      nextOffset: null,
-    });
   });
 });
 
 describe("listVerbatimSessions", () => {
   const msg = (sessionKey: string, content: string, timestamp: string) => ({
-    userId: "u",
+    userId: "static:alice",
     sessionKey,
     role: "user" as const,
     content,
     timestamp,
   });
 
-  it("scrolls the person's messages newest-first and dedups by sessionKey, keeping each conversation's most recent message", async () => {
-    let received: { params: Record<string, unknown> } | undefined;
-    const client: QdrantClientLike = {
-      getCollections: async () => ({ collections: [] }),
-      createCollection: async () => ({}),
-      upsert: async () => ({}),
-      query: async () => ({ points: [] }),
-      scroll: async (_collection, params) => {
-        received = { params };
-        return {
-          points: [
-            { id: "p1", payload: msg("conv-b", "latest in b", "2026-09-24T12:00:03.000Z") },
-            { id: "p2", payload: msg("conv-a", "latest in a", "2026-09-24T12:00:02.000Z") },
-            { id: "p3", payload: msg("conv-b", "older in b", "2026-09-24T12:00:01.000Z") },
-            { id: "p4", payload: msg("conv-a", "older in a", "2026-09-24T12:00:00.000Z") },
-          ],
-        };
-      },
-    };
+  it("reads the person's newest messages and dedups by sessionKey, keeping each conversation's most recent message", async () => {
+    const store = fakeConversationStore([
+      msg("conv-a", "older in a", "2026-09-24T12:00:00.000Z"),
+      msg("conv-b", "latest in b", "2026-09-24T12:00:03.000Z"),
+      msg("conv-a", "latest in a", "2026-09-24T12:00:02.000Z"),
+      msg("conv-b", "older in b", "2026-09-24T12:00:01.000Z"),
+    ]);
 
-    const result = await listVerbatimSessions(client, "verbatim_archive", { userId: "static:alice", limit: 10 });
+    const result = await listVerbatimSessions(store, { userId: "static:alice", limit: 10 });
 
-    expect(received?.params).toEqual({
-      filter: { must: [{ key: "userId", match: { value: "static:alice" } }] },
-      order_by: { key: "timestamp", direction: "desc" },
-      limit: 500,
-      with_payload: true,
-    });
+    expect(store.calls).toEqual([["recent", { userId: "static:alice", limit: 500 }]]);
     expect(result).toEqual({
       conversations: [
         { sessionKey: "conv-b", lastTimestamp: "2026-09-24T12:00:03.000Z", preview: "latest in b" },
@@ -384,34 +193,13 @@ describe("listVerbatimSessions", () => {
   });
 
   it("caps the number of returned conversations at limit", async () => {
-    const client: QdrantClientLike = {
-      getCollections: async () => ({ collections: [] }),
-      createCollection: async () => ({}),
-      upsert: async () => ({}),
-      query: async () => ({ points: [] }),
-      scroll: async () => ({
-        points: [
-          { id: "p1", payload: msg("conv-a", "a", "2026-09-24T12:00:03.000Z") },
-          { id: "p2", payload: msg("conv-b", "b", "2026-09-24T12:00:02.000Z") },
-          { id: "p3", payload: msg("conv-c", "c", "2026-09-24T12:00:01.000Z") },
-        ],
-      }),
-    };
-
-    const result = await listVerbatimSessions(client, "verbatim_archive", { userId: "static:alice", limit: 2 });
-
+    const store = fakeConversationStore([
+      msg("conv-a", "a", "2026-09-24T12:00:03.000Z"),
+      msg("conv-b", "b", "2026-09-24T12:00:02.000Z"),
+      msg("conv-c", "c", "2026-09-24T12:00:01.000Z"),
+    ]);
+    const result = await listVerbatimSessions(store, { userId: "static:alice", limit: 2 });
     expect(result.conversations.map((c) => c.sessionKey)).toEqual(["conv-a", "conv-b"]);
-  });
-
-  it("returns empty when the client has no scroll support", async () => {
-    const client: QdrantClientLike = {
-      getCollections: async () => ({ collections: [] }),
-      createCollection: async () => ({}),
-      upsert: async () => ({}),
-      query: async () => ({ points: [] }),
-    };
-
-    expect(await listVerbatimSessions(client, "verbatim_archive", { userId: "static:alice", limit: 10 })).toEqual({ conversations: [] });
   });
 });
 
@@ -423,38 +211,14 @@ describe("listVerbatimTail", () => {
     content,
     timestamp: `2026-10-12T10:00:${String(second).padStart(2, "0")}.000Z`,
   });
-
-  /** A client whose scroll hands back `newestFirst` (already newest first, as Qdrant would), recording the request. */
-  function clientWith(newestFirst: ReturnType<typeof msg>[], received: { params?: Record<string, unknown> } = {}): QdrantClientLike {
-    return {
-      getCollections: async () => ({ collections: [] }),
-      createCollection: async () => ({}),
-      upsert: async () => ({}),
-      query: async () => ({ points: [] }),
-      scroll: async (_collection, params) => {
-        received.params = params;
-        return { points: newestFirst.map((payload, i) => ({ id: `p${i}`, payload })) };
-      },
-    };
-  }
+  const q = { userId: "static:alice", sessionKey: "alice:conv-1" };
 
   it("asks for the person's conversation newest first, and returns it in chronological order", async () => {
-    const received: { params?: Record<string, unknown> } = {};
-    const client = clientWith([msg("assistant", "verde", 3), msg("user", "colore?", 2), msg("assistant", "ok", 1), msg("user", "mi piace il verde", 0)], received);
+    const store = fakeConversationStore([msg("user", "mi piace il verde", 0), msg("assistant", "ok", 1), msg("user", "colore?", 2), msg("assistant", "verde", 3)]);
 
-    const tail = await listVerbatimTail(client, "verbatim_archive", { userId: "static:alice", sessionKey: "alice:conv-1", maxChars: 1000 });
+    const tail = await listVerbatimTail(store, { ...q, maxChars: 1000 });
 
-    expect(received.params).toEqual({
-      filter: {
-        must: [
-          { key: "userId", match: { value: "static:alice" } },
-          { key: "sessionKey", match: { value: "alice:conv-1" } },
-        ],
-      },
-      order_by: { key: "timestamp", direction: "desc" },
-      limit: 200,
-      with_payload: true,
-    });
+    expect(store.calls).toEqual([["messages", { ...q, order: "desc", limit: 200 }]]);
     expect(tail).toEqual({
       messages: [
         { role: "user", content: "mi piace il verde", timestamp: "2026-10-12T10:00:00.000Z" },
@@ -468,9 +232,9 @@ describe("listVerbatimTail", () => {
 
   it("keeps only the newest messages that fit the budget, starting from a user message", async () => {
     // Newest first: "dddd"(4) + "cccc"(4) fit 10, "bb"(2) would make 10 too, "aaaa" no longer fits.
-    const client = clientWith([msg("assistant", "dddd", 3), msg("user", "cccc", 2), msg("assistant", "bb", 1), msg("user", "aaaa", 0)]);
+    const store = fakeConversationStore([msg("user", "aaaa", 0), msg("assistant", "bb", 1), msg("user", "cccc", 2), msg("assistant", "dddd", 3)]);
 
-    const tail = await listVerbatimTail(client, "verbatim_archive", { userId: "static:alice", sessionKey: "alice:conv-1", maxChars: 10 });
+    const tail = await listVerbatimTail(store, { ...q, maxChars: 10 });
 
     // "bb" fits but is an assistant message: a tail never opens with one.
     // What came before the tail ends with "bb", the newest message left out.
@@ -484,38 +248,26 @@ describe("listVerbatimTail", () => {
     });
   });
 
-  it("is incomplete when the archive holds more than one scroll page of the conversation", async () => {
+  it("is incomplete when the archive holds more than one page of the conversation", async () => {
     const many = Array.from({ length: 200 }, (_, i) => msg(i % 2 === 0 ? "assistant" : "user", "x", 59));
-    const tail = await listVerbatimTail(clientWith(many), "verbatim_archive", { userId: "static:alice", sessionKey: "alice:conv-1", maxChars: 10_000 });
+    const tail = await listVerbatimTail(storeWith(many), { ...q, maxChars: 10_000 });
     expect(tail.complete).toBe(false);
     expect(tail.messages[0]?.role).toBe("user");
   });
 
   it("is empty when even the newest message doesn't fit, or nothing is archived", async () => {
-    expect(await listVerbatimTail(clientWith([msg("assistant", "troppo lungo", 1), msg("user", "a", 0)]), "verbatim_archive", { userId: "static:alice", sessionKey: "alice:conv-1", maxChars: 5 })).toEqual({
+    expect(await listVerbatimTail(fakeConversationStore([msg("user", "a", 0), msg("assistant", "troppo lungo", 1)]), { ...q, maxChars: 5 })).toEqual({
       messages: [],
       complete: false,
       leftOutAt: "2026-10-12T10:00:01.000Z",
     });
-    expect(await listVerbatimTail(clientWith([]), "verbatim_archive", { userId: "static:alice", sessionKey: "alice:conv-1", maxChars: 5 })).toEqual({ messages: [], complete: true });
+    expect(await listVerbatimTail(fakeConversationStore(), { ...q, maxChars: 5 })).toEqual({ messages: [], complete: true });
   });
 
-  it("skips malformed points", async () => {
-    const client: QdrantClientLike = {
-      ...clientWith([]),
-      scroll: async () => ({ points: [{ id: "p1", payload: null }, { id: "p2", payload: msg("user", "ciao", 0) }] }),
-    };
-    expect(await listVerbatimTail(client, "verbatim_archive", { userId: "static:alice", sessionKey: "alice:conv-1", maxChars: 100 })).toEqual({
+  it("skips malformed messages", async () => {
+    expect(await listVerbatimTail(storeWith([{ content: 42 }, msg("user", "ciao", 0)]), { ...q, maxChars: 100 })).toEqual({
       messages: [{ role: "user", content: "ciao", timestamp: "2026-10-12T10:00:00.000Z" }],
       complete: true,
-    });
-  });
-
-  it("is empty when the client has no scroll support", async () => {
-    const { scroll: _scroll, ...noScroll } = clientWith([]);
-    expect(await listVerbatimTail(noScroll, "verbatim_archive", { userId: "static:alice", sessionKey: "alice:conv-1", maxChars: 100 })).toEqual({
-      messages: [],
-      complete: false,
     });
   });
 });
@@ -540,17 +292,6 @@ describe("the displays a turn showed", () => {
     timestamp: "2026-10-15T10:00:00.000Z",
   };
 
-  /** A client whose scroll and query hand back `payloads` as points. */
-  function clientWith(payloads: Array<Record<string, unknown>>): QdrantClientLike {
-    const points = payloads.map((payload, i) => ({ id: `p${i}`, score: 1, payload }));
-    return {
-      getCollections: async () => ({ collections: [] }),
-      createCollection: async () => ({}),
-      upsert: async () => ({}),
-      query: async () => ({ points }),
-      scroll: async () => ({ points, next_page_offset: null }),
-    };
-  }
 
   describe("shownText", () => {
     it("joins the answer and the displays with a blank line, as the turn's final text", () => {
@@ -573,41 +314,20 @@ describe("the displays a turn showed", () => {
 
   describe("appendVerbatimMessage", () => {
     it("keeps the displays in the payload and embeds the answer", async () => {
-      let point: { vector: number[]; payload: Record<string, unknown> } | undefined;
-      const client: QdrantClientLike = {
-        ...clientWith([]),
-        upsert: async (_collection, params) => {
-          point = params.points[0] as typeof point;
-          return {};
-        },
-      };
-      const embedded: string[] = [];
-      const embed = async (text: string) => {
-        embedded.push(text);
-        return [1];
-      };
-
-      await appendVerbatimMessage(client, "verbatim_archive", embed, answer);
-
-      expect(point?.payload).toEqual(answer);
+      const { stored, indexed, embedded } = await appended(answer);
+      const { id: _id, ...payload } = stored[0]!;
+      expect(payload).toEqual(answer);
+      expect(indexed[0]?.payload).toEqual(answer);
       expect(embedded).toEqual(["Ecco le tue issue:"]);
     });
 
     it("embeds what was shown when the answer is empty", async () => {
-      const embedded: string[] = [];
-      const embed = async (text: string) => {
-        embedded.push(text);
-        return [1];
-      };
-
-      await appendVerbatimMessage(clientWith([]), "verbatim_archive", embed, { ...answer, content: "" });
-
-      expect(embedded).toEqual([LIST]);
+      expect((await appended({ ...answer, content: "" })).embedded).toEqual([LIST]);
     });
   });
 
   it("listVerbatimBySession serves each message as it was shown, without a separate displays field", async () => {
-    const result = await listVerbatimBySession(clientWith([question, answer]), "verbatim_archive", {
+    const result = await listVerbatimBySession(storeWith([question, answer]), {
       userId: "static:alice",
       sessionKey: "conv-1",
       limit: 50,
@@ -618,7 +338,7 @@ describe("the displays a turn showed", () => {
   });
 
   it("listVerbatimSessions previews what was shown", async () => {
-    const result = await listVerbatimSessions(clientWith([{ ...answer, content: "" }]), "verbatim_archive", {
+    const result = await listVerbatimSessions(storeWith([{ ...answer, content: "" }]), {
       userId: "static:alice",
       limit: 10,
     });
@@ -629,7 +349,7 @@ describe("the displays a turn showed", () => {
   });
 
   it("listVerbatimTail, what goes back to the model, keeps the answer only", async () => {
-    const tail = await listVerbatimTail(clientWith([answer, question]), "verbatim_archive", {
+    const tail = await listVerbatimTail(storeWith([answer, question]), {
       userId: "static:alice",
       sessionKey: "conv-1",
       maxChars: 10_000,
@@ -655,7 +375,7 @@ describe("the displays a turn showed", () => {
   // the model leaves it out, as before such answers were archived, rather than
   // hand it an empty assistant message.
   it("listVerbatimTail leaves out an answer that was only displays", async () => {
-    const tail = await listVerbatimTail(clientWith([{ ...answer, content: "" }, question]), "verbatim_archive", {
+    const tail = await listVerbatimTail(storeWith([{ ...answer, content: "" }, question]), {
       userId: "static:alice",
       sessionKey: "conv-1",
       maxChars: 10_000,
@@ -668,19 +388,14 @@ describe("the displays a turn showed", () => {
   });
 
   it("an answer of blank space with displays counts as only displays", async () => {
-    const tail = await listVerbatimTail(clientWith([{ ...answer, content: " \n " }, question]), "verbatim_archive", {
+    const tail = await listVerbatimTail(storeWith([{ ...answer, content: " \n " }, question]), {
       userId: "static:alice",
       sessionKey: "conv-1",
       maxChars: 10_000,
     });
     expect(tail.messages).toEqual([{ role: "user", content: "Quali issue ho?", timestamp: question.timestamp }]);
 
-    const embedded: string[] = [];
-    await appendVerbatimMessage(clientWith([]), "verbatim_archive", async (text) => (embedded.push(text), [1]), {
-      ...answer,
-      content: " ",
-    });
-    expect(embedded).toEqual([` \n\n${LIST}`]);
+    expect((await appended({ ...answer, content: " " })).embedded).toEqual([` \n\n${LIST}`]);
   });
 
   it("searchVerbatim leaves out an answer that was only displays", async () => {
@@ -695,7 +410,7 @@ describe("the displays a turn showed", () => {
 
   it("listVerbatimSessions cuts the preview of what was shown at 120 characters", async () => {
     const long = "x".repeat(200);
-    const result = await listVerbatimSessions(clientWith([{ ...answer, content: "Ecco:", displays: [long] }]), "verbatim_archive", {
+    const result = await listVerbatimSessions(storeWith([{ ...answer, content: "Ecco:", displays: [long] }]), {
       userId: "static:alice",
       limit: 10,
     });
@@ -704,7 +419,7 @@ describe("the displays a turn showed", () => {
   });
 
   it("reads a message without displays, archived before them, as it was", async () => {
-    const result = await listVerbatimBySession(clientWith([question]), "verbatim_archive", {
+    const result = await listVerbatimBySession(storeWith([question]), {
       userId: "static:alice",
       sessionKey: "conv-1",
       limit: 50,
@@ -737,32 +452,14 @@ describe("the tool calls an answer was written from (#352)", () => {
     timestamp: "2026-10-15T10:00:00.000Z",
   };
 
-  function clientWith(payloads: Array<Record<string, unknown>>): QdrantClientLike {
-    const points = payloads.map((payload, i) => ({ id: `p${i}`, score: 1, payload }));
-    return {
-      getCollections: async () => ({ collections: [] }),
-      createCollection: async () => ({}),
-      upsert: async () => ({}),
-      query: async () => ({ points }),
-      scroll: async () => ({ points, next_page_offset: null }),
-    };
-  }
 
   it("keeps the calls in the payload", async () => {
-    let payload: Record<string, unknown> | undefined;
-    const client: QdrantClientLike = {
-      ...clientWith([]),
-      upsert: async (_collection, params) => {
-        payload = (params.points[0] as { payload: Record<string, unknown> }).payload;
-        return {};
-      },
-    };
-    await appendVerbatimMessage(client, "verbatim_archive", async () => [1], answer);
+    const { id: _id, ...payload } = (await appended(answer)).stored[0]!;
     expect(payload).toEqual(answer);
   });
 
   it("listVerbatimTail, what goes back to the model, brings the calls back", async () => {
-    const tail = await listVerbatimTail(clientWith([answer, question]), "verbatim_archive", {
+    const tail = await listVerbatimTail(storeWith([answer, question]), {
       userId: "static:alice",
       sessionKey: "conv-1",
       maxChars: 10_000,
@@ -776,14 +473,14 @@ describe("the tool calls an answer was written from (#352)", () => {
   it("listVerbatimTail counts the calls toward the budget", async () => {
     const fits = question.content.length + answer.content.length + JSON.stringify(calls).length;
     const query = { userId: "static:alice", sessionKey: "conv-1" };
-    const whole = await listVerbatimTail(clientWith([answer, question]), "verbatim_archive", { ...query, maxChars: fits });
+    const whole = await listVerbatimTail(storeWith([answer, question]), { ...query, maxChars: fits });
     expect(whole.messages).toHaveLength(2);
-    const short = await listVerbatimTail(clientWith([answer, question]), "verbatim_archive", { ...query, maxChars: fits - 1 });
+    const short = await listVerbatimTail(storeWith([answer, question]), { ...query, maxChars: fits - 1 });
     expect(short.messages).toEqual([]);
   });
 
   it("listVerbatimBySession, what a UI renders, leaves the calls out", async () => {
-    const result = await listVerbatimBySession(clientWith([question, answer]), "verbatim_archive", {
+    const result = await listVerbatimBySession(storeWith([question, answer]), {
       userId: "static:alice",
       sessionKey: "conv-1",
       limit: 50,
@@ -802,7 +499,7 @@ describe("the tool calls an answer was written from (#352)", () => {
   });
 
   it("skips a point whose calls aren't a list of calls", async () => {
-    const tail = await listVerbatimTail(clientWith([{ ...answer, calls: "nope" }, question]), "verbatim_archive", {
+    const tail = await listVerbatimTail(storeWith([{ ...answer, calls: "nope" }, question]), {
       userId: "static:alice",
       sessionKey: "conv-1",
       maxChars: 10_000,
@@ -829,32 +526,14 @@ describe("an answer the turn's interruption cut short (#366)", () => {
     timestamp: "2026-11-02T10:00:01.000Z",
   };
 
-  function clientWith(payloads: Array<Record<string, unknown>>): QdrantClientLike {
-    const points = payloads.map((payload, i) => ({ id: `p${i}`, score: 1, payload }));
-    return {
-      getCollections: async () => ({ collections: [] }),
-      createCollection: async () => ({}),
-      upsert: async () => ({}),
-      query: async () => ({ points }),
-      scroll: async () => ({ points, next_page_offset: null }),
-    };
-  }
 
   it("keeps the mark in the payload", async () => {
-    let payload: Record<string, unknown> | undefined;
-    const client: QdrantClientLike = {
-      ...clientWith([]),
-      upsert: async (_collection, params) => {
-        payload = (params.points[0] as { payload: Record<string, unknown> }).payload;
-        return {};
-      },
-    };
-    await appendVerbatimMessage(client, "verbatim_archive", async () => [1], interrupted);
+    const { id: _id, ...payload } = (await appended(interrupted)).stored[0]!;
     expect(payload).toEqual(interrupted);
   });
 
   it("listVerbatimBySession, what a UI renders, serves it marked and without the model's text", async () => {
-    const result = await listVerbatimBySession(clientWith([question, interrupted]), "verbatim_archive", {
+    const result = await listVerbatimBySession(storeWith([question, interrupted]), {
       userId: "static:alice",
       sessionKey: "conv-1",
       limit: 50,
@@ -863,7 +542,7 @@ describe("an answer the turn's interruption cut short (#366)", () => {
   });
 
   it("listVerbatimTail, what goes back to the model, hands back the text the history held", async () => {
-    const tail = await listVerbatimTail(clientWith([interrupted, question]), "verbatim_archive", {
+    const tail = await listVerbatimTail(storeWith([interrupted, question]), {
       userId: "static:alice",
       sessionKey: "conv-1",
       maxChars: 10_000,
@@ -875,7 +554,7 @@ describe("an answer the turn's interruption cut short (#366)", () => {
   });
 
   it("listVerbatimSessions previews the question, at the time of the interruption", async () => {
-    const result = await listVerbatimSessions(clientWith([interrupted, question]), "verbatim_archive", {
+    const result = await listVerbatimSessions(storeWith([interrupted, question]), {
       userId: "static:alice",
       limit: 10,
     });
@@ -885,7 +564,7 @@ describe("an answer the turn's interruption cut short (#366)", () => {
   });
 
   it("listVerbatimSessions previews nothing when its scan holds only the interrupted answer", async () => {
-    const result = await listVerbatimSessions(clientWith([interrupted]), "verbatim_archive", {
+    const result = await listVerbatimSessions(storeWith([interrupted]), {
       userId: "static:alice",
       limit: 10,
     });
@@ -894,7 +573,7 @@ describe("an answer the turn's interruption cut short (#366)", () => {
 
   it("skips a point whose mark isn't true", async () => {
     for (const mark of [false, "yes", 1]) {
-      const tail = await listVerbatimTail(clientWith([{ ...interrupted, interrupted: mark }, question]), "verbatim_archive", {
+      const tail = await listVerbatimTail(storeWith([{ ...interrupted, interrupted: mark }, question]), {
         userId: "static:alice",
         sessionKey: "conv-1",
         maxChars: 10_000,
@@ -940,52 +619,31 @@ describe("what the person saw of the turn besides its text (#370)", () => {
     confirmation: { id: "0123456789abcdef", status: "resume", choice: "Only this time" },
   };
 
-  function clientWith(payloads: Array<Record<string, unknown>>): QdrantClientLike {
-    const points = payloads.map((payload, i) => ({ id: `p${i}`, score: 1, payload }));
-    return {
-      getCollections: async () => ({ collections: [] }),
-      createCollection: async () => ({}),
-      upsert: async () => ({}),
-      query: async () => ({ points }),
-      scroll: async () => ({ points, next_page_offset: null }),
-    };
-  }
 
-  /** Appends `entry` and returns what was embedded and the payload upserted. */
-  async function appended(entry: Parameters<typeof appendVerbatimMessage>[3]) {
-    let payload: Record<string, unknown> | undefined;
-    let embedded: string | undefined;
-    const client: QdrantClientLike = {
-      ...clientWith([]),
-      upsert: async (_collection, params) => {
-        payload = (params.points[0] as { payload: Record<string, unknown> }).payload;
-        return {};
-      },
-    };
-    await appendVerbatimMessage(client, "verbatim_archive", async (text) => {
-      embedded = text;
-      return [1];
-    }, entry);
-    return { payload, embedded };
+  /** Appends `entry`: the payload the store kept (its id aside) and what was embedded. */
+  async function appendedOne(entry: Parameters<typeof appendVerbatimMessage>[1]) {
+    const { stored, embedded } = await appended(entry);
+    const { id: _id, ...payload } = stored[0]!;
+    return { payload, embedded: embedded[0] };
   }
 
   it("keeps the trace and the pending note in the payload", async () => {
-    expect((await appended(answer as never)).payload).toEqual(answer);
+    expect((await appendedOne(answer as never)).payload).toEqual(answer);
   });
 
   it("keeps a confirmation's outcome in the payload, embedded on the reply", async () => {
-    const { payload, embedded } = await appended(outcome as never);
+    const { payload, embedded } = await appendedOne(outcome as never);
     expect(payload).toEqual(outcome);
     expect(embedded).toBe("Done.");
   });
 
   it("embeds an outcome with no reply (a resumed one) on its choice, else on how it went", async () => {
-    expect((await appended(resumedOutcome as never)).embedded).toBe("Only this time");
-    expect((await appended({ ...resumedOutcome, confirmation: { id: "x", status: "resume" } } as never)).embedded).toBe("resume");
+    expect((await appendedOne(resumedOutcome as never)).embedded).toBe("Only this time");
+    expect((await appendedOne({ ...resumedOutcome, confirmation: { id: "x", status: "resume" } } as never)).embedded).toBe("resume");
   });
 
   it("listVerbatimBySession, what a UI renders, serves the trace, the pending note and the outcome", async () => {
-    const result = await listVerbatimBySession(clientWith([question, answer, outcome, resumedOutcome]), "verbatim_archive", {
+    const result = await listVerbatimBySession(storeWith([question, answer, outcome, resumedOutcome]), {
       userId: "static:alice",
       sessionKey: "conv-1",
       limit: 50,
@@ -996,7 +654,7 @@ describe("what the person saw of the turn besides its text (#370)", () => {
   it("listVerbatimBySession serves an interrupted answer's partial trace", async () => {
     const interrupted = { ...answer, content: "[stopped]", interrupted: true, pendingNote: undefined, trace: [trace[0]] };
     delete (interrupted as { pendingNote?: unknown }).pendingNote;
-    const result = await listVerbatimBySession(clientWith([interrupted]), "verbatim_archive", {
+    const result = await listVerbatimBySession(storeWith([interrupted]), {
       userId: "static:alice",
       sessionKey: "conv-1",
       limit: 50,
@@ -1005,7 +663,7 @@ describe("what the person saw of the turn besides its text (#370)", () => {
   });
 
   it("listVerbatimTail, what goes back to the model, leaves out the trace, the pending note and the outcomes", async () => {
-    const tail = await listVerbatimTail(clientWith([resumedOutcome, outcome, answer, question]), "verbatim_archive", {
+    const tail = await listVerbatimTail(storeWith([resumedOutcome, outcome, answer, question]), {
       userId: "static:alice",
       sessionKey: "conv-1",
       maxChars: 10_000,
@@ -1027,7 +685,7 @@ describe("what the person saw of the turn besides its text (#370)", () => {
   });
 
   it("listVerbatimSessions previews the newest message that shows something, past an outcome with no reply", async () => {
-    const result = await listVerbatimSessions(clientWith([resumedOutcome, outcome, answer]), "verbatim_archive", {
+    const result = await listVerbatimSessions(storeWith([resumedOutcome, outcome, answer]), {
       userId: "static:alice",
       limit: 10,
     });
@@ -1038,7 +696,7 @@ describe("what the person saw of the turn besides its text (#370)", () => {
   // schema, a hand edit) still shows its answer: only the extra goes.
   it("drops a malformed trace or pending note, keeping the message", async () => {
     for (const bad of [{ trace: "nope" }, { trace: [{ label: "no type" }] }, { trace: [null] }, { pendingNote: 3 }]) {
-      const result = await listVerbatimBySession(clientWith([{ ...answer, ...bad }]), "verbatim_archive", {
+      const result = await listVerbatimBySession(storeWith([{ ...answer, ...bad }]), {
         userId: "static:alice",
         sessionKey: "conv-1",
         limit: 50,
@@ -1052,7 +710,7 @@ describe("what the person saw of the turn besides its text (#370)", () => {
   // A malformed outcome would otherwise read as an ordinary answer and go back to the model.
   it("skips a point whose confirmation outcome is malformed", async () => {
     for (const confirmation of ["ok", { id: "x", status: "maybe" }, { id: 1, status: "ok" }, { status: "ok" }, { id: "x", status: "ok", choice: 2 }]) {
-      const tail = await listVerbatimTail(clientWith([{ ...outcome, confirmation }, question]), "verbatim_archive", {
+      const tail = await listVerbatimTail(storeWith([{ ...outcome, confirmation }, question]), {
         userId: "static:alice",
         sessionKey: "conv-1",
         maxChars: 10_000,

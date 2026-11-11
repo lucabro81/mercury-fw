@@ -11,12 +11,11 @@
  * person, anything at all for someone the core doesn't admit. The channel
  * turns that into its own "not found" or "bad request".
  */
-import type { ChannelHostReads, Principal, VectorIndex } from "@mercury-fw/channel-types";
+import type { ChannelHostReads, ConversationStore, Principal, VectorIndex } from "@mercury-fw/channel-types";
 import type { ConfirmationStore } from "@mercury-fw/confirm-engine";
 import { EPISODIC_SPACE } from "../memory/episodic-store.ts";
 import { SEMANTIC_FACTS_SPACE } from "../memory/semantic-facts-store.ts";
 import { VERBATIM_SPACE } from "../memory/verbatim-archive-store.ts";
-import type { QdrantClientLike } from "../memory/qdrant-client.ts";
 import { listVerbatimBySession, listVerbatimSessions } from "../memory/verbatim-archive-store.ts";
 import type { ConversationTitle } from "../memory/conversation-titles-store.ts";
 import { getToolLog } from "../session/tool-log-buffer.ts";
@@ -25,10 +24,9 @@ import { grepVisible, listVisible, readVisible } from "./vault-access.ts";
 
 export type HostReadsDeps = {
   vaultPath: string;
-  qdrant: QdrantClientLike;
-  /** The archive's collection on Qdrant. */
-  collections: { verbatim: string };
-  /** Where `memoryScroll` reads; without one there's no memory to scroll. */
+  /** Where the conversations are read from; without one there are no conversation reads. */
+  store?: ConversationStore;
+  /** Where `memoryScroll` reads; without one there's no memory read. */
   index?: VectorIndex;
   confirmationStore: ConfirmationStore;
   /** The manifest of what `who` is offered. */
@@ -46,9 +44,9 @@ export type HostReadsDeps = {
   titlesOf?: (key: string, sessionKeys: string[]) => Promise<Map<string, ConversationTitle>>;
 };
 
-/** Builds the per-person `ChannelHostReads` over this instance's vault, Qdrant, vector index and stores. */
+/** Builds the per-person `ChannelHostReads` over this instance's vault, conversation store, vector index and confirmations. */
 export function createHostReads(deps: HostReadsDeps): ChannelHostReads {
-  const { vaultPath, qdrant, collections } = deps;
+  const { vaultPath, store, index } = deps;
   // The spaces whose points carry a person's `userId`: the only ones `memoryScroll` opens.
   const perPerson = new Set([VERBATIM_SPACE, EPISODIC_SPACE, SEMANTIC_FACTS_SPACE]);
   const identify = deps.identify ?? createPeople({ directory: "none" }).identify;
@@ -73,20 +71,18 @@ export function createHostReads(deps: HostReadsDeps): ChannelHostReads {
     }
   };
 
-  return {
-    manifest: forPerson((who) => deps.manifest(who)),
-    health: deps.health,
-    pendingConfirmations: forPerson((who) => deps.confirmationStore.pending(who.person.key)),
+  // The conversations exist only with a store, the memory only with an index.
+  const conversationReads = (conversationStore: ConversationStore) => ({
     conversation: forPerson(async (who, sessionKey: string, limit: number, offset?: string) => {
       const [page, titled] = await Promise.all([
-        listVerbatimBySession(qdrant, collections.verbatim, { userId: who.person.key, sessionKey, limit, offset }),
+        listVerbatimBySession(conversationStore, { userId: who.person.key, sessionKey, limit, offset }),
         titles(who, [sessionKey]),
       ]);
       const title = titled.get(sessionKey)?.title;
       return title === undefined ? page : { ...page, title };
     }),
     conversations: forPerson(async (who, limit: number) => {
-      const { conversations } = await listVerbatimSessions(qdrant, collections.verbatim, { userId: who.person.key, limit });
+      const { conversations } = await listVerbatimSessions(conversationStore, { userId: who.person.key, limit });
       const titled = await titles(who, conversations.map((c) => c.sessionKey));
       return {
         conversations: conversations.map((c) => {
@@ -95,18 +91,28 @@ export function createHostReads(deps: HostReadsDeps): ChannelHostReads {
         }),
       };
     }),
-    wikiList: forPerson((who) => listVisible(scope(who))),
-    wikiRead: forPerson((who, path: string) => readVisible(scope(who), path).catch(() => null)),
-    wikiGrep: forPerson((who, pattern: string) => grepVisible(scope(who), pattern)),
+  });
+  const memoryReads = (vectorIndex: VectorIndex) => ({
     memoryScroll: forPerson(async (who, space: string, limit: number, offset?: string) => {
-      if (deps.index === undefined || !perPerson.has(space)) return null;
-      const page = await deps.index.scroll(space, {
+      if (!perPerson.has(space)) return null;
+      const page = await vectorIndex.scroll(space, {
         where: { userId: who.person.key },
         limit,
         ...(offset === undefined ? {} : { cursor: offset }),
       });
       return { points: page.points, nextOffset: page.next ?? null };
     }),
+  });
+
+  return {
+    ...(store === undefined ? {} : conversationReads(store)),
+    ...(index === undefined ? {} : memoryReads(index)),
+    manifest: forPerson((who) => deps.manifest(who)),
+    health: deps.health,
+    pendingConfirmations: forPerson((who) => deps.confirmationStore.pending(who.person.key)),
+    wikiList: forPerson((who) => listVisible(scope(who))),
+    wikiRead: forPerson((who, path: string) => readVisible(scope(who), path).catch(() => null)),
+    wikiGrep: forPerson((who, pattern: string) => grepVisible(scope(who), pattern)),
     toolLog: forPerson((who) => getToolLog({ owner: who.person.key })),
     me: forPerson((who) => ({
       name: deps.preferredName?.(who.person.key) ?? null,
