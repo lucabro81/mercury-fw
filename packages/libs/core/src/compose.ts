@@ -315,6 +315,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
     titleOf: (userId, sessionKey) => titleOf(qdrant, titlesCollection, { userId, sessionKey }),
     setTitle: (userId, sessionKey, title) => setTitle(qdrant, titlesCollection, { userId, sessionKey, title, source: "generated" }),
     log: (msg) => console.error(msg),
+    emit: (event) => tracer.emit(event),
   });
 
   // Semantic consolidation (D-22/D-34): a separate Qdrant collection from
@@ -357,6 +358,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
         writeInferredNoteFn: writeInferredNote,
       }),
     log: (msg) => console.error(`[cron] ${msg}`),
+    emit: (event) => tracer.emit(event),
   };
 
   // How many new messages (since the last capture) a live tracked session needs
@@ -377,7 +379,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   // Who each tracked session belongs to and how much of it is already in
   // memory; mirrors the rest at the two mid-conversation triggers.
   const sessionCapture = createSessionCapture({
-    capture: (userId, sessionKey, messages) => captureSessionToMemory(userId, sessionKey, messages, Date.now(), captureDeps),
+    capture: (userId, sessionKey, messages, trigger) => captureSessionToMemory(userId, sessionKey, messages, Date.now(), captureDeps, trigger),
     threshold: MESSAGE_COUNT_CAPTURE_THRESHOLD,
     texts,
     describe: (pending, t) =>
@@ -452,11 +454,20 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
       try {
         const timestamp = new Date().toISOString();
         await storeToolCorrection(qdrant, toolCorrectionsCollection, embed, { ...correction, timestamp });
-        await consolidateToolCorrection(correction.tool, correction.topic, toolCorrectionConsolidationDeps);
+        const decision = await consolidateToolCorrection(correction.tool, correction.topic, toolCorrectionConsolidationDeps);
         onToolFinish?.(correctionId, "success");
+        tracer.emit({ kind: "memory.correction", person: key, binary: correction.tool, topic: correction.topic, decision, outcome: "done" });
       } catch (err) {
         console.error(`[capture] procedural correction failed for ${correction.tool}/${correction.topic}: ${String(err)}`);
         onToolFinish?.(correctionId, "failed");
+        tracer.emit({
+          kind: "memory.correction",
+          person: key,
+          binary: correction.tool,
+          topic: correction.topic,
+          outcome: "failed",
+          args: { error: err instanceof Error ? err.message : String(err) },
+        });
       }
     }
   }
@@ -729,6 +740,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
       runIndexAndOrphan: (orphans) => runIndexAndOrphanPass({ vaultPath: wikiVaultPath, model, orphans }),
       runContradictionCheck: () => runContradictionCheckPass({ vaultPath: wikiVaultPath, model }),
       log: (msg) => console.error(`[cron] ${msg}`),
+      emit: (event) => tracer.emit(event),
     });
     return {
       stop: () => {

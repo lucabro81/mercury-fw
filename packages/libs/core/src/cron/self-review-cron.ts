@@ -15,6 +15,8 @@
  * access and the actual LLM calls are injected, same separation
  * `idle-session-cron.ts` uses for session storage and the LLM summarizer.
  */
+import type { TraceInput } from "../traces/tracer.ts";
+
 export type SelfReviewTickDeps = {
   listRawEntries: () => Promise<string[]>;
   findOrphans: () => Promise<string[]>;
@@ -22,6 +24,12 @@ export type SelfReviewTickDeps = {
   runIndexAndOrphan: (orphans: string[]) => Promise<void>;
   runContradictionCheck: () => Promise<void>;
   log?: (msg: string) => void;
+  /** Where each pass's `review.pass` event goes (#23), all under one job id per tick. */
+  emit?: (input: TraceInput) => void;
+  /** Test seam for the passes' durations; defaults to `Date.now`. */
+  clock?: () => number;
+  /** Test seam for the tick's job id; defaults to a random UUID. */
+  newJobId?: () => string;
 };
 
 /**
@@ -34,30 +42,36 @@ export type SelfReviewTickDeps = {
  */
 export async function runSelfReviewTick(deps: SelfReviewTickDeps): Promise<void> {
   const log = deps.log ?? ((msg: string) => console.error(msg));
+  const clock = deps.clock ?? Date.now;
+  const job = (deps.newJobId ?? (() => crypto.randomUUID()))();
+
+  /** Runs one pass (or records it as skipped), logging and emitting how it went. */
+  async function pass(name: "raw" | "index" | "contradictions", label: string, run: (() => Promise<void>) | undefined): Promise<void> {
+    if (run === undefined) {
+      deps.emit?.({ kind: "review.pass", job, pass: name, outcome: "skipped" });
+      return;
+    }
+    const startedAt = clock();
+    try {
+      await run();
+      deps.emit?.({ kind: "review.pass", job, pass: name, outcome: "done", durationMs: clock() - startedAt });
+    } catch (err) {
+      log(`self-review ${label} pass failed: ${String(err)}`);
+      deps.emit?.({
+        kind: "review.pass",
+        job,
+        pass: name,
+        outcome: "failed",
+        durationMs: clock() - startedAt,
+        args: { error: err instanceof Error ? err.message : String(err) },
+      });
+    }
+  }
 
   const [rawEntries, orphans] = await Promise.all([deps.listRawEntries(), deps.findOrphans()]);
-
-  if (rawEntries.length > 0) {
-    try {
-      await deps.runRawTriage(rawEntries);
-    } catch (err) {
-      log(`self-review raw-triage pass failed: ${String(err)}`);
-    }
-  }
-
-  if (orphans.length > 0) {
-    try {
-      await deps.runIndexAndOrphan(orphans);
-    } catch (err) {
-      log(`self-review index/orphan pass failed: ${String(err)}`);
-    }
-  }
-
-  try {
-    await deps.runContradictionCheck();
-  } catch (err) {
-    log(`self-review contradiction-check pass failed: ${String(err)}`);
-  }
+  await pass("raw", "raw-triage", rawEntries.length > 0 ? () => deps.runRawTriage(rawEntries) : undefined);
+  await pass("index", "index/orphan", orphans.length > 0 ? () => deps.runIndexAndOrphan(orphans) : undefined);
+  await pass("contradictions", "contradiction-check", () => deps.runContradictionCheck());
 }
 
 /** 3 AM local time — hardcoded on purpose, see file header. */

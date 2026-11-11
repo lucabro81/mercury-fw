@@ -18,7 +18,8 @@ type CaptureCallbacks = { onToolStart: TurnSink["onToolStart"]; onToolFinish: Tu
 
 export type SessionCaptureDeps = {
   /** Mirrors `messages` of the session `sessionKey`, owned by `userId`, to memory; rejects on failure. */
-  capture: (userId: string, sessionKey: string, messages: Message[]) => Promise<void>;
+  /** `trigger` says which of the two mid-conversation triggers it was, for the traces. */
+  capture: (userId: string, sessionKey: string, messages: Message[], trigger: "threshold" | "compress") => Promise<void>;
   /** How many new messages a session needs before `maybeCapture` mirrors them. */
   threshold: number;
   /** The detail line a capture's status shows, from the messages it captures, in the session's person's language (`t`). */
@@ -56,13 +57,13 @@ export function createSessionCapture(deps: SessionCaptureDeps): SessionCapture {
   const inFlight = new Set<Promise<unknown>>();
 
   /** Captures `pending`, reporting to the session's current callbacks; resolves whether it succeeded. */
-  async function capturePending(sessionKey: string, userId: string, pending: Message[]): Promise<boolean> {
+  async function capturePending(sessionKey: string, userId: string, pending: Message[], trigger: "threshold" | "compress"): Promise<boolean> {
     const status = callbacks.get(sessionKey);
     const captureId = crypto.randomUUID();
     const { t } = texts.forPerson(userId);
     status?.onToolStart(t("core.status.remembering"), deps.describe?.(pending, t), captureId);
     try {
-      await deps.capture(userId, sessionKey, pending);
+      await deps.capture(userId, sessionKey, pending, trigger);
       status?.onToolFinish?.(captureId, "success");
       return true;
     } catch (err) {
@@ -85,7 +86,7 @@ export function createSessionCapture(deps: SessionCaptureDeps): SessionCapture {
       if (userId === undefined) return;
       const marker = markers.get(sessionKey) ?? 0;
       if (messages.length - marker < deps.threshold) return;
-      if (await capturePending(sessionKey, userId, messages.slice(marker))) {
+      if (await capturePending(sessionKey, userId, messages.slice(marker), "threshold")) {
         markers.set(sessionKey, messages.length);
       }
     },
@@ -96,7 +97,7 @@ export function createSessionCapture(deps: SessionCaptureDeps): SessionCapture {
       // The view after compression starts fresh, whatever happens to this capture.
       markers.set(sessionKey, 0);
       if (pending.length === 0) return;
-      const running = capturePending(sessionKey, userId, pending);
+      const running = capturePending(sessionKey, userId, pending, "compress");
       inFlight.add(running);
       void running.finally(() => inFlight.delete(running));
     },

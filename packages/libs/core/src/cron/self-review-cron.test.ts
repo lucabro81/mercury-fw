@@ -159,3 +159,31 @@ describe("startSelfReviewCron", () => {
     expect(ticks).toBe(0);
   });
 });
+
+// #23: the nightly review says, pass by pass, whether it ran and how it went.
+describe("runSelfReviewTick: review events", () => {
+  it("each pass is an event: skipped when there was nothing to do, done with its duration, failed with its error for args", async () => {
+    const events: Array<Record<string, unknown>> = [];
+    let clock = 0;
+    await runSelfReviewTick({
+      listRawEntries: async () => [],
+      findOrphans: async () => ["curated/x.md"],
+      runRawTriage: async () => {},
+      runIndexAndOrphan: async () => {
+        clock += 4_000;
+      },
+      runContradictionCheck: async () => {
+        throw new Error("model down");
+      },
+      log: () => {},
+      emit: (e) => void events.push(e),
+      clock: () => clock,
+      newJobId: () => "job-1",
+    });
+    expect(events).toEqual([
+      { kind: "review.pass", job: "job-1", pass: "raw", outcome: "skipped" },
+      { kind: "review.pass", job: "job-1", pass: "index", outcome: "done", durationMs: 4000 },
+      { kind: "review.pass", job: "job-1", pass: "contradictions", outcome: "failed", durationMs: 0, args: { error: "model down" } },
+    ]);
+  });
+});

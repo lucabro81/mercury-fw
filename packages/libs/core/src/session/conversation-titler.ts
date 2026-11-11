@@ -11,6 +11,7 @@
  */
 import { generateText, type LanguageModel } from "ai";
 import { cleanGeneratedTitle, type ConversationTitle } from "../memory/conversation-titles-store.ts";
+import type { TraceInput } from "../traces/tracer.ts";
 import type { VerbatimMessage } from "../memory/verbatim-archive-store.ts";
 
 /** What the model is told: a few words naming the conversation, in the person's language, and nothing else. */
@@ -34,6 +35,8 @@ export type ConversationTitlerDeps = {
   /** Saves a generated title. */
   setTitle: (userId: string, sessionKey: string, title: string) => Promise<void>;
   log: (msg: string) => void;
+  /** Where each attempt's `title` event goes (#23): generated, exists, empty or failed. */
+  emit?: (input: TraceInput) => void;
 };
 
 /** Whether `m` has words for the model to read: not an interrupted answer, not how a confirmation was resolved. */
@@ -64,18 +67,22 @@ export function createConversationTitler(deps: ConversationTitlerDeps): (session
     const id = JSON.stringify([userId, sessionKey]);
     if (inFlight.has(id)) return;
     inFlight.add(id);
+    const emit = (outcome: string, args?: Record<string, unknown>) =>
+      deps.emit?.({ kind: "title", session: sessionKey, person: userId, outcome, ...(args === undefined ? {} : { args }) });
     try {
-      if ((await deps.titleOf(userId, sessionKey)) !== undefined) return;
+      if ((await deps.titleOf(userId, sessionKey)) !== undefined) return emit("exists");
       const prompt = openingPrompt(await deps.readOpening(userId, sessionKey));
-      if (prompt === undefined) return;
+      if (prompt === undefined) return emit("empty");
       const { text } = await generate({ model: deps.model, instructions: TITLE_INSTRUCTIONS, prompt });
       const title = cleanGeneratedTitle(text);
-      if (title === "") return;
+      if (title === "") return emit("empty");
       // The person may have named it while the model was answering.
-      if ((await deps.titleOf(userId, sessionKey)) !== undefined) return;
+      if ((await deps.titleOf(userId, sessionKey)) !== undefined) return emit("exists");
       await deps.setTitle(userId, sessionKey, title);
+      emit("generated");
     } catch (err) {
       deps.log(`[titles] no title for ${sessionKey}: ${err instanceof Error ? err.message : String(err)}`);
+      emit("failed", { error: err instanceof Error ? err.message : String(err) });
     } finally {
       inFlight.delete(id);
     }

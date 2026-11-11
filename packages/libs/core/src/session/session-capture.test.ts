@@ -151,3 +151,19 @@ describe("createSessionCapture", () => {
     expect(r.captured).toEqual([]);
   });
 });
+
+// #23: the traces say which trigger started each capture.
+describe("createSessionCapture: the trigger", () => {
+  test("the threshold and a compression each tell the capture which one they are", async () => {
+    const triggers: string[] = [];
+    const c = createSessionCapture({
+      capture: async (_u, _k, _m, trigger) => void triggers.push(trigger),
+      threshold: 2,
+    });
+    c.track("s", "u1");
+    await c.maybeCapture("s", msgs(0, 2));
+    c.onCompress("s", msgs(0, 4));
+    await c.settled();
+    expect(triggers).toEqual(["threshold", "compress"]);
+  });
+});
