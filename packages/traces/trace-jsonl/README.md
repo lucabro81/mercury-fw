@@ -1,12 +1,8 @@
 # @mercury-fw/trace-jsonl
 
-Writes the traces of a [Mercury](https://github.com/lucabro81/mercury-fw) agent to files: one JSON line per event, one file per day. It's the sink `mfw create` puts in a new app, and the simplest one to read: `grep`, `jq` and `tail -f` are enough.
+Writes the traces of a [Mercury](https://github.com/lucabro81/mercury-fw) agent to files: one JSON line per event, one file per day. It's the sink `mfw create` puts in a new app, and the simplest one to read: `grep`, `jq` and `tail -f` are enough. It moves with the framework, at the same version as `@mercury-fw/core`.
 
-On Mercury's documentation site: [its page](https://lucabro81.github.io/mercury-fw/plugins/trace-jsonl/).
-
-```bash
-bun add @mercury-fw/trace-jsonl
-```
+On Mercury's documentation site: [Traces](https://lucabro81.github.io/mercury-fw/concepts/traces/).
 
 ```ts
 import { jsonlTraces } from "@mercury-fw/trace-jsonl";
