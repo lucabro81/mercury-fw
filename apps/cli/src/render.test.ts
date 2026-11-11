@@ -443,7 +443,7 @@ function evaluatedConfig(config: string): { persona: { name: string; identity: s
   // The imports are dropped: the language file's stands in as the empty file it
   // is, the package.json's as a manifest with a version, the core's env helpers
   // as an empty environment.
-  const body = `const en = {};\nconst pkg = { version: "0.1.0" };\nconst envBoolean = (_, fallback) => fallback;\nconst envNumber = (_, fallback) => fallback;\nconst jsonlTraces = () => ({});\nconst qdrantIndex = () => ({});\n${config.replace(/^import .*$/gm, "").replace("export default defineMercuryConfig(", "return (")}`;
+  const body = `const en = {};\nconst pkg = { version: "0.1.0" };\nconst envBoolean = (_, fallback) => fallback;\nconst envNumber = (_, fallback) => fallback;\nconst jsonlTraces = () => ({});\nconst qdrantIndex = () => ({});\nconst qdrantConversations = () => ({});\n${config.replace(/^import .*$/gm, "").replace("export default defineMercuryConfig(", "return (")}`;
   return new Function(body)();
 }
 

@@ -98,16 +98,19 @@ const CONFIG_HEADER = `/**
 /** The trace sink every new app declares, writing the traces to files in Mercury's data folder. */
 export const TRACE_SINK_PACKAGE = "@mercury-fw/trace-jsonl";
 
-/** The vector index every new app declares: Qdrant, the compose service. */
+/** The vector index and the conversation store every new app declares: Qdrant, the compose service. */
 export const VECTOR_INDEX_PACKAGE = "@mercury-fw/store-qdrant";
 
-/** The config's `vectorIndex` entry, with what it holds. */
+/** The config's `vectorIndex` and `conversationStore` entries, with what each holds. */
 const VECTOR_INDEX_SECTION = [
   "  // Where the memory is found by meaning (what past conversations were about,",
   "  // what the agent learned about each person, the corrections to how a tool",
   "  // is used, and searching past messages): Qdrant, the compose service.",
   "  // Remove to keep no memory.",
   "  vectorIndex: qdrantIndex(),",
+  "  // Where what was said is kept: every conversation, to reopen and list it,",
+  "  // and its title. Qdrant, the compose service. Remove to archive nothing.",
+  "  conversationStore: qdrantConversations(),",
 ].join("\n");
 
 /** The config's `traces` entry, with what it records and where. */
@@ -284,7 +287,7 @@ function renderConfig(
     imports.push(`import { ${c.exportName} } from "${c.package}";`);
   }
   imports.push(`import { jsonlTraces } from "${TRACE_SINK_PACKAGE}";`);
-  imports.push(`import { qdrantIndex } from "${VECTOR_INDEX_PACKAGE}";`);
+  imports.push(`import { qdrantConversations, qdrantIndex } from "${VECTOR_INDEX_PACKAGE}";`);
 
   const helpers = withRules.map((t) => `${t.formatter?.helpers}\n\n`).join("");
 
