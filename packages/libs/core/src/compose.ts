@@ -58,22 +58,16 @@ import { createIdleSessionScanner } from "./cron/idle-session-scanner.ts";
 import { startIdleSessionCron, captureSessionToMemory, type CaptureDeps } from "./cron/idle-session-cron.ts";
 import {
   EPISODIC_SPACE,
-  ensureEpisodicSpace,
   storeEpisodicSummary,
   getLastSessionEpisodicSummaries,
   getEpisodicSummariesBySession,
 } from "./memory/episodic-store.ts";
-import { VERBATIM_SPACE, ensureVerbatimCollection, listVerbatimBySession, listVerbatimTail } from "./memory/verbatim-archive-store.ts";
-import { ensureTitlesCollection, setTitle, titleOf, titlesOf } from "./memory/conversation-titles-store.ts";
+import { listVerbatimBySession, listVerbatimTail } from "./memory/verbatim-archive-store.ts";
+import { setTitle, titleOf, titlesOf } from "./memory/conversation-titles-store.ts";
 import { createVerbatimArchiveProvider } from "./memory/memory-provider.ts";
-import { SEMANTIC_FACTS_SPACE, ensureSemanticFactsSpace, storeSemanticFact, searchSemanticFactsByTopic } from "./memory/semantic-facts-store.ts";
-import {
-  TOOL_CORRECTIONS_SPACE,
-  ensureToolCorrectionsSpace,
-  storeToolCorrection,
-  searchToolCorrectionsByTopic,
-} from "./memory/tool-corrections-store.ts";
-import { embeddingDimensions, setUpWhenReachable } from "./memory/collection-setup.ts";
+import { storeSemanticFact, searchSemanticFactsByTopic } from "./memory/semantic-facts-store.ts";
+import { TOOL_CORRECTIONS_SPACE, storeToolCorrection, searchToolCorrectionsByTopic } from "./memory/tool-corrections-store.ts";
+import { MIGRATED_SPACES, setUpMemory, setUpWhenReachable } from "./memory/collection-setup.ts";
 import { loadVectorIndex } from "./data/vector-index-loader.ts";
 import { consolidateSemanticFact, consolidateToolCorrection, type ToolCorrectionConsolidationDeps } from "./cron/semantic-consolidation.ts";
 import { createToolCorrectionExtractor } from "./session/tool-correction-extractor.ts";
@@ -322,7 +316,8 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   const episodicSummarize = createEpisodicSummarizer(model);
   const embeddingModel = provider.textEmbeddingModel(process.env.OLLAMA_EMBEDDING_MODEL ?? "nomic-embed-text");
   const embed = createEmbedder(embeddingModel);
-  const qdrant = new QdrantClient({ url: process.env.QDRANT_URL ?? "http://qdrant:6333" });
+  // The same Qdrant `@mercury-fw/store-qdrant` reaches: an empty QDRANT_URL is the default too.
+  const qdrant = new QdrantClient({ url: process.env.QDRANT_URL || "http://qdrant:6333" });
   // Where what's found by meaning lives (the episodes, the facts, the
   // corrections, the archive's search): the declared vector index. Without
   // one Mercury keeps no memory and offers no recall.
@@ -435,26 +430,22 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   // the tool-call trace only exists in memory for the duration of its turn.
   // Every Layer-3 space and collection, set up in the background: Mercury
   // starts even while the index or the embedding model isn't answering yet,
-  // and memory switches on once they do. The spaces are as long as the
-  // embedding model's vectors.
+  // and memory switches on once they do (see memory/collection-setup.ts).
   const memoryReady = setUpWhenReachable(
-    async () => {
-      const dimensions = await embeddingDimensions(embed);
-      if (vectorIndex !== undefined) {
-        await ensureEpisodicSpace(vectorIndex, dimensions);
-        await ensureSemanticFactsSpace(vectorIndex, dimensions);
-        await ensureToolCorrectionsSpace(vectorIndex, dimensions);
-      }
-      await ensureVerbatimCollection(qdrant, verbatimCollection, dimensions);
-      await ensureTitlesCollection(qdrant, titlesCollection);
-    },
+    () =>
+      setUpMemory({
+        ...(vectorIndex === undefined ? {} : { index: vectorIndex }),
+        embed,
+        qdrant,
+        collections: { verbatim: verbatimCollection, titles: titlesCollection },
+      }),
     { log: (msg) => console.error(`[memory] ${msg}`), emit: (event) => tracer.emit(event) },
   );
   // Memory written before the user key gets it, once the index answers.
   if (vectorIndex !== undefined) {
     const index = vectorIndex;
     void memoryReady.done.then(() =>
-      migrateMemoryToUserKeys(index, [EPISODIC_SPACE, SEMANTIC_FACTS_SPACE, VERBATIM_SPACE], (msg) => console.error(`[memory] ${msg}`)),
+      migrateMemoryToUserKeys(index, MIGRATED_SPACES, (msg) => console.error(`[memory] ${msg}`)),
     );
   }
   const extractToolCorrections = createToolCorrectionExtractor(model, undefined, {
