@@ -150,6 +150,7 @@ describe("reset", () => {
     volumes: {
       "wiki-vault": { name: "my-agent_wiki-vault" },
       "qdrant-data": { name: "my-agent_qdrant-data" },
+      "mercury-data": { name: "my-agent_mercury-data" },
     },
   });
 
@@ -176,6 +177,29 @@ describe("reset", () => {
       ["docker", "volume", "rm", "my-agent_wiki-vault"],
       ["docker", "compose", "up", "-d", "mercury"],
     ]);
+  });
+
+  // #379: Mercury's own state has a volume of its own, and its own reset.
+  test("data: Mercury's state volume goes, the app comes back with an empty data folder", async () => {
+    const f = fake({ captured: { [CONFIG]: compose }, answer: "my-agent" });
+    expect(await appCommands(APP, f.deps).reset("data")).toBe(0);
+    expect(f.asked).toEqual([
+      "This deletes Mercury's own state (account links, profiles, plugins' data, traces) for good: volume my-agent_mercury-data. Type the app's name (my-agent) to confirm: ",
+    ]);
+    expect(f.runs()).toEqual([
+      ["docker", "compose", "stop", "mercury"],
+      ["docker", "compose", "rm", "-f", "mercury"],
+      ["docker", "volume", "rm", "my-agent_mercury-data"],
+      ["docker", "compose", "up", "-d", "mercury"],
+    ]);
+  });
+
+  test("data on an app whose compose file has no data volume yet: an error before any question", async () => {
+    const old = JSON.stringify({ volumes: { "wiki-vault": { name: "my-agent_wiki-vault" } } });
+    const f = fake({ captured: { [CONFIG]: old }, answer: "my-agent" });
+    await expect(appCommands(APP, f.deps).reset("data")).rejects.toThrow('no "mercury-data" volume');
+    expect(f.asked).toEqual([]);
+    expect(f.runs()).toEqual([]);
   });
 
   test.each(["", "y", "yes", "My-Agent", "my-agen"])("answer %p: nothing is deleted, exit 1", async (answer) => {

@@ -180,7 +180,7 @@ import { jsonlTraces } from "@mercury-fw/trace-jsonl";
 traces: { sink: jsonlTraces({ keepDays: 7 }), level: "meta" },
 ```
 
-- `sink` is where the events go: `jsonlTraces()` writes a file per day on the vault's volume, keeping the last
+- `sink` is where the events go: `jsonlTraces()` writes a file per day in the agent's data folder, keeping the last
   `keepDays` days with activity (7 when left out).
 - `level` is `meta` (names, outcomes, durations, sizes; the default) or `args` (also what the tools were given, the
   summary of an action waiting for confirmation, and the error messages). Anything else stops the agent at startup.

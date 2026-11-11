@@ -32,8 +32,8 @@ COPY --chown=mercury:mercury src ./src
 
 # Mount points of the named volumes, owned by the runtime user before a fresh
 # volume attaches (a new volume takes the ownership it finds here).
-RUN mkdir -p /app/wiki-vault /home/mercury/.config \
-  && chown mercury:mercury /app/wiki-vault \
+RUN mkdir -p /app/wiki-vault /app/data /home/mercury/.config \
+  && chown mercury:mercury /app/wiki-vault /app/data \
   && chown -R mercury:mercury /home/mercury
 
 USER mercury

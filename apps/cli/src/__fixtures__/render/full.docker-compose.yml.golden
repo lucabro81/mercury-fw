@@ -8,6 +8,7 @@ services:
         required: false
     volumes:
       - wiki-vault:/app/wiki-vault
+      - mercury-data:/app/data
       # The login of a plugin's CLI, on a volume so what the CLI writes back
       # (refreshed tokens) survives a redeploy: see README.md.
       - cli-credentials:/home/mercury/.config
@@ -27,6 +28,8 @@ services:
 volumes:
   wiki-vault:
     name: demo_wiki-vault
+  mercury-data:
+    name: demo_mercury-data
   qdrant-data:
     name: demo_qdrant-data
   cli-credentials:

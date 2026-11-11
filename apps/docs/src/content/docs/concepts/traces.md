@@ -23,8 +23,8 @@ import { jsonlTraces } from "@mercury-fw/trace-jsonl";
 traces: { sink: jsonlTraces(), level: "meta" },
 ```
 
-- `sink` is where the events go. `jsonlTraces()` writes them to files on the vault's volume, one per day, in
-  `.mercury/traces/`.
+- `sink` is where the events go. `jsonlTraces()` writes them to files in the agent's data folder, one per day, in
+  `traces/`.
 - `level` is how much each event carries (see below). Left out, it's `meta`.
 
 Without `traces`, nothing is recorded.
@@ -58,6 +58,7 @@ What gets recorded:
 | `review.pass` | A pass of the nightly wiki review: ran or skipped, how long, how it went. |
 | `session.closed` | A quiet conversation was saved and freed. |
 | `system.start`, `system.channels` | The agent started: model, plugins and channels running, and the ones left out with the reason. |
+| `system.migrated` | The agent copied state an older version kept elsewhere: which area, and what it copied. |
 | `system.error`, `system.recovered` | Something failed without stopping the agent (the memory store unreachable, a login that didn't finish), and when it came back. |
 
 ## Who is who
@@ -65,7 +66,7 @@ What gets recorded:
 An event never says who someone is. The person and the conversation are replaced by a **pseudonym**: 16 characters
 that are always the same for the same person, so you can tell that ten slow turns were all the same person's, but not
 who that person is. The pseudonyms come from a secret the agent makes on its first start and keeps in
-`.mercury/trace-secret`; delete it and the next start makes new ones.
+`trace-secret`, in its data folder; delete it and the next start makes new ones.
 
 The text of the conversation never enters a trace either. Each event carries the turn's id, and the archived messages
 of that turn carry the same one: when you need to read what was said, the archive has it.
@@ -81,18 +82,18 @@ of that turn carry the same one: when you need to read what was said, the archiv
 
 ## Reading them
 
-The files are on the vault's volume, in the agent's container: `$WIKI_VAULT_PATH/.mercury/traces/`, one per day. From
+The files are in the agent's data folder, in its container: `$MERCURY_DATA_PATH/traces/`, one per day. From
 the app's folder, everything one turn did, in order, straight from the container:
 
 ```bash
-docker compose exec -T mercury sh -c 'grep -h "\"turn\":\"4f1c" "$WIKI_VAULT_PATH"/.mercury/traces/*.jsonl'
+docker compose exec -T mercury sh -c 'grep -h "\"turn\":\"4f1c" "$MERCURY_DATA_PATH"/traces/*.jsonl'
 ```
 
 To dig further, copy them to your machine and read them with [`jq`](https://jqlang.org/), which the container doesn't
 have:
 
 ```bash
-docker compose exec -T mercury sh -c 'cat "$WIKI_VAULT_PATH"/.mercury/traces/*.jsonl' > traces.jsonl
+docker compose exec -T mercury sh -c 'cat "$MERCURY_DATA_PATH"/traces/*.jsonl' > traces.jsonl
 ```
 
 The slowest turns, for instance:

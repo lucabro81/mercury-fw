@@ -94,6 +94,7 @@ import { migrateMemoryToUserKeys, migrateVaultToUserAreas } from "./identity/mig
 import { runRawTriagePass, runIndexAndOrphanPass, runContradictionCheckPass } from "./wiki/self-review-runner.ts";
 import { startSelfReviewCron } from "./cron/self-review-cron.ts";
 import { loadTracer } from "./traces/trace-loader.ts";
+import { migrateLegacyState, pluginDataRoot, requireDataPath } from "./data/data-dir.ts";
 import type { Tracer } from "./traces/tracer.ts";
 import { withCompressionEvents } from "./traces/compression-events.ts";
 import { resolve as resolvePath } from "node:path";
@@ -160,6 +161,16 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   // Shown as the app declares it; an empty one is none.
   const appVersion = config.version?.trim() || undefined;
 
+  // Mercury's own state lives in its data folder (see data/data-dir.ts): a
+  // missing MERCURY_DATA_PATH stops the start, and what an older instance kept
+  // in the vault's `.mercury/` is copied over on the first start.
+  const dataPath = requireDataPath(process.env);
+  const migratedState = await migrateLegacyState({
+    dataPath,
+    vaultPath: requireEnv("WIKI_VAULT_PATH"),
+    log: (msg) => console.error(`[data] ${msg}`),
+  });
+
   // The model is constructed up front, before the plugins load and the system
   // prompt is built: a plugin's post-turn guard can be model-backed (Jira's
   // issue-list corrector is), and the system prompt is assembled from the
@@ -202,7 +213,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
     assistantName,
     env: process.env,
     log: (msg) => console.error(msg),
-    pluginDataRoot: resolvePath(requireEnv("WIKI_VAULT_PATH"), ".mercury", "plugins"),
+    pluginDataRoot: pluginDataRoot(dataPath),
   });
 
   // Status labels for the tool-start hook, keyed by tool name: each plugin's
@@ -215,11 +226,11 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
 
   // Who a principal is to Mercury: an account linked to another is its
   // owner, then the declared directory decides, closed to anyone it doesn't
-  // know unless the config opens it. The links live on the vault's volume,
+  // know unless the config opens it. The links live in the data folder,
   // where no model tool or HTTP read reaches.
-  const accountLinks = createLinkStore({ path: linksPath(requireEnv("WIKI_VAULT_PATH")) });
+  const accountLinks = createLinkStore({ path: linksPath(dataPath) });
   // How each person wants to be called and the language they want, kept next to the links.
-  const profiles = createProfileStore({ path: profilesPath(requireEnv("WIKI_VAULT_PATH")) });
+  const profiles = createProfileStore({ path: profilesPath(dataPath) });
 
   // The texts a person sees, in their language (see i18n/i18n.ts): the
   // core's and the loaded plugins' English, the instance's language files over it. A default
@@ -350,9 +361,10 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   const tracer = await loadTracer(config.traces, {
     env: process.env,
     log: (msg) => console.error(msg),
-    vaultPath: wikiVaultPath,
+    dataPath,
     now: () => Date.now(),
   });
+  if (migratedState.length > 0) tracer.emit({ kind: "system.migrated", area: "data-folder", entries: migratedState });
 
   // Shared by the idle sweep (final capture + close) and by sessionCapture
   // (the two mid-conversation triggers, neither of which closes the session) —

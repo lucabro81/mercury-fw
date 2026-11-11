@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 /**
  * Maintenance CLI for the account links — runs INSIDE the Mercury container
- * (the links live on the vault's volume): `mfw identity` runs it in a one-off
+ * (the links live in the data folder): `mfw identity` runs it in a one-off
  * container, by this path. For the operator: listing the links, linking an
  * account by hand where nobody can be shown a code (an instance with no HTTP
  * surface), and undoing a link.
@@ -12,6 +12,7 @@
  * once its answer for that identity expires (five minutes at most).
  */
 import { createLinkStore, linksPath, type LinkOwner, type LinkStore } from "./links.ts";
+import { migrateLegacyState, requireDataPath } from "../data/data-dir.ts";
 
 const USAGE = [
   "Usage: mfw identity <command>",
@@ -93,11 +94,16 @@ function run(argv: string[], io: { store: LinkStore; out: (line: string) => void
 }
 
 if (import.meta.main) {
-  const vaultPath = process.env.WIKI_VAULT_PATH;
-  if (!vaultPath) {
-    console.error("WIKI_VAULT_PATH is not set");
+  let dataPath: string;
+  try {
+    dataPath = requireDataPath(process.env);
+  } catch (err) {
+    console.error(err instanceof Error ? err.message : String(err));
     process.exit(1);
   }
-  const store = createLinkStore({ path: linksPath(vaultPath) });
+  // Before the service's first start on this version the links are still in the vault's `.mercury/`.
+  const vaultPath = process.env.WIKI_VAULT_PATH;
+  if (vaultPath) await migrateLegacyState({ dataPath, vaultPath, log: (msg) => console.error(msg) });
+  const store = createLinkStore({ path: linksPath(dataPath) });
   process.exit(runLinksCli(process.argv.slice(2), { store, out: (l) => console.log(l), err: (l) => console.error(l) }));
 }

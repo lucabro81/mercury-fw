@@ -19,7 +19,7 @@ On Mercury's documentation site: [the `mfw` reference](https://lucabro81.github.
   - [`mfw memory list`](#mfw-memory-list)
   - [`mfw memory read <collection> [--limit N]`](#mfw-memory-read-collection---limit-n)
   - [`mfw identity links`, `link`, `unlink`](#mfw-identity-links-link-unlink)
-  - [`mfw reset <memory|wiki>`](#mfw-reset-memorywiki)
+  - [`mfw reset <memory|wiki|data>`](#mfw-reset-memorywikidata)
   - [`mfw credentials setup <plugin>`](#mfw-credentials-setup-plugin)
   - [`mfw credentials check <plugin>`](#mfw-credentials-check-plugin)
   - [`mfw credentials reset <plugin> [--user <key>]`](#mfw-credentials-reset-plugin---user-key)
@@ -53,7 +53,7 @@ Writes a new Mercury app into `<folder>`, which has to be missing or empty; the 
 - which channels and which tool plugins to include (none is fine: the REPL always works);
 - the git remote for `origin`, which you can leave empty (most of the time it doesn't exist yet when you scaffold).
 
-It writes the `mercury.config.ts` for that selection, the persona, the traces (`@mercury-fw/trace-jsonl`, at level `meta`, in `.mercury/traces/` on the vault's volume), a `locales/` folder with an `en.json` for the texts people see (empty, or the starting formatter rules' own texts: `app.jira.no-issues` with Jira), the service and REPL entrypoints, a Dockerfile, a compose file with Qdrant, and an env example listing every variable the chosen pieces read. Its `package.json` declares `plugins/*` as workspaces, the place for the app's own plugins (each a package in `plugins/<name>`, which the image copies before installing), and a `test` script (`bun test`, the plugins' tests included); the workspaces make Bun install with its isolated linker, and the Dockerfile's PATH step follows the links it makes. A plugin that hands over lists comes wrapped in the formatter with a starting rule, yours to change.
+It writes the `mercury.config.ts` for that selection, the persona, the traces (`@mercury-fw/trace-jsonl`, at level `meta`, in `traces/` in the data folder), a `locales/` folder with an `en.json` for the texts people see (empty, or the starting formatter rules' own texts: `app.jira.no-issues` with Jira), the service and REPL entrypoints, a Dockerfile, a compose file with Qdrant and a volume for the wiki and one for Mercury's own state, and an env example listing every variable the chosen pieces read. Its `package.json` declares `plugins/*` as workspaces, the place for the app's own plugins (each a package in `plugins/<name>`, which the image copies before installing), and a `test` script (`bun test`, the plugins' tests included); the workspaces make Bun install with its isolated linker, and the Dockerfile's PATH step follows the links it makes. A plugin that hands over lists comes wrapped in the formatter with a starting rule, yours to change.
 
 Then it runs `bun install` in the app and creates a git repository on `main` with a first commit (`bun.lock` included), adding `origin` when you gave one; nothing is pushed. Each step is best effort and never undoes the ones before it: an install that fails still leaves the app committed, without the lockfile, and the closing message says what to run. The repository is skipped when the folder is already inside one (an app created in a monorepo belongs to it). Whether git can commit is git's call: when it refuses (no identity, a hook) or isn't installed, the message reports why and lists the commands to finish by hand. `bun install` prints its own output as it runs.
 
@@ -92,7 +92,7 @@ mfw start --no-cache
 
 ### `mfw stop`
 
-Stops the app and Qdrant and removes their containers (`docker compose down`). The volumes stay, so memory, the wiki and the CLI credentials are all there on the next start.
+Stops the app and Qdrant and removes their containers (`docker compose down`). The volumes stay, so memory, the wiki, Mercury's own state (the data folder) and the CLI credentials are all there on the next start.
 
 ```bash
 mfw stop
@@ -188,18 +188,19 @@ mfw identity link google-chat:users/123 oidc:3123
 mfw identity unlink google-chat:users/123
 ```
 
-### `mfw reset <memory|wiki>`
+### `mfw reset <memory|wiki|data>`
 
-Deletes for good what the assistant remembers: `memory` is every collection on Qdrant, `wiki` the whole vault. It reads the volume's real name from the compose file, tells you which one is about to go, and asks you to type the app's name (the `name` in `package.json`); anything else, an empty answer, a `y` or closing the input included, deletes nothing and exits 1. Once confirmed it stops the service using the volume, removes its container and the volume, and starts the service again on an empty one (`docker compose stop`, `rm -f`, `docker volume rm`, `up -d`). After `memory`, a running app is restarted too (`docker compose restart mercury`), since it sets up its collections only when it starts.
+Deletes for good what the assistant remembers: `memory` is every collection on Qdrant, `wiki` the whole vault, `data` Mercury's own state (the linked accounts, the profiles, the plugins' data, the traces), each on a volume of its own. An app whose compose file has no `mercury-data` volume yet has nothing for `data` to delete: the command says so before asking anything. It reads the volume's real name from the compose file, tells you which one is about to go, and asks you to type the app's name (the `name` in `package.json`); anything else, an empty answer, a `y` or closing the input included, deletes nothing and exits 1. Once confirmed it stops the service using the volume, removes its container and the volume, and starts the service again on an empty one (`docker compose stop`, `rm -f`, `docker volume rm`, `up -d`). After `memory`, a running app is restarted too (`docker compose restart mercury`), since it sets up its collections only when it starts.
 
 If a step fails once the service is stopped (the volume still in use by a one-off container, say), it stops there and says the service is down: `mfw start` brings it back.
 
 ```bash
 mfw reset memory
 mfw reset wiki
+mfw reset data
 ```
 
-Useful for clearing out test data; the other layer isn't touched.
+Useful for clearing out test data; the other volumes aren't touched.
 
 ### `mfw credentials setup <plugin>`
 

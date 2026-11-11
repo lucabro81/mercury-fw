@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import pkg from "../package.json";
@@ -17,10 +17,12 @@ const ENV = {
 describe("composeMercury", () => {
   const saved: Record<string, string | undefined> = {};
   let vault: string;
+  let data: string;
 
   beforeAll(async () => {
     vault = await mkdtemp(join(tmpdir(), "mercury-compose-"));
-    for (const [key, value] of Object.entries({ ...ENV, WIKI_VAULT_PATH: vault })) {
+    data = await mkdtemp(join(tmpdir(), "mercury-compose-data-"));
+    for (const [key, value] of Object.entries({ ...ENV, WIKI_VAULT_PATH: vault, MERCURY_DATA_PATH: data })) {
       saved[key] = process.env[key];
       process.env[key] = value;
     }
@@ -32,6 +34,91 @@ describe("composeMercury", () => {
       else process.env[key] = value;
     }
     await rm(vault, { recursive: true, force: true });
+    await rm(data, { recursive: true, force: true });
+  });
+
+  /** Runs `fn` with MERCURY_DATA_PATH and WIKI_VAULT_PATH set to fresh folders of its own, `.mercury/` in the vault holding `legacy`. */
+  async function withFreshFolders(legacy: Record<string, string>, fn: (dirs: { vault: string; data: string }) => Promise<void>): Promise<void> {
+    const dirs = {
+      vault: await mkdtemp(join(tmpdir(), "mercury-compose-")),
+      data: join(await mkdtemp(join(tmpdir(), "mercury-compose-data-")), "data"),
+    };
+    for (const [path, content] of Object.entries(legacy)) {
+      await mkdir(join(dirs.vault, ".mercury"), { recursive: true });
+      await writeFile(join(dirs.vault, ".mercury", path), content);
+    }
+    const before = { vault: process.env.WIKI_VAULT_PATH, data: process.env.MERCURY_DATA_PATH };
+    process.env.WIKI_VAULT_PATH = dirs.vault;
+    process.env.MERCURY_DATA_PATH = dirs.data;
+    try {
+      await fn(dirs);
+    } finally {
+      process.env.WIKI_VAULT_PATH = before.vault;
+      process.env.MERCURY_DATA_PATH = before.data;
+      await rm(dirs.vault, { recursive: true, force: true });
+      await rm(join(dirs.data, ".."), { recursive: true, force: true });
+    }
+  }
+
+  /** A trace sink keeping what it's given: its build context and the events. */
+  function collectingSink() {
+    const events: Array<Record<string, unknown>> = [];
+    const dirs: string[] = [];
+    const sink = {
+      apiVersion: 1,
+      name: "collect",
+      build: (ctx: { dir: string }) => {
+        dirs.push(ctx.dir);
+        return { write: (e: Record<string, unknown>) => void events.push(e), flush: async () => {} };
+      },
+    };
+    return { sink, events, dirs };
+  }
+
+  // #379: Mercury's state needs a volume of its own; without one it would be lost at the next restart.
+  it("refuses to start without MERCURY_DATA_PATH", async () => {
+    const before = process.env.MERCURY_DATA_PATH;
+    delete process.env.MERCURY_DATA_PATH;
+    try {
+      await expect(composeMercury({ plugins: [] })).rejects.toThrow("MERCURY_DATA_PATH is not set");
+    } finally {
+      process.env.MERCURY_DATA_PATH = before;
+    }
+  });
+
+  // #379: the traces and their secret live in the data folder, not in the vault.
+  it("gives the trace sink traces/ in the data folder, and keeps the secret there", async () => {
+    await withFreshFolders({}, async ({ vault, data }) => {
+      const { sink, dirs } = collectingSink();
+      await composeMercury({ plugins: [], traces: { sink } });
+      expect(dirs).toEqual([join(data, "traces")]);
+      expect((await readFile(join(data, "trace-secret"), "utf8")).trim()).toMatch(/^[0-9a-f]{64}$/);
+      expect(await Bun.file(join(vault, ".mercury", "trace-secret")).exists()).toBe(false);
+    });
+  });
+
+  // #379: an instance from before the data folder keeps its state, copied from the vault's .mercury/ on the first start.
+  it("copies the vault's .mercury/ into an empty data folder, and says so in the traces", async () => {
+    await withFreshFolders({ "profiles.json": '{"x":{}}', "trace-secret": `${"ab".repeat(32)}\n` }, async ({ data }) => {
+      const { sink, events } = collectingSink();
+      const app = await composeMercury({ plugins: [], traces: { sink } });
+      await app.tracer.flush();
+      expect(await readFile(join(data, "profiles.json"), "utf8")).toBe('{"x":{}}');
+      expect(events.find((e) => e.kind === "system.migrated")).toMatchObject({
+        kind: "system.migrated",
+        area: "data-folder",
+        entries: ["profiles.json", "trace-secret"],
+      });
+    });
+  });
+
+  it("emits no system.migrated when there was nothing to copy", async () => {
+    await withFreshFolders({}, async () => {
+      const { sink, events } = collectingSink();
+      const app = await composeMercury({ plugins: [], traces: { sink } });
+      await app.tracer.flush();
+      expect(events.some((e) => e.kind === "system.migrated")).toBe(false);
+    });
   });
 
   // #310: the HTTP surface's /version answers what the core puts here.

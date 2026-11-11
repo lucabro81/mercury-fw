@@ -53,6 +53,11 @@ const CORE_ENV: EnvVar[] = [
   { name: "QDRANT_URL", comment: "Qdrant, the compose service", value: "http://qdrant:6333" },
   { name: "WIKI_VAULT_PATH", comment: "Wiki vault, the named volume's mount point", value: "/app/wiki-vault" },
   {
+    name: "MERCURY_DATA_PATH",
+    comment: "Mercury's own state (account links, profiles, plugins' data, traces), the named volume's mount point",
+    value: "/app/data",
+  },
+  {
     name: "TURN_STALL_TIMEOUT_MS",
     comment: "How long a streaming turn waits for the model's next token before it's stopped with an error (0 turns it off)",
     value: "120000",
@@ -90,12 +95,12 @@ const CONFIG_HEADER = `/**
  * Every tool plugin and channel declared here is active.
  */`;
 
-/** The trace sink every new app declares, writing the traces to files on the vault's volume. */
+/** The trace sink every new app declares, writing the traces to files in Mercury's data folder. */
 export const TRACE_SINK_PACKAGE = "@mercury-fw/trace-jsonl";
 
 /** The config's `traces` entry, with what it records and where. */
 const TRACES_SECTION = [
-  "  // What the agent does, as events in .mercury/traces/ on the vault's volume:",
+  "  // What the agent does, as events in traces/ in Mercury's data folder:",
   "  // a file per day, the last 7 days with activity kept. \"meta\" records names,",
   "  // outcomes and times; \"args\" also what the tools were given. Remove to record nothing.",
   '  traces: { sink: jsonlTraces(), level: "meta" },',
@@ -410,6 +415,7 @@ function renderCompose(name: string, hasHttp: boolean, services: Array<{ name: s
     "        required: false",
     "    volumes:",
     "      - wiki-vault:/app/wiki-vault",
+    "      - mercury-data:/app/data",
     "      # The login of a plugin's CLI, on a volume so what the CLI writes back",
     "      # (refreshed tokens) survives a redeploy: see README.md.",
     "      - cli-credentials:/home/mercury/.config",
@@ -429,6 +435,8 @@ function renderCompose(name: string, hasHttp: boolean, services: Array<{ name: s
     "volumes:",
     "  wiki-vault:",
     `    name: ${name}_wiki-vault`,
+    "  mercury-data:",
+    `    name: ${name}_mercury-data`,
     "  qdrant-data:",
     `    name: ${name}_qdrant-data`,
     "  cli-credentials:",

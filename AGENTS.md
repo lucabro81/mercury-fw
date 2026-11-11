@@ -186,7 +186,7 @@ mercury/                       # repo root
 │   ├── formatters/
 │   │   └── formatter/             # @mercury-fw/formatter — applies an instance's per-kind rules to the lists a data plugin emits (formatterPlugin + formatter); holds no format of its own
 │   ├── traces/
-│   │   └── trace-jsonl/           # @mercury-fw/trace-jsonl — the default trace sink: a JSONL file per day on the vault's volume, the last days with activity kept; in the framework's fixed group, what `mfw create` declares
+│   │   └── trace-jsonl/           # @mercury-fw/trace-jsonl — the default trace sink: a JSONL file per day in the core's data folder, the last days with activity kept; in the framework's fixed group, what `mfw create` declares
 │   ├── libs/
 │   │   ├── core/                 # @mercury-fw/core — the framework runtime: composeMercury + loaders + engines wiring + turn pipeline. See its own tree below
 │   │   ├── kit/                  # @mercury-fw/kit — the plugin-authoring facade: re-exports plugin-types + channel-types (the future SDK #27 lands here). Apps consume core; authors consume kit
@@ -219,6 +219,7 @@ packages/libs/core/
     ├── compose.ts            # builds the instance from the config it's given (model/tools/memory/turn pipeline); returns handleTurn + deferred start closures
     ├── model/                # Ollama provider, real context-window lookup
     ├── session/               # Layer 1 history + summarizer + agent-turn loop + the system prompt (the plugins offered with their descriptions, their fragments and skill descriptors) + the stamp on each turn (turn-stamp.ts: when and where the person wrote it, the time zone it's in) + the conversation's generated title (conversation-titler.ts)
+    ├── data/                 # the core's data folder (data-dir.ts): MERCURY_DATA_PATH, required, where Mercury's own state lives (account links, profiles, plugins' data, traces and their secret); the one-time copy of an older vault's `.mercury/` into it
     ├── config/               # defineMercuryConfig + the MercuryConfig contract (plugins, channels, persona)
     ├── tools/                 # CLI executor + command parser/allowlist (cli-tool.ts) + config schema/loader/version-check + the display channel (display-channel.ts: strips and stashes every plugin tool's display) + the display store and `present`
     ├── plugins/               # generic fail-soft tool-plugin loader (plugin-loader.ts; refuses a plugin with no description, whose `messages` reach outside its name, or named `core`/`app`), what each person is offered (offering.ts: act-as-self, access.plugins, the plugins listed with their descriptions) and the tools acting as Mercury for them (act-as-self.ts), the manifest
@@ -230,12 +231,12 @@ packages/libs/core/
     │   ├── directory-loader.ts # builds the declared user directory; closed when it fails (nobody but the terminal is let in)
     │   ├── terminal.ts         # the REPL loop (stdin/stdout), driven by the app's repl.ts — a dev console, not a channel
     │   └── tool-log.ts         # terminal-only debug visibility helpers
-    ├── identity/              # who sees what, decided in one place: who a principal is (people.ts: account links first, then the directory, cached, closed for unknown people by default, failing closed), the account links Mercury owns (links.ts, a file on the vault's volume out of its git; linking.ts, the one-time code; links-cli.ts, behind `mfw identity`), the user key (`<provider>:<id>`), a person's vault area (`users/<key>/`, `personal/` to the model) and its access checks, the per-person channel reads and settings (channel-settings.ts: the time zone a UI saves; channel-conversations.ts: a conversation's title the person chooses), people's pending logins to the services plugins act on as them, the startup migration of pre-key data
+    ├── identity/              # who sees what, decided in one place: who a principal is (people.ts: account links first, then the directory, cached, closed for unknown people by default, failing closed), the account links Mercury owns (links.ts, a file in the data folder; linking.ts, the one-time code; links-cli.ts, behind `mfw identity`), the user key (`<provider>:<id>`), a person's vault area (`users/<key>/`, `personal/` to the model) and its access checks, the per-person channel reads and settings (channel-settings.ts: the time zone a UI saves; channel-conversations.ts: a conversation's title the person chooses), people's pending logins to the services plugins act on as them, the startup migration of pre-key data
     ├── i18n/                  # the texts a person sees, in their language: the core's English catalog (core-messages.ts) and the loaded plugins' and channels' (`instanceI18n`), the instance's language files over them (its own `app.` keys declared by its `locales/en.json`), each person's language (their profile, the channel's language hint, then the default), the startup report of missing keys
     ├── credentials/           # at startup, links each plugin-declared CLI login kept outside ~/.config to the credentials volume, and reports one not set up yet
     ├── memory/                # Layer 3 — episodic store (Qdrant), the verbatim archive, the conversation titles (conversation-titles-store.ts)
     ├── wiki/                  # Layer 2 — vault init/read/write (common `curated/` + per-person `users/<key>/`) + vault-cli.ts (maintenance CLI, see Operational notes)
-    ├── traces/                # the events of what the instance does (#23): the tracer, the one place an event is cut to the instance's level and its person and session pseudonymised (tracer.ts), the secret the pseudonyms come from (trace-secret.ts, on the vault's volume), the declared sink's loader, what a model step and a compression become as events
+    ├── traces/                # the events of what the instance does (#23): the tracer, the one place an event is cut to the instance's level and its person and session pseudonymised (tracer.ts), the secret the pseudonyms come from (trace-secret.ts, in the data folder), the declared sink's loader, what a model step and a compression become as events
     └── cron/                  # idle-session scanner
 ```
 

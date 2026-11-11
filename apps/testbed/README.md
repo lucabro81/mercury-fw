@@ -84,7 +84,7 @@ bunx mfw e2e ../../tests/concurrency.e2e.ts
 
 A case on the HTTP surface talks to the running service, so `bunx mfw start` comes first; the REPL ones start a container of their own.
 
-`bunx mfw start` builds the image with the tarballs (the Dockerfile copies `.packs/` before installing) and starts the app and its Qdrant. Each app has its own Docker volumes, named after its folder: its wiki, memory and credentials don't mix with other apps'.
+`bunx mfw start` builds the image with the tarballs (the Dockerfile copies `.packs/` before installing) and starts the app and its Qdrant. Each app has its own Docker volumes, named after its folder: its wiki, memory, Mercury's own state and credentials don't mix with other apps'.
 
 ## The loop: change, repack, check
 
@@ -112,7 +112,7 @@ Prefer read-only cases. A case that changes an external system (creates an issue
 
 ## Starting over, removing an app
 
-`bun run create prova --fresh` removes `apps/prova` and creates it anew, `.env` included: keep a copy of the env file if you want it back. It's also the way out when a first `bun run create` stopped halfway: the folder it left counts as an app that exists, so a plain rerun would only install into it. The app's Docker volumes stay. To drop them too (wiki, memory, unpacked credentials), from the app's folder, before removing it:
+`bun run create prova --fresh` removes `apps/prova` and creates it anew, `.env` included: keep a copy of the env file if you want it back. It's also the way out when a first `bun run create` stopped halfway: the folder it left counts as an app that exists, so a plain rerun would only install into it. The app's Docker volumes stay. To drop them too (wiki, memory, Mercury's own state, unpacked credentials), from the app's folder, before removing it:
 
 ```bash
 bunx mfw stop
