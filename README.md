@@ -96,6 +96,7 @@ The framework, released together under one version:
 | [`@mercury-fw/cli`](apps/cli) | The `mfw` command: `mfw create` scaffolds an app, the other commands run it. |
 | [`create-mercury-agent`](apps/create-mercury-agent) | What `bun create mercury-agent` runs. |
 | [`@mercury-fw/formatter`](packages/formatters/formatter) | Applies an app's rules to the lists a plugin hands over. |
+| [`@mercury-fw/trace-jsonl`](packages/traces/trace-jsonl) | The trace sink `mfw create` declares: the events of what the agent does, a JSONL file per day, the last days with activity kept. |
 | [`@mercury-fw/kit`](packages/libs/kit) | For plugin authors: the plugin and channel contracts in one import. |
 | [`@mercury-fw/plugin-types`](packages/types/plugin-types), [`@mercury-fw/channel-types`](packages/types/channel-types) | The contracts a tool plugin and a channel implement. |
 | [`@mercury-fw/cli-engine`](packages/libs/cli-engine) | For plugins that work through a CLI: parsing, allowlist, execution, confirmation staging. |

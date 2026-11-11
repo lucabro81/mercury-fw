@@ -81,22 +81,24 @@ of that turn carry the same one: when you need to read what was said, the archiv
 
 ## Reading them
 
-The files are on the vault's volume, so you read them from inside the agent's container:
+The files are on the vault's volume, in the agent's container: `$WIKI_VAULT_PATH/.mercury/traces/`, one per day. From
+the app's folder, everything one turn did, in order, straight from the container:
 
 ```bash
-mfw shell
+docker compose exec -T mercury sh -c 'grep -h "\"turn\":\"4f1c" "$WIKI_VAULT_PATH"/.mercury/traces/*.jsonl'
 ```
 
-Then, for instance, the slowest turns of today:
+To dig further, copy them to your machine and read them with [`jq`](https://jqlang.org/), which the container doesn't
+have:
 
 ```bash
-jq -c 'select(.kind == "turn.end") | {turn, outcome, durationMs}' .mercury/traces/$(date -u +%F).jsonl | sort -t: -k4 -n | tail
+docker compose exec -T mercury sh -c 'cat "$WIKI_VAULT_PATH"/.mercury/traces/*.jsonl' > traces.jsonl
 ```
 
-Everything one turn did, in order:
+The slowest turns, for instance:
 
 ```bash
-grep '"turn":"4f1c' .mercury/traces/*.jsonl
+jq -r 'select(.kind == "turn.end") | "\(.durationMs) \(.outcome) \(.turn)"' traces.jsonl | sort -n | tail
 ```
 
 ## How long they're kept

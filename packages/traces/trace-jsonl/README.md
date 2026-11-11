@@ -17,6 +17,12 @@ traces: { sink: jsonlTraces({ keepDays: 14 }), level: "args" },
 
 The files go in the folder the core gives the sink, `.mercury/traces/` on the vault's volume, named after the UTC day of their events (`2026-11-11.jsonl`). The core has already cut each event to the instance's level and replaced who someone is with a pseudonym, so what's in a file is what the level allows, nothing more.
 
+To read them, from the app's folder (the agent's container has no `jq`, so copy them out to use it):
+
+```bash
+docker compose exec -T mercury sh -c 'cat "$WIKI_VAULT_PATH"/.mercury/traces/*.jsonl' > traces.jsonl
+```
+
 `keepDays` counts days with activity, not calendar days: an agent that works two days and then sits idle for a month still has those two days. Older day files go when the agent starts and when a new day's first event arrives; any other file in the folder is left alone.
 
 A write that fails (a full or read-only volume) never reaches the turn that caused it: it's logged once, and events are lost until writing works again.
