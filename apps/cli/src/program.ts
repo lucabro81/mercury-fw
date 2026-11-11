@@ -119,7 +119,7 @@ Examples:
   program
     .command("stop")
     .summary("stops the app")
-    .description("Stops the app and Qdrant and removes their containers. The volumes (memory, wiki, CLI credentials) stay.")
+    .description("Stops the app and Qdrant and removes their containers. The volumes (memory, wiki, Mercury's own state, CLI credentials) stay.")
     .addHelpText("after", INSIDE_AN_APP)
     .action(inApp((app) => app.stop()));
 
