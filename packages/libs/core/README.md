@@ -72,7 +72,7 @@ Every turn writes to the service's log (stderr) when it starts and when it ends,
 
 ## Traces
 
-Besides the log, the agent can record every turn, model step, tool call, memory decision and startup as an event (`traces` in the config, see [Traces](https://github.com/lucabro81/mercury-fw/blob/main/apps/docs/src/content/docs/concepts/traces.md)). The core is the only place an event is shaped: it cuts it to the instance's level, `meta` (names, outcomes, durations, sizes) or `args` (also the tools' input and the error messages), and replaces the person's key and the session key with pseudonyms made from a secret it generates on first start, in `.mercury/trace-secret` on the vault's volume. The conversation's text never enters an event; each turn's events and its archived messages share a `turnId`. An event never costs a turn anything: a sink that fails is logged once and ignored.
+Besides the log, the agent can record every turn, model step, tool call, memory decision and startup as an event (`traces` in the config, see [Traces](https://github.com/lucabro81/mercury-fw/blob/main/apps/docs/src/content/docs/concepts/traces.md)). The core is the only place an event is shaped: it cuts it to the instance's level, `meta` (names, outcomes, durations, sizes) or `args` (also the tools' input, the summary of an action waiting for confirmation, and the error messages), and replaces the person's key and the session key with pseudonyms made from a secret it generates on first start, in `.mercury/trace-secret` on the vault's volume. The conversation's text never enters an event; each turn's events and its archived messages share a `turnId`. An event never costs a turn anything: a sink that fails is logged once and ignored.
 
 ## Who sees what
 

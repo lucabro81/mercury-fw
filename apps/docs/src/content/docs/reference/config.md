@@ -182,8 +182,8 @@ traces: { sink: jsonlTraces({ keepDays: 7 }), level: "meta" },
 
 - `sink` is where the events go: `jsonlTraces()` writes a file per day on the vault's volume, keeping the last
   `keepDays` days with activity (7 when left out).
-- `level` is `meta` (names, outcomes, durations, sizes; the default) or `args` (also what the tools were given, and
-  the error messages). Anything else stops the agent at startup.
+- `level` is `meta` (names, outcomes, durations, sizes; the default) or `args` (also what the tools were given, the
+  summary of an action waiting for confirmation, and the error messages). Anything else stops the agent at startup.
 
 Left out, nothing is recorded. A sink that can't start (a read-only volume, say) leaves the agent without traces,
 said once in the log, and the agent starts anyway.

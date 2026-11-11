@@ -75,7 +75,7 @@ of that turn carry the same one: when you need to read what was said, the archiv
 | Level | What's in it |
 |---|---|
 | `meta` | Names, outcomes, durations, sizes. |
-| `args` | Also what the tools were given (a command, a query, cut to 500 characters a string) and the error messages. |
+| `args` | Also what the tools were given (a command, a query, cut to 500 characters a string), the summary of an action waiting for confirmation, and the error messages. |
 
 `meta` is the safe default. `args` is for when you're chasing a bug and need to see the command that failed.
 
