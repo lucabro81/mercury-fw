@@ -53,6 +53,7 @@ What gets recorded:
 | `confirmation.staged`, `confirmation.resolved` | An action waits for a confirmation, and how it was resolved. |
 | `history.compressed` | A long conversation was summarized to fit: how much, how long it took. |
 | `context.assembled` | What the [context](../context/) added before the model answered: the profile, and for each layer how many characters and blocks it added, how many it left out for the budget, or why it was skipped. |
+| `context.changed` | Someone changed a [context](../context/) profile while the agent ran: which profile, which of its budget, order and knobs; the values before and after only at the `args` level. |
 | `guard.run` | A plugin's check on the answer ran, and whether it changed it. |
 | `plugin.hook` | A plugin's code after a turn, or after a conversation closed, finished: which plugin, how long it took, whether it worked. |
 | `memory.capture`, `memory.consolidate`, `memory.correction` | The memory saved a conversation, decided whether to keep a fact or a correction, and why. |

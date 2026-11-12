@@ -101,6 +101,16 @@ Saves the caller's time zone, for a UI's settings: body `{ timeZone }`, an IANA 
 
 Renames one of the caller's conversations: `?id=<conversationId>`, body `{ title }`; returns `{ ok: true, title }` with the title as saved (trimmed). A title has at most 100 characters, on one line: an empty one, a longer one or one with a line break is `400` with the reason, as are a missing or malformed `id` and a body without `title`. `404` when no conversation of the caller's has that id: only a conversation with at least one turn in the archive can be renamed. Mercury never replaces a title the person chose. Not there on an agent with no conversation store (`404`).
 
+## The `/context` routes
+
+For an admin area that changes the instance's [context](https://lucabro81.github.io/mercury-fw/concepts/context/) while it runs. Only on an instance that declares a `context` (`404` otherwise), only for callers holding the `mercury.context-admin` role (`403` otherwise).
+
+| Route | |
+|---|---|
+| `GET /context` | `{ ok: true, profiles }`: every profile, `default` first, with the roles it's given to (`assignedTo`), its budget (`maxChars`) and its layers in order, each with its `scope` and its `knobs` (each knob's spec, and its `value` in that profile). |
+| `PATCH /context/profiles/{name}` | Body `{ maxChars?, order?, knobs? }`: a new budget, the profile's layers by plugin name in a new order (the same ones, each once), knob values by plugin and knob (`{ "rag": { "topK": 8 } }`, `null` back to the default). Returns `{ ok: true, profile }` as it now runs. Checked whole and applied whole: `400` with the reason for a change that doesn't fit, `404` for a profile that doesn't exist. Applies from the next turn; a conversation already open keeps its `session` layers. Kept across restarts. |
+| `GET /context/changes?limit=<n>` | `{ ok: true, changes: [{ at, by, profile, before, after }] }`, newest first, 50 unless `limit` (1 to 500) says otherwise: who (the person's key) changed what, and the values before and after (a knob at its default is `null`). |
+
 ## `POST /confirm`
 
 Explicit alternative to re-sending a token as `/turn` `text`. Body `{ token, conversationId }`; returns `{ ok: true, resolved: true, text }` when the token was a pending confirmation (`text`: the core's reply in the caller's language, "Confirmed and done." or the failure, never the action's raw result), `{ ok: true, resolved: false }` otherwise. When the confirmed action hands its result back to the model, it returns `{ ok: true, resolved: true, resume: true }` instead: open `POST /turn { resume: true, conversationId }` to hear the model's answer. `400` if `token` or `conversationId` is missing, or the id has other characters than `/turn` accepts. Never invokes the model.

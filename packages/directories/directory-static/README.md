@@ -24,6 +24,6 @@ An identity is `<provider>:<id>`, as the channel or the auth provider vouches fo
 
 The person's key is `people:<id>`, so `id` is a short lowercase slug (letters, digits, `.`, `_`, `-`). A missing or malformed list stops the directory from loading, and the instance then lets nobody in but the terminal: a broken config closes it, it never opens it.
 
-The roles that mean something to Mercury itself are `mercury.act-as-self`, which lets a person make Mercury act with its own identity on every plugin, and `mercury.act-as-self.<plugin>`, the same for one plugin. Any other role is for the app's own `access.plugins` restrictions.
+The roles that mean something to Mercury itself are `mercury.act-as-self`, which lets a person make Mercury act with its own identity on every plugin, and `mercury.act-as-self.<plugin>`, the same for one plugin, and `mercury.context-admin`, which lets a person change the instance's context while it runs (`/context` on the HTTP channel). Any other role is for the app's own `access.plugins` restrictions.
 
 MIT
