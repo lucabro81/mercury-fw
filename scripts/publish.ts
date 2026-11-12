@@ -135,7 +135,7 @@ export async function publishAll(
       continue;
     }
     deps.log(`publish ${w.pkg.name}@${w.pkg.version}`);
-    if (deps.publishOne(w) === "already") deps.log(`already on the registry (npm hasn't shown it yet): ${w.pkg.name}@${w.pkg.version}`);
+    if (deps.publishOne(w) === "already") deps.log(`already on the registry (npm refused it as published): ${w.pkg.name}@${w.pkg.version}`);
     published++;
   }
   return published;

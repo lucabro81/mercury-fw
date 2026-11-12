@@ -577,7 +577,7 @@ describe("publishAll", () => {
     expect(lines).toEqual([
       "publish a@1.0.0",
       "publish b@1.0.0",
-      "already on the registry (npm hasn't shown it yet): b@1.0.0",
+      "already on the registry (npm refused it as published): b@1.0.0",
       "publish c@1.0.0",
     ]);
   });
