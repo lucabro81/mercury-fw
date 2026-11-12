@@ -5,10 +5,15 @@
  * (`maybeCapture`, after a turn) and a Layer-1 compression (`onCompress`).
  * The idle sweep does the final capture itself and calls `close`.
  *
+ * Every capture runs on its own, as background work (`deps.job`, the core's
+ * queue for the model, #383): nothing waits for it, not even the session's
+ * next turn.
+ *
  * The marker counts messages of the history's current view (`getMessages()`),
- * which a compression restarts. So `onCompress` fixes the slice it captures and
- * resets the marker on the spot, before anything else can read it, and its
- * capture, running on its own, never touches the marker again.
+ * which a compression restarts. Each trigger fixes the slice it captures and
+ * moves the marker on the spot, before anything else can read it. A threshold
+ * capture that fails puts it back, unless something moved it again meanwhile;
+ * a compression's capture never touches it again.
  */
 import type { TurnSink } from "../router/provider.ts";
 import type { Message } from "./history.ts";
@@ -27,6 +32,8 @@ export type SessionCaptureDeps = {
   /** The status's texts, in the language of the person the session is; English when absent. */
   texts?: Texts;
   log?: (message: string) => void;
+  /** Runs one capture as background work (the core's queue for the model); run directly when absent. */
+  job?: <T>(fn: () => Promise<T>) => Promise<T>;
 };
 
 export type SessionCapture = {
@@ -36,7 +43,7 @@ export type SessionCapture = {
   registerCallbacks(sessionKey: string, callbacks: CaptureCallbacks): void;
   /** The user a tracked session belongs to. */
   userOf(sessionKey: string): string | undefined;
-  /** Captures what's new in `messages` once there are `threshold` new ones; the marker moves only on success. */
+  /** Starts capturing what's new in `messages` once there are `threshold` new ones, without waiting for it; a failed capture leaves those messages for the next trigger. */
   maybeCapture(sessionKey: string, messages: Message[]): Promise<void>;
   /** For `createSessionHistory`'s `onBeforeCompress`: captures what wasn't captured yet of `messages`, in the background. */
   onCompress(sessionKey: string, messages: Message[]): void;
@@ -55,22 +62,31 @@ export function createSessionCapture(deps: SessionCaptureDeps): SessionCapture {
   const markers = new Map<string, number>();
   const callbacks = new Map<string, CaptureCallbacks>();
   const inFlight = new Set<Promise<unknown>>();
+  const job = deps.job ?? (<T,>(fn: () => Promise<T>) => fn());
+
+  /** Keeps `running` until it settles, for `settled()`. */
+  const track = (running: Promise<unknown>) => {
+    inFlight.add(running);
+    void running.finally(() => inFlight.delete(running));
+  };
 
   /** Captures `pending`, reporting to the session's current callbacks; resolves whether it succeeded. */
-  async function capturePending(sessionKey: string, userId: string, pending: Message[], trigger: "threshold" | "compress"): Promise<boolean> {
+  function capturePending(sessionKey: string, userId: string, pending: Message[], trigger: "threshold" | "compress"): Promise<boolean> {
     const status = callbacks.get(sessionKey);
-    const captureId = crypto.randomUUID();
-    const { t } = texts.forPerson(userId);
-    status?.onToolStart(t("core.status.remembering"), deps.describe?.(pending, t), captureId);
-    try {
-      await deps.capture(userId, sessionKey, pending, trigger);
-      status?.onToolFinish?.(captureId, "success");
-      return true;
-    } catch (err) {
-      log(`[capture] failed for ${sessionKey}, will retry next trigger: ${String(err)}`);
-      status?.onToolFinish?.(captureId, "failed");
-      return false;
-    }
+    return job(async () => {
+      const captureId = crypto.randomUUID();
+      const { t } = texts.forPerson(userId);
+      status?.onToolStart(t("core.status.remembering"), deps.describe?.(pending, t), captureId);
+      try {
+        await deps.capture(userId, sessionKey, pending, trigger);
+        status?.onToolFinish?.(captureId, "success");
+        return true;
+      } catch (err) {
+        log(`[capture] failed for ${sessionKey}, will retry next trigger: ${String(err)}`);
+        status?.onToolFinish?.(captureId, "failed");
+        return false;
+      }
+    }).catch(() => false);
   }
 
   return {
@@ -86,9 +102,13 @@ export function createSessionCapture(deps: SessionCaptureDeps): SessionCapture {
       if (userId === undefined) return;
       const marker = markers.get(sessionKey) ?? 0;
       if (messages.length - marker < deps.threshold) return;
-      if (await capturePending(sessionKey, userId, messages.slice(marker), "threshold")) {
-        markers.set(sessionKey, messages.length);
-      }
+      const upTo = messages.length;
+      markers.set(sessionKey, upTo);
+      track(
+        capturePending(sessionKey, userId, messages.slice(marker), "threshold").then((ok) => {
+          if (!ok && markers.get(sessionKey) === upTo) markers.set(sessionKey, marker);
+        }),
+      );
     },
     onCompress(sessionKey, messages) {
       const userId = users.get(sessionKey);
@@ -97,9 +117,7 @@ export function createSessionCapture(deps: SessionCaptureDeps): SessionCapture {
       // The view after compression starts fresh, whatever happens to this capture.
       markers.set(sessionKey, 0);
       if (pending.length === 0) return;
-      const running = capturePending(sessionKey, userId, pending, "compress");
-      inFlight.add(running);
-      void running.finally(() => inFlight.delete(running));
+      track(capturePending(sessionKey, userId, pending, "compress"));
     },
     close(sessionKey) {
       users.delete(sessionKey);

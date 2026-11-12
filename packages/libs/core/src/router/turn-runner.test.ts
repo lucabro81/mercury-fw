@@ -656,6 +656,131 @@ describe("createTurnRunner", () => {
     expect(sink.finalized).toEqual([]);
   });
 
+  // #383: a turn counts on the turn model from the moment the runner takes it
+  // (a second one of the same session waiting for the lock counts too) until
+  // its answer is out, so background work never takes the model from it.
+  test("holds the turn model from the turn's arrival until its answer is out", async () => {
+    const events: string[] = [];
+    let holds = 0;
+    const answers: Array<() => void> = [];
+    const runner = createTurnRunner({
+      model: {} as any,
+      systemPrompts: { singleUser: "s", multiUser: "m" },
+      holdTurn: () => {
+        const n = ++holds;
+        events.push(`hold ${n}`);
+        // The scheduler's release counts once however often it's called: so does this one.
+        let released = false;
+        return () => {
+          if (!released) events.push(`release ${n}`);
+          released = true;
+        };
+      },
+      buildTools: () => ({}),
+      getOrCreateHistory: () => fakeHistory(),
+      trackSession: () => {},
+      registerCaptureCallback: () => {},
+      maybeCapture: async () => {},
+      processToolCorrections: async () => void events.push("corrections"),
+      logStep: () => {},
+      runTurnFn: () => new Promise<string>((resolve) => answers.push(() => resolve("reply"))),
+    });
+    const first = runner(baseTurn(), baseSink({ finalize: async () => void events.push("finalize 1") }));
+    const second = runner(baseTurn(), baseSink({ finalize: async () => void events.push("finalize 2") }));
+    await Bun.sleep(0);
+    expect(events).toEqual(["hold 1", "hold 2"]);
+    answers.shift()?.();
+    await first;
+    await Bun.sleep(0);
+    answers.shift()?.();
+    await second;
+    expect(events).toEqual(["hold 1", "hold 2", "finalize 1", "release 1", "corrections", "finalize 2", "release 2", "corrections"]);
+  });
+
+  test("a turn that fails or is refused releases the turn model too", async () => {
+    const released: string[] = [];
+    const deps = {
+      model: {} as any,
+      systemPrompts: { singleUser: "s", multiUser: "m" },
+      buildTools: () => ({}),
+      getOrCreateHistory: () => fakeHistory(),
+      trackSession: () => {},
+      registerCaptureCallback: () => {},
+      maybeCapture: async () => {},
+      processToolCorrections: async () => {},
+      logStep: () => {},
+    };
+    const failing = createTurnRunner({
+      ...deps,
+      holdTurn: () => () => released.push("failed"),
+      runTurnFn: async () => {
+        throw new Error("boom");
+      },
+    });
+    await expect(failing(baseTurn(), baseSink())).rejects.toThrow("boom");
+    const refusing = createTurnRunner({
+      ...deps,
+      holdTurn: () => () => released.push("refused"),
+      identify: async () => ({ ok: false, reason: "unknown", message: "no" }),
+      runTurnFn: async () => "reply",
+    });
+    await refusing(baseTurn({ principal: verified("users/1") }), baseSink());
+    expect(released).toEqual(["failed", "refused"]);
+  });
+
+  // #383: the corrections run as background work, queued for the model: the
+  // turn (and the next one of its session) never waits for them.
+  test("doesn't wait for the turn's corrections, and a second turn of the session runs meanwhile", async () => {
+    let finishCorrections!: () => void;
+    const corrections = new Promise<void>((resolve) => {
+      finishCorrections = resolve;
+    });
+    const replies: string[] = [];
+    const runner = createTurnRunner({
+      model: {} as any,
+      systemPrompts: { singleUser: "s", multiUser: "m" },
+      buildTools: () => ({}),
+      getOrCreateHistory: () => fakeHistory(),
+      trackSession: () => {},
+      registerCaptureCallback: () => {},
+      maybeCapture: async () => {},
+      processToolCorrections: () => corrections,
+      logStep: () => {},
+      runTurnFn: async () => "reply",
+    });
+    await runner(baseTurn(), baseSink({ finalize: async (text) => void replies.push(`1: ${text}`) }));
+    await runner(baseTurn(), baseSink({ finalize: async (text) => void replies.push(`2: ${text}`) }));
+    expect(replies).toEqual(["1: reply", "2: reply"]);
+    finishCorrections();
+  });
+
+  test("corrections that fail are logged, never thrown at the turn", async () => {
+    const logged: string[] = [];
+    const original = console.log;
+    console.log = (msg: string) => void logged.push(String(msg));
+    try {
+      const runner = createTurnRunner({
+        model: {} as any,
+        systemPrompts: { singleUser: "s", multiUser: "m" },
+        buildTools: () => ({}),
+        getOrCreateHistory: () => fakeHistory(),
+        trackSession: () => {},
+        registerCaptureCallback: () => {},
+        maybeCapture: async () => {},
+        processToolCorrections: async () => {
+          throw new Error("index down");
+        },
+        logStep: () => {},
+        runTurnFn: async () => "reply",
+      });
+      await runner(baseTurn(), baseSink());
+      await Bun.sleep(0);
+    } finally {
+      console.log = original;
+    }
+    expect(logged.some((line) => line.includes("[corrections] failed, turn unaffected: index down"))).toBe(true);
+  });
+
   test("processToolCorrections is skipped when the turn throws", async () => {
     let correctionsCalled = false;
     const runner = createTurnRunner({
