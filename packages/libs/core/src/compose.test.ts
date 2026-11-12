@@ -297,8 +297,10 @@ describe("composeMercury", () => {
     expect(seen?.again).toBe(seen?.first);
   });
 
-  // #383: the turn runs on `turn`, the conversation's title on `background`.
-  it("runs the turn on the turn model and the conversation's title on the background model", async () => {
+  // #383: the turn runs on `turn`, the conversation's title on `background`,
+  // as a background job the traces report.
+  it("runs the turn on the turn model and the conversation's title on the background model, as a job", async () => {
+    const { sink, events } = collectingSink();
     const asked: string[] = [];
     const realFetch = globalThis.fetch;
     globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
@@ -322,6 +324,7 @@ describe("composeMercury", () => {
         models: { turn: ollamaModel("big"), background: ollamaModel("small") },
         conversationStore: { apiVersion: 1, name: "fake", build: () => fakeConversationStore() },
         access: { unknown: "allow" },
+        traces: { sink },
       });
       await app.handleTurn(
         { channel: "http", multiUser: false, text: "hello", sessionKey: "http:alice:c1", principal: { provider: "static", id: "alice" }, logPrefix: "" },
@@ -330,6 +333,11 @@ describe("composeMercury", () => {
       for (let i = 0; i < 500 && asked.length < 2; i++) await new Promise((resolve) => setTimeout(resolve, 10));
       expect(asked[0]).toBe("big");
       expect(asked.slice(1)).toEqual(["small"]);
+      for (let i = 0; i < 500 && !events.some((e) => e.kind === "background.job"); i++) await new Promise((resolve) => setTimeout(resolve, 10));
+      await app.tracer.flush();
+      expect(events.filter((e) => e.kind === "background.job")).toEqual([
+        expect.objectContaining({ kind: "background.job", job: "title", urgency: "soon", models: ["small"], steps: 1, outcome: "done" }),
+      ]);
     } finally {
       globalThis.fetch = realFetch;
     }
