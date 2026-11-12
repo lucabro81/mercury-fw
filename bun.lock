@@ -12,7 +12,7 @@
     },
     "apps/cli": {
       "name": "@mercury-fw/cli",
-      "version": "0.73.0",
+      "version": "0.74.0",
       "bin": {
         "mfw": "./src/bin.ts",
       },
@@ -44,7 +44,7 @@
     },
     "apps/create-mercury-agent": {
       "name": "create-mercury-agent",
-      "version": "0.73.0",
+      "version": "0.74.0",
       "bin": {
         "create-mercury-agent": "./index.ts",
       },
@@ -91,7 +91,7 @@
     },
     "apps/skill-trainer": {
       "name": "skill-trainer",
-      "version": "0.0.27",
+      "version": "0.0.28",
       "bin": {
         "skill-trainer": "src/bin.ts",
       },
@@ -165,7 +165,7 @@
     },
     "packages/channels/channel-http": {
       "name": "@mercury-fw/channel-http",
-      "version": "0.17.0",
+      "version": "0.18.0",
       "devDependencies": {
         "@mercury-fw/channel-types": "workspace:*",
         "@mercury-fw/plugin-types": "workspace:*",
@@ -183,7 +183,7 @@
     },
     "packages/directories/directory-static": {
       "name": "@mercury-fw/directory-static",
-      "version": "0.1.2",
+      "version": "0.1.3",
       "devDependencies": {
         "@mercury-fw/channel-types": "workspace:*",
         "@mercury-fw/typescript-config": "*",
@@ -196,7 +196,7 @@
     },
     "packages/formatters/formatter": {
       "name": "@mercury-fw/formatter",
-      "version": "0.73.0",
+      "version": "0.74.0",
       "dependencies": {
         "@mercury-fw/plugin-types": "workspace:*",
       },
@@ -208,7 +208,7 @@
     },
     "packages/libs/cli-engine": {
       "name": "@mercury-fw/cli-engine",
-      "version": "0.73.0",
+      "version": "0.74.0",
       "dependencies": {
         "@mercury-fw/plugin-types": "workspace:*",
         "@mercury-fw/utils": "workspace:*",
@@ -224,7 +224,7 @@
     },
     "packages/libs/confirm-engine": {
       "name": "@mercury-fw/confirm-engine",
-      "version": "0.73.0",
+      "version": "0.74.0",
       "dependencies": {
         "@mercury-fw/channel-types": "workspace:*",
         "@mercury-fw/plugin-types": "workspace:*",
@@ -237,7 +237,7 @@
     },
     "packages/libs/core": {
       "name": "@mercury-fw/core",
-      "version": "0.73.0",
+      "version": "0.74.0",
       "dependencies": {
         "@mercury-fw/channel-types": "workspace:*",
         "@mercury-fw/cli-engine": "workspace:*",
@@ -257,7 +257,7 @@
     },
     "packages/libs/kit": {
       "name": "@mercury-fw/kit",
-      "version": "0.73.0",
+      "version": "0.74.0",
       "dependencies": {
         "@mercury-fw/channel-types": "workspace:*",
         "@mercury-fw/plugin-types": "workspace:*",
@@ -270,7 +270,7 @@
     },
     "packages/libs/utils": {
       "name": "@mercury-fw/utils",
-      "version": "0.73.0",
+      "version": "0.74.0",
       "devDependencies": {
         "@mercury-fw/typescript-config": "*",
         "@types/bun": "^1.4.2",
@@ -279,7 +279,7 @@
     },
     "packages/stores/store-qdrant": {
       "name": "@mercury-fw/store-qdrant",
-      "version": "0.73.0",
+      "version": "0.74.0",
       "dependencies": {
         "@mercury-fw/channel-types": "workspace:*",
         "@qdrant/js-client-rest": "^1.19.0",
@@ -415,7 +415,7 @@
     },
     "packages/traces/trace-jsonl": {
       "name": "@mercury-fw/trace-jsonl",
-      "version": "0.73.0",
+      "version": "0.74.0",
       "dependencies": {
         "@mercury-fw/channel-types": "workspace:*",
       },
@@ -427,7 +427,7 @@
     },
     "packages/types/channel-types": {
       "name": "@mercury-fw/channel-types",
-      "version": "0.73.0",
+      "version": "0.74.0",
       "dependencies": {
         "@mercury-fw/plugin-types": "workspace:*",
       },
@@ -439,7 +439,7 @@
     },
     "packages/types/plugin-types": {
       "name": "@mercury-fw/plugin-types",
-      "version": "0.73.0",
+      "version": "0.74.0",
       "dependencies": {
         "ai": "^7.0.126",
       },

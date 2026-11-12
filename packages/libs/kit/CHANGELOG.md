@@ -1,5 +1,35 @@
 # @mercury-fw/kit
 
+## 0.74.0
+
+### Minor Changes
+
+- 52c8130: - `context` in `mercury.config.ts`: profiles of plugins' layers with a budget in characters, `default` required, `assign` by role
+  - plugin contract: `context: { scope, build }` in `build()`'s contributions, a `"session"` layer built once per session and person and kept in the system prompt, a `"turn"` layer in front of the person's message, where the model reads it on later turns too, never in the conversation's text
+  - a layer runs only for people its plugin is offered to
+  - a person keeps the profile picked at their first turn in a session until it closes; a `"session"` layer that fails then stays out until it closes
+  - the start stops on a layer naming a plugin not in `plugins` or one with no layer, a plugin listed twice in a profile, or a budget that isn't a whole number
+  - `context.assembled` in the traces: the profile, and per layer the characters and blocks added, dropped or why it was skipped
+- c7a0a56: - plugin contract: `afterTurn(turn)` in `build()`'s contributions, run once a turn ended with an answer, for the plugins offered in it
+  - plugin contract: `onSessionClose(session)`, run once a quiet session is closed, with its messages, for the plugins offered in its last turn
+  - `ctx.job(name, urgency, fn)`: a plugin's work nobody waits on, queued for the model like the core's own, `<plugin>:<name>` in the traces
+  - `ctx.model` goes through the queue: inside `ctx.job` its calls wait for a free slot, during a turn they count as turn work
+  - `plugin.hook` in the traces: each hook's plugin, time taken, and whether it worked
+
+### Patch Changes
+
+- 9c78729: - context layers declare knobs (`context.knobs`, `KnobSpec`: `boolean`, `integer`, `number`, `string`, `enum`); `req.knobs` holds each one's value in the person's profile, or its default
+  - a plugin whose knob spec contradicts itself isn't loaded
+  - a profile's `maxChars`, layer order and knobs can change while the instance runs, for people holding `mercury.context-admin`; kept in `context-settings.json` in the data folder, each change recorded in `context-changes.jsonl` and as a `context.changed` event
+  - channel contract: `ctx.contextAdmin` (`read`, `update`, `changes`), on an instance with a `context`
+  - channel-http: `GET /context`, `PATCH /context/profiles/{name}`, `GET /context/changes`
+  - directory-static: README names the `mercury.context-admin` role
+- Updated dependencies [9c78729]
+- Updated dependencies [52c8130]
+- Updated dependencies [c7a0a56]
+  - @mercury-fw/plugin-types@0.74.0
+  - @mercury-fw/channel-types@0.74.0
+
 ## 0.73.0
 
 ### Minor Changes

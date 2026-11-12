@@ -1,5 +1,12 @@
 # @mercury-fw/store-qdrant
 
+## 0.74.0
+
+### Patch Changes
+
+- Updated dependencies [9c78729]
+  - @mercury-fw/channel-types@0.74.0
+
 ## 0.73.0
 
 ### Minor Changes
