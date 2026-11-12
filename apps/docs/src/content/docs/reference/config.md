@@ -299,6 +299,11 @@ both places. The agent stops at startup when a layer names a plugin that isn't i
 the context, when a profile lists the same plugin twice, or when a budget isn't a whole number. A plugin that couldn't
 load loses its layer, said once in the log, and the agent starts anyway.
 
+These are the values the agent starts from. Someone holding `mercury.context-admin` can change a profile's budget, its
+layers' order and its layers' knobs while the agent runs; those changes are kept in the data folder and win over
+these until the configuration no longer allows them. See
+[Changing it while the agent runs](../../concepts/context/#changing-it-while-the-agent-runs).
+
 Left out, nothing is added to what the model reads.
 
 ## `traces`

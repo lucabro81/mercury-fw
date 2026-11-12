@@ -10,6 +10,7 @@ import type { MercuryConfig } from "./config/define-config.ts";
 import { ollamaEmbedding, ollamaModel } from "./model/models.ts";
 import { generateText } from "ai";
 import { PLUGIN_API_VERSION, type PluginRuntimeContext } from "@mercury-fw/plugin-types";
+import { OPERATOR_PRINCIPAL } from "./identity/people.ts";
 
 // Nothing listens on these: Qdrant and Ollama fail soft, and composing never
 // asks the model anything.
@@ -483,7 +484,7 @@ describe("composeMercury", () => {
   });
 
   // #387: the context's layers reach the model: a session layer in the
-  // system prompt, a turn layer in front of the message, the history without it.
+  // system prompt, a turn layer in front of its message, there on later calls too.
   it("puts a profile's layers in what the model is sent: session in the system prompt, turn in front of the message", async () => {
     const bodies: Array<{ messages: Array<{ role: string; content: string }> }> = [];
     const realFetch = globalThis.fetch;
@@ -528,14 +529,41 @@ describe("composeMercury", () => {
       expect(one!.messages[0]!.role).toBe("system");
       expect(one!.messages[0]!.content).toContain("WIKI INDEX");
       expect(one!.messages.at(-1)!.content).toMatch(/^<context>\nRAG HIT\n<\/context>\n\n.*first$/s);
-      // The second call: the same system prompt, the first message as written, the context only on the last.
-      expect(two!.messages[0]!.content).toBe(one!.messages[0]!.content);
-      const users = two!.messages.filter((m) => m.role === "user").map((m) => m.content);
-      expect(users[0]).not.toContain("RAG HIT");
-      expect(users.at(-1)).toMatch(/^<context>\nRAG HIT\n<\/context>\n\n.*second$/s);
+      // The second call starts with the first, whole (its context included), so the model's cache of it holds.
+      expect(two!.messages.slice(0, one!.messages.length)).toEqual(one!.messages);
+      expect(two!.messages.at(-1)!.content).toMatch(/^<context>\nRAG HIT\n<\/context>\n\n.*second$/s);
     } finally {
       globalThis.fetch = realFetch;
     }
+  });
+
+  // #387: the context's admin API reaches the channels only with a context,
+  // over the settings kept in the data folder, and a change reaches the next turn.
+  it("hands the channels contextAdmin over the settings kept in the data folder, applied at the start; none without a context", async () => {
+    const rag = {
+      apiVersion: PLUGIN_API_VERSION,
+      name: "rag",
+      description: "Adds rag.",
+      actsAs: "anyone" as const,
+      build: () => ({ context: { scope: "turn" as const, build: async () => [], knobs: { topK: { type: "integer" as const, default: 5, description: "How many" } } } }),
+    };
+    await withFreshFolders({}, async ({ data }) => {
+      await mkdir(data, { recursive: true });
+      await writeFile(join(data, "context-settings.json"), JSON.stringify({ version: 1, profiles: { default: { maxChars: 300, knobs: { rag: { topK: 7 } } } } }));
+      const app = await composeMercury({
+        plugins: [rag],
+        models: MODELS,
+        context: { profiles: { default: { layers: [rag], budget: { maxChars: 1000 } } } },
+      });
+      const admin = app.channelRuntime.contextAdmin!;
+      const read = await admin.read(OPERATOR_PRINCIPAL);
+      expect(read.ok && read.value.profiles.map((p) => [p.maxChars, p.layers[0]!.knobs[0]!.value])).toEqual([[300, 7]]);
+      expect((await admin.update(OPERATOR_PRINCIPAL, "default", { knobs: { rag: { topK: 2 } } })).ok).toBe(true);
+      expect(JSON.parse(await readFile(join(data, "context-settings.json"), "utf8")).profiles.default).toEqual({ maxChars: 300, knobs: { rag: { topK: 2 } } });
+      expect((await readFile(join(data, "context-changes.jsonl"), "utf8")).trim().split("\n")).toHaveLength(1);
+    });
+    const bare = await composeMercury({ plugins: [], models: MODELS });
+    expect(bare.channelRuntime.contextAdmin).toBeUndefined();
   });
 
   it("refuses to start on a context layer pointing at a plugin that isn't declared", async () => {

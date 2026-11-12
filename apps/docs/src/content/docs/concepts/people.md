@@ -24,7 +24,8 @@ because the provider is part of the name.
 ## 2. The directory says who that is
 
 A **directory** turns a principal into a **person**, with their **roles**: labels such as `mercury.act-as-self` or
-`support` that decide what they may use. It's optional:
+`support` that decide what they may use (`mercury.context-admin` lets them change the [context](../context/) while
+the agent runs). It's optional:
 
 - **Without a directory**, the person is whoever the channel says, with no roles.
 - **With one**, the agent talks only to the people the directory knows (unless the configuration sets

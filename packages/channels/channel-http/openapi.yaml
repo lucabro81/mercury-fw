@@ -641,6 +641,137 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  /context:
+    get:
+      summary: The instance's context as it runs
+      description: >
+        Every context profile, `default` first: the roles it's given to, its
+        budget in characters, its layers in order, and each layer's knobs with
+        their spec and the value they have in that profile. Only for callers
+        holding the `mercury.context-admin` role. Not there on an instance
+        without a `context`.
+      responses:
+        "200":
+          description: The profiles.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, profiles]
+                properties:
+                  ok:
+                    type: boolean
+                    enum: [true]
+                  profiles:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ContextProfile"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ContextForbidden"
+        "503":
+          $ref: "#/components/responses/NotAdmitted"
+  /context/profiles/{name}:
+    patch:
+      summary: Changes a context profile while the instance runs
+      description: >
+        Changes the profile's budget, its layers' order, or its knobs' values;
+        what the body leaves out stays as it is. The change is checked whole
+        and applies whole or not at all. Conversations already open keep
+        their `session` layers as they were built; everything else follows
+        from the next turn. The change is kept across restarts and recorded
+        (`GET /context/changes`). Only for callers holding the
+        `mercury.context-admin` role. Not there on an instance without a
+        `context`.
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: The profile's name, as `GET /context` lists it.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ContextProfileChange"
+      responses:
+        "200":
+          description: The profile as it now runs.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, profile]
+                properties:
+                  ok:
+                    type: boolean
+                    enum: [true]
+                  profile:
+                    $ref: "#/components/schemas/ContextProfile"
+        "400":
+          description: >
+            A body that isn't a JSON object, or a change that doesn't fit: a
+            field it doesn't have, a budget that isn't a whole number from 0 up,
+            an order that isn't the profile's layers each once, a knob the layer
+            doesn't declare or a value its spec doesn't allow. `error` says which.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ContextForbidden"
+        "404":
+          description: The instance has no profile with this name.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          $ref: "#/components/responses/NotAdmitted"
+  /context/changes:
+    get:
+      summary: The newest changes to the context
+      description: >
+        Who changed which profile, when, and what, before and after, newest
+        first. Only for callers holding the `mercury.context-admin` role. Not
+        there on an instance without a `context`.
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          description: How many, from 1 to 500 (a value outside is brought inside); 50 when left out.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 50
+      responses:
+        "200":
+          description: The changes.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, changes]
+                properties:
+                  ok:
+                    type: boolean
+                    enum: [true]
+                  changes:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ContextChange"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ContextForbidden"
+        "503":
+          $ref: "#/components/responses/NotAdmitted"
   /login/callback:
     get:
       summary: Where a person comes back after logging in to a service
@@ -793,6 +924,15 @@ components:
               reason:
                 type: string
                 enum: [unknown, unavailable]
+    ContextForbidden:
+      description: >
+        The caller doesn't hold the `mercury.context-admin` role, or the app's
+        directory doesn't know them (then the body also carries `reason`, as
+        for `NotAdmitted`).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
   schemas:
     TurnRequest:
       type: object
@@ -1043,6 +1183,106 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ConversationSummary"
+    KnobValue:
+      description: A knob's value, as its spec allows.
+      type: [boolean, number, string]
+    ContextKnob:
+      type: object
+      required: [name, type, default, description, value]
+      properties:
+        name:
+          type: string
+        type:
+          type: string
+          enum: [boolean, integer, number, string, enum]
+        default:
+          $ref: "#/components/schemas/KnobValue"
+        description:
+          type: string
+          description: What the knob does, in one line, for whoever changes it.
+        min:
+          type: number
+          description: The smallest value allowed (`integer` and `number` only).
+        max:
+          type: number
+          description: The largest value allowed (`integer` and `number` only).
+        values:
+          type: array
+          description: The values allowed (`enum` only).
+          items:
+            type: string
+        value:
+          $ref: "#/components/schemas/KnobValue"
+    ContextLayer:
+      type: object
+      required: [plugin, scope, knobs]
+      properties:
+        plugin:
+          type: string
+          description: The plugin whose layer it is.
+        scope:
+          type: string
+          enum: [session, turn]
+          description: "`session`: built once per conversation, in the system prompt; `turn`: built for every message, in front of it."
+        knobs:
+          type: array
+          items:
+            $ref: "#/components/schemas/ContextKnob"
+    ContextProfile:
+      type: object
+      required: [name, assignedTo, maxChars, layers]
+      properties:
+        name:
+          type: string
+        assignedTo:
+          type: array
+          description: The roles the profile is given to; empty for `default`, everyone else's.
+          items:
+            type: string
+        maxChars:
+          type: integer
+          description: The budget, in characters, of everything the layers add.
+        layers:
+          type: array
+          description: In the order they fill the budget.
+          items:
+            $ref: "#/components/schemas/ContextLayer"
+    ContextProfileChange:
+      type: object
+      description: A change to a profile; at least one field.
+      additionalProperties: false
+      properties:
+        maxChars:
+          type: integer
+          minimum: 0
+        order:
+          type: array
+          description: The profile's layers, by plugin name, each once, in their new order.
+          items:
+            type: string
+        knobs:
+          type: object
+          description: "Knob values by plugin, then by knob: `{ \"rag\": { \"topK\": 8 } }`. `null` puts a knob back to its default."
+          additionalProperties:
+            type: object
+            additionalProperties:
+              type: [boolean, number, string, "null"]
+    ContextChange:
+      type: object
+      required: [at, by, profile, before, after]
+      properties:
+        at:
+          type: string
+          format: date-time
+        by:
+          type: string
+          description: The key of the person who made the change.
+        profile:
+          type: string
+        before:
+          $ref: "#/components/schemas/ContextProfileChange"
+        after:
+          $ref: "#/components/schemas/ContextProfileChange"
     Error:
       type: object
       required: [ok, error]

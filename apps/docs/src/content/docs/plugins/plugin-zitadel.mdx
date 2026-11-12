@@ -51,7 +51,8 @@ directory: zitadelDirectory,
 Someone calling with a token from that ZITADEL is the ZITADEL user it names, with the roles assigned to them on the
 project (`ZITADEL_PROJECT_ID`); someone ZITADEL doesn't find, or who isn't active, is refused. Create the roles
 `mercury.act-as-self` and `mercury.act-as-self.<plugin>` in the project for the people who may make the agent act
-as itself, and assign them in ZITADEL's console (the user's **Role Assignments**). A change counts within five
+as itself, and `mercury.context-admin` for those who may change the [context](../../concepts/context/) while the
+agent runs, and assign them in ZITADEL's console (the user's **Role Assignments**). A change counts within five
 minutes.
 
 A Google Chat sender is recognized when they signed in to ZITADEL with the same Google account at least once: set

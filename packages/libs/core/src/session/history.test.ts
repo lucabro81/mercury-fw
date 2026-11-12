@@ -425,3 +425,14 @@ describe("createSessionHistory", () => {
     });
   });
 });
+
+// #387: the turn's context kept beside the person's message is what the
+// model reads too, so it counts toward the history's size.
+describe("createSessionHistory: a message's context", () => {
+  it("keeps the context apart from the message's text and counts it in the history's size", async () => {
+    const history = createSessionHistory(async () => "summary");
+    await history.addUserMessage("hello", "<context>\nfact\n</context>");
+    expect(history.getMessages()).toEqual([{ role: "user", content: "hello", context: "<context>\nfact\n</context>" }]);
+    expect(history.getCharCount()).toBe("hello".length + "<context>\nfact\n</context>".length);
+  });
+});

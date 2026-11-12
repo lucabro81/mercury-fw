@@ -11,7 +11,7 @@
  * `resolveConfirmation`) stays in the core and reaches a channel via
  * `ctx.confirm`.
  */
-import type { Messages, StepInfo, Translate } from "@mercury-fw/plugin-types";
+import type { KnobSpec, KnobValue, Messages, StepInfo, Translate } from "@mercury-fw/plugin-types";
 
 export type { Messages, Translate };
 
@@ -573,6 +573,58 @@ export type ChannelConversations = {
   rename: (principal: Principal, sessionKey: string, title: string) => Promise<RenameOutcome>;
 };
 
+/** A knob of a layer in a profile (see `KnobSpec`): its name, its spec, and the value it has in that profile. */
+export type ContextKnobView = KnobSpec & { name: string; value: KnobValue };
+
+/** A layer of a profile, in the profile's order: its plugin, its scope, its knobs. */
+export type ContextLayerView = { plugin: string; scope: "session" | "turn"; knobs: ContextKnobView[] };
+
+/** A context profile as it runs now: its name, the roles `assign` gives it to (none for `default`), its budget, its layers. */
+export type ContextProfileView = { name: string; assignedTo: string[]; maxChars: number; layers: ContextLayerView[] };
+
+/** The instance's context as it runs now, profile by profile, `default` first. */
+export type ContextView = { profiles: ContextProfileView[] };
+
+/**
+ * A change to one profile: its budget, its layers' order (the same layers,
+ * by plugin name, in a new order), its knobs' values by plugin and knob
+ * (`null` puts a knob back to its `default`). What's left out stays as it is.
+ */
+export type ContextProfileChange = {
+  maxChars?: number;
+  order?: string[];
+  knobs?: Record<string, Record<string, KnobValue | null>>;
+};
+
+/** A change as the core recorded it: when, by whom (the person's key), to which profile, and what it changed, before and after (a knob at its default is `null`). */
+export type ContextChangeEntry = {
+  at: string;
+  by: string;
+  profile: string;
+  before: ContextProfileChange;
+  after: ContextProfileChange;
+};
+
+/** How a context request came out: its result, or why not (`forbidden`: the person lacks the role; `notFound`: no such profile; `invalid`: the change doesn't fit). */
+export type ContextAdminOutcome<T> =
+  | { ok: true; value: T }
+  | { ok: false; error: string; status: "forbidden" | "notFound" | "invalid" };
+
+/**
+ * The instance's context while it runs, for a channel with an admin area
+ * (the HTTP surface): `read` shows the profiles, `update` changes one
+ * (a session already open keeps its `session` layers; everything else
+ * applies from the next turn), `changes` lists the newest `limit` changes,
+ * newest first. Only for people holding the `mercury.context-admin` role;
+ * refused for anyone the core doesn't admit. Absent when the instance
+ * declares no `context`.
+ */
+export type ChannelContextAdmin = {
+  read: (principal: Principal) => Promise<ContextAdminOutcome<ContextView>>;
+  update: (principal: Principal, profile: string, change: ContextProfileChange) => Promise<ContextAdminOutcome<ContextProfileView>>;
+  changes: (principal: Principal, limit: number) => Promise<ContextAdminOutcome<ContextChangeEntry[]>>;
+};
+
 /**
  * The minimal capabilities every channel gets from the core — the intersection
  * across terminal, HTTP and Google Chat, nothing channel-specific. Anything
@@ -581,7 +633,7 @@ export type ChannelConversations = {
  * these, the channel imports none of them.
  *
  * `env`, `log`, `confirm` and `admit` are the floor every channel relies on.
- * `resolveConfirmation`, `reads`, `authenticate`, `logins`, `linking`, `settings` and `conversations` are optional in-process capabilities that
+ * `resolveConfirmation`, `reads`, `authenticate`, `logins`, `linking`, `settings`, `conversations` and `contextAdmin` are optional in-process capabilities that
  * can't come from `env`: the core populates them, only a channel that needs them
  * (HTTP) reads them, the others ignore them.
  */
@@ -625,6 +677,8 @@ export type ChannelRuntimeContext = {
   settings?: ChannelSettings;
   /** The person's own conversations (see `ChannelConversations`); absent on an older core. */
   conversations?: ChannelConversations;
+  /** The instance's context, for its admins (see `ChannelContextAdmin`); absent without `context`, and on an older core. */
+  contextAdmin?: ChannelContextAdmin;
   /** The assistant's name (the app's `persona.name`), for what the channel tells people itself (a login page, a card). The core always sets it; absent on an older core. */
   assistantName?: string;
   /** The framework's version (`major.minor.patch`), for a channel that tells people which Mercury they're talking to (HTTP's `/version`). The core always sets it; absent on an older core. */
