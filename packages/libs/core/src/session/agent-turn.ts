@@ -422,6 +422,10 @@ export async function runTurn(
     pendingNote?: string;
     /** Called when the turn's text is that stand-in, so the caller knows without comparing text. */
     onPendingNote?: () => void;
+    /** What the context's `turn` layers add for this call (#387): put in
+     * front of the person's last message in the call only, never in the
+     * history. */
+    turnContext?: string;
     /** The note closing a turn that stopped because a tool asked the person
      * to log in, naming the services (none when no name is known), in the
      * person's language; English when absent. Never streamed: it isn't the model's. */
@@ -437,11 +441,18 @@ export async function runTurn(
   }
 }
 
+/** `messages` with `context` in front of the last user message's text (a copy: the history's own messages stay as they are); unchanged without one. */
+function withTurnContext(messages: ModelMessage[], context: string | undefined): ModelMessage[] {
+  if (context === undefined) return messages;
+  const last = messages.findLastIndex((m) => m.role === "user" && typeof m.content === "string");
+  if (last === -1) return messages;
+  return messages.map((m, i) => (i === last ? { ...m, content: `${context}\n\n${m.content as string}` } as ModelMessage : m));
+}
+
 /** `runTurn`'s model call, once the user's message is recorded: records the answer, or `ABORTED_MARKER` for an aborted call that returned. */
 async function generateAnswer(history: SessionHistory, deps: Parameters<typeof runTurn>[2]): Promise<string> {
-  const messages: ModelMessage[] = deps.resumed
-    ? [...historyMessages(history.getMessages()), ...resumedMessages(deps.resumed)]
-    : historyMessages(history.getMessages());
+  const fromHistory = withTurnContext(historyMessages(history.getMessages()), deps.turnContext);
+  const messages: ModelMessage[] = deps.resumed ? [...fromHistory, ...resumedMessages(deps.resumed)] : fromHistory;
   const steps: StepInfo[] = [];
 
   if (deps.onTextChunk || deps.onReasoningChunk) {

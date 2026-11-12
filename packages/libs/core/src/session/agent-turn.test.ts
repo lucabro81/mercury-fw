@@ -1503,3 +1503,39 @@ describe("a step asking for a login ends the turn", () => {
     expect(result).toBe("Hello.");
   });
 });
+
+// #387: a `turn` context layer goes in front of the person's message for that
+// call only: the history keeps the message as they wrote it, so the next
+// call's prompt starts the same and the model's cache of it holds.
+describe("runTurn: the turn's context", () => {
+  it("puts the turn's context in front of the last message of the call, on both paths, and keeps it out of the history", async () => {
+    for (const streaming of [false, true]) {
+      const history = createSessionHistory(neverSummarize);
+      await history.addUserMessage("earlier");
+      await history.addAssistantMessage("answer");
+      const sent: ModelMessage[][] = [];
+      async function* fakeStream() {
+        yield { type: "text-delta", id: "1", text: "ok" };
+        yield { type: "finish", finishReason: "stop" };
+      }
+      await runTurn(history, "now", {
+        model: "fake-model" as never,
+        tools: {},
+        system: SYSTEM,
+        turnContext: "<context>\nfact\n</context>",
+        ...(streaming
+          ? {
+              streamTextFn: async (params: { messages: ModelMessage[] }) => (sent.push(params.messages), { stream: fakeStream() }),
+              onTextChunk: () => {},
+            }
+          : { generateTextFn: async (params: { messages: ModelMessage[] }) => (sent.push(params.messages), { text: "ok" }) }),
+      } as never);
+      expect(sent[0]).toEqual([
+        { role: "user", content: "earlier" },
+        { role: "assistant", content: "answer" },
+        { role: "user", content: "<context>\nfact\n</context>\n\nnow" },
+      ]);
+      expect(history.getMessages().map((m) => m.content)).toEqual(["earlier", "answer", "now", "ok"]);
+    }
+  });
+});
