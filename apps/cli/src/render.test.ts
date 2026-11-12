@@ -233,8 +233,9 @@ describe("renderApp: mercury.config.ts", () => {
         [
           "/**",
           " * The model the assistant runs on, from .env: a setting left empty is the",
-          " * model's own (thinking stays on), and capacity, how many requests its",
-          " * runtime serves at once, is 1.",
+          " * model's own (thinking stays on); capacity, how many requests its runtime",
+          " * serves at once, is 1, and so is backgroundSlots, how many of them the work",
+          " * nobody waits on may take.",
           " */",
           "const main = ollamaModel(process.env.OLLAMA_MODEL, {",
           '  think: envBoolean("OLLAMA_THINK", true),',
@@ -242,6 +243,7 @@ describe("renderApp: mercury.config.ts", () => {
           '  topP: envNumber("OLLAMA_TOP_P"),',
           '  topK: envNumber("OLLAMA_TOP_K"),',
           '  capacity: envNumber("OLLAMA_CAPACITY"),',
+          '  backgroundSlots: envNumber("OLLAMA_BACKGROUND_SLOTS"),',
           "});",
         ].join("\n"),
       );
@@ -402,6 +404,8 @@ describe("renderApp: .env.example", () => {
         "OLLAMA_TOP_K=",
         "# How many requests the chat model's runtime serves at once (empty: 1)",
         "OLLAMA_CAPACITY=",
+        "# How many of those the work nobody waits on may take, below the capacity when it's above 1 (empty: 1)",
+        "OLLAMA_BACKGROUND_SLOTS=",
         "",
       ].join("\n"),
     );

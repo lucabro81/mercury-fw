@@ -219,7 +219,7 @@ packages/libs/core/
 ├── index.ts                 # public barrel — composeMercury, defineMercuryConfig, the loaders, createTerminalProvider
 └── src/
     ├── compose.ts            # builds the instance from the config it's given (model/tools/memory/turn pipeline); returns handleTurn + deferred start closures
-    ├── model/                # the models an instance declares, by role (models.ts: ollamaModel/ollamaEmbedding, turn/background/embedding), Ollama provider, real context-window lookup
+    ├── model/                # the models an instance declares, by role (models.ts: ollamaModel/ollamaEmbedding, turn/background/embedding), the queue of model work (scheduler.ts: turns first, background work in steps in the free slots), Ollama provider, real context-window lookup
     ├── session/               # Layer 1 history + summarizer + agent-turn loop + the system prompt (the plugins offered with their descriptions, their fragments and skill descriptors) + the stamp on each turn (turn-stamp.ts: when and where the person wrote it, the time zone it's in) + the conversation's generated title (conversation-titler.ts)
     ├── data/                 # the core's data folder (data-dir.ts): MERCURY_DATA_PATH, required, where Mercury's own state lives (account links, profiles, plugins' data, traces and their secret); the one-time copy of an older vault's `.mercury/` into it; the declared vector index's and conversation store's loaders (vector-index-loader.ts, conversation-store-loader.ts)
     ├── config/               # defineMercuryConfig + the MercuryConfig contract (plugins, channels, persona)

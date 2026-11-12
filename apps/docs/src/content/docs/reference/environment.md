@@ -31,6 +31,7 @@ empty, a setting is the model's own.
 | `OLLAMA_TOP_P` | Only the most likely words whose probabilities add up to this are kept: above 0, at most 1. |
 | `OLLAMA_TOP_K` | Only this many of the most likely words are kept: a whole number from 1 up. |
 | `OLLAMA_CAPACITY` | How many requests the chat model's server answers at the same time: a whole number from 1 up. Empty: 1. |
+| `OLLAMA_BACKGROUND_SLOTS` | How many of those the work nobody waits on may take at once: below the capacity when it's above 1, only 1 with capacity 1. Empty: 1. |
 
 ## Memory
 

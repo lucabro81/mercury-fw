@@ -343,7 +343,12 @@ describe("runIdleSessionSweep without memory", () => {
 });
 
 describe("runIdleSessionSweep under a session lock", () => {
-  it("captures and closes each session inside withSession", async () => {
+  // #383: the capture is background work queued for the model. Inside the
+  // lock it would hold the session's next turn behind it (and, with that
+  // turn counted on the model, never run): the sweep takes the session's
+  // messages under the lock, captures outside it, and closes it under the
+  // lock again.
+  it("takes the messages and closes the session under withSession, capturing in between outside it, as a job", async () => {
     const scanner = createIdleSessionScanner();
     scanner.touch("s1", NOW - TIMEOUT);
     const events: string[] = [];
@@ -354,6 +359,12 @@ describe("runIdleSessionSweep under a session lock", () => {
         await fn();
         events.push(`unlock:${key}`);
       },
+      job: async (fn) => {
+        events.push("job start");
+        const result = await fn();
+        events.push("job end");
+        return result;
+      },
       getSession: (key) => ({ key, userId: "u1", messages: [{ role: "user", content: "hi" }] }),
       summarize: async () => {
         events.push("summarize");
@@ -363,7 +374,28 @@ describe("runIdleSessionSweep under a session lock", () => {
       closeSession: () => events.push("close"),
     });
 
-    expect(events).toEqual(["lock:s1", "summarize", "close", "unlock:s1"]);
+    expect(events).toEqual(["lock:s1", "unlock:s1", "job start", "summarize", "job end", "lock:s1", "close", "unlock:s1"]);
+  });
+
+  it("a turn that ran while the capture did keeps the session open, still tracked", async () => {
+    const scanner = createIdleSessionScanner();
+    scanner.touch("s1", NOW - TIMEOUT);
+    let closed = false;
+
+    await runIdleSessionSweep(scanner, NOW, TIMEOUT, {
+      getSession: (key) => ({ key, userId: "u1", messages: [{ role: "user", content: "hi" }] }),
+      summarize: async () => {
+        scanner.touch("s1", NOW + 1); // a turn of the session ran meanwhile
+        return "s";
+      },
+      store: async () => {},
+      closeSession: () => {
+        closed = true;
+      },
+    });
+
+    expect(closed).toBe(false);
+    expect(scanner.isIdle("s1", NOW + 1 + TIMEOUT, TIMEOUT)).toBe(true);
   });
 
   // Regression for #154: the sweep captured a session and closed it after an

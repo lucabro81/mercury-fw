@@ -16,6 +16,7 @@
  */
 import { getOllamaProvider } from "./model/client.ts";
 import { resolveModels } from "./model/models.ts";
+import { createScheduler, type BackgroundJobName, type Urgency } from "./model/scheduler.ts";
 import { createConfirmationStore, createStageChoices, createStageConfirmation, type ConfirmationStore, type ResumedAction } from "@mercury-fw/confirm-engine";
 import { createDisplayStore } from "./tools/display-store.ts";
 import { createPresentTool } from "./tools/present-tool.ts";
@@ -38,7 +39,8 @@ import { createTurnRunner, parseStallTimeoutMs } from "./router/turn-runner.ts";
 import { loadAuth } from "./router/auth-loader.ts";
 import { loadDirectory } from "./router/directory-loader.ts";
 import type { TurnSink } from "./router/provider.ts";
-import type { HandleTurn, ChannelRuntimeContext, ChannelPlugin } from "@mercury-fw/channel-types";
+import type { HandleTurn, ChannelRuntimeContext, ChannelPlugin, VectorIndex } from "@mercury-fw/channel-types";
+import type { MercuryModelHandle } from "@mercury-fw/plugin-types";
 import {
   truncateForDisplay,
   describeToolOutcome,
@@ -100,7 +102,7 @@ import type { Tracer } from "./traces/tracer.ts";
 import { withCompressionEvents } from "./traces/compression-events.ts";
 import { resolve as resolvePath } from "node:path";
 import { homedir } from "node:os";
-import type { Tool } from "ai";
+import type { LanguageModel, Tool } from "ai";
 import { getSelfHealth } from "./health.ts";
 import { frameworkVersion } from "./version.ts";
 import { buildPluginManifest } from "./plugins/manifest.ts";
@@ -195,8 +197,34 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   });
   for (const line of models.describe()) console.error(line);
   const ollamaModel = config.models.turn.name;
+  // The core's queue of model work (#383), one queue per declared model:
+  // turns hold the turn model from their arrival to their answer, and the
+  // work nobody waits on runs a model call at a time in the slots they leave
+  // free. Every model but the turn's own (the turn runner counts its turns)
+  // goes through it; a wrong capacity stops the start here.
+  const scheduler = createScheduler({ emit: (event) => tracer.emit(event), log: (line) => console.error(line) });
+  /** Runs `fn` as one background job on the queue. */
+  const backgroundJob = <T,>(job: BackgroundJobName, urgency: Urgency, fn: () => Promise<T>): Promise<T> =>
+    scheduler.job({ job, urgency }, fn);
+  // The turn model's queue, made now: its capacity is checked at the start.
+  scheduler.declare(config.models.turn);
   const model = models.turn;
-  const backgroundModel = models.background;
+  const backgroundModel = scheduler.languageModel(config.models.background ?? config.models.turn, models.background);
+  const embeddingModel =
+    config.models.embedding === undefined || models.embedding === undefined
+      ? undefined
+      : scheduler.embeddingModel(config.models.embedding, models.embedding);
+  // A plugin's own model, queued: a call during a turn is turn work on it.
+  const queuedOwn = new Map<MercuryModelHandle, LanguageModel>();
+  const modelFor = (handle: MercuryModelHandle): LanguageModel => {
+    if (handle === config.models.turn) return model;
+    let queued = queuedOwn.get(handle);
+    if (queued === undefined) {
+      queued = scheduler.languageModel(handle, models.modelFor(handle));
+      queuedOwn.set(handle, queued);
+    }
+    return queued;
+  };
   const summarize = createSummarizer(model);
 
   // Plugins are declared in the instance's config (its `mercury.config.ts`) and
@@ -222,7 +250,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
 
   const loadedPlugins = await loadPlugins(plugins, {
     model,
-    modelFor: models.modelFor,
+    modelFor,
     assistantName,
     env: process.env,
     log: (msg) => console.error(msg),
@@ -329,11 +357,11 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   const episodicSummarize = createEpisodicSummarizer(backgroundModel);
   // Without a vector index nothing is embedded, and none is declared.
   const embed =
-    models.embedding === undefined
+    embeddingModel === undefined
       ? async (): Promise<number[]> => {
           throw new Error("no embedding model declared (models.embedding)");
         }
-      : createEmbedder(models.embedding);
+      : createEmbedder(embeddingModel);
   // Where what was said is kept (the archive and the titles): the declared
   // conversation store. Without one nothing is archived: no conversations to
   // reopen or list, no titles, no recall.
@@ -356,6 +384,12 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
           store: conversationStore,
           embed,
           ...(vectorIndex === undefined ? {} : { index: vectorIndex }),
+          // Embedding a message for the search is background work: the turn
+          // has it in the store already.
+          indexInBackground: (work) =>
+            void backgroundJob("archive-index", "soon", work).catch((err: unknown) =>
+              console.error(`[verbatim-archive] indexing failed, the message is kept: ${String(err instanceof Error ? err.message : err)}`),
+            ),
         });
   // How much of a resumed conversation comes back, when its channel sets no
   // budget of its own (see session/resume.ts).
@@ -365,7 +399,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   const titleConversation = (() => {
     const store = conversationStore;
     if (store === undefined) return undefined;
-    return createConversationTitler({
+    const title = createConversationTitler({
       model: backgroundModel,
       readOpening: async (userId, sessionKey) => (await listVerbatimBySession(store, { userId, sessionKey, limit: 10 })).messages,
       titleOf: (userId, sessionKey) => titleOf(store, { userId, sessionKey }),
@@ -373,6 +407,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
       log: (msg) => console.error(msg),
       emit: (event) => tracer.emit(event),
     });
+    return (sessionKey: string, userId: string) => backgroundJob("title", "soon", () => title(sessionKey, userId));
   })();
 
   // Semantic consolidation (D-22/D-34): a separate space from the episodic
@@ -442,6 +477,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   // memory; mirrors the rest at the two mid-conversation triggers.
   const sessionCapture = createSessionCapture({
     capture: (userId, sessionKey, messages, trigger) => captureSessionToMemory(userId, sessionKey, messages, Date.now(), captureDeps, trigger),
+    job: (fn) => backgroundJob("capture", "idle", fn),
     threshold: MESSAGE_COUNT_CAPTURE_THRESHOLD,
     texts,
     describe: (pending, t) =>
@@ -499,7 +535,19 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
     key: string,
   ): Promise<void> {
     // Without an index there's nowhere to keep a correction: nothing to extract.
-    if (vectorIndex === undefined) return;
+    const index = vectorIndex;
+    if (index === undefined) return;
+    await backgroundJob("correction", "soon", () => correctToolUse(index, steps, onToolStart, onToolFinish, key));
+  }
+
+  /** `processToolCorrections`' work, as one background job. */
+  async function correctToolUse(
+    vectorIndex: VectorIndex,
+    steps: StepInfo[],
+    onToolStart: TurnSink["onToolStart"] | undefined,
+    onToolFinish: TurnSink["onToolFinish"] | undefined,
+    key: string,
+  ): Promise<void> {
     const corrections = await extractToolCorrections(steps);
     const { t } = texts.forPerson(key);
     for (const correction of corrections) {
@@ -649,6 +697,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
     tracer,
     takeResumed: (sessionKey) => resumes.take(sessionKey),
     sessionLock,
+    holdTurn: () => scheduler.holdTurn(config.models.turn),
     model,
     systemPrompts: systemPromptsFor({ person: { key: "", roles: [] }, operator: false }),
     systemPromptsFor,
@@ -804,6 +853,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
         withSession: async (key, fn) => {
           await sessionLock.run(key, fn);
         },
+        job: (fn) => backgroundJob("capture", "idle", fn),
         ...captureDeps,
         capture: vectorIndex !== undefined,
       },
@@ -815,9 +865,12 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
     const selfReviewCron = startSelfReviewCron({
       listRawEntries: () => listWikiFilesInRoots(wikiVaultPath, [resolvePath(wikiVaultPath, "raw")]),
       findOrphans: () => findOrphanCuratedDocs(wikiVaultPath),
-      runRawTriage: (rawEntries) => runRawTriagePass({ vaultPath: wikiVaultPath, model: backgroundModel, rawEntries }),
-      runIndexAndOrphan: (orphans) => runIndexAndOrphanPass({ vaultPath: wikiVaultPath, model: backgroundModel, orphans }),
-      runContradictionCheck: () => runContradictionCheckPass({ vaultPath: wikiVaultPath, model: backgroundModel }),
+      runRawTriage: (rawEntries) =>
+        backgroundJob("review", "idle", () => runRawTriagePass({ vaultPath: wikiVaultPath, model: backgroundModel, rawEntries })),
+      runIndexAndOrphan: (orphans) =>
+        backgroundJob("review", "idle", () => runIndexAndOrphanPass({ vaultPath: wikiVaultPath, model: backgroundModel, orphans })),
+      runContradictionCheck: () =>
+        backgroundJob("review", "idle", () => runContradictionCheckPass({ vaultPath: wikiVaultPath, model: backgroundModel })),
       log: (msg) => console.error(`[cron] ${msg}`),
       emit: (event) => tracer.emit(event),
     });
@@ -825,6 +878,8 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
       stop: () => {
         idleCron.stop();
         selfReviewCron.stop();
+        // Model work still waiting is dropped; what's running finishes.
+        scheduler.stop();
       },
     };
   }

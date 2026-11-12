@@ -257,6 +257,13 @@ export type TurnRunnerDeps = {
    * opening, not a resumed one) is archived, with the person's user key.
    */
   titleConversation?: (sessionKey: string, userId: string) => Promise<void>;
+  /**
+   * Counts the turn on the turn model from the moment it arrives (before it
+   * waits for its session) until its answer is out, so the work nobody waits
+   * on leaves the model to it (#383). Returns the release, which may be called
+   * more than once. Absent, nothing is counted.
+   */
+  holdTurn?: () => () => void;
   /** `key` is the turn's person: the corrections' status reads in their language. */
   processToolCorrections: (
     steps: StepInfo[],
@@ -353,19 +360,24 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
   // history and the capture markers); a turn whose client went away while
   // it waited never starts, but its sink is still released.
   return async (turn: InboundTurn, sink: TurnSink): Promise<void> => {
+    const releaseTurn = deps.holdTurn?.() ?? (() => {});
     let started = false;
-    await sessionLock.run(
-      turn.sessionKey,
-      () => {
-        started = true;
-        return runTurnLocked(turn, sink);
-      },
-      turn.abortSignal,
-    );
+    try {
+      await sessionLock.run(
+        turn.sessionKey,
+        () => {
+          started = true;
+          return runTurnLocked(turn, sink, releaseTurn);
+        },
+        turn.abortSignal,
+      );
+    } finally {
+      releaseTurn();
+    }
     if (!started) sink.dispose();
   };
 
-  async function runTurnLocked(turn: InboundTurn, channelSink: TurnSink): Promise<void> {
+  async function runTurnLocked(turn: InboundTurn, channelSink: TurnSink, releaseTurn: () => void): Promise<void> {
     // What the person sees of the turn besides its text, kept with the answer (#370).
     const trace = createTurnTrace(channelSink);
     const sink = trace.sink;
@@ -718,6 +730,8 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
       stoodIn = noteUsed && correctedText.startsWith(pendingNote);
       if (stoodIn) await sink.finalize(finalText, { pendingNote });
       else await sink.finalize(finalText);
+      // The answer is out: from here on the turn needs the model no more.
+      releaseTurn();
       endTurn("done");
       logTurn(
         `${turn.logPrefix}[turn] done in ${seconds()}s: ${count(steps.length, "step")}, ${count(toolCalls, "tool call")}, reasoning ${reasoningChars} chars, answer ${answerLength(assistantText, answerChars)} chars${finish ? `, finish ${finish.reason}` : ""}`,
@@ -794,7 +808,11 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
         }
       }
     }
-    // After the archive: nothing of it belongs to the turn's trace.
-    await deps.processToolCorrections(steps, channelSink.onToolStart, channelSink.onToolFinish, key);
+    // After the archive: nothing of it belongs to the turn's trace. Background
+    // work, queued for the model (#383): neither this turn nor the next one of
+    // the session waits for it.
+    void deps.processToolCorrections(steps, channelSink.onToolStart, channelSink.onToolFinish, key).catch((err) =>
+      console.log(`[corrections] failed, turn unaffected: ${String(err instanceof Error ? err.message : err)}`),
+    );
   }
 }

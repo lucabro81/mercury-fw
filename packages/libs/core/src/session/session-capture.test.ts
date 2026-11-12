@@ -27,15 +27,107 @@ function recorder(opts: { fail?: () => boolean; hold?: Promise<void> } = {}) {
 }
 
 describe("createSessionCapture", () => {
+  // #383: the threshold capture is background work queued for the model;
+  // awaited by the turn, it would hold the session's next turn behind it.
+  test("maybeCapture returns before its capture is done", async () => {
+    const hold = gate();
+    const r = recorder({ hold: hold.promise });
+    const c = createSessionCapture({ capture: r.capture, threshold: 2 });
+    c.track("s", "u1");
+    await c.maybeCapture("s", msgs(0, 2));
+    expect(r.captured).toEqual([]);
+    hold.open();
+    await c.settled();
+    expect(r.captured).toEqual([["m0", "m1"]]);
+  });
+
+  test("a trigger while a capture runs captures only what came after it", async () => {
+    const hold = gate();
+    const r = recorder({ hold: hold.promise });
+    const c = createSessionCapture({ capture: r.capture, threshold: 2 });
+    c.track("s", "u1");
+    await c.maybeCapture("s", msgs(0, 2));
+    await c.maybeCapture("s", msgs(0, 3));
+    await c.maybeCapture("s", msgs(0, 4));
+    hold.open();
+    await c.settled();
+    expect(r.captured).toEqual([
+      ["m0", "m1"],
+      ["m2", "m3"],
+    ]);
+  });
+
+  test("a capture that fails puts the marker back: the next trigger captures its messages again", async () => {
+    let failing = true;
+    const r = recorder({ fail: () => failing });
+    const c = createSessionCapture({ capture: r.capture, threshold: 2, log: () => {} });
+    c.track("s", "u1");
+    await c.maybeCapture("s", msgs(0, 2));
+    await c.settled();
+    failing = false;
+    await c.maybeCapture("s", msgs(0, 2));
+    await c.settled();
+    expect(r.captured).toEqual([["m0", "m1"]]);
+  });
+
+  // #383: a capture can run long after its turn, when the channel that asked is gone: its status failing never loses the capture.
+  test("a status callback that throws doesn't stop the capture", async () => {
+    const r = recorder();
+    const c = createSessionCapture({ capture: r.capture, threshold: 1, log: () => {} });
+    c.track("s", "u1");
+    c.registerCallbacks("s", {
+      onToolStart: () => {
+        throw new Error("sink disposed");
+      },
+      onToolFinish: () => {
+        throw new Error("sink disposed");
+      },
+    });
+    await c.maybeCapture("s", msgs(0, 1));
+    await c.settled();
+    expect(r.captured).toEqual([["m0"]]);
+    await c.maybeCapture("s", msgs(0, 2));
+    await c.settled();
+    expect(r.captured).toEqual([["m0"], ["m1"]]);
+  });
+
+  test("each capture runs as a job, its status pinged from inside it", async () => {
+    const order: string[] = [];
+    const c = createSessionCapture({
+      capture: async () => void order.push("capture"),
+      threshold: 1,
+      job: async (fn) => {
+        order.push("job start");
+        const result = await fn();
+        order.push("job end");
+        return result;
+      },
+    });
+    c.track("s", "u1");
+    c.registerCallbacks("s", { onToolStart: () => order.push("status start"), onToolFinish: () => order.push("status end") });
+    await c.maybeCapture("s", msgs(0, 1));
+    await c.settled();
+    c.onCompress("s", msgs(0, 2));
+    await c.settled();
+    expect(order).toEqual([
+      "job start", "status start", "capture", "status end", "job end",
+      "job start", "status start", "capture", "status end", "job end",
+    ]);
+  });
+
   test("maybeCapture captures what's new once the threshold is reached, then only what came after", async () => {
     const r = recorder();
     const c = createSessionCapture({ capture: r.capture, threshold: 4 });
     c.track("s", "u1");
 
     await c.maybeCapture("s", msgs(0, 3));
+
+    await c.settled();
     expect(r.captured).toEqual([]);
     await c.maybeCapture("s", msgs(0, 4));
+    await c.settled();
     await c.maybeCapture("s", msgs(0, 8));
+    await c.settled();
     expect(r.captured).toEqual([
       ["m0", "m1", "m2", "m3"],
       ["m4", "m5", "m6", "m7"],
@@ -49,8 +141,11 @@ describe("createSessionCapture", () => {
     c.track("s", "u1");
 
     await c.maybeCapture("s", msgs(0, 2));
+
+    await c.settled();
     failing = false;
     await c.maybeCapture("s", msgs(0, 3));
+    await c.settled();
     expect(r.captured).toEqual([["m0", "m1", "m2"]]);
   });
 
@@ -58,6 +153,7 @@ describe("createSessionCapture", () => {
     const r = recorder();
     const c = createSessionCapture({ capture: r.capture, threshold: 1 });
     await c.maybeCapture("s", msgs(0, 3));
+    await c.settled();
     c.onCompress("s", msgs(0, 3));
     expect(r.captured).toEqual([]);
   });
@@ -67,6 +163,7 @@ describe("createSessionCapture", () => {
     const c = createSessionCapture({ capture: r.capture, threshold: 2 });
     c.track("s", "u1");
     await c.maybeCapture("s", msgs(0, 2));
+    await c.settled();
 
     c.onCompress("s", msgs(0, 5));
     await c.settled();
@@ -102,6 +199,7 @@ describe("createSessionCapture", () => {
     ]);
     // Nothing is captured twice afterwards.
     await c.maybeCapture("s", afterCompression);
+    await c.settled();
     expect(r.captured).toHaveLength(2);
   });
 
@@ -116,6 +214,8 @@ describe("createSessionCapture", () => {
     });
 
     await c.maybeCapture("s", msgs(0, 2));
+
+    await c.settled();
     expect(events).toEqual(["start:2 messages", "finish:success"]);
   });
 
@@ -137,6 +237,7 @@ describe("createSessionCapture", () => {
     c.track("s", "u1");
     c.registerCallbacks("s", { onToolStart: (label, detail) => events.push(`${label} | ${detail}`), onToolFinish: () => {} });
     await c.maybeCapture("s", msgs(0, 2));
+    await c.settled();
     expect(events).toEqual(['u1:core.status.remembering | u1:core.status.capture-detail{"count":2}']);
   });
 
@@ -148,6 +249,7 @@ describe("createSessionCapture", () => {
     c.close("s");
     expect(c.userOf("s")).toBeUndefined();
     await c.maybeCapture("s", msgs(0, 2));
+    await c.settled();
     expect(r.captured).toEqual([]);
   });
 });
@@ -162,6 +264,7 @@ describe("createSessionCapture: the trigger", () => {
     });
     c.track("s", "u1");
     await c.maybeCapture("s", msgs(0, 2));
+    await c.settled();
     c.onCompress("s", msgs(0, 4));
     await c.settled();
     expect(triggers).toEqual(["threshold", "compress"]);
