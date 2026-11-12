@@ -296,7 +296,7 @@ context: {
 
 A layer names the plugin itself, the same object as in `plugins`: declare the plugin once, in a constant, and use it
 in both places. The agent stops at startup when a layer names a plugin that isn't in `plugins`, or one that adds
-nothing to the context, or when a budget isn't a whole number. A plugin that couldn't load loses its layer, said
+nothing to the context, when a profile lists the same plugin twice, or when a budget isn't a whole number. A plugin that couldn't load loses its layer, said
 once in the log, and the agent starts anyway.
 
 Left out, nothing is added to what the model reads.

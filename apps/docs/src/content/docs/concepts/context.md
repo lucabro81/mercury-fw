@@ -26,9 +26,10 @@ have. A layer that fails is skipped for that message, and the log says so.
 
 A layer is one of two kinds, and the kind decides where its text goes:
 
-- a **session** layer is read once, when the conversation starts, and goes into the system prompt, where it stays
-  for the whole conversation. It suits something that doesn't depend on the question: an index of the wiki, the
-  rules of a team;
+- a **session** layer is read once, when the person starts writing in the conversation, and goes into the system
+  prompt, where it stays for the rest of the conversation. It suits something that doesn't depend on the question:
+  an index of the wiki, the rules of a team. In a space shared by several people, each one gets their own, built
+  for them: one person's never reaches another's answers;
 - a **turn** layer is read again for every message and goes right in front of it, for that answer only. It suits
   something that depends on the question: the documents that match it. The conversation keeps the message as the
   person wrote it, without the layer's text.
@@ -36,7 +37,9 @@ A layer is one of two kinds, and the kind decides where its text goes:
 The reason is speed. The model doesn't read the whole text from scratch every time: what starts the same as the
 previous request is already computed and reused (on Ollama, the **prompt cache**). If a text that changes at every
 message sat in the system prompt, at the very start, nothing after it could be reused, and every answer would make
-the model read the whole conversation again. Kept at the end, it costs only itself.
+the model read the whole conversation again. Kept at the end, it costs only itself. In a shared space, where each
+person has their own session layers, the system prompt changes when the person writing changes, and the model
+reads the conversation again for that answer.
 
 Session layers take the budget first; turn layers get what's left.
 
