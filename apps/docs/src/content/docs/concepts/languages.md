@@ -2,7 +2,7 @@
 title: Languages
 description: The texts a person reads in their own language, how an app adds a language, and the time zone a person is in.
 sidebar:
-  order: 7
+  order: 8
 ---
 
 Two kinds of text reach a person. One is what the model writes: it answers in the language it's spoken to, or in

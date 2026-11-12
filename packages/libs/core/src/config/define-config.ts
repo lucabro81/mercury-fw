@@ -57,6 +57,23 @@ export type MercuryI18n = {
  */
 export type MercuryModel = ModelSettings;
 
+/** One context profile: the plugins whose layers the model reads, in order (each must be in `plugins` and contribute a `context` layer), and how many characters of them it reads at most. */
+export type ContextProfile = {
+  layers: Plugin[];
+  budget: { maxChars: number };
+};
+
+/**
+ * What the model reads besides the conversation, by profile. `default` is
+ * required: it's everyone's unless `assign` gives them another, the first
+ * profile in `assign`, in the order written, that names one of their roles.
+ * The terminal always uses `default`.
+ */
+export type MercuryContext<P extends string = string> = {
+  profiles: { [K in "default" | P]: ContextProfile };
+  assign?: { [K in Exclude<P, "default">]?: string[] };
+};
+
 /** The shape of a Mercury instance's composition config: the tool plugins
  * and the channel plugins (each enabled by being declared here: declared =
  * active), each loaded by its own loader, the auth providers that tell a
@@ -68,8 +85,9 @@ export type MercuryModel = ModelSettings;
  * use what (`access`), the languages it speaks (`i18n`), the assistant's
  * persona (its identity and tone; the defaults when left out), the models it
  * runs on (`models`), where the traces of what it does go (`traces`),
+ * what the model reads besides the conversation (`context`),
  * plus the app's own version (`version`). */
-export type MercuryConfig = {
+export type MercuryConfig<P extends string = string> = {
   plugins: Plugin[];
   /** The models the instance runs on, by role: `turn` (required), `background` (the turn's when left out), `embedding` (needed with `vectorIndex`). */
   models: MercuryModels;
@@ -85,6 +103,8 @@ export type MercuryConfig = {
   persona?: Persona;
   /** Where the events of what the instance does go (`sink`) and how much they carry (`level`: `meta`, the default, or `args`). Left out, nothing is recorded. */
   traces?: MercuryTraces;
+  /** What the model reads besides the conversation: profiles of plugins' layers, with a budget, assigned by role. Left out, nothing is added. */
+  context?: MercuryContext<P>;
   /** The app's version, as its `package.json` has it (`version: pkg.version`), shown next to the framework's on the HTTP channel's `GET /version`. Shown as is, never changed by Mercury. Left out (or empty), nothing is shown. */
   version?: string;
 };
@@ -94,6 +114,6 @@ export type MercuryConfig = {
  * unchanged; its only job is to type the config literal against `MercuryConfig`
  * at the call site, exactly like `defineConfig` in the Vite/Nuxt ecosystem.
  */
-export function defineMercuryConfig(config: MercuryConfig): MercuryConfig {
-  return config;
+export function defineMercuryConfig<const P extends string = never>(config: MercuryConfig<P>): MercuryConfig {
+  return config as MercuryConfig;
 }

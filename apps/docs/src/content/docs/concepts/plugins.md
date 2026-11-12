@@ -23,6 +23,8 @@ A plugin may also contribute:
 - **skills**, longer instructions the model loads only when it needs them (below);
 - **lists for the person**, such as a list of Jira issues, which the app formats and the model never has to
   copy out by hand (below);
+- **a context layer**, text the model reads besides the conversation, when the app asks for it (see
+  [Context](../context/));
 - **hooks**, code Mercury runs after a turn and when a conversation closes, for a plugin that learns from what was
   said (below).
 

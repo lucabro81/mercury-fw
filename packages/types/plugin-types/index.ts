@@ -297,6 +297,49 @@ export type ClosedSession = {
 };
 
 /**
+ * What a context layer is built for: the session, who wrote (in a shared
+ * space, the sender; `operator` on the terminal), how the plugin is offered
+ * to them (`as`, the identity its tools would act with), what they wrote
+ * (for a `session` layer, their first message in the session; empty when
+ * that turn was one the agent opened, or resumed after a confirmation),
+ * whether the space is shared, and the layer's knobs as the instance set
+ * them (empty until the plugin declares some).
+ */
+export type ContextRequest = {
+  sessionKey: string;
+  person: { key: string };
+  operator: boolean;
+  as: "person" | "mercury" | "anyone";
+  input: string;
+  multiUser: boolean;
+  knobs: Record<string, unknown>;
+};
+
+/**
+ * What a plugin adds to what the model reads, when the instance lists it in
+ * a context profile's `layers`. `build` returns blocks of text, the most
+ * important first: the core keeps whole blocks, in order, as long as the
+ * profile's budget allows, and drops the rest. `undefined` or `[]` adds
+ * nothing.
+ *
+ * - `"session"`: built once per session and person, at their first turn in
+ *   it, and kept in the system prompt for the rest of the session (stable
+ *   text keeps the model's cache of the conversation valid); one that fails
+ *   then stays out until the session closes. In a space shared by several
+ *   people each one gets their own, never another's.
+ * - `"turn"`: built for every turn and put in front of the person's message
+ *   for that call only; the conversation's history keeps the message
+ *   without it.
+ *
+ * A `build` that throws is skipped for that turn (or session), and the core
+ * logs it.
+ */
+export type ContextLayer = {
+  scope: "session" | "turn";
+  build: (req: ContextRequest) => Promise<string[] | undefined>;
+};
+
+/**
  * The per-turn context a `sessionTools` factory receives: the session it's
  * building tools for, and the two core capabilities a tool may need bound to
  * that session: staging a confirm-required action, and stashing a display
@@ -379,6 +422,10 @@ export type PersonLogin = {
  *   plugin offered in its last turn (see `ClosedSession`); not awaited
  *   either. Ignored by an older core.
  *
+ * - `context`: what the plugin adds to what the model reads, when the
+ *   instance lists it in a context profile (see `ContextLayer`). Ignored by
+ *   an older core, and by this one when no profile lists the plugin.
+ *
  * A hook that throws, or rejects, is logged: nothing else is affected.
  */
 export type PluginRuntimeContributions = {
@@ -389,6 +436,7 @@ export type PluginRuntimeContributions = {
   postTurnGuards?: PostTurnGuard[];
   afterTurn?: (turn: FinishedTurn) => void | Promise<void>;
   onSessionClose?: (session: ClosedSession) => void | Promise<void>;
+  context?: ContextLayer;
 };
 
 /**

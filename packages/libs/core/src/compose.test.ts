@@ -482,6 +482,69 @@ describe("composeMercury", () => {
     }
   });
 
+  // #387: the context's layers reach the model: a session layer in the
+  // system prompt, a turn layer in front of the message, the history without it.
+  it("puts a profile's layers in what the model is sent: session in the system prompt, turn in front of the message", async () => {
+    const bodies: Array<{ messages: Array<{ role: string; content: string }> }> = [];
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input instanceof Request ? input.url : input);
+      if (!url.endsWith("/api/chat")) return new Response("not here", { status: 404 });
+      const body = JSON.parse(String(init?.body ?? "{}")) as { model: string; messages: Array<{ role: string; content: string }> };
+      bodies.push(body);
+      return Response.json({
+        model: body.model,
+        created_at: new Date().toISOString(),
+        message: { role: "assistant", content: "ok" },
+        done: true,
+        done_reason: "stop",
+        prompt_eval_count: 1,
+        eval_count: 1,
+      });
+    }) as typeof fetch;
+    const layered = (name: string, scope: "session" | "turn", text: string) => ({
+      apiVersion: PLUGIN_API_VERSION,
+      name,
+      description: `Adds ${name}.`,
+      actsAs: "anyone" as const,
+      build: () => ({ context: { scope, build: async () => [text] } }),
+    });
+    const wiki = layered("wiki", "session", "WIKI INDEX");
+    const rag = layered("rag", "turn", "RAG HIT");
+    try {
+      const app = await composeMercury({
+        plugins: [wiki, rag],
+        models: { turn: ollamaModel("big") },
+        access: { unknown: "allow" },
+        context: { profiles: { default: { layers: [wiki, rag], budget: { maxChars: 1000 } } } },
+      });
+      const sink = { onToolStart: () => {}, finalize: async () => {}, dispose: () => {} } as never;
+      const turn = (text: string) => ({ channel: "http", multiUser: false, text, sessionKey: "http:alice:c1", principal: { provider: "static", id: "alice" }, logPrefix: "" }) as never;
+      await app.handleTurn(turn("first"), sink);
+      await app.handleTurn(turn("second"), sink);
+      // No conversation store: no title, so the two calls are the two turns'.
+      expect(bodies).toHaveLength(2);
+      const [one, two] = bodies;
+      expect(one!.messages[0]!.role).toBe("system");
+      expect(one!.messages[0]!.content).toContain("WIKI INDEX");
+      expect(one!.messages.at(-1)!.content).toMatch(/^<context>\nRAG HIT\n<\/context>\n\n.*first$/s);
+      // The second call: the same system prompt, the first message as written, the context only on the last.
+      expect(two!.messages[0]!.content).toBe(one!.messages[0]!.content);
+      const users = two!.messages.filter((m) => m.role === "user").map((m) => m.content);
+      expect(users[0]).not.toContain("RAG HIT");
+      expect(users.at(-1)).toMatch(/^<context>\nRAG HIT\n<\/context>\n\n.*second$/s);
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  });
+
+  it("refuses to start on a context layer pointing at a plugin that isn't declared", async () => {
+    const stray = { apiVersion: PLUGIN_API_VERSION, name: "stray", description: "Strays.", build: () => ({ context: { scope: "turn" as const, build: async () => [] } }) };
+    await expect(
+      composeMercury({ plugins: [], models: MODELS, context: { profiles: { default: { layers: [stray], budget: { maxChars: 10 } } } } }),
+    ).rejects.toThrow('lists the plugin "stray", which isn\'t in plugins');
+  });
+
   // #383: a handle written by hand skips ollamaModel's checks; the turn
   // model's queue is made at the start, so a wrong one stops it there, not at
   // the first turn.

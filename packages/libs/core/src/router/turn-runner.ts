@@ -11,6 +11,7 @@
  */
 import type { LanguageModel, Tool } from "ai";
 import { hookCall, type CallRecord } from "../session/call-record.ts";
+import type { ContextAssembly, ContextTurn } from "../context/context.ts";
 import { ABORTED_MARKER, runTurn } from "../session/agent-turn.ts";
 import type { StepInfo } from "../session/step-info.ts";
 import { formatTurnStamp } from "../session/turn-stamp.ts";
@@ -294,6 +295,13 @@ export type TurnRunnerDeps = {
    * hooks. Called, never awaited; a throw is logged.
    */
   afterTurn?: (who: TurnWho, turn: FinishedTurnInfo) => void;
+  /**
+   * What the instance's context adds to the turn (#387): the session layers'
+   * text for the system prompt, the turn layers' text for the model call,
+   * and what the `context.assembled` event reports. Absent, or failing, the
+   * turn goes without.
+   */
+  contextFor?: (who: TurnWho, turn: ContextTurn) => Promise<ContextAssembly>;
   /** The texts of the person with `key` on a channel hinting `hint`, for what the turn shows them that isn't the model's; English when absent. */
   translatorFor?: (key: string, hint?: string) => Translate;
   /**
@@ -459,13 +467,14 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
     }
     const shown = deps.shownLists?.(turn.sessionKey) ?? [];
     /** The turn's prompt; the primer comes with the history: its current state as is, its recap framed as background. */
-    const systemFor = (primer: { current: string; recap: string } | undefined) =>
+    const systemFor = (primer: { current: string; recap: string } | undefined, context?: string) =>
       [
         // A resumed turn answers the person who confirmed, even in a shared
         // space: the multi-user prompt would let the model stay silent on it.
         turn.multiUser && !resumed ? prompts.multiUser : prompts.singleUser,
         ...(primer?.current ? [primer.current] : []),
         ...(primer?.recap ? [RECAP_NOTE(primer.recap)] : []),
+        ...(context ? [context] : []),
         ...(turn.opening ? [OPENING_NOTE] : name === undefined ? [] : [PREFERRED_NAME_NOTE(name)]),
         ...(language === undefined ? [] : [PREFERRED_LANGUAGE_NOTE(language)]),
         // Last, where a small model pays the most attention.
@@ -608,6 +617,16 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
             return () => clearTimeout(id);
           }),
       );
+      // What the instance's context adds: never a reason for the turn to fail.
+      let context: ContextAssembly | undefined;
+      if (deps.contextFor) {
+        try {
+          context = await deps.contextFor(who, { sessionKey: turn.sessionKey, input: turn.opening || resumed ? "" : turn.text, multiUser: turn.multiUser });
+          emit({ kind: "context.assembled", ...context.event }, key);
+        } catch (err) {
+          logTurn(`${turn.logPrefix}[context] failed, the turn goes without: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
       const text = await (deps.runTurnFn ?? runTurn)(history, input, {
         model: deps.model,
         tools: watching
@@ -632,7 +651,8 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
         onPendingNote: () => {
           noteUsed = true;
         },
-        system: systemFor(history.primer()),
+        system: systemFor(history.primer(), context?.system),
+        ...(context?.turn === undefined ? {} : { turnContext: context.turn }),
         // Counted on the way through, and only where the channel streams: an
         // absent callback keeps the turn on the non-streaming path.
         ...(sink.onTextChunk
