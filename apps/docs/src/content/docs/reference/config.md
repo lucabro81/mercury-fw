@@ -265,6 +265,8 @@ So that work waits for its turn. Each model has a queue, and:
 - a title, a correction and the archive's index go before what can wait longer (what the memory keeps, the nightly
   review).
 
+A plugin's own work of this kind (a job, see [Plugins](../../concepts/plugins/#after-a-turn-and-when-a-conversation-closes)) waits the same way.
+
 Each model has its own queue: work on a `background` model of its own doesn't wait for the answers on the `turn` one.
 When the agent stops, what's still waiting is dropped, and the trace says so. The [traces](../../concepts/traces/)
 record each of these jobs (`background.job`): how long it waited, how long it took.
