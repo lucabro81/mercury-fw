@@ -2,28 +2,28 @@
  * What the model reads besides the conversation (#387): the layers plugins
  * add, composed by the instance's `context` profiles.
  *
- * - `resolveContext` checks the config at startup: a layer pointing at a
- *   plugin that isn't declared, or at one that adds no layer, a plugin
- *   listed twice in a profile, or a budget
- *   that isn't a whole number, stops the start (a contradiction in the
- *   config); a plugin that didn't load (a condition outside the config) only
- *   loses its layer, with a line; a layer a profile can never use, its
- *   plugin kept by `access` from every role the profile goes to, gets a
- *   warning.
+ * - `resolveContext` checks the config at startup. A contradiction in the
+ *   config stops the start: a layer pointing at a plugin that isn't
+ *   declared, or at one that adds no layer, a plugin listed twice in a
+ *   profile, a budget that isn't a whole number. A plugin that didn't load
+ *   (a condition outside the config) only loses its layer, with a line. A
+ *   layer a profile can never use, its plugin kept by `access` from every
+ *   role the profile goes to, gets a warning.
  * - `profileFor` picks a person's profile: the first in `assign`, as
  *   written, naming one of their roles; `default` otherwise, and always on
  *   the terminal.
  * - `createContextAssembler` builds a turn's context. A layer runs only for
  *   a plugin offered to the person (the same roles and permissions as its
- *   tools), with the identity its tools would have. `session` layers are
- *   built once per session and person (in a shared space each sender gets
- *   their own, never another's), at their first turn in it, and go into the system prompt,
- *   which stays the same for the session so the model's cache of the
- *   conversation stays valid; `turn` layers are built every turn and go in
- *   front of the person's message for that call only. The budget counts the
- *   blocks' characters: the session layers take it first, in order, then
- *   the turn layers have what's left, in order; a block that doesn't fit is
- *   dropped whole. A layer that fails is skipped and logged.
+ *   tools), with the identity its tools would have. Each person's profile
+ *   and `session` layers are fixed at their first turn in a session (in a
+ *   shared space each sender gets their own, never another's): the layers
+ *   go into the system prompt, which stays the same so the model's cache of
+ *   the conversation stays valid, and a layer that failed then, or wasn't
+ *   offered, stays out for the session. `turn` layers are built every turn
+ *   and go in front of the person's message for that call only. The budget
+ *   counts the blocks' characters: the session layers take it first, in
+ *   order, then the turn layers have what's left, in order; a block that
+ *   doesn't fit is dropped whole. A layer that fails is skipped and logged.
  *
  * Used by: `compose.ts`, which resolves the config after the plugins load
  * and hands the assembler to the turn runner.
@@ -129,8 +129,8 @@ export type ContextAssembler = {
 /** A layer's blocks once built: what it returned, or why it has none. */
 type Built = { plugin: LoadedPlugin; blocks: string[]; skipped?: "not-offered" | "failed" };
 
-/** A session's `session` layers as they were fitted when it opened: the system text, the characters used, the reports. */
-type SessionPart = { profile: string; text?: string; used: number; reports: Map<string, LayerReport> };
+/** A person's part of a session, fixed at their first turn in it: their profile, the system text of its `session` layers, the characters used, the reports. */
+type SessionPart = { profile: ResolvedProfile; text?: string; used: number; reports: Map<string, LayerReport> };
 
 /** Fits `built`, in order, into `budget` characters, whole blocks only: the texts kept, the characters used, a report per layer. */
 function fit(built: Built[], budget: number, scope: "session" | "turn"): { kept: string[]; used: number; reports: LayerReport[] } {
@@ -192,7 +192,6 @@ export function createContextAssembler(deps: {
 
   return {
     async forTurn(who, turn) {
-      const profile = profileFor(deps.resolved, who);
       let people = sessions.get(turn.sessionKey);
       if (people === undefined) {
         people = new Map();
@@ -200,15 +199,17 @@ export function createContextAssembler(deps: {
       }
       let session = people.get(who.person.key);
       if (session === undefined) {
+        const profile = profileFor(deps.resolved, who);
         const fitted = fit(await build(profile, "session", who, turn), profile.maxChars, "session");
         session = {
-          profile: profile.name,
+          profile,
           ...(fitted.kept.length === 0 ? {} : { text: fitted.kept.join("\n\n") }),
           used: fitted.used,
           reports: new Map(fitted.reports.map((r) => [r.plugin, r])),
         };
         people.set(who.person.key, session);
       }
+      const profile = session.profile;
       const forTurn = fit(await build(profile, "turn", who, turn), profile.maxChars - session.used, "turn");
       const turnReports = new Map(forTurn.reports.map((r) => [r.plugin, r]));
       return {
@@ -218,7 +219,7 @@ export function createContextAssembler(deps: {
           profile: profile.name,
           budget: profile.maxChars,
           used: session.used + forTurn.used,
-          layers: profile.layers.map((p) => (p.context!.scope === "session" ? session.reports.get(p.name) : turnReports.get(p.name))!).filter((r) => r !== undefined),
+          layers: profile.layers.map((p) => (p.context!.scope === "session" ? session.reports.get(p.name) : turnReports.get(p.name))!),
         },
       };
     },

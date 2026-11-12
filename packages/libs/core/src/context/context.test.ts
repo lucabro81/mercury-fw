@@ -264,3 +264,81 @@ describe("resolveContext: a plugin listed twice (#387)", () => {
     ).toThrow('context profile "default" lists the plugin "wiki" twice');
   });
 });
+
+describe("context per person and session (#387, review)", () => {
+  /** The notes layer, building "notes of <person>" and recording each request in `seen`. */
+  function notesLayer(seen: ContextRequest[]) {
+    return plugin(
+      "notes",
+      layer(
+        "session",
+        async () => [`notes of ${seen.at(-1)!.person.key}`],
+        seen,
+      ),
+    );
+  }
+
+  it("gives each person with layers their own build in a shared space, and the same person their own in each session", async () => {
+    const seen: ContextRequest[] = [];
+    const notes = notesLayer(seen);
+    const resolved = resolveContext(
+      { profiles: { default: { layers: [notes.declared], budget: { maxChars: 100 } } } },
+      { declared: [notes.declared], loaded: [notes.loaded], log: () => {} },
+    )!;
+    const a = createContextAssembler({ resolved, offered: () => [{ plugin: notes.loaded, as: "person" }], log: () => {} });
+    const bob: TurnWho = { person: { key: "u:bob", roles: ["staff"] }, operator: false };
+
+    const alicesText = (await a.forTurn(alice, { sessionKey: "space", input: "a", multiUser: true })).system;
+    const bobsText = (await a.forTurn(bob, { sessionKey: "space", input: "b", multiUser: true })).system;
+    const alicesAgain = (await a.forTurn(alice, { sessionKey: "space", input: "a2", multiUser: true })).system;
+    const aliceElsewhere = (await a.forTurn(alice, { sessionKey: "dm", input: "x", multiUser: false })).system;
+
+    expect([alicesText, bobsText, alicesAgain, aliceElsewhere]).toEqual(["notes of u:alice", "notes of u:bob", "notes of u:alice", "notes of u:alice"]);
+    expect(seen.map((r) => `${r.sessionKey}/${r.person.key}`)).toEqual(["space/u:alice", "space/u:bob", "dm/u:alice"]);
+  });
+
+  // Regression: the profile picked at a person's first turn was stored but
+  // not used, so roles changing mid-session mixed two profiles' budgets and layers.
+  it("keeps the profile a person got at their first turn in the session, roles changing or not", async () => {
+    const wiki = plugin("wiki", layer("session", ["0123456789"]));
+    const rag = plugin("rag", layer("turn", ["abc"]));
+    const resolved = resolveContext(
+      {
+        profiles: { default: { layers: [wiki.declared], budget: { maxChars: 10 } }, premium: { layers: [wiki.declared, rag.declared], budget: { maxChars: 100 } } },
+        assign: { premium: ["paid"] },
+      },
+      { declared: [wiki.declared, rag.declared], loaded: [wiki.loaded, rag.loaded], log: () => {} },
+    )!;
+    const a = createContextAssembler({
+      resolved,
+      offered: () => [wiki, rag].map((p) => ({ plugin: p.loaded, as: "anyone" as const })),
+      log: () => {},
+    });
+    await a.forTurn(alice, turn("first"));
+    const later = await a.forTurn({ ...alice, person: { ...alice.person, roles: ["paid"] } }, turn("later"));
+    expect(later.turn).toBeUndefined();
+    expect(later.event).toEqual({ profile: "default", budget: 10, used: 10, layers: [{ plugin: "wiki", scope: "session", chars: 10, blocks: 1, dropped: 0 }] });
+  });
+
+  it("leaves out for the rest of the session a session layer that failed at the person's first turn", async () => {
+    let calls = 0;
+    const flaky = plugin(
+      "flaky",
+      layer("session", async () => {
+        calls += 1;
+        if (calls === 1) throw new Error("blip");
+        return ["late"];
+      }),
+    );
+    const resolved = resolveContext(
+      { profiles: { default: { layers: [flaky.declared], budget: { maxChars: 100 } } } },
+      { declared: [flaky.declared], loaded: [flaky.loaded], log: () => {} },
+    )!;
+    const a = createContextAssembler({ resolved, offered: () => [{ plugin: flaky.loaded, as: "anyone" }], log: () => {} });
+    await a.forTurn(alice, turn("one"));
+    const two = await a.forTurn(alice, turn("two"));
+    expect(two.system).toBeUndefined();
+    expect(two.event.layers).toEqual([{ plugin: "flaky", scope: "session", chars: 0, blocks: 0, dropped: 0, skipped: "failed" }]);
+    expect(calls).toBe(1);
+  });
+});
