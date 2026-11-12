@@ -80,10 +80,6 @@ jobs:
     permissions:
       contents: read
       id-token: write
-    # How many packages this run published: the site job runs only after a
-    # release, never for a push that published nothing.
-    outputs:
-      published: ${{ steps.publish.outputs.published }}
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
@@ -97,7 +93,6 @@ jobs:
       - name: Install
         run: bun install --frozen-lockfile
       - name: Publish
-        id: publish
         run: bun scripts/publish.ts
 
   # The GitHub Release of each tag on the release commit, the unified
@@ -112,6 +107,10 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    # Whether the commit is a release (it carries tags): the site job runs
+    # only then, whatever this run itself had left to publish.
+    outputs:
+      release: ${{ steps.tags.outputs.release }}
     steps:
       # The whole history, for the tags.
       - uses: actions/checkout@v4
@@ -120,6 +119,9 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: "1.x"
+      - name: Is it a release
+        id: tags
+        run: echo "release=$([ -n "$(git tag --points-at HEAD)" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
       - name: Create the Releases
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -131,14 +133,12 @@ jobs:
   # the build: docs.yml already checks every change to the site.
   site:
     needs: [check, publish, releases]
-    # Normally after a run that published packages, its Releases created. A
-    # dispatch from main with deploy_site rebuilds it on its own, dry run or
-    # not, when a release's run didn't: a publish that failed halfway (the
-    # rerun publishes nothing) or a releases job that failed.
+    # After a release commit's publish and Releases, a rerun's too. A dispatch
+    # from main with deploy_site rebuilds it on its own, dry run or not.
     if: >-
       ${{ !cancelled() && (
         (inputs.deploy_site && github.ref == 'refs/heads/main' && needs.check.result == 'success') ||
-        (needs.publish.result == 'success' && needs.releases.result == 'success' && needs.publish.outputs.published > 0)
+        (needs.publish.result == 'success' && needs.releases.result == 'success' && needs.releases.outputs.release == 'true')
       ) }}
     runs-on: ubuntu-latest
     permissions:

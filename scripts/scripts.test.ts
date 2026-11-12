@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { orderByDependencies, REPO_ONLY_DIRS, root, workspaces, type Workspace } from "./workspaces.ts";
 import { typesConfig } from "./build-types.ts";
-import { alreadyOnRegistry, isPublished, publishAction, publishAll, publishCommand, writeGithubOutput } from "./publish.ts";
+import { alreadyOnRegistry, isPublished, publishAction, publishAll, publishCommand } from "./publish.ts";
 import { comparePack, privacyProblem } from "./check-pack.ts";
 import { pendingChangesets, stageRelease } from "./release.ts";
 import { changelogSection, createReleaseCommand, createReleases, parseTag, releaseNotes, releasesToCreate } from "./github-releases.ts";
@@ -474,25 +474,6 @@ describe("createReleases", () => {
   });
 });
 
-describe("writeGithubOutput", () => {
-  let dir: string;
-  beforeEach(() => {
-    dir = mkdtempSync(join(tmpdir(), "gh-output-"));
-  });
-  afterEach(() => rmSync(dir, { recursive: true, force: true }));
-
-  test("appends published=<n> to the file GitHub Actions names, after what's already there", () => {
-    const file = join(dir, "output");
-    writeFileSync(file, "earlier=1\n");
-    writeGithubOutput(file, 3);
-    expect(readFileSync(file, "utf-8")).toBe("earlier=1\npublished=3\n");
-  });
-
-  test("outside GitHub Actions (no file named) it writes nothing", () => {
-    expect(() => writeGithubOutput(undefined, 3)).not.toThrow();
-  });
-});
-
 describe("alreadyOnRegistry", () => {
   test("is npm refusing a version it has taken but not shown yet (E409), as the v0.73.0 rerun got it", () => {
     expect(
@@ -582,8 +563,7 @@ describe("publishAll", () => {
     ]);
   });
 
-  // The docs site deploys only when this isn't 0: a push that published
-  // nothing (everything already on npm) must count 0.
+  // A push with everything already on npm publishes nothing.
   test("0 when every package is skipped", async () => {
     const count = await publishAll(three, {
       decide: async () => ({ publish: false, reason: "already on r" }),

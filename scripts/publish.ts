@@ -18,11 +18,9 @@
  * version it has just taken: a rerun in that window publishes it again, and
  * npm's refusal of a version it already has counts as published, so a rerun
  * goes on at once. Without `--tag`, versions go
- * to `latest`, which is where the CLI looks plugins up. In GitHub Actions it
- * also writes how many packages it published (`published=<n>`) to
- * `$GITHUB_OUTPUT`: `publish.yml` deploys the docs site only when it isn't 0.
+ * to `latest`, which is where the CLI looks plugins up.
  */
-import { appendFileSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
@@ -102,14 +100,6 @@ export function publishCommand(
   return cmd;
 }
 
-/** Tells the workflow how many packages were published (`published=<n>`), by
- * appending to the file GitHub Actions names in `GITHUB_OUTPUT`; nothing
- * outside GitHub Actions. `publish.yml` deploys the docs site only when it
- * isn't 0. */
-export function writeGithubOutput(file: string | undefined, published: number): void {
-  if (file) appendFileSync(file, `published=${published}\n`);
-}
-
 /** What `publishAll` needs from the world: the decision for a package
  * (`publishAction`), how to publish one, where to say what it does. */
 export type PublishAllDeps = {
@@ -121,8 +111,7 @@ export type PublishAllDeps = {
 
 /** Publishes each of `workspaces`, in order, that `decide` lets through, and
  * returns how many it published: skipped ones don't count, ones npm refused
- * as already published do (a rerun that meets only those still lets the site
- * of the release deploy). */
+ * as already published do. */
 export async function publishAll(
   workspaces: Array<{ dir: string; pkg: { name: string; version: string } }>,
   deps: PublishAllDeps,
@@ -166,7 +155,7 @@ if (import.meta.main) {
   try {
     run(["bun", "scripts/build-types.ts"]);
     run(["bun", "scripts/check-pack.ts", "--types"]);
-    const published = await publishAll(publicWorkspacesInOrder(), {
+    await publishAll(publicWorkspacesInOrder(), {
       decide: (pkg) => publishAction(pkg, registry),
       // From the tarballs' folder, outside the repo: npm would otherwise read
       // the root manifest's devEngines (Bun) and refuse to run.
@@ -174,7 +163,6 @@ if (import.meta.main) {
         npmPublish(publishCommand(pack(dir, tarballs), { registry, tag: values.tag, dryRun: values["dry-run"] as boolean }), tarballs),
       log: (line) => console.log(line),
     });
-    if (!values["dry-run"]) writeGithubOutput(process.env.GITHUB_OUTPUT, published);
   } catch (err) {
     // What's published stays published; rerunning skips it and carries on.
     console.error(err instanceof Error ? err.message : String(err));
