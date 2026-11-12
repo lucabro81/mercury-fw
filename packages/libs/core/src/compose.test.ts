@@ -433,6 +433,55 @@ describe("composeMercury", () => {
     }
   });
 
+  // #387: a hook never holds the session's next turn, and a plugin kept from
+  // a person by `access` never hears their turns.
+  it("runs the session's next turn while a plugin's afterTurn is still going, and keeps a restricted plugin out", async () => {
+    const heard: string[] = [];
+    const hook = (name: string, actsAs: "anyone") => ({
+      apiVersion: PLUGIN_API_VERSION,
+      name,
+      description: `Hooks as ${name}.`,
+      actsAs,
+      build: () => ({
+        afterTurn: () => {
+          heard.push(name);
+          return new Promise<void>(() => {}); // never done
+        },
+      }),
+    });
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input instanceof Request ? input.url : input);
+      if (!url.endsWith("/api/chat")) return new Response("not here", { status: 404 });
+      const body = JSON.parse(String(init?.body ?? "{}")) as { model: string };
+      return Response.json({
+        model: body.model,
+        created_at: new Date().toISOString(),
+        message: { role: "assistant", content: "ok" },
+        done: true,
+        done_reason: "stop",
+        prompt_eval_count: 1,
+        eval_count: 1,
+      });
+    }) as typeof fetch;
+    try {
+      const app = await composeMercury({
+        plugins: [hook("open", "anyone"), hook("admins-only", "anyone")],
+        models: { turn: ollamaModel("big") },
+        access: { unknown: "allow", plugins: { "admins-only": { roles: ["admin"] } } },
+      });
+      const finalized: string[] = [];
+      const sink = { onToolStart: () => {}, finalize: async (text: string) => void finalized.push(text), dispose: () => {} } as never;
+      const turn = (text: string) => ({ channel: "http", multiUser: false, text, sessionKey: "http:alice:c1", principal: { provider: "static", id: "alice" }, logPrefix: "" });
+      await app.handleTurn(turn("first"), sink);
+      await app.handleTurn(turn("second"), sink);
+      expect(finalized).toEqual(["ok", "ok"]);
+      expect(heard).toEqual(["open", "open"]);
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  });
+
   // #383: a handle written by hand skips ollamaModel's checks; the turn
   // model's queue is made at the start, so a wrong one stops it there, not at
   // the first turn.

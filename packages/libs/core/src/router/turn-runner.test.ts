@@ -3597,3 +3597,28 @@ describe("createTurnRunner: afterTurn (#387)", () => {
     expect(sink.finalized).toEqual(["reply"]);
   });
 });
+
+describe("createTurnRunner: afterTurn comes before the capture (#387)", () => {
+  // The person has the answer: a capture that fails, or takes its time, must not cost a plugin the turn.
+  test("a capture that fails still lets afterTurn hear the turn, and afterTurn comes first", async () => {
+    const order: string[] = [];
+    const runner = createTurnRunner({
+      model: {} as any,
+      systemPrompts: { singleUser: "s", multiUser: "m" },
+      buildTools: () => ({}),
+      getOrCreateHistory: () => fakeHistory(),
+      trackSession: () => {},
+      registerCaptureCallback: () => {},
+      maybeCapture: async () => {
+        order.push("capture");
+        throw new Error("capture broke");
+      },
+      processToolCorrections: async () => {},
+      logStep: () => {},
+      runTurnFn: async () => "reply",
+      afterTurn: () => void order.push("afterTurn"),
+    });
+    await runner(baseTurn({ principal: verified("u1") }), baseSink()).catch(() => {});
+    expect(order).toEqual(["afterTurn", "capture"]);
+  });
+});

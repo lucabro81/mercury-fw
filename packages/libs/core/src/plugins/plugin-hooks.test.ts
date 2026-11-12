@@ -144,3 +144,16 @@ describe("createPluginHooks (#387)", () => {
     expect(seen).toEqual(["memo"]);
   });
 });
+
+describe("createPluginHooks: the terminal (#387)", () => {
+  // The terminal's sessions are never closed by the idle sweep: remembering them would only grow.
+  it("hands the operator's turns over without keeping their session for a close", async () => {
+    const seen: string[] = [];
+    const memo = loaded("memo", { afterTurn: () => void seen.push("turn"), onSessionClose: () => void seen.push("close") });
+    const hooks = createPluginHooks({ offered: () => [{ plugin: memo, as: "anyone" }], log: () => {} });
+    hooks.afterTurn({ ...alice, operator: true }, info);
+    hooks.sessionClosed({ key: "s1", userId: "u:alice", messages: [] });
+    await settle();
+    expect(seen).toEqual(["turn"]);
+  });
+});

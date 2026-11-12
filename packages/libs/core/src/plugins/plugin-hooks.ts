@@ -38,7 +38,7 @@ export type PluginHooksDeps = {
 export type ClosedSessionInfo = { key: string; userId: string; messages: Message[] };
 
 export type PluginHooks = {
-  /** Hands a finished turn to the `afterTurn` of each plugin offered in it, and remembers who the session's last turn was for. Returns at once. */
+  /** Hands a finished turn to the `afterTurn` of each plugin offered in it, and remembers who the session's last turn was for (not the terminal's, which is never closed for being quiet). Returns at once. */
   afterTurn: (who: TurnWho, turn: FinishedTurnInfo) => void;
   /** Hands a closed session to the `onSessionClose` of each plugin offered in its last finished turn; nothing for a session with none. Returns at once. */
   sessionClosed: (session: ClosedSessionInfo) => void;
@@ -97,7 +97,8 @@ export function createPluginHooks(deps: PluginHooksDeps): PluginHooks {
 
   return {
     afterTurn(who, turn) {
-      lastWho.set(turn.sessionKey, who);
+      // The terminal's sessions are never closed for being quiet: nothing to remember for them.
+      if (!who.operator) lastWho.set(turn.sessionKey, who);
       for (const { plugin, as } of oncePerPlugin(deps.offered(who))) {
         const hook = plugin.afterTurn;
         if (hook === undefined) continue;

@@ -773,6 +773,22 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
       if (cancelled) await archiveInterrupted();
     }
 
+    // The person has the answer: the plugins hear the turn now, whatever the capture below does.
+    if (deps.afterTurn) {
+      const last = history.getMessages().at(-1);
+      const calls = last?.role === "assistant" ? (last.calls ?? []) : [];
+      try {
+        deps.afterTurn(who, {
+          sessionKey: turn.sessionKey,
+          input: turn.opening || resumed ? "" : turn.text,
+          answer: assistantText,
+          calls: calls.map(hookCall),
+          multiUser: turn.multiUser,
+        });
+      } catch (err) {
+        console.log(`[hooks] afterTurn failed, turn unaffected: ${String(err instanceof Error ? err.message : err)}`);
+      }
+    }
     if (tracked) {
       // Activity at the end too: a turn longer than the idle timeout must not
       // look idle the moment it ends.
@@ -825,20 +841,5 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
     void deps.processToolCorrections(steps, channelSink.onToolStart, channelSink.onToolFinish, key).catch((err) =>
       console.log(`[corrections] failed, turn unaffected: ${String(err instanceof Error ? err.message : err)}`),
     );
-    if (deps.afterTurn) {
-      const last = history.getMessages().at(-1);
-      const calls = last?.role === "assistant" ? (last.calls ?? []) : [];
-      try {
-        deps.afterTurn(who, {
-          sessionKey: turn.sessionKey,
-          input: turn.opening || resumed ? "" : turn.text,
-          answer: assistantText,
-          calls: calls.map(hookCall),
-          multiUser: turn.multiUser,
-        });
-      } catch (err) {
-        console.log(`[hooks] afterTurn failed, turn unaffected: ${String(err instanceof Error ? err.message : err)}`);
-      }
-    }
   }
 }
