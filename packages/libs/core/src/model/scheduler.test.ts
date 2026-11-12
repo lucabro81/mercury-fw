@@ -378,6 +378,14 @@ describe("scheduler: the background.job event", () => {
     ]);
   });
 
+  // #383: the turn's corrections, or a title that already exists, often need no model call: every turn would add an empty event.
+  test("a job done without a model call reports nothing", async () => {
+    const events: Array<Record<string, unknown>> = [];
+    const scheduler = createScheduler({ emit: (event) => events.push(event) });
+    await scheduler.job({ job: "correction", urgency: "soon" }, async () => "nothing to correct");
+    expect(events).toEqual([]);
+  });
+
   test("failed and dropped jobs say so", async () => {
     const events: Array<Record<string, unknown>> = [];
     const scheduler = createScheduler({ now: () => 0, emit: (event) => events.push(event) });

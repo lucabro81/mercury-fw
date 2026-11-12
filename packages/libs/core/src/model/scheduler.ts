@@ -47,7 +47,7 @@ export class DroppedError extends Error {
 export type Scheduler = {
   /** Counts a turn on `handle`'s model until the returned release is called (calling it again does nothing). */
   holdTurn(handle: QueuedHandle): () => void;
-  /** Runs `fn` as one background job: its model calls are steps, and one `background.job` event says how it went. */
+  /** Runs `fn` as one background job: its model calls are steps, and one `background.job` event says how it went (none for a job done without a model call). */
   job<T>(meta: { job: BackgroundJobName; urgency: Urgency }, fn: () => Promise<T>): Promise<T>;
   /** Runs one model call on `handle`: a step of the current job, or turn work outside one. */
   call<T>(handle: QueuedHandle, fn: () => Promise<T>): Promise<T>;
@@ -173,7 +173,9 @@ export function createScheduler(opts: { now?: () => number; emit?: (event: Trace
     async job(meta, fn) {
       const state: JobState = { urgency: meta.urgency, models: [], steps: 0, waitedMs: 0, dropped: false };
       const startedAt = now();
-      const report = (outcome: "done" | "failed" | "dropped") =>
+      // A job done without a model call (no correction to look for, a title already there) isn't worth an event.
+      const report = (outcome: "done" | "failed" | "dropped") => {
+        if (outcome === "done" && state.steps === 0) return;
         opts.emit?.({
           kind: "background.job",
           job: meta.job,
@@ -184,6 +186,7 @@ export function createScheduler(opts: { now?: () => number; emit?: (event: Trace
           ms: now() - startedAt,
           outcome,
         });
+      };
       try {
         const result = await jobs.run(state, fn);
         report(state.dropped ? "dropped" : "done");
