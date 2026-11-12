@@ -172,12 +172,60 @@ export type PostTurnGuard = {
 };
 
 /**
+ * How a language model generates, for every call on it. Every entry is
+ * optional: one left out isn't sent, so the model's own value (its Modelfile)
+ * applies.
+ */
+export type ModelSettings = {
+  /** Whether the model reasons before answering; on when left out. `false` for a model that doesn't support it, which Ollama otherwise refuses. */
+  think?: boolean;
+  /** How much room the less likely words get: lower is more predictable. From 0 up. */
+  temperature?: number;
+  /** Only the most likely words whose probabilities add up to this are kept. Above 0, at most 1. */
+  topP?: number;
+  /** Only this many of the most likely words are kept. A whole number from 1 up. */
+  topK?: number;
+};
+
+/**
+ * A model the instance declared (`ollamaModel(...)` in its config): which
+ * one, how it generates, and how many requests its runtime serves at once.
+ * A plugin that needs a model of its own takes one of these in its own
+ * configuration and turns it into a model with `ctx.modelFor`, so the
+ * instance decides which model it is and the core knows every model in use.
+ */
+export type MercuryModelHandle = {
+  readonly provider: "ollama";
+  readonly kind: "language";
+  /** The model's name on its runtime (`qwen3.8:27b`). */
+  readonly name: string;
+  readonly settings: Readonly<ModelSettings>;
+  /** How many requests the model's runtime serves at once; 1 for a model served one request at a time. */
+  readonly capacity: number;
+};
+
+/** An embedding model the instance declared (`ollamaEmbedding(...)`), the one memory found by meaning is embedded with. */
+export type MercuryEmbeddingHandle = {
+  readonly provider: "ollama";
+  readonly kind: "embedding";
+  readonly name: string;
+  readonly capacity: number;
+};
+
+/**
  * What a plugin's `build()` receives — everything its runtime contributions may
- * need that isn't static data: the shared model (for a model-backed guard), the
- * process env (for its own configuration), and a logger for anything it skips.
+ * need that isn't static data: the instance's turn model (for a model-backed
+ * guard), the model of a handle it was given (`modelFor`), the process env
+ * (for its own configuration), and a logger for anything it skips.
  */
 export type PluginRuntimeContext = {
   model: LanguageModel;
+  /**
+   * The model a handle the plugin was given in its configuration stands for,
+   * built by the core (the same model for the same handle). Absent with an
+   * older core.
+   */
+  modelFor?: (handle: MercuryModelHandle) => LanguageModel;
   env: Record<string, string | undefined>;
   log: (msg: string) => void;
   /**

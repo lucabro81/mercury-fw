@@ -11,7 +11,8 @@
  * now the config carries only the plugin list. Per-plugin configuration and the
  * eventual retirement of the file-based cli-configs are deliberately not here.
  */
-import type { Plugin } from "@mercury-fw/plugin-types";
+import type { ModelSettings, Plugin } from "@mercury-fw/plugin-types";
+import type { MercuryModels } from "../model/models.ts";
 import type { AuthPlugin, ChannelPlugin, ConversationStorePlugin, DirectoryPlugin, VectorIndexPlugin } from "@mercury-fw/channel-types";
 import type { Persona } from "../session/system-prompt.ts";
 import type { Messages } from "../i18n/i18n.ts";
@@ -49,22 +50,12 @@ export type MercuryI18n = {
 };
 
 /**
- * How the main model (the one in `OLLAMA_MODEL`) generates (#355), for every
- * call on it: the turn, the summaries, the plugins' guards. Every entry is
- * optional: one left out (or `undefined`, an empty variable read with
- * `envNumber`) isn't sent, so the model's own value (its Modelfile) applies.
- * A value out of its range stops the start.
+ * How a declared model generates (`ollamaModel(name, settings)`), for every
+ * call on it. Every entry is optional: one left out (or `undefined`, an empty
+ * variable read with `envNumber`) isn't sent, so the model's own value (its
+ * Modelfile) applies. A value out of its range stops the start.
  */
-export type MercuryModel = {
-  /** Whether the model reasons before answering; on when left out. `false` for a model that doesn't support it, which Ollama otherwise refuses. */
-  think?: boolean;
-  /** How much room the less likely words get: lower is more predictable. From 0 up. */
-  temperature?: number;
-  /** Only the most likely words whose probabilities add up to this are kept. Above 0, at most 1. */
-  topP?: number;
-  /** Only this many of the most likely words are kept. A whole number from 1 up. */
-  topK?: number;
-};
+export type MercuryModel = ModelSettings;
 
 /** The shape of a Mercury instance's composition config: the tool plugins
  * and the channel plugins (each enabled by being declared here: declared =
@@ -75,12 +66,13 @@ export type MercuryModel = {
  * index the memory is found in (`vectorIndex`; none, no memory), the store
  * the conversations are kept in (`conversationStore`; none, no archive), who may
  * use what (`access`), the languages it speaks (`i18n`), the assistant's
- * persona (its identity and tone; the defaults when left out), how the main
- * model generates (`model`), where the traces of what it does go (`traces`),
+ * persona (its identity and tone; the defaults when left out), the models it
+ * runs on (`models`), where the traces of what it does go (`traces`),
  * plus the app's own version (`version`). */
 export type MercuryConfig = {
   plugins: Plugin[];
-  model?: MercuryModel;
+  /** The models the instance runs on, by role: `turn` (required), `background` (the turn's when left out), `embedding` (needed with `vectorIndex`). */
+  models: MercuryModels;
   channels?: ChannelPlugin[];
   auth?: AuthPlugin | AuthPlugin[];
   directory?: DirectoryPlugin;

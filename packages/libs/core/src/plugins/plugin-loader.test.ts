@@ -80,6 +80,14 @@ describe("loadPlugins", () => {
     expect(typeof (seen as { log: unknown }).log).toBe("function");
   });
 
+  it("hands build() the core's modelFor, so a plugin given a model handle gets that model", async () => {
+    let seen: { modelFor?: unknown } | undefined;
+    const modelFor = (() => ({ id: "own" })) as never;
+    const plugin = plug({ name: "jira", build: (ctx) => { seen = ctx; return {}; } });
+    await loadPlugins([plugin], baseCtx({ modelFor }));
+    expect(seen?.modelFor).toBe(modelFor);
+  });
+
   // #142: a declared plugin also had to be listed in MERCURY_CLIS, or the
   // loader skipped it without a word.
   it("loads every declared plugin, with nothing else to enable it", async () => {

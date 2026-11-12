@@ -5,7 +5,7 @@
  */
 import { envBoolean, envNumber, type MercuryModel } from "@mercury-fw/core";
 
-/** The config's `model` section from `env`, only the entries set. Throws on a value of the wrong kind, naming its variable. */
+/** The turn model's settings from `env`, only the entries set. Throws on a value of the wrong kind, naming its variable. */
 export function modelSettingsFromEnv(env: Record<string, string | undefined>): MercuryModel {
   const settings: MercuryModel = { think: envBoolean("OLLAMA_THINK", true, env) };
   const temperature = envNumber("OLLAMA_TEMPERATURE", undefined, env);

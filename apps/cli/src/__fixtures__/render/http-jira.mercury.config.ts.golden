@@ -9,7 +9,7 @@
  *
  * Every tool plugin and channel declared here is active.
  */
-import { defineMercuryConfig, envBoolean, envNumber } from "@mercury-fw/core";
+import { defineMercuryConfig, envBoolean, envNumber, ollamaEmbedding, ollamaModel } from "@mercury-fw/core";
 import en from "./locales/en.json";
 import pkg from "./package.json";
 import { formatterPlugin, formatter } from "@mercury-fw/formatter";
@@ -21,6 +21,19 @@ import { qdrantConversations, qdrantIndex } from "@mercury-fw/store-qdrant";
 
 /** The assistant's name: what the persona calls it, and every text the model reads. */
 const name = "Mercury";
+
+/**
+ * The model the assistant runs on, from .env: a setting left empty is the
+ * model's own (thinking stays on), and capacity, how many requests its
+ * runtime serves at once, is 1.
+ */
+const main = ollamaModel(process.env.OLLAMA_MODEL, {
+  think: envBoolean("OLLAMA_THINK", true),
+  temperature: envNumber("OLLAMA_TEMPERATURE"),
+  topP: envNumber("OLLAMA_TOP_P"),
+  topK: envNumber("OLLAMA_TOP_K"),
+  capacity: envNumber("OLLAMA_CAPACITY"),
+});
 
 /** One Jira issue in a search result: key, status in brackets when there is
  * one, summary, and the browse link on its own line. A starting point: change
@@ -63,13 +76,12 @@ export default defineMercuryConfig({
   // Where what was said is kept: every conversation, to reopen and list it,
   // and its title. Qdrant, the compose service. Remove to archive nothing.
   conversationStore: qdrantConversations(),
-  // How the main model generates, each value from .env: left empty, the
-  // model's own applies (thinking stays on).
-  model: {
-    think: envBoolean("OLLAMA_THINK", true),
-    temperature: envNumber("OLLAMA_TEMPERATURE"),
-    topP: envNumber("OLLAMA_TOP_P"),
-    topK: envNumber("OLLAMA_TOP_K"),
+  // The models it runs on, by role: the turns on `main`, and the work no one
+  // waits on too unless a `background` model is added here; the memory
+  // found by meaning is embedded with `embedding`.
+  models: {
+    turn: main,
+    embedding: ollamaEmbedding(process.env.OLLAMA_EMBEDDING_MODEL ?? "nomic-embed-text"),
   },
   i18n: { locales: { en } },
   // What the agent does, as events in traces/ in Mercury's data folder:

@@ -9,7 +9,7 @@ sidebar:
 `defineMercuryConfig`, which does nothing at runtime: it's there so your editor and `tsc` check every field.
 
 ```ts title="mercury.config.ts"
-import { defineMercuryConfig, envBoolean, envNumber } from "@mercury-fw/core";
+import { defineMercuryConfig, envBoolean, envNumber, ollamaEmbedding, ollamaModel } from "@mercury-fw/core";
 import { httpChannel } from "@mercury-fw/channel-http";
 import { oidcAuth } from "@mercury-fw/auth-oidc";
 import { staticDirectory } from "@mercury-fw/directory-static";
@@ -20,6 +20,14 @@ import { jsonlTraces } from "@mercury-fw/trace-jsonl";
 import { qdrantConversations, qdrantIndex } from "@mercury-fw/store-qdrant";
 
 const name = "Hermes";
+
+const main = ollamaModel(process.env.OLLAMA_MODEL, {
+  think: envBoolean("OLLAMA_THINK", true),
+  temperature: envNumber("OLLAMA_TEMPERATURE"),
+  topP: envNumber("OLLAMA_TOP_P"),
+  topK: envNumber("OLLAMA_TOP_K"),
+  capacity: envNumber("OLLAMA_CAPACITY"),
+});
 
 export default defineMercuryConfig({
   persona: {
@@ -38,11 +46,9 @@ export default defineMercuryConfig({
   vectorIndex: qdrantIndex(),
   conversationStore: qdrantConversations(),
   access: { unknown: "refuse" },
-  model: {
-    think: envBoolean("OLLAMA_THINK", true),
-    temperature: envNumber("OLLAMA_TEMPERATURE"),
-    topP: envNumber("OLLAMA_TOP_P"),
-    topK: envNumber("OLLAMA_TOP_K"),
+  models: {
+    turn: main,
+    embedding: ollamaEmbedding(process.env.OLLAMA_EMBEDDING_MODEL ?? "nomic-embed-text"),
   },
   i18n: { defaultLocale: "it", locales: { en, it } },
   traces: { sink: jsonlTraces(), level: "meta" },
@@ -51,8 +57,8 @@ export default defineMercuryConfig({
 ```
 
 Settings that change between machines, and secrets, never go here: they go in `.env`, and each piece reads its own
-(see [Environment variables](../environment/)). A field whose value changes between machines, like the model's in
-[`model`](#model), reads it from `.env` through `envNumber` or `envBoolean`.
+(see [Environment variables](../environment/)). A field whose value changes between machines, like a model's settings in
+[`models`](#models), reads it from `.env` through `envNumber` or `envBoolean`.
 
 ## `plugins`
 
@@ -166,11 +172,19 @@ A scaffolded app writes the name once, as a `const`, and refers to it in `identi
 in full, one string per line, ready to edit. `{{assistant}}` in any text the model reads also becomes `name`: that's how
 the plugins' fragments and skills, written without knowing what the assistant will be called, refer to it.
 
-## `model`
+## `models`
 
-How the chat model (the one in `OLLAMA_MODEL`) generates. It applies to every call on that model: the answers, and
-the summaries and checks the agent runs on it in the background. Every field is optional: a field left out isn't
-sent to Ollama, so the model's own value applies, the one in its Modelfile.
+The models the agent runs on, each given the job the core has for it, its role:
+
+| Role | |
+|---|---|
+| `turn` | **Required.** The model that answers: every turn, the summary written when a conversation gets too long, and the checks a plugin runs on an answer. |
+| `background` | The model for the work nobody is waiting on: a conversation's title, what the memory keeps of a conversation, the corrections it learns, the wiki's nightly review. Left out, it's the `turn` model. |
+| `embedding` | The model that turns text into numbers for the memory found by meaning (see [`vectorIndex`](#vectorindex)). Needed with a vector index: an agent with one and no `embedding` model stops at startup and says so. Without a vector index nothing is embedded, and none is needed. |
+
+A model is declared once, with `ollamaModel(name, settings)` for one that writes or `ollamaEmbedding(name, { capacity })` for an embedding model, and then given to its roles. The name is the model's name on the Ollama server (`OLLAMA_HOST`). The same declaration in two roles is one model; two declarations with the same name are two.
+
+The settings of `ollamaModel` say how the model generates, for every call on it. Every field is optional: a field left out isn't sent to Ollama, so the model's own value applies, the one in its Modelfile.
 
 | Field | |
 |---|---|
@@ -178,29 +192,57 @@ sent to Ollama, so the model's own value applies, the one in its Modelfile.
 | `temperature` | How much room the less likely words get, from 0 up. Lower is more predictable: a model that guesses commands instead of reading how to write them guesses less at a low temperature. |
 | `topP` | Before each word is picked, only the most likely ones whose probabilities add up to this are kept. Above 0, at most 1. |
 | `topK` | Before each word is picked, only this many of the most likely ones are kept. A whole number from 1 up. |
+| `capacity` | How many requests the model's server answers at the same time: a whole number from 1 up, 1 when left out. Ollama answers one at a time unless its own `OLLAMA_NUM_PARALLEL` says otherwise, and some models only ever one at a time. `ollamaEmbedding` takes it too. |
 
-A value out of its range stops the agent at startup, and the log says which field. At startup the log also says what
-the model runs with: `[model] qwen3.8:27b: think on, temperature 0.2`, or `server defaults` when nothing is set.
+An empty name, or a value out of its range, stops the agent at startup, and the log says which model and which field. At startup the log also says what each role runs on:
 
-Each value usually comes from `.env`, so the same app can run another model somewhere else with other values. A
-scaffolded app writes the section like this:
+```
+[model] turn qwen3.8:27b: think on, temperature 0.2, capacity 1
+[model] background: the turn's model
+[model] embedding nomic-embed-text: capacity 1
+```
+
+`server defaults` takes the place of the settings when none is set.
+
+Each value usually comes from `.env`, so the same app can run another model somewhere else with other values. A scaffolded app declares its model above the config and gives it its roles:
 
 ```ts
-import { defineMercuryConfig, envBoolean, envNumber } from "@mercury-fw/core";
+import { defineMercuryConfig, envBoolean, envNumber, ollamaEmbedding, ollamaModel } from "@mercury-fw/core";
 
-model: {
+const main = ollamaModel(process.env.OLLAMA_MODEL, {
   think: envBoolean("OLLAMA_THINK", true),
   temperature: envNumber("OLLAMA_TEMPERATURE"),
   topP: envNumber("OLLAMA_TOP_P"),
   topK: envNumber("OLLAMA_TOP_K"),
-},
+  capacity: envNumber("OLLAMA_CAPACITY"),
+});
+
+export default defineMercuryConfig({
+  // ...
+  models: {
+    turn: main,
+    embedding: ollamaEmbedding(process.env.OLLAMA_EMBEDDING_MODEL ?? "nomic-embed-text"),
+  },
+});
 ```
 
 `envNumber(name, fallback?)` reads a number from the variable, and `envBoolean(name, fallback)` reads `true` or `false`.
-An empty or missing variable gives the fallback: with none, as for the three numbers above, the field is left out and
-the model's own value applies. Write one to have a default of your own, `envNumber("OLLAMA_TEMPERATURE", 0.2)`. Text
+An empty or missing variable gives the fallback: with none, as for the four numbers above, the field is left out and
+the model's own value applies (and the capacity is 1). Write one to have a default of your own, `envNumber("OLLAMA_TEMPERATURE", 0.2)`. Text
 that isn't a number, or isn't `true` or `false`, stops the agent at startup with the variable's name. The variables are
 listed in [Environment variables](../environment/#the-model).
+
+To run the background work on a smaller model, declare it and give it the `background` role:
+
+```ts
+models: {
+  turn: main,
+  background: ollamaModel("<smaller-model>", { think: false }),
+  embedding: ollamaEmbedding(process.env.OLLAMA_EMBEDDING_MODEL ?? "nomic-embed-text"),
+},
+```
+
+A plugin that needs a model of its own takes one in its configuration, `somePlugin({ model: ollamaModel("<its-model>") })`: the agent decides which model it is, and the plugin gets it from Mercury with `ctx.modelFor` in its `build()`.
 
 ## `traces`
 

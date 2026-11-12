@@ -2,13 +2,13 @@
  * The real conversation the harness opens: Mercury composed with only the
  * plugin under training, on the vault it's given, each turn sent as the
  * operator on the terminal's channel (no person to identify, no session
- * captured to memory), its steps collected as `/dump` writes them. The model,
- * its settings (the config's `model` section, read as an app's config reads
- * it) and everything else come from the environment, as for any app.
+ * captured to memory), its steps collected as `/dump` writes them. The model
+ * (`OLLAMA_MODEL`), its settings (read as an app's config reads them) and
+ * everything else come from the environment, as for any app.
  */
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
-import { composeMercury, defineMercuryConfig, OPERATOR_PRINCIPAL } from "@mercury-fw/core";
+import { composeMercury, defineMercuryConfig, ollamaModel, OPERATOR_PRINCIPAL } from "@mercury-fw/core";
 import type { Plugin } from "@mercury-fw/plugin-types";
 import { watchBuild } from "./build-watch.ts";
 import { modelSettingsFromEnv } from "./model-settings.ts";
@@ -23,7 +23,10 @@ export async function openMercuryConversation(plugin: Plugin, vaultPath: string)
   process.env.WIKI_VAULT_PATH = vaultPath;
   process.env.MERCURY_DATA_PATH = join(vaultPath, ".mercury");
   const watched = watchBuild(plugin);
-  const app = await composeMercury(defineMercuryConfig({ plugins: [watched.plugin], model: modelSettingsFromEnv(process.env) }));
+  const app = await composeMercury(defineMercuryConfig({
+      plugins: [watched.plugin],
+      models: { turn: ollamaModel(process.env.OLLAMA_MODEL, modelSettingsFromEnv(process.env)) },
+    }));
   const failure = watched.failure();
   if (failure !== undefined) throw new Error(failure);
   const sessionKey = `skill-trainer:${randomUUID()}`;
