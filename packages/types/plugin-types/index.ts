@@ -248,6 +248,52 @@ export type PluginRuntimeContext = {
    * core logs why): the plugin does without.
    */
   dataDir?: string;
+  /**
+   * Runs `fn` as work nobody is waiting on, through the core's queue for the
+   * models: every model call inside it waits until the people talking to the
+   * agent leave the model a free slot, one call at a time. `name` says what
+   * the work is (the traces show it as `<plugin>:<name>`); `urgency` puts
+   * `"soon"` work before `"idle"` work. Resolves with what `fn` resolves with,
+   * rejects with its error, or when the agent stops before it ran. Absent
+   * with an older core: call the model directly.
+   */
+  job?: <T>(name: string, urgency: JobUrgency, fn: () => Promise<T>) => Promise<T>;
+};
+
+/** How soon a piece of work nobody waits on should run: `"soon"` (a title, within minutes) goes before `"idle"` (whenever the model is free). */
+export type JobUrgency = "soon" | "idle";
+
+/** A tool call of a finished turn, as hooks see it: the tool, what it was called with, whether it worked, and its error when it didn't. Never what it returned. */
+export type HookCall = { toolName: string; input: unknown; ok: boolean; error?: string };
+
+/** A message of a session, as `onSessionClose` sees it: the person's text, or the agent's answer with the calls it made. */
+export type HookMessage = { role: "user" | "assistant"; content: string; calls?: HookCall[] };
+
+/**
+ * A turn that just ended with an answer, as `afterTurn` sees it. `person` is
+ * who wrote it (in a shared space, the sender); `operator` is true on the
+ * terminal, whose turns today's memory never learns from; `as` is how the
+ * plugin was offered in that turn (see `Plugin.actsAs`).
+ */
+export type FinishedTurn = {
+  sessionKey: string;
+  person: { key: string };
+  operator: boolean;
+  as: "person" | "mercury" | "anyone";
+  /** What the person wrote, as they wrote it. */
+  input: string;
+  /** The answer they got, after the post-turn guards. */
+  answer: string;
+  calls: HookCall[];
+  /** Whether the turn came from a space shared by several people. */
+  multiUser: boolean;
+};
+
+/** A session that was just closed for being quiet, as `onSessionClose` sees it: whose it was and its messages. */
+export type ClosedSession = {
+  sessionKey: string;
+  person: { key: string };
+  messages: HookMessage[];
 };
 
 /**
@@ -325,6 +371,15 @@ export type PersonLogin = {
  *   without knowing it's a CLI.
  * - `postTurnGuards`: run over the model's finished text (see `PostTurnGuard`).
  * - `login`: how a plugin acting as `person` logs one in (see `PersonLogin`).
+ * - `afterTurn`: called once a turn ended with an answer, for every plugin
+ *   offered in that turn (see `FinishedTurn`). The core doesn't wait for it:
+ *   the person already has the answer, and their next turn doesn't wait
+ *   either. A model call belongs in `ctx.job`. Ignored by an older core.
+ * - `onSessionClose`: called once a quiet session was closed, for every
+ *   plugin offered in its last turn (see `ClosedSession`); not awaited
+ *   either. Ignored by an older core.
+ *
+ * A hook that throws, or rejects, is logged: nothing else is affected.
  */
 export type PluginRuntimeContributions = {
   postProcess?: CliPostProcessor;
@@ -332,6 +387,8 @@ export type PluginRuntimeContributions = {
   sessionTools?: (ctx: SessionToolContext, postProcess?: CliPostProcessor) => Record<string, Tool>;
   toolStatusDescribers?: Record<string, (input: unknown, t: Translate) => string>;
   postTurnGuards?: PostTurnGuard[];
+  afterTurn?: (turn: FinishedTurn) => void | Promise<void>;
+  onSessionClose?: (session: ClosedSession) => void | Promise<void>;
 };
 
 /**

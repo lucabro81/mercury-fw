@@ -145,6 +145,8 @@ export type IdleSessionSweepDeps = CaptureDeps & {
   job?: <T>(fn: () => Promise<T>) => Promise<T>;
   /** `false` closes idle sessions without capturing them: an instance that keeps no memory. Captures when left out. */
   capture?: boolean;
+  /** Told about each session once it's closed, with the messages it was closed with, outside the lock (the plugins' `onSessionClose`). A throw is logged. */
+  onClosed?: (session: IdleSession) => void;
 };
 
 /**
@@ -187,13 +189,16 @@ export async function runIdleSessionSweep(
         await job(() => captureSessionToMemory(session.userId, key, session.messages, now, deps, "idle"));
       }
 
+      let closed = false;
       await withSession(key, async () => {
         // A turn of the session ran while it was captured: it goes on, open.
         if (!scanner.isIdle(key, now, idleTimeoutMs)) return;
         deps.closeSession(key);
         scanner.clear(key);
+        closed = true;
         deps.emit?.({ kind: "session.closed", session: key, person: session.userId, messages: session.messages.length });
       });
+      if (closed) deps.onClosed?.(session);
     } catch (err) {
       log(`idle session sweep failed for ${key}: ${String(err)}`);
     }

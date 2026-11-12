@@ -22,7 +22,9 @@ A plugin may also contribute:
   when to use it;
 - **skills**, longer instructions the model loads only when it needs them (below);
 - **lists for the person**, such as a list of Jira issues, which the app formats and the model never has to
-  copy out by hand (below).
+  copy out by hand (below);
+- **hooks**, code Mercury runs after a turn and when a conversation closes, for a plugin that learns from what was
+  said (below).
 
 ## Skills
 
@@ -101,6 +103,26 @@ execute: async ({ query }) => ({ ok: true, query, display: { type: "search-link"
 Mercury takes `display` out before the model sees the result, so the model reads `query` and a reference, never the
 list itself. The plugin exports the kinds it hands over as a type (as Jira does with `JiraDisplays`), so the app's
 rules for them are checked too.
+
+## After a turn, and when a conversation closes
+
+Some plugins don't add a tool: they learn from what was said, to remember it later. A plugin like that gives Mercury
+two pieces of code to run:
+
+- **after a turn**, once the person has their answer: it gets what they wrote, the answer, and the tools the model
+  called (what with, and whether they worked, never what they returned);
+- **when a conversation closes**, after half an hour with no message (`SESSION_IDLE_TIMEOUT_MS`): it gets the
+  conversation's messages.
+
+A plugin hears only about the conversations of the people it's offered to: the same [roles](../people/) that decide
+who may use its tools decide whose turns it sees. Mercury doesn't wait for this code: the answer is already out,
+and the person's next message doesn't wait either. Code that fails is written in the log and leaves everything else
+as it was.
+
+When that work needs the model (a summary, say), the plugin hands it to Mercury as a **job**: Mercury runs it only
+when nobody is waiting for an answer, the same way it runs its own work (see
+[Work nobody waits on](../../reference/config/#work-nobody-waits-on)). The [traces](../traces/) show each job
+under the plugin's name.
 
 ## Whose identity a tool uses
 

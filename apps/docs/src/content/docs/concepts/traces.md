@@ -53,11 +53,12 @@ What gets recorded:
 | `confirmation.staged`, `confirmation.resolved` | An action waits for a confirmation, and how it was resolved. |
 | `history.compressed` | A long conversation was summarized to fit: how much, how long it took. |
 | `guard.run` | A plugin's check on the answer ran, and whether it changed it. |
+| `plugin.hook` | A plugin's code after a turn, or after a conversation closed, finished: which plugin, how long it took, whether it worked. |
 | `memory.capture`, `memory.consolidate`, `memory.correction` | The memory saved a conversation, decided whether to keep a fact or a correction, and why. |
 | `title` | A conversation got its title, or why it didn't. |
 | `review.pass` | A pass of the nightly wiki review: ran or skipped, how long, how it went. |
 | `session.closed` | A quiet conversation was saved and freed. |
-| `background.job` | A piece of work nobody waits on ran (a title, a capture, a correction, the archive's index, a review pass): on which models, in how many model calls, how long they waited for the model and how long it took in all, and whether it was done, failed or dropped when the agent stopped. One that needed no model call (no correction to look for, a title already there) isn't recorded. |
+| `background.job` | A piece of work nobody waits on ran (a title, a capture, a correction, the archive's index, a review pass, or a plugin's job, named `<plugin>:<job>`): on which models, in how many model calls, how long they waited for the model and how long it took in all, and whether it was done, failed or dropped when the agent stopped. One that needed no model call (no correction to look for, a title already there) isn't recorded. |
 | `system.start`, `system.channels` | The agent started: the model of each role with its capacity, plugins and channels running, and the ones left out with the reason; whether it has a vector index and a conversation store. |
 | `system.migrated` | The agent copied state an older version kept elsewhere: which area, and what it copied. |
 | `system.error`, `system.recovered` | Something failed without stopping the agent (the memory store unreachable, a login that didn't finish), and when it came back. |

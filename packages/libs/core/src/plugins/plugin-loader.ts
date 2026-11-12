@@ -24,7 +24,7 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { LanguageModel } from "ai";
 import { PLUGIN_API_VERSION } from "@mercury-fw/plugin-types";
-import type { Plugin, CliPostProcessor, MercuryModelHandle, Messages, PersonLogin, PostTurnGuard, Skill, SessionToolContext, Translate } from "@mercury-fw/plugin-types";
+import type { Plugin, ClosedSession, CliPostProcessor, FinishedTurn, JobUrgency, MercuryModelHandle, Messages, PersonLogin, PostTurnGuard, Skill, SessionToolContext, Translate } from "@mercury-fw/plugin-types";
 import { catalogErrors } from "../i18n/i18n.ts";
 import type { Tool } from "ai";
 
@@ -55,6 +55,12 @@ export interface LoadedPlugin {
   /** Its tool factory, when it contributes tools; the composition root invokes
    * it per turn with the session context (see `SessionToolBundle`). */
   bundle?: SessionToolBundle;
+  /** The plugin as the config declared it: what the config points at when it names a plugin by object. */
+  source: Plugin;
+  /** Its hook for a turn that ended with an answer (see `PluginRuntimeContributions.afterTurn`). */
+  afterTurn?: (turn: FinishedTurn) => void | Promise<void>;
+  /** Its hook for a session closed for being quiet (see `PluginRuntimeContributions.onSessionClose`). */
+  onSessionClose?: (session: ClosedSession) => void | Promise<void>;
 }
 
 /** What the loader hands back to the composition root. The core knows nothing
@@ -87,9 +93,19 @@ export interface PluginLoadContext {
   log: (msg: string) => void;
   /** The assistant's name, for what a plugin builds while running (see `PluginRuntimeContext`). */
   assistantName: string;
+  /** Runs a plugin's work nobody waits on through the core's queue, named as the traces show it (`<plugin>:<name>`); no plugin gets `job` when absent (see `PluginRuntimeContext.job`). */
+  job?: <T>(name: string, urgency: JobUrgency, fn: () => Promise<T>) => Promise<T>;
   /** Where each plugin's own data folder goes (`<root>/<name>`, see
    * `PluginRuntimeContext.dataDir`); no plugin gets one when absent. */
   pluginDataRoot?: string;
+}
+
+/** `plugin`'s `job`: the core's queue, with the job named after the plugin. */
+function pluginJob(
+  plugin: string,
+  job: NonNullable<PluginLoadContext["job"]>,
+): <T>(name: string, urgency: JobUrgency, fn: () => Promise<T>) => Promise<T> {
+  return (name, urgency, fn) => job(`${plugin}:${name}`, urgency, fn);
 }
 
 /** A plugin name usable as a folder name as is: the rule app names follow too. */
@@ -246,6 +262,7 @@ export async function loadPlugins(plugins: Plugin[], ctx: PluginLoadContext): Pr
             log: ctx.log,
             assistantName: ctx.assistantName,
             ...(dataDir === undefined ? {} : { dataDir }),
+            ...(ctx.job === undefined ? {} : { job: pluginJob(plugin.name, ctx.job) }),
           })
         : {};
 
@@ -265,6 +282,9 @@ export async function loadPlugins(plugins: Plugin[], ctx: PluginLoadContext): Pr
         ...(plugin.systemPromptFragment === undefined ? {} : { promptFragment: plugin.systemPromptFragment }),
         skills: [...(plugin.skills ?? [])],
         ...(bundle === undefined ? {} : { bundle }),
+        source: plugin,
+        ...(contributions.afterTurn === undefined ? {} : { afterTurn: contributions.afterTurn }),
+        ...(contributions.onSessionClose === undefined ? {} : { onSessionClose: contributions.onSessionClose }),
       });
       if (actsAs === "mercury") {
         ctx.log(

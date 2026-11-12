@@ -165,7 +165,7 @@ mercury/                       # repo root
 ├── scripts/                   # release tooling: release.ts (versions + tags), publish.ts (types + pack check + bun pm pack + npm publish), github-releases.ts (a GitHub Release per published tag), build-types.ts, check-pack.ts, workspaces.ts
 ├── packages/                  # grouped into per-role buckets; every workspace is @mercury-fw/*
 │   ├── types/
-│   │   ├── plugin-types/          # the shared Plugin contract (tools, version 6) — types + apiVersion + skill/status helpers + the texts a person sees (`Messages`, `Params`, `Translate`), imported by core and plugins
+│   │   ├── plugin-types/          # the shared Plugin contract (tools, version 6) — types + apiVersion + skill/status helpers + the hooks after a turn and on a session's close + `ctx.job` + the texts a person sees (`Messages`, `Params`, `Translate`), imported by core and plugins
 │   │   └── channel-types/         # the shared ChannelPlugin contract (channels, version 7) — Provider/TurnSink + confirm helpers + the channel's texts (`messages`, `ctx.i18n`, `languageHint`, `FinalizeInfo.pendingNote`) + the turn's `timeZoneHint` and the person's settings (`ctx.settings`) + renaming the person's conversations (`ctx.conversations`) + the providers declared beside the channels (`AuthPlugin`, `DirectoryPlugin`, `TraceSinkPlugin`), imported by core and channels
 │   ├── channels/
 │   │   ├── channel-google-chat/   # Google Chat channel plugin: the registered-app transport (Pub/Sub + REST), loaded by the channel loader
@@ -224,7 +224,7 @@ packages/libs/core/
     ├── data/                 # the core's data folder (data-dir.ts): MERCURY_DATA_PATH, required, where Mercury's own state lives (account links, profiles, plugins' data, traces and their secret); the one-time copy of an older vault's `.mercury/` into it; the declared vector index's and conversation store's loaders (vector-index-loader.ts, conversation-store-loader.ts)
     ├── config/               # defineMercuryConfig + the MercuryConfig contract (plugins, channels, persona)
     ├── tools/                 # CLI executor + command parser/allowlist (cli-tool.ts) + config schema/loader/version-check + the display channel (display-channel.ts: strips and stashes every plugin tool's display) + the display store and `present`
-    ├── plugins/               # generic fail-soft tool-plugin loader (plugin-loader.ts; refuses a plugin with no description, whose `messages` reach outside its name, or named `core`/`app`), what each person is offered (offering.ts: act-as-self, access.plugins, the plugins listed with their descriptions) and the tools acting as Mercury for them (act-as-self.ts), the manifest
+    ├── plugins/               # generic fail-soft tool-plugin loader (plugin-loader.ts; refuses a plugin with no description, whose `messages` reach outside its name, or named `core`/`app`), what each person is offered (offering.ts: act-as-self, access.plugins, the plugins listed with their descriptions) and the tools acting as Mercury for them (act-as-self.ts), the plugins' hooks after a turn and on a session's close, for the plugins offered (plugin-hooks.ts), the manifest
     ├── router/
     │   ├── turn-runner.ts      # shared per-turn driver every provider funnels through, one turn at a time per session
     │   ├── session-lock.ts     # the per-session queue the turn runner and the idle sweep share

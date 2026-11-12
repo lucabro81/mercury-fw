@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { Tool } from "ai";
-import type { SessionToolContext } from "@mercury-fw/plugin-types";
+import type { Plugin, SessionToolContext } from "@mercury-fw/plugin-types";
 import type { LoadedPlugin } from "./plugin-loader.ts";
 import { ACT_AS_SELF, offeringFor } from "./offering.ts";
 import { AS_SELF_NOTE } from "./act-as-self.ts";
@@ -14,6 +14,7 @@ function plugin(name: string, actsAs: "person" | "mercury", built: SessionToolCo
     name,
     description: `what ${name} does`,
     actsAs,
+    source: { name } as Plugin,
     skills: [],
     bundle: {
       name,
@@ -39,7 +40,7 @@ function setup(roles: string[], operator = false) {
   const stashed: Array<{ artifact: string; label: string; show: boolean }> = [];
   const logs: string[] = [];
   const logins: Array<[string, string]> = [];
-  const plugins = [plugin("jira", "person", built), plugin("admin", "mercury", built), { name: "prompt-only", description: "Only adds to the prompt.", actsAs: "person", skills: [] } as LoadedPlugin];
+  const plugins = [plugin("jira", "person", built), plugin("admin", "mercury", built), { name: "prompt-only", description: "Only adds to the prompt.", actsAs: "person", skills: [], source: { name: "prompt-only" } as Plugin } satisfies LoadedPlugin];
   const who = { person: { key: "people:alice", roles }, operator };
   const result = buildOfferedTools(offeringFor(plugins, { roles, operator }), who, {
     context,
@@ -115,7 +116,7 @@ describe("buildOfferedTools", () => {
 
   test("no tool-contributing plugin offered: no plugin tools", () => {
     const who = { person: { key: "k", roles: [] }, operator: false };
-    const plugins = [{ name: "prompt-only", description: "Only adds to the prompt.", actsAs: "person", skills: [] } as LoadedPlugin];
+    const plugins = [{ name: "prompt-only", description: "Only adds to the prompt.", actsAs: "person", skills: [], source: { name: "prompt-only" } as Plugin } satisfies LoadedPlugin];
     expect(buildOfferedTools(offeringFor(plugins, { roles: [], operator: false }), who, { context, requireLogin: async () => ({ ok: false, error: "" }), log: () => {}, stashDisplay: () => "d" })).toEqual({
       tools: {},
       hasPluginTools: false,
@@ -166,6 +167,7 @@ describe("buildOfferedTools: a real CLI tool through the display channel", () =>
       name: "jira",
       description: "Reads Jira.",
       actsAs: "anyone",
+      source: { name: "jira" } as Plugin,
       skills: [],
       bundle: {
         name: "jira",
