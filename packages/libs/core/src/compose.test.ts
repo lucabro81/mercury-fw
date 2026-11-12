@@ -8,6 +8,7 @@ import { fakeVectorIndex } from "./memory/__fixtures__/fake-vector-index.ts";
 import { fakeConversationStore } from "./memory/__fixtures__/fake-conversation-store.ts";
 import type { MercuryConfig } from "./config/define-config.ts";
 import { ollamaEmbedding, ollamaModel } from "./model/models.ts";
+import { PLUGIN_API_VERSION, type PluginRuntimeContext } from "@mercury-fw/plugin-types";
 
 // Nothing listens on these: Qdrant and Ollama fail soft, and composing never
 // asks the model anything.
@@ -273,6 +274,72 @@ describe("composeMercury", () => {
       expect(app.channelRuntime.reads?.conversations !== undefined).toBe(reads);
       expect(app.channelRuntime.conversations !== undefined).toBe(reads);
     }
+  });
+
+  // #383: each role's model reaches the work it's for. A plugin gets the turn's
+  // model as ctx.model and its own handle's through ctx.modelFor.
+  it("hands a plugin the turn model and, through modelFor, the model of a handle it was given", async () => {
+    const own = ollamaModel("query-writer");
+    let seen: { model: unknown; first: unknown; again: unknown } | undefined;
+    const plugin = {
+      apiVersion: PLUGIN_API_VERSION,
+      name: "own-model",
+      description: "Answers with a model of its own.",
+      build: (ctx: PluginRuntimeContext) => {
+        const first = ctx.modelFor?.(own);
+        seen = { model: ctx.model, first, again: ctx.modelFor?.(own) };
+        return {};
+      },
+    };
+    await composeMercury({ plugins: [plugin], models: { turn: ollamaModel("big"), background: ollamaModel("small") } });
+    expect((seen?.model as { modelId: string }).modelId).toBe("big");
+    expect((seen?.first as { modelId: string }).modelId).toBe("query-writer");
+    expect(seen?.again).toBe(seen?.first);
+  });
+
+  // #383: the turn runs on `turn`, the conversation's title on `background`.
+  it("runs the turn on the turn model and the conversation's title on the background model", async () => {
+    const asked: string[] = [];
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input instanceof Request ? input.url : input);
+      if (!url.endsWith("/api/chat")) return new Response("not here", { status: 404 });
+      const body = JSON.parse(String(init?.body ?? "{}")) as { model: string };
+      asked.push(body.model);
+      return Response.json({
+        model: body.model,
+        created_at: new Date().toISOString(),
+        message: { role: "assistant", content: "A short title" },
+        done: true,
+        done_reason: "stop",
+        prompt_eval_count: 1,
+        eval_count: 1,
+      });
+    }) as typeof fetch;
+    try {
+      const app = await composeMercury({
+        plugins: [],
+        models: { turn: ollamaModel("big"), background: ollamaModel("small") },
+        conversationStore: { apiVersion: 1, name: "fake", build: () => fakeConversationStore() },
+        access: { unknown: "allow" },
+      });
+      await app.handleTurn(
+        { channel: "http", multiUser: false, text: "hello", sessionKey: "http:alice:c1", principal: { provider: "static", id: "alice" }, logPrefix: "" },
+        { onToolStart: () => {}, finalize: async () => {}, dispose: () => {} } as never,
+      );
+      for (let i = 0; i < 50 && asked.length < 2; i++) await new Promise((resolve) => setTimeout(resolve, 10));
+      expect(asked[0]).toBe("big");
+      expect(asked.slice(1)).toEqual(["small"]);
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  });
+
+  // A stale config (the old `model`, no `models`) is refused by tsc; without it, the start stops saying what's missing.
+  it("refuses to start without models.turn, naming what to declare", async () => {
+    await expect(composeMercury({ plugins: [] } as unknown as MercuryConfig)).rejects.toThrow(
+      "models.turn is required: declare the model the turns run on with ollamaModel(...)",
+    );
   });
 
   it("gives channels no app version when the config declares none, or an empty one", async () => {

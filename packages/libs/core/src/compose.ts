@@ -180,6 +180,10 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   // on the instance's Ollama, with its settings for every call on it.
   const provider = getOllamaProvider();
   const ollamaHost = requireEnv("OLLAMA_HOST"); // already validated by getOllamaProvider(); read again here for the terminal provider's getLoadedContextLength call
+  // Without tsc (Bun doesn't typecheck), a config still on the old `model` gets here with no models.
+  if (config.models?.turn === undefined) {
+    throw new Error("models.turn is required: declare the model the turns run on with ollamaModel(...)");
+  }
   // Memory found by meaning is embedded: an index without an embedding model is
   // a config that can't work, not something to start without.
   if (config.vectorIndex !== undefined && config.models.embedding === undefined) {
