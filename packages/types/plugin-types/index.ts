@@ -302,8 +302,9 @@ export type ClosedSession = {
  * to them (`as`, the identity its tools would act with), what they wrote
  * (for a `session` layer, their first message in the session; empty when
  * that turn was one the agent opened, or resumed after a confirmation),
- * whether the space is shared, and the layer's knobs as the instance set
- * them (empty until the plugin declares some).
+ * whether the space is shared, and the value of each knob the layer
+ * declares in the person's profile: the one the instance set, or the knob's
+ * `default` (empty when it declares none).
  */
 export type ContextRequest = {
   sessionKey: string;
@@ -312,8 +313,26 @@ export type ContextRequest = {
   as: "person" | "mercury" | "anyone";
   input: string;
   multiUser: boolean;
-  knobs: Record<string, unknown>;
+  knobs: Record<string, KnobValue>;
 };
+
+/** A knob's value: what its `KnobSpec` allows. */
+export type KnobValue = boolean | number | string;
+
+/**
+ * A setting a context layer lets the instance change while it runs, per
+ * profile, without a restart (an admin area draws it from this alone):
+ * its `type`, its `default`, a one-line `description` for whoever changes
+ * it, and the values it allows. `integer` and `number` may bound it with
+ * `min` and `max` (included); `enum` lists its `values`, `default` among
+ * them. A plugin whose spec contradicts itself (a `default` outside it, an
+ * `enum` with no values) isn't loaded.
+ */
+export type KnobSpec =
+  | { type: "boolean"; default: boolean; description: string }
+  | { type: "integer" | "number"; default: number; description: string; min?: number; max?: number }
+  | { type: "string"; default: string; description: string }
+  | { type: "enum"; default: string; description: string; values: string[] };
 
 /**
  * What a plugin adds to what the model reads, when the instance lists it in
@@ -337,6 +356,8 @@ export type ContextRequest = {
 export type ContextLayer = {
   scope: "session" | "turn";
   build: (req: ContextRequest) => Promise<string[] | undefined>;
+  /** The settings the layer reads from `req.knobs`, by name (see `KnobSpec`). */
+  knobs?: Record<string, KnobSpec>;
 };
 
 /**
