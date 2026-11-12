@@ -3622,3 +3622,71 @@ describe("createTurnRunner: afterTurn comes before the capture (#387)", () => {
     expect(order).toEqual(["afterTurn", "capture"]);
   });
 });
+
+describe("createTurnRunner: the context (#387)", () => {
+  /** A runner whose model call records what it's given, with `contextFor` and the rest overridable. */
+  function runnerWith(overrides: Partial<TurnRunnerDeps>, seen: Array<{ system: string; turnContext?: string }>) {
+    return createTurnRunner({
+      model: {} as any,
+      systemPrompts: { singleUser: "BASE", multiUser: "MULTI" },
+      buildTools: () => ({}),
+      getOrCreateHistory: () => fakeHistory({ primer: () => ({ current: "PRIMER", recap: "" }) }),
+      trackSession: () => {},
+      registerCaptureCallback: () => {},
+      maybeCapture: async () => {},
+      processToolCorrections: async () => {},
+      logStep: () => {},
+      runTurnFn: async (_history, _input, deps) => {
+        seen.push({ system: deps.system, ...(deps.turnContext === undefined ? {} : { turnContext: deps.turnContext }) });
+        return "reply";
+      },
+      ...overrides,
+    });
+  }
+
+  test("puts the session layers in the system prompt after the primer, and hands the turn layers to the model call", async () => {
+    const seen: Array<{ system: string; turnContext?: string }> = [];
+    const asked: unknown[][] = [];
+    await runnerWith(
+      {
+        contextFor: async (...args: unknown[]) => {
+          asked.push(args);
+          return { system: "SESSION LAYERS", turn: "<context>\nT\n</context>", event: { profile: "default", budget: 10, used: 3, layers: [] } };
+        },
+      },
+      seen,
+    )(baseTurn({ principal: verified("u1"), text: "hello" }), baseSink());
+
+    expect(seen).toEqual([{ system: "BASE\n\nPRIMER\n\nSESSION LAYERS", turnContext: "<context>\nT\n</context>" }]);
+    expect(asked[0]![1]).toEqual({ sessionKey: "session-1", input: "hello", multiUser: false });
+  });
+
+  test("reports what the context held as a context.assembled event of the turn", async () => {
+    const events: Array<Record<string, unknown>> = [];
+    await runnerWith(
+      {
+        contextFor: async () => ({ event: { profile: "premium", budget: 10, used: 0, layers: [] } }),
+        tracer: { emit: (e) => void events.push(e as Record<string, unknown>), flush: async () => {} },
+        newTurnId: () => "t1",
+      },
+      [],
+    )(baseTurn(), baseSink());
+    expect(events.find((e) => e.kind === "context.assembled")).toEqual({
+      kind: "context.assembled",
+      profile: "premium",
+      budget: 10,
+      used: 0,
+      layers: [],
+      turn: "t1",
+      session: "session-1",
+      person: "none:terminal",
+    });
+  });
+
+  test("without contextFor, or when it fails, the prompt and the call are today's", async () => {
+    const seen: Array<{ system: string; turnContext?: string }> = [];
+    await runnerWith({}, seen)(baseTurn(), baseSink());
+    await runnerWith({ contextFor: async () => { throw new Error("broke"); } }, seen)(baseTurn(), baseSink());
+    expect(seen).toEqual([{ system: "BASE\n\nPRIMER" }, { system: "BASE\n\nPRIMER" }]);
+  });
+});
