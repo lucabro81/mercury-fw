@@ -9,7 +9,7 @@ sidebar:
 `defineMercuryConfig`, which does nothing at runtime: it's there so your editor and `tsc` check every field.
 
 ```ts title="mercury.config.ts"
-import { defineMercuryConfig, envBoolean, envNumber } from "@mercury-fw/core";
+import { defineMercuryConfig, envBoolean, envNumber, ollamaEmbedding, ollamaModel } from "@mercury-fw/core";
 import { httpChannel } from "@mercury-fw/channel-http";
 import { oidcAuth } from "@mercury-fw/auth-oidc";
 import { staticDirectory } from "@mercury-fw/directory-static";
@@ -20,6 +20,14 @@ import { jsonlTraces } from "@mercury-fw/trace-jsonl";
 import { qdrantConversations, qdrantIndex } from "@mercury-fw/store-qdrant";
 
 const name = "Hermes";
+
+const main = ollamaModel(process.env.OLLAMA_MODEL, {
+  think: envBoolean("OLLAMA_THINK", true),
+  temperature: envNumber("OLLAMA_TEMPERATURE"),
+  topP: envNumber("OLLAMA_TOP_P"),
+  topK: envNumber("OLLAMA_TOP_K"),
+  capacity: envNumber("OLLAMA_CAPACITY"),
+});
 
 export default defineMercuryConfig({
   persona: {
@@ -38,11 +46,9 @@ export default defineMercuryConfig({
   vectorIndex: qdrantIndex(),
   conversationStore: qdrantConversations(),
   access: { unknown: "refuse" },
-  model: {
-    think: envBoolean("OLLAMA_THINK", true),
-    temperature: envNumber("OLLAMA_TEMPERATURE"),
-    topP: envNumber("OLLAMA_TOP_P"),
-    topK: envNumber("OLLAMA_TOP_K"),
+  models: {
+    turn: main,
+    embedding: ollamaEmbedding(process.env.OLLAMA_EMBEDDING_MODEL ?? "nomic-embed-text"),
   },
   i18n: { defaultLocale: "it", locales: { en, it } },
   traces: { sink: jsonlTraces(), level: "meta" },
