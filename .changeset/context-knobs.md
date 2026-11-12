@@ -2,7 +2,7 @@
 "@mercury-fw/plugin-types": minor
 "@mercury-fw/channel-types": minor
 "@mercury-fw/core": minor
-"@mercury-fw/kit": minor
+"@mercury-fw/kit": patch
 "@mercury-fw/channel-http": minor
 "@mercury-fw/directory-static": patch
 ---

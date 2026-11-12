@@ -4,7 +4,7 @@ Gives a [Mercury](https://github.com/lucabro81/mercury-fw) agent an HTTP surface
 
 On Mercury's documentation site: [its page](https://lucabro81.github.io/mercury-fw/plugins/channel-http/).
 
-This version is written for version 7 of the channel contract, the one whose conversation and memory reads are there only when the agent keeps them, and needs the framework at 0.73 or later; since 0.61 the core says when a resumed turn's answer is no longer available (`resume` below). A core with an older contract skips it, and the log says why.
+This version is written for version 7 of the channel contract, the one whose conversation and memory reads are there only when the agent keeps them, and needs the framework at 0.74 or later; since 0.61 the core says when a resumed turn's answer is no longer available (`resume` below). A core with an older contract skips it, and the log says why.
 
 ```bash
 bun add @mercury-fw/channel-http
