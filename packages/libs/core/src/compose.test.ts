@@ -8,6 +8,7 @@ import { fakeVectorIndex } from "./memory/__fixtures__/fake-vector-index.ts";
 import { fakeConversationStore } from "./memory/__fixtures__/fake-conversation-store.ts";
 import type { MercuryConfig } from "./config/define-config.ts";
 import { ollamaEmbedding, ollamaModel } from "./model/models.ts";
+import { generateText } from "ai";
 import { PLUGIN_API_VERSION, type PluginRuntimeContext } from "@mercury-fw/plugin-types";
 
 // Nothing listens on these: Qdrant and Ollama fail soft, and composing never
@@ -351,6 +352,81 @@ describe("composeMercury", () => {
       await app.tracer.flush();
       expect(events.filter((e) => e.kind === "background.job")).toEqual([
         expect.objectContaining({ kind: "background.job", job: "title", urgency: "soon", models: ["small"], steps: 1, outcome: "done" }),
+      ]);
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  });
+
+  // #387: a plugin hears about the turns it was offered in, and its job runs
+  // on the queue under its own name, its model calls (on the model it was
+  // given) as background steps.
+  it("hands a finished turn to a plugin's afterTurn, whose job runs on the queue as <plugin>:<name>", async () => {
+    const events: Array<Record<string, unknown>> = [];
+    let jobReported!: () => void;
+    const jobDone = new Promise<void>((resolve) => {
+      jobReported = resolve;
+    });
+    const sink = {
+      apiVersion: 1,
+      name: "collect",
+      build: () => ({
+        write: (e: Record<string, unknown>) => {
+          events.push(e);
+          if (e.kind === "background.job") jobReported();
+        },
+        flush: async () => {},
+      }),
+    };
+    const turns: unknown[] = [];
+    const plugin = {
+      apiVersion: PLUGIN_API_VERSION,
+      name: "memo",
+      description: "Keeps notes.",
+      actsAs: "anyone" as const,
+      build: (ctx: PluginRuntimeContext) => ({
+        afterTurn: (turn: unknown) => {
+          turns.push(turn);
+          void ctx.job?.("note", "idle", () => generateText({ model: ctx.model, prompt: "note it" }));
+        },
+      }),
+    };
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input instanceof Request ? input.url : input);
+      if (!url.endsWith("/api/chat")) return new Response("not here", { status: 404 });
+      const body = JSON.parse(String(init?.body ?? "{}")) as { model: string };
+      return Response.json({
+        model: body.model,
+        created_at: new Date().toISOString(),
+        message: { role: "assistant", content: "ok" },
+        done: true,
+        done_reason: "stop",
+        prompt_eval_count: 1,
+        eval_count: 1,
+      });
+    }) as typeof fetch;
+    try {
+      const app = await composeMercury({
+        plugins: [plugin],
+        models: { turn: ollamaModel("big") },
+        access: { unknown: "allow" },
+        traces: { sink },
+      });
+      await app.handleTurn(
+        { channel: "http", multiUser: false, text: "hello", sessionKey: "http:alice:c1", principal: { provider: "static", id: "alice" }, logPrefix: "" },
+        { onToolStart: () => {}, finalize: async () => {}, dispose: () => {} } as never,
+      );
+      await jobDone;
+      expect(turns).toEqual([
+        expect.objectContaining({ sessionKey: "http:alice:c1", input: "hello", answer: "ok", operator: false, as: "anyone", multiUser: false }),
+      ]);
+      await app.tracer.flush();
+      expect(events.filter((e) => e.kind === "background.job")).toEqual([
+        expect.objectContaining({ job: "memo:note", urgency: "idle", models: ["big"], steps: 1, outcome: "done" }),
+      ]);
+      expect(events.filter((e) => e.kind === "plugin.hook")).toEqual([
+        expect.objectContaining({ plugin: "memo", hook: "afterTurn", outcome: "done" }),
       ]);
     } finally {
       globalThis.fetch = realFetch;

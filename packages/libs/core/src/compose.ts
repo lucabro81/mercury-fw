@@ -21,6 +21,7 @@ import { createConfirmationStore, createStageChoices, createStageConfirmation, t
 import { createDisplayStore } from "./tools/display-store.ts";
 import { createPresentTool } from "./tools/present-tool.ts";
 import { loadPlugins } from "./plugins/plugin-loader.ts";
+import { createPluginHooks } from "./plugins/plugin-hooks.ts";
 import { materializeCliCredentials } from "./credentials/materialize.ts";
 import type { MercuryConfig } from "./config/define-config.ts";
 import { createResumeSlots } from "./session/resume-slots.ts";
@@ -214,10 +215,13 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
     config.models.embedding === undefined || models.embedding === undefined
       ? undefined
       : scheduler.embeddingModel(config.models.embedding, models.embedding);
-  // A plugin's own model, queued: a call during a turn is turn work on it.
+  // The turn model as plugins get it, queued: a call during a turn is turn
+  // work on it, never held back; one inside a plugin's job waits its turn.
+  const pluginModel = scheduler.languageModel(config.models.turn, model);
+  // A plugin's own model, queued the same way.
   const queuedOwn = new Map<MercuryModelHandle, LanguageModel>();
   const modelFor = (handle: MercuryModelHandle): LanguageModel => {
-    if (handle === config.models.turn) return model;
+    if (handle === config.models.turn) return pluginModel;
     let queued = queuedOwn.get(handle);
     if (queued === undefined) {
       queued = scheduler.languageModel(handle, models.modelFor(handle));
@@ -249,12 +253,13 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   });
 
   const loadedPlugins = await loadPlugins(plugins, {
-    model,
+    model: pluginModel,
     modelFor,
     assistantName,
     env: process.env,
     log: (msg) => console.error(msg),
     pluginDataRoot: pluginDataRoot(dataPath),
+    job: (name, urgency, fn) => backgroundJob(name as BackgroundJobName, urgency, fn),
   });
 
   // Status labels for the tool-start hook, keyed by tool name: each plugin's
@@ -299,6 +304,14 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   // What a person is offered of the loaded plugins (see plugins/offering.ts).
   const offeringOf = (who: TurnWho): Offering =>
     offeringFor(loadedPlugins.plugins, { roles: who.person.roles, operator: who.operator }, config.access?.plugins);
+
+  // The plugins' hooks (see plugins/plugin-hooks.ts): a plugin hears about
+  // the turns, and the closes, of the sessions it was offered in.
+  const pluginHooks = createPluginHooks({
+    offered: (who) => offeringOf(who).entries,
+    log: (msg) => console.error(msg),
+    emit: (event) => tracer.emit(event),
+  });
 
   // The two system prompts (1:1 and shared-space) for an offering, built from
   // the descriptions, fragments and skills of the plugins it holds and the instance's
@@ -712,6 +725,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
     // Post-turn guards contributed by whatever plugins loaded — the core runs
     // them without knowing what any does (see PostTurnGuard).
     postTurnGuards: loadedPlugins.postTurnGuards,
+    afterTurn: pluginHooks.afterTurn,
     getOrCreateHistory: async (key, trackForCapture, userId, resume, timeZone) => {
       if (trackForCapture && userId && !histories.has(key)) {
         // A conversation its client reopens comes back from the archive (#163).
@@ -856,6 +870,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
         job: (fn) => backgroundJob("capture", "idle", fn),
         ...captureDeps,
         capture: vectorIndex !== undefined,
+        onClosed: pluginHooks.sessionClosed,
       },
       {
         idleTimeoutMs: Number(process.env.SESSION_IDLE_TIMEOUT_MS ?? String(30 * 60_000)),
