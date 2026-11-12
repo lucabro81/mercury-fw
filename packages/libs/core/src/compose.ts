@@ -202,7 +202,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   // work nobody waits on runs a model call at a time in the slots they leave
   // free. Every model but the turn's own (the turn runner counts its turns)
   // goes through it; a wrong capacity stops the start here.
-  const scheduler = createScheduler({ emit: (event) => tracer.emit(event) });
+  const scheduler = createScheduler({ emit: (event) => tracer.emit(event), log: (line) => console.error(line) });
   /** Runs `fn` as one background job on the queue. */
   const backgroundJob = <T,>(job: BackgroundJobName, urgency: Urgency, fn: () => Promise<T>): Promise<T> =>
     scheduler.job({ job, urgency }, fn);

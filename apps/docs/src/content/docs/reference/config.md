@@ -194,7 +194,7 @@ The settings of `ollamaModel` say how the model generates, for every call on it.
 | `topP` | Before each word is picked, only the most likely ones whose probabilities add up to this are kept. Above 0, at most 1. |
 | `topK` | Before each word is picked, only this many of the most likely ones are kept. A whole number from 1 up. |
 | `capacity` | How many requests the model's server answers at the same time: a whole number from 1 up, 1 when left out. Ollama answers one at a time unless its own `OLLAMA_NUM_PARALLEL` says otherwise, and some models only ever one at a time. `ollamaEmbedding` takes it too. |
-| `backgroundSlots` | How many of those requests the work nobody is waiting on may take at once (see [Work nobody waits on](#work-nobody-waits-on)): a whole number from 1 up, 1 when left out, below `capacity` when that's above 1. With `capacity: 8, backgroundSlots: 2`, six requests are always free for the people talking to the agent. |
+| `backgroundSlots` | How many of those requests the work nobody is waiting on may take at once (see [Work nobody waits on](#work-nobody-waits-on)): a whole number from 1 up, 1 when left out, below `capacity` when that's above 1 and only 1 with capacity 1 (anything else stops the agent at startup). With `capacity: 8, backgroundSlots: 2`, six requests are always free for the people talking to the agent. |
 
 An empty name, or a value out of its range, stops the agent at startup, and the log says which model and which field. At startup the log also says what each role runs on:
 

@@ -409,6 +409,19 @@ describe("scheduler: the background.job event", () => {
     ]);
   });
 
+  test("each dropped job gets a log line", async () => {
+    const lines: string[] = [];
+    const scheduler = createScheduler({ log: (line) => lines.push(line) });
+    const model = ollamaModel("qwen");
+    const release = scheduler.holdTurn(model);
+    const job = scheduler.job({ job: "review", urgency: "idle" }, () => scheduler.call(model, async () => {})).catch(() => {});
+    await flush();
+    scheduler.stop();
+    await job;
+    release();
+    expect(lines).toEqual(["[queue] review dropped: the agent stopped before it could run"]);
+  });
+
   test("a job that swallowed a dropped step is still dropped", async () => {
     const events: Array<Record<string, unknown>> = [];
     const scheduler = createScheduler({ emit: (event) => events.push(event) });

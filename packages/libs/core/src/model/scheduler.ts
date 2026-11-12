@@ -85,8 +85,10 @@ function checkHandle(handle: QueuedHandle): { capacity: number; backgroundSlots:
   return { capacity, backgroundSlots };
 }
 
-/** Builds the instance's scheduler; `now` and `emit` are for the `background.job` events. */
-export function createScheduler(opts: { now?: () => number; emit?: (event: TraceInput) => void } = {}): Scheduler {
+/** Builds the instance's scheduler; `now` and `emit` are for the `background.job` events, `log` for the line each job dropped at stop gets. */
+export function createScheduler(
+  opts: { now?: () => number; emit?: (event: TraceInput) => void; log?: (line: string) => void } = {},
+): Scheduler {
   const now = opts.now ?? Date.now;
   const queues = new Map<QueuedHandle, Queue>();
   const jobs = new AsyncLocalStorage<JobState>();
@@ -176,6 +178,7 @@ export function createScheduler(opts: { now?: () => number; emit?: (event: Trace
       // A job done without a model call (no correction to look for, a title already there) isn't worth an event.
       const report = (outcome: "done" | "failed" | "dropped") => {
         if (outcome === "done" && state.steps === 0) return;
+        if (outcome === "dropped") (opts.log ?? console.error)(`[queue] ${meta.job} dropped: the agent stopped before it could run`);
         opts.emit?.({
           kind: "background.job",
           job: meta.job,
