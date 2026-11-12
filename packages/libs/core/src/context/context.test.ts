@@ -342,3 +342,88 @@ describe("context per person and session (#387, review)", () => {
     expect(calls).toBe(1);
   });
 });
+
+describe("knobs and changes while running (#387, part 3)", () => {
+  /** A layer of `scope` with `knobs` that records the requests it's built for and returns `blocks`. */
+  function knobbed(scope: "session" | "turn", knobs: ContextLayer["knobs"], blocks: string[], seen: ContextRequest[]): ContextLayer {
+    return { ...layer(scope, blocks, seen), knobs };
+  }
+
+  it("starts every profile with no knob set", () => {
+    const rag = plugin("rag", layer("turn", []));
+    const resolved = resolveContext(
+      { profiles: { default: { layers: [rag.declared], budget: { maxChars: 10 } } } },
+      { declared: [rag.declared], loaded: [rag.loaded], log: () => {} },
+    )!;
+    expect(resolved.profiles.get("default")!.knobs).toEqual(new Map());
+  });
+
+  it("hands each layer its knobs: the value set in the person's profile, else the default", async () => {
+    const seen: ContextRequest[] = [];
+    const rag = plugin(
+      "rag",
+      knobbed(
+        "turn",
+        {
+          topK: { type: "integer", default: 5, description: "How many" },
+          fresh: { type: "boolean", default: false, description: "Newest first" },
+        },
+        ["hit"],
+        seen,
+      ),
+    );
+    const resolved = resolveContext(
+      { profiles: { default: { layers: [rag.declared], budget: { maxChars: 100 } } } },
+      { declared: [rag.declared], loaded: [rag.loaded], log: () => {} },
+    )!;
+    resolved.profiles.get("default")!.knobs.set("rag", { topK: 8 });
+    const a = createContextAssembler({ resolved, offered: () => [{ plugin: rag.loaded, as: "anyone" }], log: () => {} });
+    await a.forTurn(alice, turn());
+    expect(seen[0]!.knobs).toEqual({ topK: 8, fresh: false });
+  });
+
+  it("applies a change to the profile from the next turn to its turn layers; its session layers keep what they were built with", async () => {
+    const wikiSeen: ContextRequest[] = [];
+    const ragSeen: ContextRequest[] = [];
+    const notesSeen: ContextRequest[] = [];
+    const wiki = plugin("wiki", knobbed("session", { depth: { type: "integer", default: 1, description: "How deep" } }, ["index"], wikiSeen));
+    const rag = plugin("rag", knobbed("turn", { topK: { type: "integer", default: 5, description: "How many" } }, ["r-hit"], ragSeen));
+    const notes = plugin("notes", layer("turn", ["n-hit"], notesSeen));
+    const resolved = resolveContext(
+      { profiles: { default: { layers: [wiki.declared, rag.declared, notes.declared], budget: { maxChars: 100 } } } },
+      { declared: [wiki.declared, rag.declared, notes.declared], loaded: [wiki.loaded, rag.loaded, notes.loaded], log: () => {} },
+    )!;
+    const a = createContextAssembler({
+      resolved,
+      offered: () => [wiki, rag, notes].map((p) => ({ plugin: p.loaded, as: "anyone" as const })),
+      log: () => {},
+    });
+    const first = await a.forTurn(alice, turn("one"));
+    expect(first.turn).toBe("<context>\nr-hit\n\nn-hit\n</context>");
+
+    const profile = resolved.profiles.get("default")!;
+    profile.layers = [notes.loaded, wiki.loaded, rag.loaded];
+    profile.maxChars = 14;
+    profile.knobs.set("rag", { topK: 2 }).set("wiki", { depth: 3 });
+
+    const second = await a.forTurn(alice, turn("two"));
+    expect(second.system).toBe("index");
+    expect(second.turn).toBe("<context>\nn-hit\n</context>");
+    expect(ragSeen.map((r) => r.knobs)).toEqual([{ topK: 5 }, { topK: 2 }]);
+    expect(wikiSeen.map((r) => r.knobs)).toEqual([{ depth: 1 }]);
+    expect(second.event).toEqual({
+      profile: "default",
+      budget: 14,
+      used: 10,
+      layers: [
+        { plugin: "notes", scope: "turn", chars: 5, blocks: 1, dropped: 0 },
+        { plugin: "wiki", scope: "session", chars: 5, blocks: 1, dropped: 0 },
+        { plugin: "rag", scope: "turn", chars: 0, blocks: 0, dropped: 1 },
+      ],
+    });
+
+    const other = await a.forTurn(alice, turn("hello", "s2"));
+    expect(other.system).toBe("index");
+    expect(wikiSeen.map((r) => r.knobs)).toEqual([{ depth: 1 }, { depth: 3 }]);
+  });
+});

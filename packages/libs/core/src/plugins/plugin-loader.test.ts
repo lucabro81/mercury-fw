@@ -585,4 +585,31 @@ describe("loadPlugins: context layers (#387)", () => {
     const loaded = await loadPlugins([plug({ name: "rag", build: () => ({ context }) })], baseCtx());
     expect(loaded.plugins[0]!.context).toBe(context);
   });
+
+  it("doesn't load a plugin whose layer declares a knob that contradicts itself, and says which and why", async () => {
+    const logs: string[] = [];
+    const loaded = await loadPlugins(
+      [
+        plug({
+          name: "rag",
+          build: () => ({
+            context: {
+              scope: "turn",
+              build: async () => [],
+              knobs: { topK: { type: "integer", default: 5, description: "How many", min: 1, max: 3 } },
+            },
+          }),
+        }),
+        plug({
+          name: "wiki",
+          build: () => ({
+            context: { scope: "session", build: async () => [], knobs: { depth: { type: "integer", default: 2, description: "How deep" } } },
+          }),
+        }),
+      ],
+      baseCtx({ log: (m) => logs.push(m) }),
+    );
+    expect(loaded.activated).toEqual(["wiki"]);
+    expect(logs).toEqual(['plugin "rag" failed to load, skipped: its context knob "topK" doesn\'t hold: its default 5 is above its max 3']);
+  });
 });

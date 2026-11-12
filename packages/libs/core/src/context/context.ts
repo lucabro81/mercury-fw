@@ -24,19 +24,28 @@
  *   counts the blocks' characters: the session layers take it first, in
  *   order, then the turn layers have what's left, in order; a block that
  *   doesn't fit is dropped whole. A layer that fails is skipped and logged.
+ *   Each layer gets its knobs as the person's profile sets them, else their
+ *   defaults. A profile's order, budget and knobs can change while the
+ *   instance runs (`context-settings.ts`): the turn layers follow from the
+ *   next turn, the session layers from the next session.
  *
  * Used by: `compose.ts`, which resolves the config after the plugins load
  * and hands the assembler to the turn runner.
  */
-import type { ContextRequest, Plugin } from "@mercury-fw/plugin-types";
+import type { ContextRequest, KnobValue, Plugin } from "@mercury-fw/plugin-types";
 import type { MercuryContext } from "../config/define-config.ts";
 import type { TurnWho } from "../identity/people.ts";
 import type { PluginAccess } from "../plugins/offering.ts";
 import type { OfferedEntry } from "../plugins/plugin-hooks.ts";
 import type { LoadedPlugin } from "../plugins/plugin-loader.ts";
 
-/** A profile as the core uses it: its name, the loaded plugins whose layers it reads, in order, and its budget. */
-export type ResolvedProfile = { name: string; layers: LoadedPlugin[]; maxChars: number };
+/**
+ * A profile as the core uses it: its name, the loaded plugins whose layers it
+ * reads, in order, its budget, and the knobs set in it, by plugin (a knob not
+ * set has its default). The order, the budget and the knobs change while the
+ * instance runs (`context-settings.ts`): the assembler reads them at every turn.
+ */
+export type ResolvedProfile = { name: string; layers: LoadedPlugin[]; maxChars: number; knobs: Map<string, Record<string, KnobValue>> };
 
 /** The instance's context, checked: its profiles by name, and who gets which, in the order written. */
 export type ResolvedContext = { profiles: Map<string, ResolvedProfile>; assign: Array<[profile: string, roles: string[]]> };
@@ -76,7 +85,7 @@ export function resolveContext(
       }
       layers.push(loaded);
     }
-    profiles.set(name, { name, layers, maxChars });
+    profiles.set(name, { name, layers, maxChars, knobs: new Map() });
   }
   for (const [name, roles] of assign) {
     for (const plugin of profiles.get(name)?.layers ?? []) {
@@ -154,6 +163,12 @@ function fit(built: Built[], budget: number, scope: "session" | "turn"): { kept:
   return { kept, used, reports };
 }
 
+/** The knobs `plugin`'s layer gets in `profile`: each one's value set there, else its default. */
+function knobsOf(profile: ResolvedProfile, plugin: LoadedPlugin): Record<string, KnobValue> {
+  const set = profile.knobs.get(plugin.name) ?? {};
+  return Object.fromEntries(Object.entries(plugin.context!.knobs ?? {}).map(([name, spec]) => [name, set[name] ?? spec.default]));
+}
+
 /** Builds the context assembler over `resolved`; see the module comment. */
 export function createContextAssembler(deps: {
   resolved: ResolvedContext;
@@ -178,7 +193,7 @@ export function createContextAssembler(deps: {
           as: entry.as,
           input: turn.input,
           multiUser: turn.multiUser,
-          knobs: {},
+          knobs: knobsOf(profile, plugin),
         };
         try {
           return { plugin, blocks: ((await plugin.context!.build(req)) ?? []).filter((b) => typeof b === "string" && b !== "") };

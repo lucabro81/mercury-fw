@@ -27,6 +27,7 @@ import { PLUGIN_API_VERSION } from "@mercury-fw/plugin-types";
 import type { Plugin, ClosedSession, CliPostProcessor, ContextLayer, FinishedTurn, JobUrgency, MercuryModelHandle, Messages, PersonLogin, PostTurnGuard, Skill, SessionToolContext, Translate } from "@mercury-fw/plugin-types";
 import { catalogErrors } from "../i18n/i18n.ts";
 import type { Tool } from "ai";
+import { knobSpecError } from "../context/knobs.ts";
 
 /** One plugin's tool contribution, kept paired so the composition root can build
  * its tools from its own post-processor: the plugin authored both, but a
@@ -267,6 +268,12 @@ export async function loadPlugins(plugins: Plugin[], ctx: PluginLoadContext): Pr
             ...(ctx.job === undefined ? {} : { job: pluginJob(plugin.name, ctx.job) }),
           })
         : {};
+      // A knob's spec is what an admin area draws and checks values against:
+      // one that contradicts itself would refuse every value, its default too.
+      for (const [knob, spec] of Object.entries(contributions.context?.knobs ?? {})) {
+        const error = knobSpecError(spec);
+        if (error !== undefined) throw new Error(`its context knob "${knob}" doesn't hold: ${error}`);
+      }
 
       const bundle: SessionToolBundle | undefined = contributions.sessionTools
         ? {
