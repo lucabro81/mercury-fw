@@ -31,7 +31,7 @@
 export { composeMercury, type ComposedApp, type ConfirmDeps } from "./src/compose.ts";
 export { loadChannels, type LoadedChannel } from "./src/router/channel-loader.ts";
 export { createTerminalProvider } from "./src/router/terminal-provider.ts";
-export { defineMercuryConfig, type MercuryConfig, type MercuryAccess, type MercuryI18n, type MercuryModel, type MercuryTraces } from "./src/config/define-config.ts";
+export { defineMercuryConfig, type ContextProfile, type MercuryConfig, type MercuryAccess, type MercuryContext, type MercuryI18n, type MercuryModel, type MercuryTraces } from "./src/config/define-config.ts";
 export { pseudonymOf, type TraceLevel, type Tracer } from "./src/traces/tracer.ts";
 export { envBoolean, envNumber } from "./src/config/env-value.ts";
 export { ollamaEmbedding, ollamaModel, type MercuryModels } from "./src/model/models.ts";
