@@ -14,7 +14,10 @@
  * publishing works with (in CI the registry trusts the workflow through OIDC,
  * no token). Never `changeset publish` or `npm publish` on the folder: both
  * leave `workspace:*` in the published manifests. Locally, authentication is
- * the registry's usual one (an `.npmrc` token). Without `--tag`, versions go
+ * the registry's usual one (an `.npmrc` token). npm takes a while to show a
+ * version it has just taken: a rerun in that window publishes it again, and
+ * npm's refusal of a version it already has counts as published, so a rerun
+ * goes on at once. Without `--tag`, versions go
  * to `latest`, which is where the CLI looks plugins up. In GitHub Actions it
  * also writes how many packages it published (`published=<n>`) to
  * `$GITHUB_OUTPUT`: `publish.yml` deploys the docs site only when it isn't 0.
@@ -43,6 +46,29 @@ export async function isPublished(
   if (res.status === 404) return false;
   if (res.ok) return true;
   throw new Error(`${registry} answered ${res.status} checking ${name}@${version}: stopping`);
+}
+
+/**
+ * Whether `stderr`, from a failed `npm publish`, is npm refusing a version it
+ * already has: one it took but doesn't show yet (`E409`, "previously staged
+ * version"), or one it shows (`E403`, "previously published versions"). Any
+ * other failure (a forbidden publish, the network) isn't.
+ */
+export function alreadyOnRegistry(stderr: string): boolean {
+  return (
+    (/\bE409\b/.test(stderr) && /previously staged version/i.test(stderr)) ||
+    (/\bE403\b/.test(stderr) && /cannot publish over the previously published version/i.test(stderr))
+  );
+}
+
+/** Runs `npm publish` (`cmd`) in `cwd`, its output passed through: `"already"` when npm refuses the version as one it has (`alreadyOnRegistry`); throws on any other failure. */
+export function npmPublish(cmd: string[], cwd: string): "published" | "already" {
+  const proc = Bun.spawnSync(cmd, { cwd, stdout: "inherit", stderr: "pipe" });
+  const stderr = proc.stderr.toString();
+  process.stderr.write(stderr);
+  if (proc.exitCode === 0) return "published";
+  if (alreadyOnRegistry(stderr)) return "already";
+  throw new Error(`${cmd.join(" ")} failed in ${cwd}`);
 }
 
 /** The version a brand-new package carries until its first release bumps it. */
@@ -88,12 +114,15 @@ export function writeGithubOutput(file: string | undefined, published: number): 
  * (`publishAction`), how to publish one, where to say what it does. */
 export type PublishAllDeps = {
   decide: (pkg: { name: string; version: string }) => Promise<{ publish: true } | { publish: false; reason: string }>;
-  publishOne: (workspace: { dir: string; pkg: { name: string; version: string } }) => void;
+  /** `"already"` when npm refused the version as one it already has. */
+  publishOne: (workspace: { dir: string; pkg: { name: string; version: string } }) => "published" | "already";
   log: (line: string) => void;
 };
 
 /** Publishes each of `workspaces`, in order, that `decide` lets through, and
- * returns how many it published: skipped ones don't count. */
+ * returns how many it published: skipped ones don't count, ones npm refused
+ * as already published do (a rerun that meets only those still lets the site
+ * of the release deploy). */
 export async function publishAll(
   workspaces: Array<{ dir: string; pkg: { name: string; version: string } }>,
   deps: PublishAllDeps,
@@ -106,7 +135,7 @@ export async function publishAll(
       continue;
     }
     deps.log(`publish ${w.pkg.name}@${w.pkg.version}`);
-    deps.publishOne(w);
+    if (deps.publishOne(w) === "already") deps.log(`already on the registry (npm refused it as published): ${w.pkg.name}@${w.pkg.version}`);
     published++;
   }
   return published;
@@ -142,7 +171,7 @@ if (import.meta.main) {
       // From the tarballs' folder, outside the repo: npm would otherwise read
       // the root manifest's devEngines (Bun) and refuse to run.
       publishOne: ({ dir }) =>
-        run(publishCommand(pack(dir, tarballs), { registry, tag: values.tag, dryRun: values["dry-run"] as boolean }), tarballs),
+        npmPublish(publishCommand(pack(dir, tarballs), { registry, tag: values.tag, dryRun: values["dry-run"] as boolean }), tarballs),
       log: (line) => console.log(line),
     });
     if (!values["dry-run"]) writeGithubOutput(process.env.GITHUB_OUTPUT, published);

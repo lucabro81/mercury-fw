@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { orderByDependencies, REPO_ONLY_DIRS, root, workspaces, type Workspace } from "./workspaces.ts";
 import { typesConfig } from "./build-types.ts";
-import { isPublished, publishAction, publishAll, publishCommand, writeGithubOutput } from "./publish.ts";
+import { alreadyOnRegistry, isPublished, publishAction, publishAll, publishCommand, writeGithubOutput } from "./publish.ts";
 import { comparePack, privacyProblem } from "./check-pack.ts";
 import { pendingChangesets, stageRelease } from "./release.ts";
 import { changelogSection, createReleaseCommand, createReleases, parseTag, releaseNotes, releasesToCreate } from "./github-releases.ts";
@@ -493,6 +493,39 @@ describe("writeGithubOutput", () => {
   });
 });
 
+describe("alreadyOnRegistry", () => {
+  test("is npm refusing a version it has taken but not shown yet (E409), as the v0.73.0 rerun got it", () => {
+    expect(
+      alreadyOnRegistry(
+        [
+          "npm error code E409",
+          'npm error 409 Conflict - PUT https://registry.npmjs.org/@mercury-fw%2fplugin-types - Cannot publish over previously staged version "0.73.0".',
+          "npm error A complete log of this run can be found in: /home/runner/.npm/_logs/2026-11-12T14_52_03_633Z-debug-0.log",
+        ].join("\n"),
+      ),
+    ).toBe(true);
+  });
+
+  test("is npm refusing a version it already shows (E403, previously published)", () => {
+    expect(
+      alreadyOnRegistry(
+        "npm error code E403\nnpm error 403 403 Forbidden - PUT https://registry.npmjs.org/@mercury-fw%2fcore - You cannot publish over the previously published versions: 0.73.0.",
+      ),
+    ).toBe(true);
+  });
+
+  test("isn't any other failure: a forbidden publish, a missing package, the network, nothing said", () => {
+    expect(
+      alreadyOnRegistry(
+        "npm error code E403\nnpm error 403 403 Forbidden - PUT https://registry.npmjs.org/@mercury-fw%2fstore-qdrant - You do not have permission to publish \"@mercury-fw/store-qdrant\".",
+      ),
+    ).toBe(false);
+    expect(alreadyOnRegistry("npm error code E404\nnpm error 404 Not Found - PUT https://registry.npmjs.org/@mercury-fw%2fnew - Not found")).toBe(false);
+    expect(alreadyOnRegistry("npm error code ECONNRESET\nnpm error network aborted")).toBe(false);
+    expect(alreadyOnRegistry("")).toBe(false);
+  });
+});
+
 describe("publishAll", () => {
   const three = [ws("a"), ws("b"), ws("c")];
 
@@ -500,7 +533,7 @@ describe("publishAll", () => {
     const published: string[] = [];
     const count = await publishAll(three, {
       decide: async (pkg) => (pkg.name === "b" ? { publish: false, reason: "already on r" } : { publish: true }),
-      publishOne: (w) => published.push(w.pkg.name),
+      publishOne: (w) => (published.push(w.pkg.name), "published" as const),
       log: () => {},
     });
     expect(published).toEqual(["a", "c"]);
@@ -516,11 +549,37 @@ describe("publishAll", () => {
       publishOne: (w) => {
         if (w.pkg.name === "b") throw new Error("npm publish failed");
         published.push(w.pkg.name);
+        return "published" as const;
       },
       log: () => {},
     });
     await expect(run).rejects.toThrow("npm publish failed");
     expect(published).toEqual(["a"]);
+  });
+
+  // #386: a rerun right after a failed run met a version npm had taken but
+  // not shown yet; npm refused it with E409 and the run stopped there, leaving
+  // the packages after it unpublished.
+  test("goes on past a version npm refuses as already published, counting it, and says so", async () => {
+    const published: string[] = [];
+    const lines: string[] = [];
+    const count = await publishAll(three, {
+      decide: async () => ({ publish: true }),
+      publishOne: (w) => {
+        if (w.pkg.name === "b") return "already";
+        published.push(w.pkg.name);
+        return "published";
+      },
+      log: (line) => lines.push(line),
+    });
+    expect(published).toEqual(["a", "c"]);
+    expect(count).toBe(3);
+    expect(lines).toEqual([
+      "publish a@1.0.0",
+      "publish b@1.0.0",
+      "already on the registry (npm refused it as published): b@1.0.0",
+      "publish c@1.0.0",
+    ]);
   });
 
   // The docs site deploys only when this isn't 0: a push that published
