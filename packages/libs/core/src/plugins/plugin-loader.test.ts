@@ -276,6 +276,7 @@ describe("loadPlugins: whose identity each plugin acts with", () => {
         promptFragment: "FRAG",
         skills: [{ name: "jira", description: "d", body: "b" }],
         bundle: { name: "jira", build: tools, login },
+        source: plugin,
       },
     ]);
   });
@@ -287,8 +288,8 @@ describe("loadPlugins: whose identity each plugin acts with", () => {
     const loaded = await loadPlugins([asMercury, undeclared], baseCtx({ log: (m) => logs.push(m) }));
     expect(loaded.activated).toEqual(["admin", "other"]);
     expect(loaded.plugins).toEqual([
-      { name: "admin", description: "what admin does", actsAs: "mercury", promptFragment: "ADMIN", skills: [], bundle: { name: "admin", build: tools } },
-      { name: "other", description: "what other does", actsAs: "mercury", skills: [{ name: "other", description: "d", body: "b" }] },
+      { name: "admin", description: "what admin does", actsAs: "mercury", promptFragment: "ADMIN", skills: [], bundle: { name: "admin", build: tools }, source: asMercury },
+      { name: "other", description: "what other does", actsAs: "mercury", skills: [{ name: "other", description: "d", body: "b" }], source: undeclared },
     ]);
     expect(logs).toEqual([
       'plugin "admin" acts as Mercury itself: offered only to people holding mercury.act-as-self or mercury.act-as-self.admin, and on the terminal',
@@ -524,5 +525,56 @@ describe("loadPlugins: what was left out, and why", () => {
 
   it("nothing left out, an empty list", async () => {
     expect((await loadPlugins([plug({ name: "ok" })], baseCtx())).left).toEqual([]);
+  });
+});
+
+describe("loadPlugins: hooks and jobs (#387)", () => {
+  it("keeps each loaded plugin's own object, so the config can point at it", async () => {
+    const plugin = plug({ name: "wiki" });
+    const loaded = await loadPlugins([plugin], baseCtx());
+    expect(loaded.plugins[0]!.source).toBe(plugin);
+  });
+
+  it("keeps a plugin's afterTurn and onSessionClose with the plugin they came from", async () => {
+    const afterTurn = () => {};
+    const onSessionClose = () => {};
+    const loaded = await loadPlugins(
+      [plug({ name: "memo", build: () => ({ afterTurn, onSessionClose }) }), plug({ name: "jira", build: () => ({}) })],
+      baseCtx(),
+    );
+    expect(loaded.plugins.map((p) => [p.name, p.afterTurn, p.onSessionClose])).toEqual([
+      ["memo", afterTurn, onSessionClose],
+      ["jira", undefined, undefined],
+    ]);
+  });
+
+  it("gives build() a job that runs on the core's queue under the plugin's name", async () => {
+    const queued: Array<[string, string]> = [];
+    let job: ((name: string, urgency: "soon" | "idle", fn: () => Promise<number>) => Promise<number>) | undefined;
+    await loadPlugins(
+      [
+        plug({
+          name: "memo",
+          build: (ctx) => {
+            job = ctx.job;
+            return {};
+          },
+        }),
+      ],
+      baseCtx({
+        job: (name, urgency, fn) => {
+          queued.push([name, urgency]);
+          return fn();
+        },
+      }),
+    );
+    expect(await job!("index", "idle", async () => 42)).toBe(42);
+    expect(queued).toEqual([["memo:index", "idle"]]);
+  });
+
+  it("with no queue, build() gets no job", async () => {
+    let seen: unknown = "unset";
+    await loadPlugins([plug({ name: "memo", build: (ctx) => ((seen = ctx.job), {}) })], baseCtx());
+    expect(seen).toBeUndefined();
   });
 });

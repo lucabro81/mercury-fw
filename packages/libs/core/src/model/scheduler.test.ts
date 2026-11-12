@@ -378,6 +378,15 @@ describe("scheduler: the background.job event", () => {
     ]);
   });
 
+  // #387: a plugin's job is named after the plugin.
+  test("a plugin's job is reported under its own name", async () => {
+    const events: Array<Record<string, unknown>> = [];
+    const scheduler = createScheduler({ now: () => 0, emit: (event) => events.push(event) });
+    const model = ollamaModel("qwen");
+    await scheduler.job({ job: "memo:index", urgency: "idle" }, () => scheduler.call(model, async () => {}));
+    expect(events.map((e) => e.job)).toEqual(["memo:index"]);
+  });
+
   // #383: the turn's corrections, or a title that already exists, often need no model call: every turn would add an empty event.
   test("a job done without a model call reports nothing", async () => {
     const events: Array<Record<string, unknown>> = [];

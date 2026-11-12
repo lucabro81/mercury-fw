@@ -1,9 +1,10 @@
 import { describe, expect, test } from "bun:test";
+import type { Plugin } from "@mercury-fw/plugin-types";
 import type { LoadedPlugin } from "./plugin-loader.ts";
 import { ACT_AS_SELF, offeringFor } from "./offering.ts";
 
-const jira: LoadedPlugin = { name: "jira", description: "Reads Jira issues.", actsAs: "person", promptFragment: "JIRA", skills: [{ name: "jira", description: "d", body: "b" }] };
-const admin: LoadedPlugin = { name: "admin", description: "Manages users.", actsAs: "mercury", promptFragment: "ADMIN", skills: [] };
+const jira: LoadedPlugin = { name: "jira", description: "Reads Jira issues.", actsAs: "person", promptFragment: "JIRA", skills: [{ name: "jira", description: "d", body: "b" }], source: { name: "jira" } as Plugin };
+const admin: LoadedPlugin = { name: "admin", description: "Manages users.", actsAs: "mercury", promptFragment: "ADMIN", skills: [], source: { name: "admin" } as Plugin };
 const plugins = [jira, admin];
 
 /** The offering as `name:as`, `+` marking the variant that acts as Mercury beside the person's own. */
@@ -75,7 +76,7 @@ describe("offeringFor", () => {
 });
 
 describe("offeringFor: a plugin that acts as no one", () => {
-  const search: LoadedPlugin = { name: "web-search", description: "Searches the web.", actsAs: "anyone", promptFragment: "SEARCH", skills: [] };
+  const search: LoadedPlugin = { name: "web-search", description: "Searches the web.", actsAs: "anyone", promptFragment: "SEARCH", skills: [], source: { name: "web-search" } as Plugin };
 
   test("is offered to everyone, as no one, with no variant acting as Mercury", () => {
     expect(shape(offeringFor([search], person()))).toEqual(["web-search:anyone"]);
