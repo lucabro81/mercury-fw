@@ -3497,3 +3497,103 @@ describe("traces of a turn: stalled, and stood in", () => {
     expect(events.at(-1)).toMatchObject({ kind: "turn.end", outcome: "done", stoodIn: true });
   });
 });
+
+describe("createTurnRunner: afterTurn (#387)", () => {
+  /** A runner whose `afterTurn` records what it's handed; `runTurnFn` and the rest overridable. */
+  function runnerWith(overrides: Partial<TurnRunnerDeps>, seen: unknown[][]) {
+    return createTurnRunner({
+      model: {} as any,
+      systemPrompts: { singleUser: "s", multiUser: "m" },
+      buildTools: () => ({}),
+      getOrCreateHistory: () => fakeHistory(),
+      trackSession: () => {},
+      registerCaptureCallback: () => {},
+      maybeCapture: async () => {},
+      processToolCorrections: async () => {},
+      logStep: () => {},
+      runTurnFn: async () => "reply",
+      afterTurn: (...args: unknown[]) => {
+        seen.push(args);
+      },
+      ...overrides,
+    });
+  }
+
+  test("hands a done turn to afterTurn: who wrote it, what they wrote, the guarded answer, the calls it was written from", async () => {
+    const seen: unknown[][] = [];
+    const history = fakeHistory({
+      getMessages: () => [
+        { role: "user", content: "hello" },
+        {
+          role: "assistant",
+          content: "reply",
+          calls: [
+            { toolName: "jira", input: { command: "issue list" }, result: { ok: true, ran: "jira issue list", results: 2 } },
+            { toolName: "web_fetch", input: { url: "x" }, result: { ok: false, ran: "web_fetch", error: "refused" } },
+          ],
+        },
+      ],
+    });
+    const runner = runnerWith(
+      {
+        getOrCreateHistory: () => history,
+        postTurnGuards: [
+          { statusLabel: () => "", statusId: "g", shouldRun: () => true, run: async (text) => ({ text: `${text}!`, outcome: "success" }) },
+        ],
+      },
+      seen,
+    );
+
+    await runner(baseTurn({ principal: verified("u1"), text: "hello", multiUser: true }), baseSink());
+
+    expect(seen).toHaveLength(1);
+    const [who, turn] = seen[0]!;
+    expect((who as { operator: boolean }).operator).toBe(false);
+    expect(turn).toEqual({
+      sessionKey: "session-1",
+      input: "hello",
+      answer: "reply!",
+      calls: [
+        { toolName: "jira", input: { command: "issue list" }, ok: true },
+        { toolName: "web_fetch", input: { url: "x" }, ok: false, error: "refused" },
+      ],
+      multiUser: true,
+    });
+  });
+
+  test("hands the operator's turns too, saying so", async () => {
+    const seen: unknown[][] = [];
+    await runnerWith({}, seen)(baseTurn(), baseSink());
+    expect((seen[0]![0] as { operator: boolean }).operator).toBe(true);
+  });
+
+  test("an opening's cue isn't something the person wrote: the input is empty", async () => {
+    const seen: unknown[][] = [];
+    await runnerWith({}, seen)(baseTurn({ opening: true, principal: verified("u1") }), baseSink());
+    expect((seen[0]![1] as { input: string }).input).toBe("");
+  });
+
+  test("a failed turn, a cancelled one and a refused one reach no afterTurn", async () => {
+    const seen: unknown[][] = [];
+    await expect(
+      runnerWith({ runTurnFn: async () => { throw new Error("boom"); } }, seen)(baseTurn(), baseSink()),
+    ).rejects.toThrow("boom");
+    const abort = new AbortController();
+    await runnerWith({ runTurnFn: async () => (abort.abort(), "partial") }, seen)(baseTurn({ abortSignal: abort.signal }), baseSink());
+    await runnerWith({ identify: async () => ({ ok: false, reason: "unknown", message: "no" }) }, seen)(baseTurn(), baseSink());
+    expect(seen).toEqual([]);
+  });
+
+  test("an afterTurn that throws leaves the turn done", async () => {
+    const sink = baseSink();
+    await runnerWith(
+      {
+        afterTurn: () => {
+          throw new Error("hook broke");
+        },
+      },
+      [],
+    )(baseTurn(), sink);
+    expect(sink.finalized).toEqual(["reply"]);
+  });
+});

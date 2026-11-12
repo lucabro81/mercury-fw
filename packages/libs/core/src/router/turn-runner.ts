@@ -10,7 +10,7 @@
  * given turn came from — same channel-agnostic spirit as `runTurn` itself.
  */
 import type { LanguageModel, Tool } from "ai";
-import type { CallRecord } from "../session/call-record.ts";
+import { hookCall, type CallRecord } from "../session/call-record.ts";
 import { ABORTED_MARKER, runTurn } from "../session/agent-turn.ts";
 import type { StepInfo } from "../session/step-info.ts";
 import { formatTurnStamp } from "../session/turn-stamp.ts";
@@ -22,7 +22,7 @@ import { createTurnTrace, type TraceEntry } from "../session/turn-trace.ts";
 // generic for future use. A guard that throws is caught by the core and never
 // blocks delivery — a guard failure is a quality miss, not a reason to
 // withhold an already-generated answer.
-import type { PostTurnGuard } from "@mercury-fw/plugin-types";
+import type { HookCall, PostTurnGuard } from "@mercury-fw/plugin-types";
 import type { ResumedAction } from "@mercury-fw/confirm-engine";
 export type { PostTurnGuard };
 import type { Message, SessionHistory } from "../session/history.ts";
@@ -31,6 +31,10 @@ import { shownText } from "../memory/verbatim-archive-store.ts";
 import type { HandleTurn, InboundTurn, TurnSink } from "./provider.ts";
 import { createPeople, type Identified, type TurnWho } from "../identity/people.ts";
 export type { TurnWho };
+
+/** What `afterTurn` is told about a finished turn: the session, what the person wrote (empty for a turn the agent opened, or resumed after a confirmation), the answer after the guards, its calls, whether the space is shared. */
+export type FinishedTurnInfo = { sessionKey: string; input: string; answer: string; calls: HookCall[]; multiUser: boolean };
+
 import { createSessionLock, type SessionLock } from "./session-lock.ts";
 import { englishTexts, type Translate } from "../i18n/i18n.ts";
 import { noopTracer, type TraceInput, type Tracer } from "../traces/tracer.ts";
@@ -283,6 +287,13 @@ export type TurnRunnerDeps = {
    * core knows nothing about what any of them does.
    */
   postTurnGuards?: PostTurnGuard[];
+  /**
+   * Told about every turn that ended with an answer, once the person has it:
+   * who wrote it and what the turn was (`FinishedTurn` without what depends
+   * on the plugin). The composition root hands it to the plugins' `afterTurn`
+   * hooks. Called, never awaited; a throw is logged.
+   */
+  afterTurn?: (who: TurnWho, turn: FinishedTurnInfo) => void;
   /** The texts of the person with `key` on a channel hinting `hint`, for what the turn shows them that isn't the model's; English when absent. */
   translatorFor?: (key: string, hint?: string) => Translate;
   /**
@@ -814,5 +825,20 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
     void deps.processToolCorrections(steps, channelSink.onToolStart, channelSink.onToolFinish, key).catch((err) =>
       console.log(`[corrections] failed, turn unaffected: ${String(err instanceof Error ? err.message : err)}`),
     );
+    if (deps.afterTurn) {
+      const last = history.getMessages().at(-1);
+      const calls = last?.role === "assistant" ? (last.calls ?? []) : [];
+      try {
+        deps.afterTurn(who, {
+          sessionKey: turn.sessionKey,
+          input: turn.opening || resumed ? "" : turn.text,
+          answer: assistantText,
+          calls: calls.map(hookCall),
+          multiUser: turn.multiUser,
+        });
+      } catch (err) {
+        console.log(`[hooks] afterTurn failed, turn unaffected: ${String(err instanceof Error ? err.message : err)}`);
+      }
+    }
   }
 }

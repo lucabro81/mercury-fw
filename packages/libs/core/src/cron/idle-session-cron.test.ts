@@ -621,3 +621,76 @@ describe("memory events: a failed extraction", () => {
     ]);
   });
 });
+
+describe("runIdleSessionSweep: onClosed (#387)", () => {
+  it("tells onClosed about a session once it's closed, with the messages it was closed with, outside the lock", async () => {
+    const scanner = createIdleSessionScanner();
+    scanner.touch("s1", NOW - TIMEOUT);
+    const events: string[] = [];
+    const told: unknown[] = [];
+    const messages: Message[] = [{ role: "user", content: "hi" }, { role: "assistant", content: "hello" }];
+
+    await runIdleSessionSweep(scanner, NOW, TIMEOUT, {
+      capture: false,
+      withSession: async (_key, fn) => {
+        events.push("lock");
+        await fn();
+        events.push("unlock");
+      },
+      getSession: (key) => ({ key, userId: "u1", messages }),
+      summarize: async () => "s",
+      store: async () => {},
+      closeSession: () => events.push("close"),
+      onClosed: (session) => {
+        events.push("onClosed");
+        told.push(session);
+      },
+    });
+
+    expect(events).toEqual(["lock", "unlock", "lock", "close", "unlock", "onClosed"]);
+    expect(told).toEqual([{ key: "s1", userId: "u1", messages }]);
+  });
+
+  it("a session a turn kept open isn't closed, so onClosed hears nothing", async () => {
+    const scanner = createIdleSessionScanner();
+    scanner.touch("s1", NOW - TIMEOUT);
+    const told: unknown[] = [];
+
+    await runIdleSessionSweep(scanner, NOW, TIMEOUT, {
+      getSession: (key) => ({ key, userId: "u1", messages: [] }),
+      summarize: async () => {
+        scanner.touch("s1", NOW + 1);
+        return "s";
+      },
+      store: async () => {},
+      closeSession: () => {},
+      onClosed: (session) => void told.push(session),
+    });
+
+    expect(told).toEqual([]);
+  });
+
+  it("an onClosed that throws doesn't stop the sweep from closing the next session", async () => {
+    const scanner = createIdleSessionScanner();
+    scanner.touch("s1", NOW - TIMEOUT);
+    scanner.touch("s2", NOW - TIMEOUT);
+    const closed: string[] = [];
+    const logs: string[] = [];
+
+    await runIdleSessionSweep(scanner, NOW, TIMEOUT, {
+      capture: false,
+      getSession: (key) => ({ key, userId: "u1", messages: [] }),
+      summarize: async () => "s",
+      store: async () => {},
+      closeSession: (key) => void closed.push(key),
+      onClosed: () => {
+        throw new Error("hook broke");
+      },
+      log: (msg) => void logs.push(msg),
+    });
+
+    expect(closed).toEqual(["s1", "s2"]);
+    expect(scanner.scanIdle(NOW, TIMEOUT)).toEqual([]);
+    expect(logs.some((l) => l.includes("hook broke"))).toBe(true);
+  });
+});

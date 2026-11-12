@@ -13,6 +13,7 @@
  * and guessed its commands instead of reading it again (#356).
  */
 import type { ModelMessage } from "ai";
+import type { HookCall } from "@mercury-fw/plugin-types";
 import type { StepInfo } from "./step-info.ts";
 import { READ_SKILL_TOOL } from "./read-skill-tool.ts";
 
@@ -28,6 +29,16 @@ export type CallResult = {
 
 /** One tool call of a past turn: its tool, its input (long strings cut), its reduced result. */
 export type CallRecord = { toolName: string; input: unknown; result: CallResult };
+
+/** A reduced call as the plugins' hooks see it: what was called, with what, whether it worked, its error when it didn't (no `ran`, no counts). */
+export function hookCall(call: CallRecord): HookCall {
+  return {
+    toolName: call.toolName,
+    input: call.input,
+    ok: call.result.ok,
+    ...(call.result.error === undefined ? {} : { error: call.result.error }),
+  };
+}
 
 /** What every reduced result tells the model about the data it no longer has. Model-facing, so in English. */
 export const HISTORY_CALL_NOTE =
