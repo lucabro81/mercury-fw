@@ -29,7 +29,8 @@ A layer is one of two kinds, and the kind decides where its text goes:
 - a **session** layer is read once, when the person starts writing in the conversation, and goes into the system
   prompt, where it stays for the rest of the conversation. It suits something that doesn't depend on the question:
   an index of the wiki, the rules of a team. In a space shared by several people, each one gets their own, built
-  for them: one person's never reaches another's answers;
+  for them: one person's never reaches another's answers. A session layer that fails stays out until the
+  conversation closes, so the system prompt doesn't change halfway;
 - a **turn** layer is read again for every message and goes right in front of it, for that answer only. It suits
   something that depends on the question: the documents that match it. The conversation keeps the message as the
   person wrote it, without the layer's text.
@@ -46,8 +47,10 @@ Session layers take the budget first; turn layers get what's left.
 ## Profiles
 
 Not everyone has to get the same context. The context is made of **profiles**: each one a list of layers and a
-budget. `default` is everyone's; `assign` gives a profile to people holding a role (`premium` to `paid`, say). Someone
-holding roles for more than one profile gets the first one listed in `assign`. The terminal always gets `default`.
+budget. `default` is everyone's; `assign` gives a profile to people holding a role (`premium` to `paid`, say).
+Someone holding roles for more than one profile gets the first one listed in `assign`. The terminal always gets
+`default`. A person keeps the profile they had when they started writing in a conversation until it closes, even if
+their roles change meanwhile.
 
 A profile can only narrow what a person gets, never widen it: a layer whose plugin isn't offered to someone is
 skipped in their context. When a profile lists a layer that none of the roles it's given to can ever use, the

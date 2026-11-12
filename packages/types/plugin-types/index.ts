@@ -301,7 +301,8 @@ export type ClosedSession = {
  * space, the sender; `operator` on the terminal), how the plugin is offered
  * to them (`as`, the identity its tools would act with), what they wrote
  * (for a `session` layer, their first message in the session; empty when
- * that turn was one the agent opened, or resumed after a confirmation), whether the space is
+ * that turn was one the agent opened, or resumed after a confirmation),
+ * whether the space is
  * shared, and the layer's knobs as the instance set them (empty until the
  * plugin declares some).
  */
@@ -324,8 +325,9 @@ export type ContextRequest = {
  *
  * - `"session"`: built once per session and person, at their first turn in
  *   it, and kept in the system prompt for the rest of the session (stable
- *   text keeps the model's cache of the conversation valid). In a space
- *   shared by several people each one gets their own, never another's.
+ *   text keeps the model's cache of the conversation valid); one that fails
+ *   then stays out until the session closes. In a space shared by several
+ *   people each one gets their own, never another's.
  * - `"turn"`: built for every turn and put in front of the person's message
  *   for that call only; the conversation's history keeps the message
  *   without it.

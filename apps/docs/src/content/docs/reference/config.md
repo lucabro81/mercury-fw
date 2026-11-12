@@ -294,10 +294,10 @@ context: {
 | `profiles` | The profiles by name; `default` is required. Each has `layers`, the plugins whose layers the model reads, in order, and `budget.maxChars`, how many characters of them at most (a whole number from 0 up). |
 | `assign` | Which roles get which profile: `{ premium: ["paid"] }`. Someone holding roles for more than one gets the first profile listed here. Everyone else, and the terminal, gets `default`. |
 
-A layer names the plugin itself, the same object as in `plugins`: declare the plugin once, in a constant, and use it
-in both places. The agent stops at startup when a layer names a plugin that isn't in `plugins`, or one that adds
-nothing to the context, when a profile lists the same plugin twice, or when a budget isn't a whole number. A plugin that couldn't load loses its layer, said
-once in the log, and the agent starts anyway.
+A layer names the plugin itself, the same object as in `plugins`: declare the plugin once, in a constant, and use it in
+both places. The agent stops at startup when a layer names a plugin that isn't in `plugins`, or one that adds nothing to
+the context, when a profile lists the same plugin twice, or when a budget isn't a whole number. A plugin that couldn't
+load loses its layer, said once in the log, and the agent starts anyway.
 
 Left out, nothing is added to what the model reads.
 
