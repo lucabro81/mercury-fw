@@ -15,7 +15,7 @@
  * would reuse `composeMercury` to boot the app it built. Not built yet.
  */
 import { getOllamaProvider } from "./model/client.ts";
-import { describeModelSettings, ollamaSettings } from "./model/generation-settings.ts";
+import { resolveModels } from "./model/models.ts";
 import { createConfirmationStore, createStageChoices, createStageConfirmation, type ConfirmationStore, type ResumedAction } from "@mercury-fw/confirm-engine";
 import { createDisplayStore } from "./tools/display-store.ts";
 import { createPresentTool } from "./tools/present-tool.ts";
@@ -133,6 +133,7 @@ export type ComposedApp = {
   /** The texts a person sees, in their language: for the terminal's own lines. */
   texts: Texts;
   ollamaHost: string;
+  /** The turn model's name, for the terminal's context-size line. */
   ollamaModel: string;
   /** Starts the Layer-3 idle-capture and self-review crons; returns a single stopper for shutdown. */
   startCrons: () => Stoppable;
@@ -172,20 +173,26 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
     log: (msg) => console.error(`[data] ${msg}`),
   });
 
-  // The model is constructed up front, before the plugins load and the system
-  // prompt is built: a plugin's post-turn guard can be model-backed (Jira's
-  // issue-list corrector is), and the system prompt is assembled from the
-  // fragments the plugin loader returns — both need the model in hand first.
+  // The models are built up front, before the plugins load and the system
+  // prompt is built: a plugin's post-turn guard can be model-backed, and the
+  // system prompt is assembled from the fragments the plugin loader returns —
+  // both need the models in hand first. Each declared handle becomes one model
+  // on the instance's Ollama, with its settings for every call on it.
   const provider = getOllamaProvider();
   const ollamaHost = requireEnv("OLLAMA_HOST"); // already validated by getOllamaProvider(); read again here for the terminal provider's getLoadedContextLength call
-  const ollamaModel = requireEnv("OLLAMA_MODEL");
-  // How the model generates comes from the config's `model` section (#355),
-  // set once here for the one shared model instance every call goes through:
-  // think (Ollama's native extended thinking, see agent-turn.ts's
-  // reasoning-delta handling) and the sampling options, each sent only when set.
-  const modelSettings = ollamaSettings(config.model);
-  console.error(describeModelSettings(ollamaModel, modelSettings));
-  const model = provider(ollamaModel, modelSettings);
+  // Memory found by meaning is embedded: an index without an embedding model is
+  // a config that can't work, not something to start without.
+  if (config.vectorIndex !== undefined && config.models.embedding === undefined) {
+    throw new Error("vectorIndex is declared but models.embedding isn't: declare the model the memory is embedded with (ollamaEmbedding(...))");
+  }
+  const models = resolveModels(config.models, {
+    language: (name, settings) => provider(name, settings),
+    embedding: (name) => provider.textEmbeddingModel(name),
+  });
+  for (const line of models.describe()) console.error(line);
+  const ollamaModel = config.models.turn.name;
+  const model = models.turn;
+  const backgroundModel = models.background;
   const summarize = createSummarizer(model);
 
   // Plugins are declared in the instance's config (its `mercury.config.ts`) and
@@ -211,6 +218,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
 
   const loadedPlugins = await loadPlugins(plugins, {
     model,
+    modelFor: models.modelFor,
     assistantName,
     env: process.env,
     log: (msg) => console.error(msg),
@@ -314,9 +322,14 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   // episodic record, then discarded. Identity-less sessions (the terminal) are
   // never tracked here — per-user isolation needs a real sender identity.
   const idleScanner = createIdleSessionScanner();
-  const episodicSummarize = createEpisodicSummarizer(model);
-  const embeddingModel = provider.textEmbeddingModel(process.env.OLLAMA_EMBEDDING_MODEL ?? "nomic-embed-text");
-  const embed = createEmbedder(embeddingModel);
+  const episodicSummarize = createEpisodicSummarizer(backgroundModel);
+  // Without a vector index nothing is embedded, and none is declared.
+  const embed =
+    models.embedding === undefined
+      ? async (): Promise<number[]> => {
+          throw new Error("no embedding model declared (models.embedding)");
+        }
+      : createEmbedder(models.embedding);
   // Where what was said is kept (the archive and the titles): the declared
   // conversation store. Without one nothing is archived: no conversations to
   // reopen or list, no titles, no recall.
@@ -349,7 +362,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
     const store = conversationStore;
     if (store === undefined) return undefined;
     return createConversationTitler({
-      model,
+      model: backgroundModel,
       readOpening: async (userId, sessionKey) => (await listVerbatimBySession(store, { userId, sessionKey, limit: 10 })).messages,
       titleOf: (userId, sessionKey) => titleOf(store, { userId, sessionKey }),
       setTitle: (userId, sessionKey, title) => setTitle(store, { userId, sessionKey, title, source: "generated" }),
@@ -361,7 +374,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   // Semantic consolidation (D-22/D-34): a separate space from the episodic
   // memory above — one point per extracted {topic, value} candidate, vector
   // embedded on the topic alone (see semantic-facts-store.ts for why).
-  const extractFacts = createSemanticFactExtractor(model);
+  const extractFacts = createSemanticFactExtractor(backgroundModel);
 
   // Idempotent self-heal: the vault lives on a named Docker volume, empty on
   // first boot and not pre-populatable at build time — re-running this every
@@ -456,7 +469,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
       migrateMemoryToUserKeys(index, MIGRATED_SPACES, (msg) => console.error(`[memory] ${msg}`)),
     );
   }
-  const extractToolCorrections = createToolCorrectionExtractor(model, undefined, {
+  const extractToolCorrections = createToolCorrectionExtractor(backgroundModel, undefined, {
     log: (msg) => console.error(`[cron] ${msg}`),
   });
   const toolCorrectionConsolidationDeps: ToolCorrectionConsolidationDeps = {
@@ -798,9 +811,9 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
     const selfReviewCron = startSelfReviewCron({
       listRawEntries: () => listWikiFilesInRoots(wikiVaultPath, [resolvePath(wikiVaultPath, "raw")]),
       findOrphans: () => findOrphanCuratedDocs(wikiVaultPath),
-      runRawTriage: (rawEntries) => runRawTriagePass({ vaultPath: wikiVaultPath, model, rawEntries }),
-      runIndexAndOrphan: (orphans) => runIndexAndOrphanPass({ vaultPath: wikiVaultPath, model, orphans }),
-      runContradictionCheck: () => runContradictionCheckPass({ vaultPath: wikiVaultPath, model }),
+      runRawTriage: (rawEntries) => runRawTriagePass({ vaultPath: wikiVaultPath, model: backgroundModel, rawEntries }),
+      runIndexAndOrphan: (orphans) => runIndexAndOrphanPass({ vaultPath: wikiVaultPath, model: backgroundModel, orphans }),
+      runContradictionCheck: () => runContradictionCheckPass({ vaultPath: wikiVaultPath, model: backgroundModel }),
       log: (msg) => console.error(`[cron] ${msg}`),
       emit: (event) => tracer.emit(event),
     });
@@ -819,8 +832,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
     kind: "system.start",
     framework: frameworkVersion(),
     ...(appVersion === undefined ? {} : { app: appVersion }),
-    model: ollamaModel,
-    modelSettings: { ...(config.model ?? {}) },
+    models: models.report,
     plugins: { activated: loadedPlugins.activated, left: loadedPlugins.left },
     auth: { declared: declaredAuth.map((a) => a.name), active: authenticate !== undefined },
     directory: typeof loadedDirectory === "string" ? loadedDirectory : loadedDirectory.name,

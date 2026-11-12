@@ -12,9 +12,12 @@
  * - `createTerminalProvider` — the dev REPL entrypoint opens the terminal with it.
  * - `defineMercuryConfig`/`MercuryConfig` — the app's `mercury.config.ts` declares
  *   its composition through these; `Persona` types its `persona` field,
- *   `MercuryI18n` its `i18n` field, `MercuryModel` its `model` field (how the
- *   main model generates), and `Messages` a language file's texts.
+ *   `MercuryI18n` its `i18n` field, `MercuryModels` its `models` field (the
+ *   models it runs on, by role), `MercuryModel` a model's settings, and
+ *   `Messages` a language file's texts.
  *   `Texts`/`Translate` type the texts the app hands the terminal (`app.texts`).
+ * - `ollamaModel`/`ollamaEmbedding` — a model on the instance's Ollama, as the
+ *   config declares it in `models` (or hands it to a plugin that needs one).
  * - `envNumber`/`envBoolean` — a config entry's value from an environment
  *   variable, or the config's fallback when it's unset or empty.
  * - `DEFAULT_PERSONA_IDENTITY`/`DEFAULT_PERSONA_TONE` — the persona an instance
@@ -31,6 +34,7 @@ export { createTerminalProvider } from "./src/router/terminal-provider.ts";
 export { defineMercuryConfig, type MercuryConfig, type MercuryAccess, type MercuryI18n, type MercuryModel, type MercuryTraces } from "./src/config/define-config.ts";
 export { pseudonymOf, type TraceLevel, type Tracer } from "./src/traces/tracer.ts";
 export { envBoolean, envNumber } from "./src/config/env-value.ts";
+export { ollamaEmbedding, ollamaModel, type MercuryModels } from "./src/model/models.ts";
 export type { Messages, Texts, Translate } from "./src/i18n/i18n.ts";
 export { DEFAULT_PERSONA_IDENTITY, DEFAULT_PERSONA_TONE, type Persona } from "./src/session/system-prompt.ts";
 export { assistantNameOf } from "./src/session/assistant-name.ts";

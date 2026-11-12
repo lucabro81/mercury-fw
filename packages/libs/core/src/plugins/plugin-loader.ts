@@ -24,7 +24,7 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { LanguageModel } from "ai";
 import { PLUGIN_API_VERSION } from "@mercury-fw/plugin-types";
-import type { Plugin, CliPostProcessor, Messages, PersonLogin, PostTurnGuard, Skill, SessionToolContext, Translate } from "@mercury-fw/plugin-types";
+import type { Plugin, CliPostProcessor, MercuryModelHandle, Messages, PersonLogin, PostTurnGuard, Skill, SessionToolContext, Translate } from "@mercury-fw/plugin-types";
 import { catalogErrors } from "../i18n/i18n.ts";
 import type { Tool } from "ai";
 
@@ -81,6 +81,8 @@ export interface LoadedPlugins {
  * context every `build()` gets. */
 export interface PluginLoadContext {
   model: LanguageModel;
+  /** The model of a handle a plugin was given (see `PluginRuntimeContext.modelFor`). */
+  modelFor?: (handle: MercuryModelHandle) => LanguageModel;
   env: Record<string, string | undefined>;
   log: (msg: string) => void;
   /** The assistant's name, for what a plugin builds while running (see `PluginRuntimeContext`). */
@@ -239,6 +241,7 @@ export async function loadPlugins(plugins: Plugin[], ctx: PluginLoadContext): Pr
       const contributions = plugin.build
         ? plugin.build({
             model: ctx.model,
+            ...(ctx.modelFor === undefined ? {} : { modelFor: ctx.modelFor }),
             env: ctx.env,
             log: ctx.log,
             assistantName: ctx.assistantName,

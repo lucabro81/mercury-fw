@@ -1,14 +1,14 @@
 /**
- * The main model's generation settings (#355): the config's `model` section
- * (its values usually from the environment, through `envNumber`/`envBoolean`)
- * turned into the settings `ai-sdk-ollama` takes when the model is built, so
- * they apply to every call on it. An entry that isn't set never reaches
+ * A declared model's generation settings (#355): what `ollamaModel(name,
+ * settings)` was given (its values usually from the environment, through
+ * `envNumber`/`envBoolean`) turned into the settings `ai-sdk-ollama` takes when
+ * the model is built, so they apply to every call on it. An entry that isn't set never reaches
  * Ollama, so the model's own values (its Modelfile) apply; `think` stays on
  * unless the config turns it off.
  */
 import type { MercuryModel } from "../config/define-config.ts";
 
-/** What the core hands `ai-sdk-ollama` for the main model: `think`, and `options` only when one is set. */
+/** What the core hands `ai-sdk-ollama` for a model: `think`, and `options` only when one is set. */
 export type OllamaModelSettings = {
   think: boolean;
   options?: { temperature?: number; top_p?: number; top_k?: number };
@@ -19,7 +19,7 @@ function check(value: number | undefined, entry: string, ok: (v: number) => bool
   if (value !== undefined && !ok(value)) throw new Error(`model.${entry} must be ${expected}, got ${value}`);
 }
 
-/** `model` as `ai-sdk-ollama`'s model settings. Throws on a value out of its range. */
+/** A model's settings as `ai-sdk-ollama`'s. Throws on a value out of its range. */
 export function ollamaSettings(model: MercuryModel | undefined): OllamaModelSettings {
   const { think, temperature, topP, topK } = model ?? {};
   check(temperature, "temperature", (v) => v >= 0, "a number from 0 up");

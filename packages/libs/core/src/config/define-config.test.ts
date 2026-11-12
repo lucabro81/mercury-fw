@@ -6,22 +6,25 @@
  */
 import { describe, expect, test } from "bun:test";
 import { defineMercuryConfig } from "./define-config.ts";
+import { ollamaModel } from "../model/models.ts";
+
+const models = { turn: ollamaModel("m") };
 
 describe("defineMercuryConfig", () => {
   test("returns its input unchanged (same reference)", () => {
-    const input = { plugins: [] };
+    const input = { plugins: [], models };
     expect(defineMercuryConfig(input)).toBe(input);
   });
 
   test("carries the declared plugins through verbatim", () => {
     const a = { apiVersion: 1, name: "a", description: "A.", cliConfig: {} };
     const b = { apiVersion: 1, name: "b", description: "B.", cliConfig: {} };
-    const config = defineMercuryConfig({ plugins: [a, b] });
+    const config = defineMercuryConfig({ plugins: [a, b], models });
     expect(config.plugins).toEqual([a, b]);
   });
 
   test("carries the persona through verbatim", () => {
     const persona = { identity: "You are Hermes.", tone: "Be terse." };
-    expect(defineMercuryConfig({ plugins: [], persona }).persona).toBe(persona);
+    expect(defineMercuryConfig({ plugins: [], models, persona }).persona).toBe(persona);
   });
 });

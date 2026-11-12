@@ -7,6 +7,7 @@ import { composeMercury } from "./compose.ts";
 import { fakeVectorIndex } from "./memory/__fixtures__/fake-vector-index.ts";
 import { fakeConversationStore } from "./memory/__fixtures__/fake-conversation-store.ts";
 import type { MercuryConfig } from "./config/define-config.ts";
+import { ollamaEmbedding, ollamaModel } from "./model/models.ts";
 
 // Nothing listens on these: Qdrant and Ollama fail soft, and composing never
 // asks the model anything.
@@ -15,6 +16,9 @@ const ENV = {
   OLLAMA_MODEL: "none",
   QDRANT_URL: "http://127.0.0.1:9",
 };
+// The models every composition below runs on: nothing answers on the host, and composing never asks them anything.
+const MODELS = { turn: ollamaModel("none") };
+const WITH_EMBEDDING = { ...MODELS, embedding: ollamaEmbedding("nomic") };
 
 describe("composeMercury", () => {
   const saved: Record<string, string | undefined> = {};
@@ -82,7 +86,7 @@ describe("composeMercury", () => {
     const before = process.env.MERCURY_DATA_PATH;
     delete process.env.MERCURY_DATA_PATH;
     try {
-      await expect(composeMercury({ plugins: [] })).rejects.toThrow("MERCURY_DATA_PATH is not set");
+      await expect(composeMercury({ plugins: [], models: MODELS })).rejects.toThrow("MERCURY_DATA_PATH is not set");
     } finally {
       process.env.MERCURY_DATA_PATH = before;
     }
@@ -92,7 +96,7 @@ describe("composeMercury", () => {
   it("gives the trace sink traces/ in the data folder, and keeps the secret there", async () => {
     await withFreshFolders({}, async ({ vault, data }) => {
       const { sink, dirs } = collectingSink();
-      await composeMercury({ plugins: [], traces: { sink } });
+      await composeMercury({ plugins: [], models: MODELS, traces: { sink } });
       expect(dirs).toEqual([join(data, "traces")]);
       expect((await readFile(join(data, "trace-secret"), "utf8")).trim()).toMatch(/^[0-9a-f]{64}$/);
       expect(await Bun.file(join(vault, ".mercury", "trace-secret")).exists()).toBe(false);
@@ -103,7 +107,7 @@ describe("composeMercury", () => {
   it("copies the vault's .mercury/ into an empty data folder, and says so in the traces", async () => {
     await withFreshFolders({ "profiles.json": '{"x":{}}', "trace-secret": `${"ab".repeat(32)}\n` }, async ({ data }) => {
       const { sink, events } = collectingSink();
-      const app = await composeMercury({ plugins: [], traces: { sink } });
+      const app = await composeMercury({ plugins: [], models: MODELS, traces: { sink } });
       await app.tracer.flush();
       expect(await readFile(join(data, "profiles.json"), "utf8")).toBe('{"x":{}}');
       expect(events.find((e) => e.kind === "system.migrated")).toMatchObject({
@@ -117,7 +121,7 @@ describe("composeMercury", () => {
   it("emits no system.migrated when there was nothing to copy", async () => {
     await withFreshFolders({}, async () => {
       const { sink, events } = collectingSink();
-      const app = await composeMercury({ plugins: [], traces: { sink } });
+      const app = await composeMercury({ plugins: [], models: MODELS, traces: { sink } });
       await app.tracer.flush();
       expect(events.some((e) => e.kind === "system.migrated")).toBe(false);
     });
@@ -125,7 +129,7 @@ describe("composeMercury", () => {
 
   // #310: the HTTP surface's /version answers what the core puts here.
   it("gives channels the framework's version on their runtime context", async () => {
-    const config: MercuryConfig = { plugins: [] };
+    const config: MercuryConfig = { plugins: [], models: MODELS };
     const app = await composeMercury(config);
     expect(app.channelRuntime.frameworkVersion).toBe(pkg.version);
   });
@@ -136,7 +140,7 @@ describe("composeMercury", () => {
       ["1.2.0", "1.2.0"],
       [" 1.2.0-beta.1 ", "1.2.0-beta.1"],
     ]) {
-      const app = await composeMercury({ plugins: [], version: declared });
+      const app = await composeMercury({ plugins: [], models: MODELS, version: declared });
       expect(app.channelRuntime.appVersion).toBe(given);
     }
   });
@@ -154,35 +158,51 @@ describe("composeMercury", () => {
     return lines;
   }
 
-  // #355: the main model's settings come from the config's `model` section, logged at startup.
-  it("logs the main model with the settings the config gives it", async () => {
-    const lines = await startupLines({ plugins: [], model: { think: false, temperature: 0.2, topK: 20 } });
-    expect(lines).toContain("[model] none: think off, temperature 0.2, top_k 20");
+  // #383: the models come from the config's `models`, each role logged at startup with its settings.
+  it("logs each role's model with the settings the config gives it", async () => {
+    const lines = await startupLines({ plugins: [], models: { turn: ollamaModel("big", { think: false, temperature: 0.2, topK: 20, capacity: 8 }) } });
+    expect(lines).toContain("[model] turn big: think off, temperature 0.2, top_k 20, capacity 8");
+    expect(lines).toContain("[model] background: the turn's model");
   });
 
-  it("logs the server's defaults when the config sets nothing", async () => {
-    expect(await startupLines({ plugins: [] })).toContain("[model] none: think on, server defaults");
+  it("logs a background model of its own and the embedding model", async () => {
+    const lines = await startupLines({
+      plugins: [],
+      models: { turn: ollamaModel("big"), background: ollamaModel("small", { think: false }), embedding: ollamaEmbedding("nomic") },
+    });
+    expect(lines).toContain("[model] turn big: think on, server defaults, capacity 1");
+    expect(lines).toContain("[model] background small: think off, server defaults, capacity 1");
+    expect(lines).toContain("[model] embedding nomic: capacity 1");
   });
 
-  it("no longer reads OLLAMA_THINK itself: think follows the config", async () => {
+  it("no longer reads OLLAMA_MODEL or OLLAMA_THINK itself: the model is the config's", async () => {
     process.env.OLLAMA_THINK = "false";
+    process.env.OLLAMA_MODEL = "from-env";
     try {
-      expect(await startupLines({ plugins: [] })).toContain("[model] none: think on, server defaults");
+      const lines = await startupLines({ plugins: [], models: MODELS });
+      expect(lines).toContain("[model] turn none: think on, server defaults, capacity 1");
+      expect(lines.some((line) => line.includes("from-env"))).toBe(false);
     } finally {
       delete process.env.OLLAMA_THINK;
+      process.env.OLLAMA_MODEL = ENV.OLLAMA_MODEL;
     }
   });
 
-  it("refuses to start on a setting out of its range", async () => {
-    await expect(composeMercury({ plugins: [], model: { temperature: -1 } })).rejects.toThrow(
-      "model.temperature must be a number from 0 up, got -1",
-    );
+  // #383: memory found by meaning needs an embedding model; an index declared without one can't work.
+  it("refuses to start with a vector index and no embedding model, naming what's missing", async () => {
+    await expect(
+      composeMercury({ plugins: [], models: MODELS, vectorIndex: { apiVersion: 1, name: "fake", build: () => fakeVectorIndex() } }),
+    ).rejects.toThrow("vectorIndex is declared but models.embedding isn't");
+  });
+
+  it("starts without an embedding model when there's no vector index", async () => {
+    await expect(composeMercury({ plugins: [], models: MODELS })).resolves.toBeDefined();
   });
 
   // #23: the trace level is a config choice; a value it can't be stops startup instead of tracing something else.
   it("refuses to start on a trace level that isn't meta or args", async () => {
     const sink = { apiVersion: 1, name: "none", build: () => ({ write: () => {}, flush: async () => {} }) };
-    await expect(composeMercury({ plugins: [], traces: { sink, level: "full" as "meta" } })).rejects.toThrow(
+    await expect(composeMercury({ plugins: [], models: MODELS, traces: { sink, level: "full" as "meta" } })).rejects.toThrow(
       'traces.level must be "meta" or "args"',
     );
   });
@@ -196,15 +216,23 @@ describe("composeMercury", () => {
       build: () => ({ write: (e: Record<string, unknown>) => void events.push(e), flush: async () => {} }),
     };
     const old = { apiVersion: 0, name: "old", description: "an old plugin" };
-    const app = await composeMercury({ plugins: [old], model: { temperature: 0.2 }, version: "1.2.0", traces: { sink } });
+    const app = await composeMercury({
+      plugins: [old],
+      models: { turn: ollamaModel("none", { temperature: 0.2 }), embedding: ollamaEmbedding("nomic", { capacity: 2 }) },
+      version: "1.2.0",
+      traces: { sink },
+    });
     await app.tracer.flush();
     const start = events.find((e) => e.kind === "system.start");
     expect(start).toMatchObject({
       kind: "system.start",
       framework: pkg.version,
       app: "1.2.0",
-      model: "none",
-      modelSettings: { temperature: 0.2 },
+      models: {
+        turn: { name: "none", capacity: 1 },
+        background: { name: "none", capacity: 1 },
+        embedding: { name: "nomic", capacity: 2 },
+      },
       plugins: { activated: [], left: [{ name: "old", reason: expect.stringContaining("apiVersion 0") }] },
       auth: { declared: [], active: false },
       directory: "none",
@@ -223,7 +251,7 @@ describe("composeMercury", () => {
     ];
     for (const [vectorIndex, expected] of cases) {
       const { sink, events } = collectingSink();
-      const app = await composeMercury({ plugins: [], traces: { sink }, ...(vectorIndex === undefined ? {} : { vectorIndex }) });
+      const app = await composeMercury({ plugins: [], models: WITH_EMBEDDING, traces: { sink }, ...(vectorIndex === undefined ? {} : { vectorIndex }) });
       await app.tracer.flush();
       expect(events.find((e) => e.kind === "system.start")?.vectorIndex).toEqual(expected);
     }
@@ -239,7 +267,7 @@ describe("composeMercury", () => {
     ];
     for (const [conversationStore, expected, reads] of cases) {
       const { sink, events } = collectingSink();
-      const app = await composeMercury({ plugins: [], traces: { sink }, ...(conversationStore === undefined ? {} : { conversationStore }) });
+      const app = await composeMercury({ plugins: [], models: MODELS, traces: { sink }, ...(conversationStore === undefined ? {} : { conversationStore }) });
       await app.tracer.flush();
       expect(events.find((e) => e.kind === "system.start")?.conversationStore).toEqual(expected);
       expect(app.channelRuntime.reads?.conversations !== undefined).toBe(reads);
@@ -248,7 +276,7 @@ describe("composeMercury", () => {
   });
 
   it("gives channels no app version when the config declares none, or an empty one", async () => {
-    for (const config of [{ plugins: [] }, { plugins: [], version: "" }, { plugins: [], version: "  " }] satisfies MercuryConfig[]) {
+    for (const config of [{ plugins: [], models: MODELS }, { plugins: [], models: MODELS, version: "" }, { plugins: [], models: MODELS, version: "  " }] satisfies MercuryConfig[]) {
       const app = await composeMercury(config);
       expect("appVersion" in app.channelRuntime).toBe(false);
     }
