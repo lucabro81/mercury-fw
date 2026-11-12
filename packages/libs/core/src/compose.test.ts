@@ -484,7 +484,7 @@ describe("composeMercury", () => {
   });
 
   // #387: the context's layers reach the model: a session layer in the
-  // system prompt, a turn layer in front of the message, the history without it.
+  // system prompt, a turn layer in front of its message, there on later calls too.
   it("puts a profile's layers in what the model is sent: session in the system prompt, turn in front of the message", async () => {
     const bodies: Array<{ messages: Array<{ role: string; content: string }> }> = [];
     const realFetch = globalThis.fetch;
@@ -529,11 +529,9 @@ describe("composeMercury", () => {
       expect(one!.messages[0]!.role).toBe("system");
       expect(one!.messages[0]!.content).toContain("WIKI INDEX");
       expect(one!.messages.at(-1)!.content).toMatch(/^<context>\nRAG HIT\n<\/context>\n\n.*first$/s);
-      // The second call: the same system prompt, the first message as written, the context only on the last.
-      expect(two!.messages[0]!.content).toBe(one!.messages[0]!.content);
-      const users = two!.messages.filter((m) => m.role === "user").map((m) => m.content);
-      expect(users[0]).not.toContain("RAG HIT");
-      expect(users.at(-1)).toMatch(/^<context>\nRAG HIT\n<\/context>\n\n.*second$/s);
+      // The second call starts with the first, whole (its context included), so the model's cache of it holds.
+      expect(two!.messages.slice(0, one!.messages.length)).toEqual(one!.messages);
+      expect(two!.messages.at(-1)!.content).toMatch(/^<context>\nRAG HIT\n<\/context>\n\n.*second$/s);
     } finally {
       globalThis.fetch = realFetch;
     }

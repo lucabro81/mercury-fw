@@ -346,8 +346,10 @@ export type KnobSpec =
  *   text keeps the model's cache of the conversation valid); one that fails
  *   then stays out until the session closes. In a space shared by several
  *   people each one gets their own, never another's.
- * - `"turn"`: built for every turn and put in front of the person's message
- *   for that call only; the conversation's history keeps the message
+ * - `"turn"`: built for every turn and put in front of the person's
+ *   message, where the model reads it on later turns too (each call starts
+ *   with the previous one, so the model's cache of it holds); what the
+ *   conversation keeps (its archive, what the person sees) is the message
  *   without it.
  *
  * A `build` that throws is skipped for that turn (or session), and the core

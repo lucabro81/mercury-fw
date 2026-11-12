@@ -20,7 +20,8 @@
  *   go into the system prompt, which stays the same so the model's cache of
  *   the conversation stays valid, and a layer that failed then, or wasn't
  *   offered, stays out for the session. `turn` layers are built every turn
- *   and go in front of the person's message for that call only. The budget
+ *   and go in front of the person's message, where the model reads them on
+ *   later turns too (`Message.context` in `../session/history.ts`). The budget
  *   counts the blocks' characters: the session layers take it first, in
  *   order, then the turn layers have what's left, in order; a block that
  *   doesn't fit is dropped whole. A layer that fails is skipped and logged.

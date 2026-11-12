@@ -22,7 +22,14 @@ import type { CallRecord } from "./call-record.ts";
  * the tool calls it was written from, reduced (`call-record.ts`): absent when
  * there were none.
  */
-export type Message = { role: "user" | "assistant"; content: string; calls?: CallRecord[] };
+/**
+ * A message of the conversation. `context`, on a person's message, is what the
+ * instance's `turn` context layers put in front of it (`../context/context.ts`):
+ * the model reads it there on every later call too, so each call starts with
+ * the previous one and the model's cache of it holds; everything else (the
+ * archive, the memory, the plugins' hooks, the summary) reads `content` only.
+ */
+export type Message = { role: "user" | "assistant"; content: string; calls?: CallRecord[]; context?: string };
 
 /**
  * Character-count threshold (not a real tokenizer count — a `chars/4`
@@ -39,8 +46,8 @@ export const MAX_HISTORY_CHARS = 60_000;
  * conversations).
  */
 export type SessionHistory = {
-  /** Appends a user turn, summarizing first if this push crosses the threshold. */
-  addUserMessage(content: string): Promise<void>;
+  /** Appends a user turn, with the context the model reads in front of it, summarizing first if this push crosses the threshold. */
+  addUserMessage(content: string, context?: string): Promise<void>;
   /** Appends an assistant turn with the tool calls it was written from, summarizing first if this push crosses the threshold. */
   addAssistantMessage(content: string, calls?: CallRecord[]): Promise<void>;
   /**
@@ -90,9 +97,9 @@ export type SessionHistory = {
 /** What a resumed conversation brings back: the summary of its older part, if any, and its newest messages. */
 export type ResumedConversation = { summary?: string; messages: Message[] };
 
-/** How much of the history `m` takes: its text and, as JSON, its calls. */
+/** How much of the history `m` takes: its text, its context and, as JSON, its calls. */
 function messageChars(m: Message): number {
-  return m.content.length + (m.calls === undefined ? 0 : JSON.stringify(m.calls).length);
+  return m.content.length + (m.context?.length ?? 0) + (m.calls === undefined ? 0 : JSON.stringify(m.calls).length);
 }
 
 /** Wraps a summary string as the synthetic leading message `getMessages()` prepends. */
@@ -190,7 +197,7 @@ export function createSessionHistory(
   }
 
   return {
-    addUserMessage: (content) => add({ role: "user", content }),
+    addUserMessage: (content, context) => add(context === undefined ? { role: "user", content } : { role: "user", content, context }),
     addAssistantMessage: (content, calls) =>
       add(calls !== undefined && calls.length > 0 ? { role: "assistant", content, calls } : { role: "assistant", content }),
     replaceLastAssistantMessage: (content) => {

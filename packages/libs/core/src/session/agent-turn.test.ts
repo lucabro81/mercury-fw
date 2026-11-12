@@ -1504,11 +1504,14 @@ describe("a step asking for a login ends the turn", () => {
   });
 });
 
-// #387: a `turn` context layer goes in front of the person's message for that
-// call only: the history keeps the message as they wrote it, so the next
-// call's prompt starts the same and the model's cache of it holds.
+// #387: a `turn` context layer goes in front of the person's message, and
+// stays there in what the model is sent on later turns: each call then starts
+// with the previous one, whole, so the model's cache of it holds (taking it
+// out again changed the middle of the prompt, and a model whose cache can only
+// grow, a hybrid one, read the whole conversation again every turn). The
+// history's text stays the message as the person wrote it.
 describe("runTurn: the turn's context", () => {
-  it("puts the turn's context in front of the last message of the call, on both paths, and keeps it out of the history", async () => {
+  it("puts the turn's context in front of its message and keeps it there for the next calls, on both paths, the history's text without it", async () => {
     for (const streaming of [false, true]) {
       const history = createSessionHistory(neverSummarize);
       await history.addUserMessage("earlier");
@@ -1518,24 +1521,30 @@ describe("runTurn: the turn's context", () => {
         yield { type: "text-delta", id: "1", text: "ok" };
         yield { type: "finish", finishReason: "stop" };
       }
-      await runTurn(history, "now", {
-        model: "fake-model" as never,
-        tools: {},
-        system: SYSTEM,
-        turnContext: "<context>\nfact\n</context>",
-        ...(streaming
-          ? {
-              streamTextFn: async (params: { messages: ModelMessage[] }) => (sent.push(params.messages), { stream: fakeStream() }),
-              onTextChunk: () => {},
-            }
-          : { generateTextFn: async (params: { messages: ModelMessage[] }) => (sent.push(params.messages), { text: "ok" }) }),
-      } as never);
+      const turn = (text: string, turnContext?: string) =>
+        runTurn(history, text, {
+          model: "fake-model" as never,
+          tools: {},
+          system: SYSTEM,
+          ...(turnContext === undefined ? {} : { turnContext }),
+          ...(streaming
+            ? {
+                streamTextFn: async (params: { messages: ModelMessage[] }) => (sent.push(params.messages), { stream: fakeStream() }),
+                onTextChunk: () => {},
+              }
+            : { generateTextFn: async (params: { messages: ModelMessage[] }) => (sent.push(params.messages), { text: "ok" }) }),
+        } as never);
+      await turn("now", "<context>\nfact\n</context>");
+      await turn("then", "<context>\nother\n</context>");
+      await turn("last");
       expect(sent[0]).toEqual([
         { role: "user", content: "earlier" },
         { role: "assistant", content: "answer" },
         { role: "user", content: "<context>\nfact\n</context>\n\nnow" },
       ]);
-      expect(history.getMessages().map((m) => m.content)).toEqual(["earlier", "answer", "now", "ok"]);
+      expect(sent[1]).toEqual([...sent[0]!, { role: "assistant", content: "ok" }, { role: "user", content: "<context>\nother\n</context>\n\nthen" }]);
+      expect(sent[2]).toEqual([...sent[1]!, { role: "assistant", content: "ok" }, { role: "user", content: "last" }]);
+      expect(history.getMessages().map((m) => m.content)).toEqual(["earlier", "answer", "now", "ok", "then", "ok", "last", "ok"]);
     }
   });
 });

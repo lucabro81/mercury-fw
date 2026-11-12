@@ -32,14 +32,18 @@ A layer is one of two kinds, and the kind decides where its text goes:
   an index of the wiki, the rules of a team. In a space shared by several people, each one gets their own, built
   for them: one person's never reaches another's answers. A session layer that fails stays out until the
   conversation closes, so the system prompt doesn't change halfway;
-- a **turn** layer is read again for every message and goes right in front of it, for that answer only. It suits
-  something that depends on the question: the documents that match it. The conversation keeps the message as the
-  person wrote it, without the layer's text.
+- a **turn** layer is read again for every message and goes right in front of it. It suits something that depends
+  on the question: the documents that match it. The model reads it there on the later messages too; what the
+  conversation keeps (what the person sees, the archive, the memory) is the message as the person wrote it, without
+  the layer's text.
 
 The reason is speed. The model doesn't read the whole text from scratch every time: what starts the same as the
 previous request is already computed and reused (on Ollama, the **prompt cache**). If a text that changes at every
 message sat in the system prompt, at the very start, nothing after it could be reused, and every answer would make
-the model read the whole conversation again. Kept at the end, it costs only itself. In a shared space, where each
+the model read the whole conversation again. Kept at the end, it costs only itself, and it stays where it was:
+taking it out at the next message would change the middle of the text, and some models (the ones whose cache can
+only grow) would read the whole conversation again from there. The price is room: the texts of the turn layers stay
+in what the model reads, and count toward the size at which a long conversation gets summarized. In a shared space, where each
 person has their own session layers, the system prompt changes when the person writing changes, and the model
 reads the conversation again for that answer.
 

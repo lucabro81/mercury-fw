@@ -135,12 +135,12 @@ function turnCalls(steps: StepInfo[], resumed: ResumedAction | undefined): CallR
   return callRecords([...confirmed, ...steps]);
 }
 
-/** The history as the model reads it: each past answer's calls, as tool calls and their reduced results, before its text. */
+/** The history as the model reads it: each person's message with its context in front, each past answer's calls, as tool calls and their reduced results, before its text. */
 function historyMessages(messages: Message[]): ModelMessage[] {
   return messages.flatMap((m, i): ModelMessage[] =>
     m.role === "assistant" && m.calls !== undefined
       ? [...callMessages(m.calls, `history-${i}`), { role: "assistant", content: m.content }]
-      : [{ role: m.role, content: m.content }],
+      : [{ role: m.role, content: m.context === undefined ? m.content : `${m.context}\n\n${m.content}` }],
   );
 }
 
@@ -422,9 +422,9 @@ export async function runTurn(
     pendingNote?: string;
     /** Called when the turn's text is that stand-in, so the caller knows without comparing text. */
     onPendingNote?: () => void;
-    /** What the context's `turn` layers add for this call (#387): put in
-     * front of the person's last message in the call only, never in the
-     * history. */
+    /** What the context's `turn` layers add for this turn (#387): kept
+     * beside the person's message in the history (`Message.context`), in
+     * front of it in this call and every later one; never in its text. */
     turnContext?: string;
     /** The note closing a turn that stopped because a tool asked the person
      * to log in, naming the services (none when no name is known), in the
@@ -432,7 +432,7 @@ export async function runTurn(
     loginNote?: (services: string[]) => string;
   },
 ): Promise<string> {
-  await history.addUserMessage(userInput);
+  await history.addUserMessage(userInput, deps.turnContext);
   try {
     return await generateAnswer(history, deps);
   } catch (err) {
@@ -441,17 +441,9 @@ export async function runTurn(
   }
 }
 
-/** `messages` with `context` in front of the last user message's text (a copy: the history's own messages stay as they are); unchanged without one. */
-function withTurnContext(messages: ModelMessage[], context: string | undefined): ModelMessage[] {
-  if (context === undefined) return messages;
-  const last = messages.findLastIndex((m) => m.role === "user" && typeof m.content === "string");
-  if (last === -1) return messages;
-  return messages.map((m, i) => (i === last ? { ...m, content: `${context}\n\n${m.content as string}` } as ModelMessage : m));
-}
-
 /** `runTurn`'s model call, once the user's message is recorded: records the answer, or `ABORTED_MARKER` for an aborted call that returned. */
 async function generateAnswer(history: SessionHistory, deps: Parameters<typeof runTurn>[2]): Promise<string> {
-  const fromHistory = withTurnContext(historyMessages(history.getMessages()), deps.turnContext);
+  const fromHistory = historyMessages(history.getMessages());
   const messages: ModelMessage[] = deps.resumed ? [...fromHistory, ...resumedMessages(deps.resumed)] : fromHistory;
   const steps: StepInfo[] = [];
 
