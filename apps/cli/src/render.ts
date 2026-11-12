@@ -50,6 +50,10 @@ const CORE_ENV: EnvVar[] = [
   { name: "OLLAMA_TOP_P", comment: "The chat model's top_p, above 0 and at most 1 (empty: the model's own)" },
   { name: "OLLAMA_TOP_K", comment: "The chat model's top_k, a whole number from 1 up (empty: the model's own)" },
   { name: "OLLAMA_CAPACITY", comment: "How many requests the chat model's runtime serves at once (empty: 1)" },
+  {
+    name: "OLLAMA_BACKGROUND_SLOTS",
+    comment: "How many of those the work nobody waits on may take, below the capacity when it's above 1 (empty: 1)",
+  },
   { name: "OLLAMA_EMBEDDING_MODEL", comment: "Embedding model for the episodic memory", value: "nomic-embed-text" },
   { name: "QDRANT_URL", comment: "Qdrant, the compose service", value: "http://qdrant:6333" },
   { name: "WIKI_VAULT_PATH", comment: "Wiki vault, the named volume's mount point", value: "/app/wiki-vault" },
@@ -69,8 +73,9 @@ const CORE_ENV: EnvVar[] = [
 const MAIN_MODEL = [
   "/**",
   " * The model the assistant runs on, from .env: a setting left empty is the",
-  " * model's own (thinking stays on), and capacity, how many requests its",
-  " * runtime serves at once, is 1.",
+  " * model's own (thinking stays on); capacity, how many requests its runtime",
+  " * serves at once, is 1, and so is backgroundSlots, how many of them the work",
+  " * nobody waits on may take.",
   " */",
   "const main = ollamaModel(process.env.OLLAMA_MODEL, {",
   '  think: envBoolean("OLLAMA_THINK", true),',
@@ -78,6 +83,7 @@ const MAIN_MODEL = [
   '  topP: envNumber("OLLAMA_TOP_P"),',
   '  topK: envNumber("OLLAMA_TOP_K"),',
   '  capacity: envNumber("OLLAMA_CAPACITY"),',
+  '  backgroundSlots: envNumber("OLLAMA_BACKGROUND_SLOTS"),',
   "});",
 ].join("\n");
 
