@@ -49,6 +49,9 @@ the summaries related to what the person is asking and gives them to the model a
 remembers the person. Finding "related" summaries is what the **embedding model** is for: it turns text into numbers
 that are close when the meaning is close.
 
+All this work (the summaries, the title, the corrections, the archive's index) waits for the model to be free: it
+never makes someone who's waiting for an answer wait longer (see [Work nobody waits on](../../reference/config/#work-nobody-waits-on)).
+
 Where the summaries go is the app's **vector index**, `vectorIndex` in its config: Qdrant, in an app made with
 `mfw create`. An app that declares none keeps no long-term memory at all (see
 [the config reference](../../reference/config/#vectorindex)).

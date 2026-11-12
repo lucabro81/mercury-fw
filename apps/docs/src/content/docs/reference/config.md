@@ -27,6 +27,7 @@ const main = ollamaModel(process.env.OLLAMA_MODEL, {
   topP: envNumber("OLLAMA_TOP_P"),
   topK: envNumber("OLLAMA_TOP_K"),
   capacity: envNumber("OLLAMA_CAPACITY"),
+  backgroundSlots: envNumber("OLLAMA_BACKGROUND_SLOTS"),
 });
 
 export default defineMercuryConfig({
@@ -193,6 +194,7 @@ The settings of `ollamaModel` say how the model generates, for every call on it.
 | `topP` | Before each word is picked, only the most likely ones whose probabilities add up to this are kept. Above 0, at most 1. |
 | `topK` | Before each word is picked, only this many of the most likely ones are kept. A whole number from 1 up. |
 | `capacity` | How many requests the model's server answers at the same time: a whole number from 1 up, 1 when left out. Ollama answers one at a time unless its own `OLLAMA_NUM_PARALLEL` says otherwise, and some models only ever one at a time. `ollamaEmbedding` takes it too. |
+| `backgroundSlots` | How many of those requests the work nobody is waiting on may take at once (see [Work nobody waits on](#work-nobody-waits-on)): a whole number from 1 up, 1 when left out, below `capacity` when that's above 1. With `capacity: 8, backgroundSlots: 2`, six requests are always free for the people talking to the agent. |
 
 An empty name, or a value out of its range, stops the agent at startup, and the log says which model and which field. At startup the log also says what each role runs on:
 
@@ -215,6 +217,7 @@ const main = ollamaModel(process.env.OLLAMA_MODEL, {
   topP: envNumber("OLLAMA_TOP_P"),
   topK: envNumber("OLLAMA_TOP_K"),
   capacity: envNumber("OLLAMA_CAPACITY"),
+  backgroundSlots: envNumber("OLLAMA_BACKGROUND_SLOTS"),
 });
 
 export default defineMercuryConfig({
@@ -228,7 +231,7 @@ export default defineMercuryConfig({
 
 `envNumber(name, fallback?)` reads a number from the variable, and `envBoolean(name, fallback)` reads `true` or `false`.
 An empty or missing variable gives the fallback: with none, as for the four numbers above, the field is left out and
-the model's own value applies (and the capacity is 1). Write one to have a default of your own, `envNumber("OLLAMA_TEMPERATURE", 0.2)`. Text
+the model's own value applies (and the capacity and the background slots are 1). Write one to have a default of your own, `envNumber("OLLAMA_TEMPERATURE", 0.2)`. Text
 that isn't a number, or isn't `true` or `false`, stops the agent at startup with the variable's name. The variables are
 listed in [Environment variables](../environment/#the-model).
 
@@ -243,6 +246,28 @@ models: {
 ```
 
 A plugin that needs a model of its own takes one in its configuration, `somePlugin({ model: ollamaModel("<its-model>") })`: the agent decides which model it is, and the plugin gets it from Mercury with `ctx.modelFor` in its `build()`.
+
+### Work nobody waits on
+
+Besides answering, the agent uses its models for work nobody is waiting on: a conversation's title, what the memory
+keeps of a conversation, the corrections it learns, the index of the archive, the wiki's nightly review. A model
+answers a limited number of requests at the same time (its `capacity`); one answering one at a time, while it writes a
+title, makes the person who just wrote wait.
+
+So that work waits for its turn. Each model has a queue, and:
+
+- an answer is never held back: from the moment a message arrives until its answer is out, it counts on the `turn`
+  model;
+- the work nobody waits on runs one model call at a time, and only when the answers leave a request of the model's
+  `capacity` free, never more than `backgroundSlots` at once. On a model with capacity 1 it runs only while nobody
+  is waiting for an answer;
+- between two calls of the same work, an answer that arrived goes first;
+- a title, a correction and the archive's index go before what can wait longer (what the memory keeps, the nightly
+  review).
+
+Each model has its own queue: work on a `background` model of its own doesn't wait for the answers on the `turn` one.
+When the agent stops, what's still waiting is dropped, and the trace says so. The [traces](../../concepts/traces/)
+record each of these jobs (`background.job`): how long it waited, how long it took.
 
 ## `traces`
 

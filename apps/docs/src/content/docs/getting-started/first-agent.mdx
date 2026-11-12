@@ -77,10 +77,10 @@ OLLAMA_MODEL=<chat-model>
 ```
 
 The other lines already point at Ollama on your machine (`OLLAMA_HOST`; set it to `http://<host>:11434` when
-Ollama runs elsewhere), at the embedding model, and at the two places Mercury keeps its memory. The five after
-`OLLAMA_MODEL` (`OLLAMA_THINK`, `OLLAMA_TEMPERATURE`, `OLLAMA_TOP_P`, `OLLAMA_TOP_K`, `OLLAMA_CAPACITY`) tune how the
-model answers and how many requests it takes at once: leave them empty and the model's own settings apply, one request
-at a time. The [environment reference](../../reference/environment/) explains each one.
+Ollama runs elsewhere), at the embedding model, and at the two places Mercury keeps its memory. The six after
+`OLLAMA_MODEL` (`OLLAMA_THINK`, `OLLAMA_TEMPERATURE`, `OLLAMA_TOP_P`, `OLLAMA_TOP_K`, `OLLAMA_CAPACITY`,
+`OLLAMA_BACKGROUND_SLOTS`) tune how the model answers and how many requests it takes at once: leave them empty and the
+model's own settings apply, one request at a time. The [environment reference](../../reference/environment/) explains each one.
 
 ## 3. Start it
 
