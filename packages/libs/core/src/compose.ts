@@ -22,6 +22,7 @@ import { createDisplayStore } from "./tools/display-store.ts";
 import { createPresentTool } from "./tools/present-tool.ts";
 import { loadPlugins } from "./plugins/plugin-loader.ts";
 import { createPluginHooks } from "./plugins/plugin-hooks.ts";
+import { createContextAssembler, resolveContext } from "./context/context.ts";
 import { materializeCliCredentials } from "./credentials/materialize.ts";
 import type { MercuryConfig } from "./config/define-config.ts";
 import { createResumeSlots } from "./session/resume-slots.ts";
@@ -304,6 +305,19 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   // What a person is offered of the loaded plugins (see plugins/offering.ts).
   const offeringOf = (who: TurnWho): Offering =>
     offeringFor(loadedPlugins.plugins, { roles: who.person.roles, operator: who.operator }, config.access?.plugins);
+
+  // What the model reads besides the conversation (see context/context.ts):
+  // checked now, so a contradiction in the config stops the start.
+  const resolvedContext = resolveContext(config.context, {
+    declared: config.plugins,
+    loaded: loadedPlugins.plugins,
+    ...(config.access?.plugins === undefined ? {} : { access: config.access.plugins }),
+    log: (msg) => console.error(msg),
+  });
+  const contextAssembler =
+    resolvedContext === undefined
+      ? undefined
+      : createContextAssembler({ resolved: resolvedContext, offered: (who) => offeringOf(who).entries, log: (msg) => console.error(msg) });
 
   // The plugins' hooks (see plugins/plugin-hooks.ts): a plugin hears about
   // the turns, and the closes, of the sessions it was offered in.
@@ -726,6 +740,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
     // them without knowing what any does (see PostTurnGuard).
     postTurnGuards: loadedPlugins.postTurnGuards,
     afterTurn: pluginHooks.afterTurn,
+    ...(contextAssembler === undefined ? {} : { contextFor: contextAssembler.forTurn }),
     getOrCreateHistory: async (key, trackForCapture, userId, resume, timeZone) => {
       if (trackForCapture && userId && !histories.has(key)) {
         // A conversation its client reopens comes back from the archive (#163).
@@ -861,6 +876,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
         },
         closeSession: (key) => {
           histories.delete(key);
+          contextAssembler?.forget(key);
           sessionCapture.close(key);
           displayStore.forget(key);
         },
