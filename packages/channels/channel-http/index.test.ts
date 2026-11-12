@@ -112,6 +112,40 @@ describe("httpChannel", () => {
     }
   });
 
+  // #387: the /context routes are served when the core hands contextAdmin over, and only then.
+  it("serves the context routes with the core's contextAdmin, and none without it", async () => {
+    const probe = Bun.serve({ port: 0, fetch: () => new Response() });
+    const port = probe.port;
+    probe.stop(true);
+    const updates: unknown[] = [];
+    const contextAdmin = {
+      read: async () => ({ ok: true as const, value: { profiles: [] } }),
+      update: async (_p: unknown, name: string, change: unknown) => (
+        updates.push([name, change]), { ok: true as const, value: { name, assignedTo: [], maxChars: 1, layers: [] } }
+      ),
+      changes: async () => ({ ok: true as const, value: [] }),
+    };
+    const authenticate = async () => ({ id: "alice", provider: "static" as const });
+    const provider = httpChannel.build(fullCtx({ env: { HTTP_SURFACE_PORT: String(port) }, authenticate, contextAdmin }))!;
+    await provider.start(async () => {});
+    try {
+      const auth = { authorization: "Bearer t" };
+      expect(await (await fetch(`http://localhost:${port}/context`, { headers: auth })).json()).toEqual({ ok: true, profiles: [] });
+      const res = await fetch(`http://localhost:${port}/context/profiles/premium`, { method: "PATCH", headers: auth, body: JSON.stringify({ maxChars: 1 }) });
+      expect(res.status).toBe(200);
+      expect(updates).toEqual([["premium", { maxChars: 1 }]]);
+    } finally {
+      await provider.stop?.();
+    }
+    const bare = httpChannel.build(fullCtx({ env: { HTTP_SURFACE_PORT: String(port) }, authenticate }))!;
+    await bare.start(async () => {});
+    try {
+      expect((await fetch(`http://localhost:${port}/context`, { headers: { authorization: "Bearer t" } })).status).toBe(404);
+    } finally {
+      await bare.stop?.();
+    }
+  });
+
   it("reads HTTP_SURFACE_RESUME_MAX_CHARS, and doesn't start on anything but a whole number from 0 up", () => {
     for (const ok of ["", " 0 ", "12000"]) {
       expect(httpChannel.build(fullCtx({ env: { HTTP_SURFACE_RESUME_MAX_CHARS: ok } }))).toBeDefined();

@@ -50,6 +50,7 @@ export const httpChannel: ChannelPlugin = {
       ...(ctx.linking === undefined ? {} : { linking: ctx.linking }),
       ...(ctx.settings === undefined ? {} : { settings: ctx.settings }),
       ...(ctx.conversations === undefined ? {} : { conversations: ctx.conversations }),
+      ...(ctx.contextAdmin === undefined ? {} : { contextAdmin: ctx.contextAdmin }),
       ...(resumeMaxChars === undefined ? {} : { resumeMaxChars }),
       ...(ctx.assistantName === undefined ? {} : { assistantName: ctx.assistantName }),
       ...(ctx.frameworkVersion === undefined ? {} : { version: ctx.frameworkVersion }),

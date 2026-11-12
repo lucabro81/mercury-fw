@@ -1,6 +1,6 @@
 import { describe, it, expect } from "bun:test";
-import { handleTurnRequest, handleConfirmRequest, handleLinkRequest, handleLoginCallback, openApiResponse, readRoutes, startHttpServer } from "./http-server.ts";
-import { type Admission, type Authenticate, type HandleTurn, type InboundTurn, type TurnSink, type ChannelConversations, type ChannelHostReads, type ChannelSettings, type Principal } from "@mercury-fw/channel-types";
+import { contextRoutes, handleTurnRequest, handleConfirmRequest, handleLinkRequest, handleLoginCallback, openApiResponse, readRoutes, startHttpServer } from "./http-server.ts";
+import { type Admission, type Authenticate, type HandleTurn, type InboundTurn, type TurnSink, type ChannelContextAdmin, type ChannelConversations, type ChannelHostReads, type ChannelSettings, type Principal } from "@mercury-fw/channel-types";
 import type { StepInfo } from "@mercury-fw/plugin-types";
 
 /**
@@ -1691,5 +1691,109 @@ describe("the caller's time zone", () => {
       expect(route.PATCH).toBeUndefined();
       expect(await (await route.GET(new Request("http://x/me"))).json()).toEqual({ ok: true, name: "Luca", language: null, timeZone: "Asia/Tokyo" });
     });
+  });
+});
+
+// #387: an admin area reads and changes the instance's context while it runs.
+describe("the context routes", () => {
+  const view = { profiles: [{ name: "default", assignedTo: [], maxChars: 1000, layers: [] }] };
+  const entry = { at: "2026-11-12T10:00:00.000Z", by: "static:alice", profile: "default", before: { maxChars: 1000 }, after: { maxChars: 800 } };
+
+  /** A contextAdmin recording its calls, answering `outcome` to an update. */
+  function admin(outcome: Awaited<ReturnType<ChannelContextAdmin["update"]>> = { ok: true, value: view.profiles[0]! }) {
+    const calls: unknown[] = [];
+    const contextAdmin: ChannelContextAdmin = {
+      read: async (p) => (calls.push(["read", p]), { ok: true, value: view }),
+      update: async (p, profile, change) => (calls.push(["update", p, profile, change]), outcome),
+      changes: async (p, limit) => (calls.push(["changes", p, limit]), { ok: true, value: [entry] }),
+    };
+    return { contextAdmin, calls };
+  }
+  const patch = (name: string, body: string) =>
+    new Request(`http://x/context/profiles/${name}`, { method: "PATCH", body, headers: { "content-type": "application/json" } });
+
+  it("GET /context answers the context as the core shows it, for the caller", async () => {
+    const a = admin();
+    const res = await contextRoutes(a.contextAdmin, asAlice)["/context"]!.GET!(new Request("http://x/context"));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, ...view });
+    expect(a.calls).toEqual([["read", ALICE]]);
+  });
+
+  it("PATCH /context/profiles/{name} hands the change to the core for that profile and answers the profile as it now runs", async () => {
+    const a = admin();
+    const res = await contextRoutes(a.contextAdmin, asAlice)["/context/profiles/:name"]!.PATCH!(
+      patch("prem%20ium", JSON.stringify({ maxChars: 800, order: ["rag"], knobs: { rag: { topK: null } } })),
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, profile: view.profiles[0] });
+    expect(a.calls).toEqual([["update", ALICE, "prem ium", { maxChars: 800, order: ["rag"], knobs: { rag: { topK: null } } }]]);
+  });
+
+  it("GET /context/changes lists the newest changes, 50 unless limit says otherwise, between 1 and 500", async () => {
+    const a = admin();
+    const route = contextRoutes(a.contextAdmin, asAlice)["/context/changes"]!;
+    const res = await route.GET!(new Request("http://x/context/changes"));
+    expect(await res.json()).toEqual({ ok: true, changes: [entry] });
+    await route.GET!(new Request("http://x/context/changes?limit=5"));
+    await route.GET!(new Request("http://x/context/changes?limit=9000"));
+    await route.GET!(new Request("http://x/context/changes?limit=0"));
+    await route.GET!(new Request("http://x/context/changes?limit=abc"));
+    expect(a.calls.map((c) => (c as unknown[])[2])).toEqual([50, 5, 500, 1, 50]);
+  });
+
+  it("answers the core's refusals: 403 forbidden, 404 no such profile, 400 a change that doesn't fit", async () => {
+    for (const [status, code] of [
+      ["forbidden", 403],
+      ["notFound", 404],
+      ["invalid", 400],
+    ] as const) {
+      const a = admin({ ok: false, status, error: `no (${status})` });
+      const res = await contextRoutes(a.contextAdmin, asAlice)["/context/profiles/:name"]!.PATCH!(patch("default", JSON.stringify({ maxChars: 1 })));
+      expect([res.status, await res.json()]).toEqual([code, { ok: false, error: `no (${status})` }]);
+    }
+    const forbidden: ChannelContextAdmin = {
+      read: async () => ({ ok: false, status: "forbidden", error: "needs the role" }),
+      update: async () => ({ ok: false, status: "forbidden", error: "needs the role" }),
+      changes: async () => ({ ok: false, status: "forbidden", error: "needs the role" }),
+    };
+    const routes = contextRoutes(forbidden, asAlice);
+    expect((await routes["/context"]!.GET!(new Request("http://x/context"))).status).toBe(403);
+    expect((await routes["/context/changes"]!.GET!(new Request("http://x/context/changes"))).status).toBe(403);
+  });
+
+  it("is 400 for a body that isn't a JSON object, without asking the core", async () => {
+    const a = admin();
+    const route = contextRoutes(a.contextAdmin, asAlice)["/context/profiles/:name"]!;
+    for (const body of ["not json", "[]", "3", "null"]) {
+      const res = await route.PATCH!(patch("default", body));
+      expect([res.status, await res.json()]).toEqual([400, { ok: false, error: "the body must be a JSON object with maxChars, order or knobs" }]);
+    }
+    expect(a.calls).toEqual([]);
+  });
+
+  it("is 401 to a caller nobody vouches for, and refused to one the core doesn't admit, asking the core nothing", async () => {
+    const a = admin();
+    const routes = contextRoutes(a.contextAdmin, refuse);
+    expect((await routes["/context"]!.GET!(new Request("http://x/context"))).status).toBe(401);
+    expect((await routes["/context/profiles/:name"]!.PATCH!(patch("default", "{}"))).status).toBe(401);
+    expect((await routes["/context/changes"]!.GET!(new Request("http://x/context/changes"))).status).toBe(401);
+    const unknown = contextRoutes(a.contextAdmin, asAlice, "*", notAdmitted("unknown"));
+    expect((await unknown["/context"]!.GET!(new Request("http://x/context"))).status).toBe(403);
+    expect(a.calls).toEqual([]);
+  });
+
+  it("carries CORS headers, and answers the preflight", async () => {
+    const routes = contextRoutes(admin().contextAdmin, asAlice, "https://ui.example");
+    const res = await routes["/context"]!.GET!(new Request("http://x/context"));
+    expect(res.headers.get("access-control-allow-origin")).toBe("https://ui.example");
+    expect(routes["/context/profiles/:name"]!.OPTIONS().status).toBe(204);
+  });
+
+  it("is described in the OpenAPI document", async () => {
+    const doc = Bun.YAML.parse(await openApiResponse().text()) as { paths: Record<string, Record<string, unknown>> };
+    expect(Object.keys(doc.paths["/context"] ?? {})).toContain("get");
+    expect(Object.keys(doc.paths["/context/profiles/{name}"] ?? {})).toContain("patch");
+    expect(Object.keys(doc.paths["/context/changes"] ?? {})).toContain("get");
   });
 });

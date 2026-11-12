@@ -37,6 +37,9 @@ import {
   type ChannelLinking,
   type ChannelSettings,
   type ChannelConversations,
+  type ChannelContextAdmin,
+  type ContextAdminOutcome,
+  type ContextProfileChange,
 } from "@mercury-fw/channel-types";
 import { englishHttp } from "./messages.ts";
 
@@ -617,6 +620,70 @@ export function readRoutes(
   };
 }
 
+/** A context route: its `GET` or `PATCH` handler plus the shared `OPTIONS` preflight. */
+type ContextRoute = {
+  GET?: (req: Request) => Promise<Response>;
+  PATCH?: (req: Request) => Promise<Response>;
+  OPTIONS: () => Response;
+};
+
+/** The HTTP status of each refusal of the core's `contextAdmin`. */
+const CONTEXT_REFUSALS = { forbidden: 403, notFound: 404, invalid: 400 } as const;
+
+/**
+ * Builds the context routes (#387), for an admin area: `GET /context` (the
+ * profiles as they run), `PATCH /context/profiles/{name}` (a change to one,
+ * the body a `ContextProfileChange`), `GET /context/changes?limit=` (the
+ * newest changes, 50 by default, 1 to 500). Each asks `authenticate` and
+ * `admit` first, like the read routes; the core decides who may (the
+ * `mercury.context-admin` role) and checks the change, and its refusals
+ * become 403, 404 and 400.
+ */
+export function contextRoutes(
+  admin: ChannelContextAdmin,
+  authenticate: Authenticate,
+  corsOrigin = "*",
+  admit?: AdmitFn,
+): Record<string, ContextRoute> {
+  const cors = corsHeaders(corsOrigin);
+  const json = (payload: object, status = 200): Response => Response.json(payload, { status, headers: cors });
+  const options = () => preflight(corsOrigin);
+  /** Runs `act` for the caller, once `authenticate` and `admit` let them through; answers the core's outcome with `key` holding its value. */
+  const handler =
+    <T>(key: string, act: (req: Request, principal: Principal) => Promise<ContextAdminOutcome<T> | Response>) =>
+    async (req: Request): Promise<Response> => {
+      const principal = await caller(req, { authenticate, ...(admit === undefined ? {} : { admit }) }, corsOrigin);
+      if (principal instanceof Response) return principal;
+      const outcome = await act(req, principal);
+      if (outcome instanceof Response) return outcome;
+      if (!outcome.ok) return json({ ok: false, error: outcome.error }, CONTEXT_REFUSALS[outcome.status]);
+      return json(key === "" ? { ok: true, ...(outcome.value as object) } : { ok: true, [key]: outcome.value });
+    };
+  return {
+    "/context": { GET: handler("", (_req, principal) => admin.read(principal)), OPTIONS: options },
+    "/context/changes": {
+      GET: handler("changes", (req, principal) => {
+        const asked = Number.parseInt(new URL(req.url).searchParams.get("limit") ?? "", 10);
+        const limit = Number.isNaN(asked) ? 50 : Math.min(500, Math.max(1, asked));
+        return admin.changes(principal, limit);
+      }),
+      OPTIONS: options,
+    },
+    "/context/profiles/:name": {
+      PATCH: handler("profile", async (req, principal) => {
+        const body = (await req.json().catch(() => null)) as unknown;
+        if (typeof body !== "object" || body === null || Array.isArray(body)) {
+          return json({ ok: false, error: "the body must be a JSON object with maxChars, order or knobs" }, 400);
+        }
+        // The last path segment, so the handler reads the same with Bun's params or without.
+        const name = decodeURIComponent(new URL(req.url).pathname.split("/").pop() ?? "");
+        return admin.update(principal, name, body as ContextProfileChange);
+      }),
+      OPTIONS: options,
+    },
+  };
+}
+
 /**
  * `GET /version`: which Mercury this is (the framework's version, and the
  * app's own when it declares one), for any front end to show. Nobody is asked
@@ -645,6 +712,8 @@ export type HttpServerDeps = TurnRequestDeps & {
   settings?: ChannelSettings;
   /** Renaming the person's conversations; `PATCH /conversation` is mounted only with it. */
   conversations?: ChannelConversations;
+  /** The instance's context, for its admins; the `/context` routes are mounted only with it. */
+  contextAdmin?: ChannelContextAdmin;
   /** What the pages people read call the assistant. */
   assistantName?: string;
   /** The framework's version; `/version` is mounted only with it. */
@@ -684,6 +753,7 @@ export function startHttpServer(deps: HttpServerDeps): ReturnType<typeof Bun.ser
       "/openapi.yaml": { GET: () => openApiResponse(origin), OPTIONS: () => preflight(origin) },
       ...(deps.version === undefined ? {} : versionRoutes(deps.version, deps.appVersion, origin)),
       ...(deps.reads ? readRoutes(deps.reads, deps.authenticate, origin, deps.admit, deps.settings, deps.conversations) : {}),
+      ...(deps.contextAdmin ? contextRoutes(deps.contextAdmin, deps.authenticate, origin, deps.admit) : {}),
       ...(deps.completeLogin ? loginRoutes(deps.completeLogin, deps.assistantName, deps.i18n) : {}),
       ...(deps.linking ? linkRoutes({ ...deps, start: deps.linking.start, corsOrigin: origin }) : {}),
     },
