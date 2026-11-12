@@ -23,6 +23,8 @@ import { createPresentTool } from "./tools/present-tool.ts";
 import { loadPlugins } from "./plugins/plugin-loader.ts";
 import { createPluginHooks } from "./plugins/plugin-hooks.ts";
 import { createContextAssembler, resolveContext } from "./context/context.ts";
+import { createChannelContextAdmin } from "./context/context-admin.ts";
+import { createContextSettings } from "./context/context-settings.ts";
 import { materializeCliCredentials } from "./credentials/materialize.ts";
 import type { MercuryConfig } from "./config/define-config.ts";
 import { createResumeSlots } from "./session/resume-slots.ts";
@@ -318,6 +320,12 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
     resolvedContext === undefined
       ? undefined
       : createContextAssembler({ resolved: resolvedContext, offered: (who) => offeringOf(who).entries, log: (msg) => console.error(msg) });
+  // What an admin changed in the profiles while the instance ran (see
+  // context/context-settings.ts): kept in the data folder, applied now.
+  const contextSettings =
+    resolvedContext === undefined
+      ? undefined
+      : createContextSettings({ resolved: resolvedContext, dataPath, log: (msg) => console.error(msg), emit: (event) => tracer.emit(event) });
 
   // The plugins' hooks (see plugins/plugin-hooks.ts): a plugin hears about
   // the turns, and the closes, of the sessions it was offered in.
@@ -854,6 +862,8 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
             setTitle: (key, sessionKey, title) => setTitle(conversationStore, { userId: key, sessionKey, title, source: "person" }),
           }),
         }),
+    // The instance's context, for the admins of a channel's admin area (#387).
+    ...(contextSettings === undefined ? {} : { contextAdmin: createChannelContextAdmin({ identify: people.identify, settings: contextSettings }) }),
     logins: { accept: personLogins.accept, complete: personLogins.complete },
     linking: { start: linking.start },
     assistantName,

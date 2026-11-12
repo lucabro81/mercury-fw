@@ -10,6 +10,7 @@ import type { MercuryConfig } from "./config/define-config.ts";
 import { ollamaEmbedding, ollamaModel } from "./model/models.ts";
 import { generateText } from "ai";
 import { PLUGIN_API_VERSION, type PluginRuntimeContext } from "@mercury-fw/plugin-types";
+import { OPERATOR_PRINCIPAL } from "./identity/people.ts";
 
 // Nothing listens on these: Qdrant and Ollama fail soft, and composing never
 // asks the model anything.
@@ -536,6 +537,35 @@ describe("composeMercury", () => {
     } finally {
       globalThis.fetch = realFetch;
     }
+  });
+
+  // #387: the context's admin API reaches the channels only with a context,
+  // over the settings kept in the data folder, and a change reaches the next turn.
+  it("hands the channels contextAdmin over the settings kept in the data folder, applied at the start; none without a context", async () => {
+    const rag = {
+      apiVersion: PLUGIN_API_VERSION,
+      name: "rag",
+      description: "Adds rag.",
+      actsAs: "anyone" as const,
+      build: () => ({ context: { scope: "turn" as const, build: async () => [], knobs: { topK: { type: "integer" as const, default: 5, description: "How many" } } } }),
+    };
+    await withFreshFolders({}, async ({ data }) => {
+      await mkdir(data, { recursive: true });
+      await writeFile(join(data, "context-settings.json"), JSON.stringify({ version: 1, profiles: { default: { maxChars: 300, knobs: { rag: { topK: 7 } } } } }));
+      const app = await composeMercury({
+        plugins: [rag],
+        models: MODELS,
+        context: { profiles: { default: { layers: [rag], budget: { maxChars: 1000 } } } },
+      });
+      const admin = app.channelRuntime.contextAdmin!;
+      const read = await admin.read(OPERATOR_PRINCIPAL);
+      expect(read.ok && read.value.profiles.map((p) => [p.maxChars, p.layers[0]!.knobs[0]!.value])).toEqual([[300, 7]]);
+      expect((await admin.update(OPERATOR_PRINCIPAL, "default", { knobs: { rag: { topK: 2 } } })).ok).toBe(true);
+      expect(JSON.parse(await readFile(join(data, "context-settings.json"), "utf8")).profiles.default).toEqual({ maxChars: 300, knobs: { rag: { topK: 2 } } });
+      expect((await readFile(join(data, "context-changes.jsonl"), "utf8")).trim().split("\n")).toHaveLength(1);
+    });
+    const bare = await composeMercury({ plugins: [], models: MODELS });
+    expect(bare.channelRuntime.contextAdmin).toBeUndefined();
   });
 
   it("refuses to start on a context layer pointing at a plugin that isn't declared", async () => {
