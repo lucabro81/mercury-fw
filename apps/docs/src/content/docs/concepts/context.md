@@ -20,7 +20,8 @@ keeps whole blocks, layer by layer, while they fit; a block that doesn't fit is 
 
 A plugin's layer only runs for people the plugin is offered to: the same [roles](../people/) that decide who may use
 its tools decide whose context it can add to, and it reads what it reads with the same identity its tools would
-have. A layer that fails is skipped for that message, and the log says so.
+have. A layer that fails is skipped, and the log says so: a turn layer for that message, a session layer until
+the conversation closes.
 
 ## Once per conversation, or every message
 
