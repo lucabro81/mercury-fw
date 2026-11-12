@@ -302,9 +302,8 @@ export type ClosedSession = {
  * to them (`as`, the identity its tools would act with), what they wrote
  * (for a `session` layer, their first message in the session; empty when
  * that turn was one the agent opened, or resumed after a confirmation),
- * whether the space is
- * shared, and the layer's knobs as the instance set them (empty until the
- * plugin declares some).
+ * whether the space is shared, and the layer's knobs as the instance set
+ * them (empty until the plugin declares some).
  */
 export type ContextRequest = {
   sessionKey: string;
