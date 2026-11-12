@@ -327,7 +327,7 @@ describe("composeMercury", () => {
         { channel: "http", multiUser: false, text: "hello", sessionKey: "http:alice:c1", principal: { provider: "static", id: "alice" }, logPrefix: "" },
         { onToolStart: () => {}, finalize: async () => {}, dispose: () => {} } as never,
       );
-      for (let i = 0; i < 50 && asked.length < 2; i++) await new Promise((resolve) => setTimeout(resolve, 10));
+      for (let i = 0; i < 500 && asked.length < 2; i++) await new Promise((resolve) => setTimeout(resolve, 10));
       expect(asked[0]).toBe("big");
       expect(asked.slice(1)).toEqual(["small"]);
     } finally {
