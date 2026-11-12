@@ -70,6 +70,20 @@ describe("appendVerbatimMessage", () => {
     expect(store.stored.map(({ id: _id, ...m }) => m)).toEqual([message]);
   });
 
+  // #383: indexing embeds the message, a model call: it's background work,
+  // handed to `defer`, while the message is in the store before append returns.
+  it("with defer, keeps the message at once and hands the indexing to defer, which indexes it under the same id", async () => {
+    const store = fakeConversationStore();
+    const index = fakeVectorIndex();
+    const deferred: Array<() => Promise<void>> = [];
+    await appendVerbatimMessage(store, message, { index, embed: async () => [1], defer: (work) => void deferred.push(work) });
+    expect(store.stored).toHaveLength(1);
+    expect(index.spaces.get("verbatim_archive") ?? []).toEqual([]);
+    expect(deferred).toHaveLength(1);
+    await deferred[0]!();
+    expect(index.spaces.get("verbatim_archive")).toEqual([{ id: store.stored[0]!.id, vector: [1], payload: message }]);
+  });
+
   // #379: without a vector index the archive still keeps what was said; nothing is embedded.
   it("without a search, keeps the message and embeds nothing", async () => {
     const { stored, embedded } = await appended({ ...message, role: "assistant", content: "KAN-1 è In Progress." }, false);

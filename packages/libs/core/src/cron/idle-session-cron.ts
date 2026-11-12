@@ -136,11 +136,13 @@ export type IdleSessionSweepDeps = CaptureDeps & {
   /** Discards the session's raw transcript — called only after a successful summarize+store. */
   closeSession: (key: string) => void;
   /**
-   * Runs one session's capture and close while nothing else touches that
-   * session (the core's session lock, shared with the turn runner). Absent,
-   * the work runs directly.
+   * Runs `fn` while nothing else touches that session (the core's session
+   * lock, shared with the turn runner): taking a session's messages, and
+   * closing it. Absent, the work runs directly.
    */
   withSession?: (key: string, fn: () => Promise<void>) => Promise<void>;
+  /** Runs one session's capture as background work (the core's queue for the model); run directly when absent. */
+  job?: <T>(fn: () => Promise<T>) => Promise<T>;
   /** `false` closes idle sessions without capturing them: an instance that keeps no memory. Captures when left out. */
   capture?: boolean;
 };
@@ -149,7 +151,10 @@ export type IdleSessionSweepDeps = CaptureDeps & {
  * Runs one sweep at `now`: every session `scanner` reports idle (past
  * `idleTimeoutMs`) gets captured (`captureSessionToMemory`, unless
  * `deps.capture` is `false`) and closed,
- * then cleared from `scanner`. A failure capturing is logged and leaves
+ * then cleared from `scanner`. Its messages are taken, and it's closed, under
+ * `withSession`; the capture runs in between, outside it, so the session's
+ * next turn never waits for it. A session a turn ran in meanwhile isn't idle
+ * any more and stays open. A failure capturing is logged and leaves
  * that session's tracking untouched (retried on the next sweep) — it must
  * never stop the sweep from processing the others (hard-won convention:
  * one bad tick can't take down the rest of Mercury).
@@ -164,19 +169,27 @@ export async function runIdleSessionSweep(
 
   const withSession = deps.withSession ?? ((_key: string, fn: () => Promise<void>) => fn());
 
+  const job = deps.job ?? (<T,>(fn: () => Promise<T>) => fn());
+
   for (const key of scanner.scanIdle(now, idleTimeoutMs)) {
     try {
+      const taken: { session?: IdleSession } = {};
       await withSession(key, async () => {
         // A turn may have run while the sweep waited for the session.
         if (!scanner.isIdle(key, now, idleTimeoutMs)) return;
-        const session = deps.getSession(key);
-        if (!session) {
-          scanner.clear(key);
-          return;
-        }
+        taken.session = deps.getSession(key);
+        if (!taken.session) scanner.clear(key);
+      });
+      const session = taken.session;
+      if (!session) continue;
 
-        if (deps.capture !== false) await captureSessionToMemory(session.userId, key, session.messages, now, deps, "idle");
+      if (deps.capture !== false) {
+        await job(() => captureSessionToMemory(session.userId, key, session.messages, now, deps, "idle"));
+      }
 
+      await withSession(key, async () => {
+        // A turn of the session ran while it was captured: it goes on, open.
+        if (!scanner.isIdle(key, now, idleTimeoutMs)) return;
         deps.closeSession(key);
         scanner.clear(key);
         deps.emit?.({ kind: "session.closed", session: key, person: session.userId, messages: session.messages.length });

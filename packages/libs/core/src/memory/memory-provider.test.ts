@@ -30,6 +30,19 @@ describe("createVerbatimArchiveProvider — captureExchange", () => {
     expect(index.spaces.get("verbatim_archive")).toEqual([{ id: store.stored[0]!.id, vector: [1, 2, 3], payload: message }]);
   });
 
+  // #383: the indexing embeds, a model call nobody waits on: it goes to indexInBackground.
+  it("hands the indexing to indexInBackground; the store has the message before", async () => {
+    const store = fakeConversationStore();
+    const index = fakeVectorIndex();
+    const later: Array<() => Promise<void>> = [];
+    const provider = createVerbatimArchiveProvider({ store, index, embed: async () => [1], indexInBackground: (work) => void later.push(work) });
+    await provider.captureExchange!({ userId: "u", sessionKey: "s", role: "user", content: "ciao" });
+    expect(store.stored).toHaveLength(1);
+    expect(index.spaces.get("verbatim_archive") ?? []).toEqual([]);
+    await later[0]!();
+    expect(index.spaces.get("verbatim_archive")).toHaveLength(1);
+  });
+
   // #379: without a vector index the archive still keeps what was said, and nothing is embedded.
   it("without an index, keeps the message and embeds nothing", async () => {
     const { provider, kept, embedCalls } = archive(undefined, false);

@@ -191,14 +191,23 @@ function storedMessages(messages: StoredMessage[]): VerbatimMessage[] {
 export async function appendVerbatimMessage(
   store: ConversationStore,
   entry: VerbatimMessage,
-  search?: { index: VectorIndex; embed: (text: string) => Promise<number[]> },
+  search?: {
+    index: VectorIndex;
+    embed: (text: string) => Promise<number[]>;
+    /** Runs the indexing later, as background work; awaited here when absent. */
+    defer?: (work: () => Promise<void>) => void;
+  },
 ): Promise<void> {
   const id = crypto.randomUUID();
   await store.append({ id, ...entry });
   if (search === undefined) return;
-  const shown = entry.content.trim() !== "" ? entry.content : shownText(entry.content, entry.displays);
-  const vector = await search.embed(shown !== "" ? shown : (entry.confirmation?.choice ?? entry.confirmation?.status ?? ""));
-  await search.index.upsert(VERBATIM_SPACE, [{ id, vector, payload: { ...entry } }]);
+  const index = async () => {
+    const shown = entry.content.trim() !== "" ? entry.content : shownText(entry.content, entry.displays);
+    const vector = await search.embed(shown !== "" ? shown : (entry.confirmation?.choice ?? entry.confirmation?.status ?? ""));
+    await search.index.upsert(VERBATIM_SPACE, [{ id, vector, payload: { ...entry } }]);
+  };
+  if (search.defer === undefined) await index();
+  else search.defer(index);
 }
 
 const DEFAULT_SEARCH_LIMIT = 5;

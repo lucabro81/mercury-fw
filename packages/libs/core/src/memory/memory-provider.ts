@@ -64,6 +64,8 @@ export type VerbatimArchiveProviderDeps = {
   embed: (text: string) => Promise<number[]>;
   /** Where messages are indexed and `recall_verbatim` searches; without one nothing is embedded and the provider offers no recall. */
   index?: VectorIndex;
+  /** Runs a message's indexing later, as background work (the core's queue for the model); awaited with the capture when absent. */
+  indexInBackground?: (work: () => Promise<void>) => void;
   /** Test seam; defaults to `() => new Date()`. The provider owns the durable ordering timestamp. */
   now?: () => Date;
 };
@@ -92,7 +94,9 @@ export function createVerbatimArchiveProvider(deps: VerbatimArchiveProviderDeps)
       await appendVerbatimMessage(
         deps.store,
         { ...exchange, timestamp: now().toISOString() },
-        deps.index === undefined ? undefined : { index: deps.index, embed: deps.embed },
+        deps.index === undefined
+          ? undefined
+          : { index: deps.index, embed: deps.embed, ...(deps.indexInBackground === undefined ? {} : { defer: deps.indexInBackground }) },
       );
     },
     sessionTools: (ctx): Record<string, Tool> => {
