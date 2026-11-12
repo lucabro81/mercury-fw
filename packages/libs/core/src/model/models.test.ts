@@ -31,6 +31,7 @@ describe("ollamaModel", () => {
       name: "qwen3.8:27b",
       settings: {},
       capacity: 1,
+      backgroundSlots: 1,
     });
   });
 
@@ -42,6 +43,7 @@ describe("ollamaModel", () => {
       name: "gemma4:12b",
       settings: { think: false, temperature: 0.2, topK: 20 },
       capacity: 8,
+      backgroundSlots: 1,
     });
     expect(Object.keys(handle.settings)).toEqual(["think", "temperature", "topK"]);
   });
@@ -77,6 +79,26 @@ describe("ollamaModel", () => {
         `ollamaModel("qwen"): capacity must be a whole number from 1 up, got ${capacity}`,
       );
     }
+  });
+});
+
+describe("ollamaModel: backgroundSlots", () => {
+  test("as declared below the capacity; 1 when left out or empty", () => {
+    expect(ollamaModel("gemma", { capacity: 8, backgroundSlots: 2 }).backgroundSlots).toBe(2);
+    expect(ollamaModel("gemma", { capacity: 8, backgroundSlots: undefined }).backgroundSlots).toBe(1);
+  });
+
+  test("not a whole number from 1 up, not below a capacity above 1, or not 1 with capacity 1: the start stops", () => {
+    expect(() => ollamaModel("gemma", { capacity: 8, backgroundSlots: 0 })).toThrow(
+      'ollamaModel("gemma"): backgroundSlots must be a whole number from 1 up, got 0',
+    );
+    expect(() => ollamaModel("gemma", { capacity: 8, backgroundSlots: 1.5 })).toThrow(
+      'ollamaModel("gemma"): backgroundSlots must be a whole number from 1 up, got 1.5',
+    );
+    expect(() => ollamaModel("gemma", { capacity: 4, backgroundSlots: 4 })).toThrow(
+      'ollamaModel("gemma"): backgroundSlots must be below capacity (4), got 4',
+    );
+    expect(() => ollamaModel("qwen", { backgroundSlots: 2 })).toThrow('ollamaModel("qwen"): backgroundSlots must be 1 with capacity 1, got 2');
   });
 });
 

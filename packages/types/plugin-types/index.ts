@@ -202,6 +202,8 @@ export type MercuryModelHandle = {
   readonly settings: Readonly<ModelSettings>;
   /** How many requests the model's runtime serves at once; 1 for a model served one request at a time. */
   readonly capacity: number;
+  /** How many of those the work nobody waits on may take at once: below `capacity` when it's above 1, 1 otherwise. */
+  readonly backgroundSlots: number;
 };
 
 /** An embedding model the instance declared (`ollamaEmbedding(...)`), the one memory found by meaning is embedded with. */

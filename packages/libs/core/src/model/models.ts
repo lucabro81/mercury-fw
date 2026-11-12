@@ -48,6 +48,21 @@ function requireName(factory: string, name: string | undefined): string {
   return name;
 }
 
+/** `backgroundSlots` checked against `capacity`: 1 when left out; a whole number from 1 up, below a capacity above 1, 1 with capacity 1. */
+function checkBackgroundSlots(label: string, capacity: number, backgroundSlots: number | undefined): number {
+  if (backgroundSlots === undefined) return 1;
+  if (!Number.isInteger(backgroundSlots) || backgroundSlots < 1) {
+    throw new Error(`${label}: backgroundSlots must be a whole number from 1 up, got ${backgroundSlots}`);
+  }
+  if (capacity === 1 && backgroundSlots !== 1) {
+    throw new Error(`${label}: backgroundSlots must be 1 with capacity 1, got ${backgroundSlots}`);
+  }
+  if (capacity > 1 && backgroundSlots >= capacity) {
+    throw new Error(`${label}: backgroundSlots must be below capacity (${capacity}), got ${backgroundSlots}`);
+  }
+  return backgroundSlots;
+}
+
 /** `capacity` checked: 1 when left out, otherwise a whole number from 1 up. */
 function checkCapacity(label: string, capacity: number | undefined): number {
   if (capacity === undefined) return 1;
@@ -59,14 +74,18 @@ function checkCapacity(label: string, capacity: number | undefined): number {
 
 /**
  * A language model on the instance's Ollama (`OLLAMA_HOST`): its name there,
- * how it generates (each setting left out isn't sent), and how many requests
- * it serves at once (`capacity`, 1 when left out). Throws on an empty name or a
- * value out of its range, so a wrong config stops the start.
+ * how it generates (each setting left out isn't sent), how many requests it
+ * serves at once (`capacity`, 1 when left out) and how many of them the work
+ * nobody waits on may take (`backgroundSlots`, 1 when left out). Throws on an
+ * empty name or a value out of its range, so a wrong config stops the start.
  */
-export function ollamaModel(name: string | undefined, options: ModelSettings & { capacity?: number } = {}): MercuryModelHandle {
+export function ollamaModel(
+  name: string | undefined,
+  options: ModelSettings & { capacity?: number; backgroundSlots?: number } = {},
+): MercuryModelHandle {
   const checked = requireName("ollamaModel", name);
   const label = `ollamaModel(${JSON.stringify(checked)})`;
-  const { capacity, ...given } = options;
+  const { capacity, backgroundSlots, ...given } = options;
   try {
     ollamaSettings(given);
   } catch (err) {
@@ -79,6 +98,7 @@ export function ollamaModel(name: string | undefined, options: ModelSettings & {
     name: checked,
     settings: Object.freeze(settings),
     capacity: checkCapacity(label, capacity),
+    backgroundSlots: checkBackgroundSlots(label, checkCapacity(label, capacity), backgroundSlots),
   });
 }
 
