@@ -472,7 +472,7 @@ describe("composeMercury", () => {
       });
       const finalized: string[] = [];
       const sink = { onToolStart: () => {}, finalize: async (text: string) => void finalized.push(text), dispose: () => {} } as never;
-      const turn = (text: string) => ({ channel: "http", multiUser: false, text, sessionKey: "http:alice:c1", principal: { provider: "static", id: "alice" }, logPrefix: "" });
+      const turn = (text: string) => ({ channel: "http", multiUser: false, text, sessionKey: "http:alice:c1", principal: { provider: "static", id: "alice" }, logPrefix: "" }) as never;
       await app.handleTurn(turn("first"), sink);
       await app.handleTurn(turn("second"), sink);
       expect(finalized).toEqual(["ok", "ok"]);
