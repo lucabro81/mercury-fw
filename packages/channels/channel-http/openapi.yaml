@@ -242,6 +242,7 @@ paths:
   /conversation:
     get:
       summary: A conversation's durable transcript
+      description: Only on an agent with a conversation store; `404` on any other.
       parameters:
         - name: id
           in: query
@@ -342,6 +343,7 @@ paths:
   /conversations:
     get:
       summary: List the caller's conversations (most-recently-active first)
+      description: Only on an agent with a conversation store; `404` on any other.
       parameters:
         - name: limit
           in: query
@@ -378,6 +380,21 @@ paths:
             application/json:
               schema:
                 type: object
+                properties:
+                  ok:
+                    type: boolean
+                  uptimeSeconds:
+                    type: number
+                  memory:
+                    type: object
+                  conversationStoreReachable:
+                    type: [boolean, "null"]
+                    description: Whether the declared conversation store answers; `null` when the agent declares none.
+                  vectorIndexReachable:
+                    type: [boolean, "null"]
+                    description: Whether the declared vector index answers; `null` when the agent declares none.
+                  ollamaReachable:
+                    type: boolean
   /manifest:
     get:
       summary: The plugins, tools and skills the caller is offered
@@ -586,6 +603,7 @@ paths:
   /memory/scroll:
     get:
       summary: Scroll the caller's points in a memory collection
+      description: Only on an agent with a vector index; `404` on any other.
       parameters:
         - name: collection
           in: query
@@ -618,7 +636,7 @@ paths:
               schema:
                 type: object
         "400":
-          description: Missing `?collection`, one that isn't kept per person, or an agent with no vector index.
+          description: Missing `?collection`, or one that isn't kept per person.
           content:
             application/json:
               schema:

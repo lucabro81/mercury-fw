@@ -1,7 +1,7 @@
 /**
- * The verbatim conversation archive (issue #4): a durable, lossless
- * Qdrant collection holding the complete user↔model exchange, one point
- * per message, distinct from every other memory layer.
+ * The verbatim conversation archive (issue #4): a durable, lossless record
+ * of the complete user↔model exchange, one entry per message, distinct from
+ * every other memory layer.
  *
  * How it differs from the neighbours in this directory:
  * - Layer-1 history (`../session/history.ts`) is a sliding window that
@@ -13,12 +13,12 @@
  * ever appends and reads; nothing here evicts (retention bounding is a
  * separate, later concern).
  *
- * Writes and reads go to Qdrant through `./qdrant-client.ts`; the search by
- * meaning (`searchVerbatim`) goes through the vector index, whose
- * `verbatim_archive` space is the archive's own collection.
+ * The messages are kept in the declared conversation store, read back by
+ * person and conversation in time order; the search by meaning
+ * (`searchVerbatim`) goes through the vector index's `verbatim_archive`
+ * space, where each message is indexed under its own id when there's one.
  */
-import type { VectorIndex } from "@mercury-fw/channel-types";
-import type { QdrantClientLike } from "./qdrant-client.ts";
+import type { ConversationStore, StoredMessage, VectorIndex } from "@mercury-fw/channel-types";
 import type { CallRecord } from "../session/call-record.ts";
 import type { TraceEntry } from "../session/turn-trace.ts";
 
@@ -29,31 +29,12 @@ import type { TraceEntry } from "../session/turn-trace.ts";
 export const VERBATIM_SPACE = "verbatim_archive";
 
 /**
- * Creates `collectionName` (cosine distance, `vectorSize`-dim) if it
- * doesn't already exist, then ensures the `userId` keyword payload index
- * regardless — `searchVerbatim` filters by `userId` server-side, and the
- * index keeps that filter usable as the archive grows. Idempotent
- * (Qdrant no-ops re-creating an existing index), so safe to call on every
- * startup, including against a collection created before this existed.
+ * Makes sure the archive's search space exists with `dimensions`-long vectors
+ * and the fields it's filtered (`userId`, `sessionKey`) and ordered
+ * (`timestamp`) on. Idempotent, safe on every startup.
  */
-export async function ensureVerbatimCollection(
-  client: QdrantClientLike,
-  collectionName: string,
-  vectorSize: number,
-): Promise<void> {
-  const { collections } = await client.getCollections();
-  if (!collections.some((c) => c.name === collectionName)) {
-    await client.createCollection(collectionName, { vectors: { size: vectorSize, distance: "Cosine" } });
-  }
-  if (client.createPayloadIndex) {
-    // `userId` for searchVerbatim's per-person filter; `sessionKey` for
-    // listVerbatimBySession's per-conversation filter; `timestamp` (datetime)
-    // for its chronological `order_by`. Qdrant rejects a filter/order_by on an
-    // unindexed field with a 400, so all three must exist.
-    await client.createPayloadIndex(collectionName, { field_name: "userId", field_schema: "keyword" });
-    await client.createPayloadIndex(collectionName, { field_name: "sessionKey", field_schema: "keyword" });
-    await client.createPayloadIndex(collectionName, { field_name: "timestamp", field_schema: "datetime" });
-  }
+export async function ensureVerbatimSpace(index: VectorIndex, dimensions: number): Promise<void> {
+  await index.ensure(VERBATIM_SPACE, { dimensions, keys: ["userId", "sessionKey"], ordered: ["timestamp"] });
 }
 
 /**
@@ -190,35 +171,34 @@ function withValidExtras(m: VerbatimMessage): VerbatimMessage {
   };
 }
 
-/** The verbatim messages among `payloads`, skipping malformed points and dropping malformed extras. */
+/** The verbatim messages among `payloads`, skipping malformed ones and dropping malformed extras. */
 function verbatimMessages(payloads: Array<Record<string, unknown> | null>): VerbatimMessage[] {
   return payloads.filter(isVerbatimMessage).map(withValidExtras);
 }
 
+/** The verbatim messages among what the store gave, without the store's ids. */
+function storedMessages(messages: StoredMessage[]): VerbatimMessage[] {
+  return verbatimMessages(messages.map(({ id: _id, ...m }) => m));
+}
+
 /**
- * Embeds `entry.content` (what was shown, when the model said nothing; for a
- * resolved confirmation with no reply, its choice or how it went, since
- * nothing searches it: recall leaves it out) and
- * upserts it as a new point in `collectionName`, payload carrying the full
- * verbatim message.
+ * Keeps `entry` in the store under a new id and, when `search` is given,
+ * indexes it under the same id in the archive's search space, its vector
+ * embedded from `entry.content` (what was shown, when the model said nothing;
+ * for a resolved confirmation with no reply, its choice or how it went, since
+ * nothing searches it: recall leaves it out), its payload the full message.
  */
 export async function appendVerbatimMessage(
-  client: QdrantClientLike,
-  collectionName: string,
-  embed: (text: string) => Promise<number[]>,
+  store: ConversationStore,
   entry: VerbatimMessage,
+  search?: { index: VectorIndex; embed: (text: string) => Promise<number[]> },
 ): Promise<void> {
+  const id = crypto.randomUUID();
+  await store.append({ id, ...entry });
+  if (search === undefined) return;
   const shown = entry.content.trim() !== "" ? entry.content : shownText(entry.content, entry.displays);
-  const vector = await embed(shown !== "" ? shown : (entry.confirmation?.choice ?? entry.confirmation?.status ?? ""));
-  await client.upsert(collectionName, {
-    points: [
-      {
-        id: crypto.randomUUID(),
-        vector,
-        payload: { ...entry },
-      },
-    ],
-  });
+  const vector = await search.embed(shown !== "" ? shown : (entry.confirmation?.choice ?? entry.confirmation?.status ?? ""));
+  await search.index.upsert(VERBATIM_SPACE, [{ id, vector, payload: { ...entry } }]);
 }
 
 const DEFAULT_SEARCH_LIMIT = 5;
@@ -264,8 +244,8 @@ export async function searchVerbatim(
 
 /**
  * How many recent messages `listVerbatimSessions` scans to build the
- * conversation list. Qdrant has no native DISTINCT, so we dedup client-side
- * over a bounded window of the newest points — a conversation whose newest
+ * conversation list. A store has no DISTINCT, so we dedup here
+ * over a bounded window of the newest messages — a conversation whose newest
  * message falls outside this window won't appear. Ample for a live-testing UI
  * sidebar; retention/aggregation is a separate later concern.
  */
@@ -288,23 +268,13 @@ const PREVIEW_CHARS = 120;
  * conversation's most recent message for its timestamp and its most recent
  * one with something shown for its preview (displays included; an
  * interrupted answer shows nothing, so its question is the preview), then
- * caps the result at `limit`. Returns empty if the client can't scroll.
+ * caps the result at `limit`.
  */
 export async function listVerbatimSessions(
-  client: QdrantClientLike,
-  collectionName: string,
+  store: ConversationStore,
   query: { userId: string; limit: number },
 ): Promise<{ conversations: VerbatimSession[] }> {
-  if (!client.scroll) {
-    return { conversations: [] };
-  }
-  const result = await client.scroll(collectionName, {
-    filter: { must: [{ key: "userId", match: { value: query.userId } }] },
-    order_by: { key: "timestamp", direction: "desc" },
-    limit: SESSION_SCAN_LIMIT,
-    with_payload: true,
-  });
-  const messages = verbatimMessages(result.points.map((p) => p.payload ?? null));
+  const messages = storedMessages(await store.recent({ userId: query.userId, limit: SESSION_SCAN_LIMIT }));
   const seen = new Map<string, VerbatimSession>();
   // The conversations whose preview is still to come: their newest messages showed nothing (an interrupted answer, a resumed confirmation).
   const previewless = new Set<string>();
@@ -329,43 +299,30 @@ export async function listVerbatimSessions(
 /** A page of a conversation's verbatim messages, plus the opaque cursor for the next page (null when exhausted). */
 export type VerbatimPage = {
   messages: VerbatimMessage[];
-  nextOffset: string | number | Record<string, unknown> | null;
+  nextOffset: string | null;
 };
 
 /**
  * The verbatim messages of one conversation (`sessionKey`) in chronological
  * order — the durable transcript a UI renders when it (re)loads a conversation.
- * Unlike `searchVerbatim` this is a plain scroll (no similarity), filtered by
+ * Unlike `searchVerbatim` this is a plain read (no similarity), filtered by
  * the person (`userId`) and the conversation (`sessionKey`), so a session key
  * that isn't the person's own yields nothing, ordered by `timestamp`
  * ascending, paged via the opaque `offset` cursor. Each message comes as the
- * person saw it, its displays folded into `content`. Returns empty if the client
- * can't scroll.
+ * person saw it, its displays folded into `content`.
  */
 export async function listVerbatimBySession(
-  client: QdrantClientLike,
-  collectionName: string,
-  query: { userId: string; sessionKey: string; limit: number; offset?: string | number | Record<string, unknown> | null },
+  store: ConversationStore,
+  query: { userId: string; sessionKey: string; limit: number; offset?: string },
 ): Promise<VerbatimPage> {
-  if (!client.scroll) {
-    return { messages: [], nextOffset: null };
-  }
-  const result = await client.scroll(collectionName, {
-    filter: {
-      must: [
-        { key: "userId", match: { value: query.userId } },
-        { key: "sessionKey", match: { value: query.sessionKey } },
-      ],
-    },
-    order_by: { key: "timestamp", direction: "asc" },
+  const page = await store.messages({
+    userId: query.userId,
+    sessionKey: query.sessionKey,
+    order: "asc",
     limit: query.limit,
-    offset: query.offset,
-    with_payload: true,
+    ...(query.offset === undefined ? {} : { cursor: query.offset }),
   });
-  return {
-    messages: verbatimMessages(result.points.map((p) => p.payload ?? null)).map(asShown),
-    nextOffset: result.next_page_offset ?? null,
-  };
+  return { messages: storedMessages(page.messages).map(asShown), nextOffset: page.next ?? null };
 }
 
 /** How many of a conversation's newest messages `listVerbatimTail` reads at most. */
@@ -391,29 +348,14 @@ export type VerbatimTail = {
  * doesn't fit, leaves out answers that were only displays (no words to hand
  * back) and how confirmations were resolved (never in the history), and drops leading assistant messages, so the tail always
  * opens with what the person said. `complete` is true only when every
- * message of the conversation made it in. Empty and incomplete when the
- * client can't scroll.
+ * message of the conversation made it in.
  */
 export async function listVerbatimTail(
-  client: QdrantClientLike,
-  collectionName: string,
+  store: ConversationStore,
   query: { userId: string; sessionKey: string; maxChars: number },
 ): Promise<VerbatimTail> {
-  if (!client.scroll) {
-    return { messages: [], complete: false };
-  }
-  const result = await client.scroll(collectionName, {
-    filter: {
-      must: [
-        { key: "userId", match: { value: query.userId } },
-        { key: "sessionKey", match: { value: query.sessionKey } },
-      ],
-    },
-    order_by: { key: "timestamp", direction: "desc" },
-    limit: TAIL_SCAN_LIMIT,
-    with_payload: true,
-  });
-  const newestFirst = verbatimMessages(result.points.map((p) => p.payload ?? null)).filter(forModel).filter(said);
+  const page = await store.messages({ userId: query.userId, sessionKey: query.sessionKey, order: "desc", limit: TAIL_SCAN_LIMIT });
+  const newestFirst = storedMessages(page.messages).filter(forModel).filter(said);
   const taken: VerbatimMessage[] = [];
   let chars = 0;
   for (const m of newestFirst) {
@@ -429,7 +371,7 @@ export async function listVerbatimTail(
       ? { role: m.role, content: m.content, timestamp: m.timestamp }
       : { role: m.role, content: m.content, calls: m.calls, timestamp: m.timestamp },
   );
-  const complete = result.points.length < TAIL_SCAN_LIMIT && messages.length === newestFirst.length;
+  const complete = page.messages.length < TAIL_SCAN_LIMIT && messages.length === newestFirst.length;
   if (complete) return { messages, complete };
   // Newest first, the first message not kept.
   const leftOut = newestFirst[kept.length];

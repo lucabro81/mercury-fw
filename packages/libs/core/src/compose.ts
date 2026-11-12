@@ -14,7 +14,6 @@
  * Mercury CLI (a separate monorepo app that scaffolds an instance) — that CLI
  * would reuse `composeMercury` to boot the app it built. Not built yet.
  */
-import { QdrantClient } from "@qdrant/js-client-rest";
 import { getOllamaProvider } from "./model/client.ts";
 import { describeModelSettings, ollamaSettings } from "./model/generation-settings.ts";
 import { createConfirmationStore, createStageChoices, createStageConfirmation, type ConfirmationStore, type ResumedAction } from "@mercury-fw/confirm-engine";
@@ -69,6 +68,7 @@ import { storeSemanticFact, searchSemanticFactsByTopic } from "./memory/semantic
 import { TOOL_CORRECTIONS_SPACE, storeToolCorrection, searchToolCorrectionsByTopic } from "./memory/tool-corrections-store.ts";
 import { MIGRATED_SPACES, setUpMemory, setUpWhenReachable } from "./memory/collection-setup.ts";
 import { loadVectorIndex } from "./data/vector-index-loader.ts";
+import { loadConversationStore } from "./data/conversation-store-loader.ts";
 import { consolidateSemanticFact, consolidateToolCorrection, type ToolCorrectionConsolidationDeps } from "./cron/semantic-consolidation.ts";
 import { createToolCorrectionExtractor } from "./session/tool-correction-extractor.ts";
 import { createEmbedder } from "./memory/embedder.ts";
@@ -273,7 +273,8 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
         plugins: offering.plugins,
         skills: offering.skills,
         persona: config.persona,
-        recallVerbatim: vectorIndex !== undefined,
+        // recall_verbatim searches the archive: it needs both.
+        recallVerbatim: vectorIndex !== undefined && conversationStore !== undefined,
       });
       prompts = { singleUser: built.system, multiUser: built.chatSystem };
       promptsByOffering.set(offering.signature, prompts);
@@ -316,38 +317,46 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   const episodicSummarize = createEpisodicSummarizer(model);
   const embeddingModel = provider.textEmbeddingModel(process.env.OLLAMA_EMBEDDING_MODEL ?? "nomic-embed-text");
   const embed = createEmbedder(embeddingModel);
-  // The same Qdrant `@mercury-fw/store-qdrant` reaches: an empty QDRANT_URL is the default too.
-  const qdrant = new QdrantClient({ url: process.env.QDRANT_URL || "http://qdrant:6333" });
+  // Where what was said is kept (the archive and the titles): the declared
+  // conversation store. Without one nothing is archived: no conversations to
+  // reopen or list, no titles, no recall.
+  const conversationStore = loadConversationStore(config.conversationStore, {
+    env: process.env,
+    log: (msg) => console.error(`[archive] ${msg}`),
+  });
   // Where what's found by meaning lives (the episodes, the facts, the
   // corrections, the archive's search): the declared vector index. Without
   // one Mercury keeps no memory and offers no recall.
   const vectorIndex = loadVectorIndex(config.vectorIndex, { env: process.env, log: (msg) => console.error(`[memory] ${msg}`) });
 
-  // Verbatim conversation archive (#4): a distinct collection holding the raw
-  // user<->model exchange, lossless and durable — separate from the lossy
-  // Layer-1 window and the derived episodic summaries above.
-  const verbatimCollection = process.env.QDRANT_VERBATIM_COLLECTION ?? "verbatim_archive";
-  const verbatimProvider = createVerbatimArchiveProvider({
-    client: qdrant,
-    collectionName: verbatimCollection,
-    embed,
-    ...(vectorIndex === undefined ? {} : { index: vectorIndex }),
-  });
+  // Verbatim conversation archive (#4): the raw user<->model exchange,
+  // lossless and durable — separate from the lossy Layer-1 window and the
+  // derived episodic summaries above — in the store, searched in the index.
+  const verbatimProvider =
+    conversationStore === undefined
+      ? undefined
+      : createVerbatimArchiveProvider({
+          store: conversationStore,
+          embed,
+          ...(vectorIndex === undefined ? {} : { index: vectorIndex }),
+        });
   // How much of a resumed conversation comes back, when its channel sets no
   // budget of its own (see session/resume.ts).
   const resumeMaxChars = parseResumeMaxChars(process.env.SESSION_RESUME_MAX_CHARS);
   // Conversation titles (#214), next to the archive whose conversations they
   // name: generated once from a conversation's first exchange, or the person's.
-  const titlesCollection = process.env.QDRANT_TITLES_COLLECTION ?? "conversation_titles";
-  const titleConversation = createConversationTitler({
-    model,
-    readOpening: async (userId, sessionKey) =>
-      (await listVerbatimBySession(qdrant, verbatimCollection, { userId, sessionKey, limit: 10 })).messages,
-    titleOf: (userId, sessionKey) => titleOf(qdrant, titlesCollection, { userId, sessionKey }),
-    setTitle: (userId, sessionKey, title) => setTitle(qdrant, titlesCollection, { userId, sessionKey, title, source: "generated" }),
-    log: (msg) => console.error(msg),
-    emit: (event) => tracer.emit(event),
-  });
+  const titleConversation = (() => {
+    const store = conversationStore;
+    if (store === undefined) return undefined;
+    return createConversationTitler({
+      model,
+      readOpening: async (userId, sessionKey) => (await listVerbatimBySession(store, { userId, sessionKey, limit: 10 })).messages,
+      titleOf: (userId, sessionKey) => titleOf(store, { userId, sessionKey }),
+      setTitle: (userId, sessionKey, title) => setTitle(store, { userId, sessionKey, title, source: "generated" }),
+      log: (msg) => console.error(msg),
+      emit: (event) => tracer.emit(event),
+    });
+  })();
 
   // Semantic consolidation (D-22/D-34): a separate space from the episodic
   // memory above — one point per extracted {topic, value} candidate, vector
@@ -435,9 +444,8 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
     () =>
       setUpMemory({
         ...(vectorIndex === undefined ? {} : { index: vectorIndex }),
+        ...(conversationStore === undefined ? {} : { store: conversationStore }),
         embed,
-        qdrant,
-        collections: { verbatim: verbatimCollection, titles: titlesCollection },
       }),
     { log: (msg) => console.error(`[memory] ${msg}`), emit: (event) => tracer.emit(event) },
   );
@@ -571,7 +579,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
     Object.assign(sessionTools, createToolLogRecallTool({ sessionKey, owner: key }));
     // Verbatim archive recall, scoped to this person — lets the model resurface
     // what was actually said in earlier conversations, beyond the live window.
-    Object.assign(sessionTools, verbatimProvider.sessionTools!({ sessionKey, userId: key }));
+    if (verbatimProvider !== undefined) Object.assign(sessionTools, verbatimProvider.sessionTools!({ sessionKey, userId: key }));
     // read_skill only exists when a plugin offered contributed at least one skill.
     if (offering.skills.length > 0) {
       Object.assign(sessionTools, createReadSkillTool(skillsWithAssistantName(offering.skills, assistantName)));
@@ -644,7 +652,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
         const resumed = await resumeConversation(
           { userId, sessionKey: key, maxChars: resumeBudget(resume, resumeMaxChars) },
           {
-            readTail: (q) => listVerbatimTail(qdrant, verbatimCollection, q),
+            readTail: async (q) => (conversationStore === undefined ? { messages: [], complete: true } : listVerbatimTail(conversationStore, q)),
             readSummaries: async (q) => (vectorIndex === undefined ? [] : getEpisodicSummariesBySession(vectorIndex, q)),
             log: (msg) => console.error(msg),
           },
@@ -675,8 +683,8 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
     maybeCapture: async (key, history) => {
       if (vectorIndex !== undefined) await sessionCapture.maybeCapture(key, history.getCapturable());
     },
-    captureVerbatim: verbatimProvider.captureExchange,
-    titleConversation,
+    ...(verbatimProvider?.captureExchange === undefined ? {} : { captureVerbatim: verbatimProvider.captureExchange }),
+    ...(titleConversation === undefined ? {} : { titleConversation }),
     processToolCorrections,
     logStep,
     // Appends what the model surfaced via `present` this turn — nothing if it
@@ -702,7 +710,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
     env: process.env,
     log: (msg) => console.error(msg),
     // How a confirmation was resolved goes to the archive with the conversation (#370).
-    ...bindConfirm(confirmDeps, people.identify, linking.redeem, texts, verbatimProvider.captureExchange, (event) => tracer.emit(event)),
+    ...bindConfirm(confirmDeps, people.identify, linking.redeem, texts, verbatimProvider?.captureExchange, (event) => tracer.emit(event)),
     admit: people.admit,
     // The channel's own texts: the person's language when the core knows who
     // it is, else the hint's, else the default.
@@ -712,8 +720,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
     reads: createHostReads({
       identify: people.identify,
       vaultPath: wikiVaultPath,
-      qdrant,
-      collections: { verbatim: verbatimCollection },
+      ...(conversationStore === undefined ? {} : { store: conversationStore }),
       ...(vectorIndex === undefined ? {} : { index: vectorIndex }),
       confirmationStore,
       // What the caller is offered, nothing more.
@@ -727,20 +734,31 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
           offering.skills,
         );
       },
-      health: () => getSelfHealth({ qdrant, ollamaHost }),
+      health: () =>
+        getSelfHealth({
+          ...(conversationStore === undefined ? {} : { store: conversationStore }),
+          ...(vectorIndex === undefined ? {} : { index: vectorIndex }),
+          ollamaHost,
+        }),
       preferredName: (key) => profiles.nameOf(key),
       preferredLanguage: (key) => texts.savedLanguage(key),
       preferredTimeZone: (key) => profiles.timeZoneOf(key),
-      titlesOf: (key, sessionKeys) => titlesOf(qdrant, titlesCollection, { userId: key, sessionKeys }),
+      ...(conversationStore === undefined
+        ? {}
+        : { titlesOf: (key: string, sessionKeys: string[]) => titlesOf(conversationStore, { userId: key, sessionKeys }) }),
     }),
     settings: createChannelSettings({ identify: people.identify, setTimeZone: (key, timeZone) => profiles.setTimeZone(key, timeZone) }),
     // A conversation's title the person chose (#214), for one of their own in the archive.
-    conversations: createChannelConversations({
-      identify: people.identify,
-      owns: async (key, sessionKey) =>
-        (await listVerbatimBySession(qdrant, verbatimCollection, { userId: key, sessionKey, limit: 1 })).messages.length > 0,
-      setTitle: (key, sessionKey, title) => setTitle(qdrant, titlesCollection, { userId: key, sessionKey, title, source: "person" }),
-    }),
+    ...(conversationStore === undefined
+      ? {}
+      : {
+          conversations: createChannelConversations({
+            identify: people.identify,
+            owns: async (key, sessionKey) =>
+              (await listVerbatimBySession(conversationStore, { userId: key, sessionKey, limit: 1 })).messages.length > 0,
+            setTitle: (key, sessionKey, title) => setTitle(conversationStore, { userId: key, sessionKey, title, source: "person" }),
+          }),
+        }),
     logins: { accept: personLogins.accept, complete: personLogins.complete },
     linking: { start: linking.start },
     assistantName,
@@ -807,6 +825,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
     auth: { declared: declaredAuth.map((a) => a.name), active: authenticate !== undefined },
     directory: typeof loadedDirectory === "string" ? loadedDirectory : loadedDirectory.name,
     vectorIndex: { declared: config.vectorIndex?.name ?? null, active: vectorIndex !== undefined },
+    conversationStore: { declared: config.conversationStore?.name ?? null, active: conversationStore !== undefined },
     i18n: i18nReport,
     credentials: credentialsReport,
     traceLevel: config.traces?.level ?? "meta",

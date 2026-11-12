@@ -379,13 +379,72 @@ export type VectorIndexPlugin = {
   build: (ctx: { env: Record<string, string | undefined>; log: (msg: string) => void }) => VectorIndex;
 };
 
+/** Conversation-store contract version: the core refuses a store with a different `apiVersion`, and then runs without one. */
+export const CONVERSATION_STORE_API_VERSION = 1;
+
+/**
+ * A message as the store keeps it: its id (a UUID), whose it is, which
+ * conversation, when (ISO 8601, the order the store reads them in), and
+ * whatever else the core records with it, kept as it is.
+ */
+export type StoredMessage = {
+  id: string;
+  userId: string;
+  sessionKey: string;
+  timestamp: string;
+  [field: string]: unknown;
+};
+
+/** A conversation's title as the store keeps it: one per person and conversation, the newest replacing the one before. */
+export type StoredTitle = { userId: string; sessionKey: string; title: string; source: string; updatedAt: string };
+
+/**
+ * Where the core keeps what was said: every message of every conversation,
+ * read back by key and in time order, never searched by meaning (that's the
+ * vector index's), and each conversation's title. Every read is scoped to one
+ * person (`userId`). `messages` pages one conversation by the opaque
+ * `cursor` the previous page gave as `next`. Every method may reject when the
+ * store can't be reached: the core treats that as the store being away for now.
+ */
+export type ConversationStore = {
+  /** Gets the store ready to be written and read (creating what it needs); idempotent, retried while it rejects. */
+  ready: () => Promise<void>;
+  append: (message: StoredMessage) => Promise<void>;
+  /** One conversation's messages, oldest first (`asc`) or newest first (`desc`). */
+  messages: (q: {
+    userId: string;
+    sessionKey: string;
+    order: "asc" | "desc";
+    limit: number;
+    cursor?: string;
+  }) => Promise<{ messages: StoredMessage[]; next?: string }>;
+  /** The person's newest `limit` messages across their conversations, newest first. */
+  recent: (q: { userId: string; limit: number }) => Promise<StoredMessage[]>;
+  setTitle: (title: StoredTitle) => Promise<void>;
+  /** The titles of the person's conversations among `sessionKeys`; a conversation with none is missing. */
+  titles: (q: { userId: string; sessionKeys: string[] }) => Promise<StoredTitle[]>;
+  /** Whether the store answers now, and why not when it doesn't. */
+  health: () => Promise<{ ok: boolean; detail?: string }>;
+};
+
+/**
+ * A conversation store, declared as `conversationStore` in `mercury.config.ts`.
+ * `build` reads its own settings from `env` and throws when it can't work: the
+ * core then runs without one (no archive, no resumed conversations, no titles).
+ */
+export type ConversationStorePlugin = {
+  apiVersion: number;
+  name: string;
+  build: (ctx: { env: Record<string, string | undefined>; log: (msg: string) => void }) => ConversationStore;
+};
+
 /** Whether the core talks to `principal`: `unknown` when the directory doesn't
  * know them and the instance is closed, `unavailable` when it couldn't tell.
  * `message` is what to tell them. */
 export type Admission = { ok: true } | { ok: false; reason: "unknown" | "unavailable"; message: string };
 
 /** Channel-plugin contract version: the loader refuses a channel with a different `apiVersion` fail-soft, like the tool-plugin loader with `PLUGIN_API_VERSION`. Bumped only on a breaking change to this file's shapes. */
-export const CHANNEL_API_VERSION = 6;
+export const CHANNEL_API_VERSION = 7;
 
 /**
  * Structured outcome of resolving a confirmation token, distinguishing cases the
@@ -441,16 +500,16 @@ export type ChannelI18n = { forRequest: (principal: Principal | null, hint?: str
 export type ChannelHostReads = {
   manifest: (principal: Principal) => Promise<unknown>;
   pendingConfirmations: (principal: Principal) => Promise<unknown>;
-  /** A conversation's durable verbatim transcript, chronological, paginated, each answer with what its turn showed besides the text (`trace`) and each resolved confirmation's outcome; empty unless `sessionKey` is one of the person's own. */
-  conversation: (principal: Principal, sessionKey: string, limit: number, offset?: string) => Promise<unknown>;
-  /** The person's conversations, most-recently-active first. */
-  conversations: (principal: Principal, limit: number) => Promise<unknown>;
+  /** A conversation's durable verbatim transcript, chronological, paginated, each answer with what its turn showed besides the text (`trace`) and each resolved confirmation's outcome; empty unless `sessionKey` is one of the person's own. Absent when the instance keeps no conversations (no conversation store). */
+  conversation?: (principal: Principal, sessionKey: string, limit: number, offset?: string) => Promise<unknown>;
+  /** The person's conversations, most-recently-active first. Absent when the instance keeps no conversations. */
+  conversations?: (principal: Principal, limit: number) => Promise<unknown>;
   wikiList: (principal: Principal) => Promise<unknown>;
   /** The file at `path` as the person names it (`curated/...`, `personal/...`), or `null` when it isn't among what they can see. */
   wikiRead: (principal: Principal, path: string) => Promise<unknown>;
   wikiGrep: (principal: Principal, pattern: string) => Promise<unknown>;
-  /** A page of the person's points in `collection`, or `null` when it isn't a collection kept per person. */
-  memoryScroll: (principal: Principal, collection: string, limit: number, offset?: string) => Promise<unknown>;
+  /** A page of the person's points in the vector index's space `collection`, or `null` when it isn't a space kept per person. Absent when the instance has no vector index. */
+  memoryScroll?: (principal: Principal, collection: string, limit: number, offset?: string) => Promise<unknown>;
   toolLog: (principal: Principal) => Promise<unknown>;
   health: () => Promise<unknown>;
   /** Who the caller is to the core: `{ name, language, timeZone }`, how they asked to be called, the language and the time zone they saved, `null` for what they never said (`timeZone` absent on an older core). Absent on an older core. */

@@ -5,6 +5,7 @@ import { join } from "node:path";
 import pkg from "../package.json";
 import { composeMercury } from "./compose.ts";
 import { fakeVectorIndex } from "./memory/__fixtures__/fake-vector-index.ts";
+import { fakeConversationStore } from "./memory/__fixtures__/fake-conversation-store.ts";
 import type { MercuryConfig } from "./config/define-config.ts";
 
 // Nothing listens on these: Qdrant and Ollama fail soft, and composing never
@@ -225,6 +226,24 @@ describe("composeMercury", () => {
       const app = await composeMercury({ plugins: [], traces: { sink }, ...(vectorIndex === undefined ? {} : { vectorIndex }) });
       await app.tracer.flush();
       expect(events.find((e) => e.kind === "system.start")?.vectorIndex).toEqual(expected);
+    }
+  });
+
+  // #379: the conversations are read only from a declared store; without one a channel gets no conversation reads.
+  it("reports the conversation store in system.start, and gives channels conversation reads only with one", async () => {
+    const store = (apiVersion: number) => ({ apiVersion, name: "fake", build: () => fakeConversationStore() });
+    const cases: Array<[MercuryConfig["conversationStore"], unknown, boolean]> = [
+      [undefined, { declared: null, active: false }, false],
+      [store(1), { declared: "fake", active: true }, true],
+      [store(99), { declared: "fake", active: false }, false],
+    ];
+    for (const [conversationStore, expected, reads] of cases) {
+      const { sink, events } = collectingSink();
+      const app = await composeMercury({ plugins: [], traces: { sink }, ...(conversationStore === undefined ? {} : { conversationStore }) });
+      await app.tracer.flush();
+      expect(events.find((e) => e.kind === "system.start")?.conversationStore).toEqual(expected);
+      expect(app.channelRuntime.reads?.conversations !== undefined).toBe(reads);
+      expect(app.channelRuntime.conversations !== undefined).toBe(reads);
     }
   });
 

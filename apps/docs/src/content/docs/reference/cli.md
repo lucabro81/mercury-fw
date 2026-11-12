@@ -116,8 +116,8 @@ cat note.md | mfw vault write-curated curated/standards/new-note.md --author luc
 
 ### `mfw memory list` and `mfw memory read <collection> [--limit N]`
 
-Lists the long-term memory's collections on Qdrant with their size, and prints a collection's entries, newest
-first where it can (20 by default). Both only read.
+Lists the collections on Qdrant (the long-term memory's and the conversation store's) with their size, and prints a
+collection's entries, newest first where it can (20 by default). Both only read.
 
 ### `mfw reset <memory|wiki|data>`
 

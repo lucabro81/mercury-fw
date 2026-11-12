@@ -6,6 +6,7 @@
 import { describe, it, expect } from "bun:test";
 import { embeddingDimensions, MIGRATED_SPACES, setUpMemory, setUpWhenReachable } from "./collection-setup.ts";
 import { fakeVectorIndex } from "./__fixtures__/fake-vector-index.ts";
+import { fakeConversationStore } from "./__fixtures__/fake-conversation-store.ts";
 
 describe("setUpWhenReachable", () => {
   it("runs the setup once and logs nothing when Qdrant answers at once", async () => {
@@ -35,8 +36,8 @@ describe("setUpWhenReachable", () => {
     expect(calls).toBe(4);
     // One line when it goes missing, one when it's back: not one per retry.
     expect(logs).toEqual([
-      "memory unreachable (the vector index or the embedding model), Layer-3 memory is off until it answers (retrying every 0.001s): Error: ConnectionRefused",
-      "memory reachable, its spaces ready",
+      "memory unreachable (the conversation store, the vector index or the embedding model), Layer-3 memory is off until it answers (retrying every 0.001s): Error: ConnectionRefused",
+      "memory reachable, ready",
     ]);
   });
 
@@ -110,52 +111,42 @@ describe("embeddingDimensions", () => {
 });
 
 describe("setUpMemory", () => {
-  const client = () => {
-    const calls: string[] = [];
-    return {
-      calls,
-      qdrant: {
-        getCollections: async () => (calls.push("getCollections"), { collections: [] }),
-        createCollection: async (name: string, params: { vectors: { size: number } }) => void calls.push(`create ${name} ${params.vectors.size}`),
-        upsert: async () => ({}),
-        query: async () => ({ points: [] }),
-        createPayloadIndex: async (name: string, params: { field_name: string }) => void calls.push(`index ${name} ${params.field_name}`),
-      },
-    };
-  };
-
-  it("makes the index's three spaces as long as the embedding model's vectors, then the archive and the titles", async () => {
+  it("gets the store ready, then makes the index's four spaces as long as the embedding model's vectors", async () => {
     const index = fakeVectorIndex();
-    const { qdrant, calls } = client();
-    await setUpMemory({ index, embed: async () => [0, 0, 0], qdrant, collections: { verbatim: "verbatim_archive", titles: "conversation_titles" } });
+    const store = fakeConversationStore();
+    await setUpMemory({ index, store, embed: async () => [0, 0, 0] });
+    expect(store.calls).toEqual([["ready"]]);
     expect(index.calls).toEqual([
       ["ensure", "episodic_memory", { dimensions: 3, keys: ["userId", "sessionKey"], ordered: ["timestamp"] }],
       ["ensure", "semantic_facts", { dimensions: 3 }],
       ["ensure", "tool_corrections", { dimensions: 3 }],
+      ["ensure", "verbatim_archive", { dimensions: 3, keys: ["userId", "sessionKey"], ordered: ["timestamp"] }],
     ]);
-    expect(calls).toContain("create verbatim_archive 3");
-    expect(calls).toContain("create conversation_titles 1");
   });
 
-  // Regression guard: the titles hold no vectors; an embedding model that
-  // isn't answering must not keep their collection from being made.
-  it("makes the titles' collection before asking the embedding model anything", async () => {
-    const { qdrant, calls } = client();
+  // Regression guard: the store holds no vectors; an embedding model that
+  // isn't answering must not keep it from getting ready.
+  it("gets the store ready before asking the embedding model anything", async () => {
+    const store = fakeConversationStore();
     const failing = async () => {
       throw new Error("embedding model down");
     };
-    await expect(
-      setUpMemory({ index: fakeVectorIndex(), embed: failing, qdrant, collections: { verbatim: "verbatim_archive", titles: "conversation_titles" } }),
-    ).rejects.toThrow("embedding model down");
-    expect(calls).toContain("create conversation_titles 1");
-    expect(calls.some((c) => c.startsWith("create verbatim_archive"))).toBe(false);
+    await expect(setUpMemory({ index: fakeVectorIndex(), store, embed: failing })).rejects.toThrow("embedding model down");
+    expect(store.calls).toEqual([["ready"]]);
   });
 
-  it("without an index, makes only the archive and the titles", async () => {
-    const { qdrant, calls } = client();
-    await setUpMemory({ embed: async () => [0, 0], qdrant, collections: { verbatim: "verbatim_archive", titles: "conversation_titles" } });
-    expect(calls).toContain("create verbatim_archive 2");
-    expect(calls).toContain("create conversation_titles 1");
+  it("without an index, gets the store ready and asks the embedding model nothing", async () => {
+    const store = fakeConversationStore();
+    let embedded = 0;
+    await setUpMemory({ store, embed: async () => (embedded++, [0]) });
+    expect(store.calls).toEqual([["ready"]]);
+    expect(embedded).toBe(0);
+  });
+
+  it("without a store, makes the index's spaces", async () => {
+    const index = fakeVectorIndex();
+    await setUpMemory({ index, embed: async () => [0, 0] });
+    expect(index.calls).toHaveLength(4);
   });
 
   it("names the spaces whose userIds the user-key migration rewrites", () => {

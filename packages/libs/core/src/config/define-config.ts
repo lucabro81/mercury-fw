@@ -12,7 +12,7 @@
  * eventual retirement of the file-based cli-configs are deliberately not here.
  */
 import type { Plugin } from "@mercury-fw/plugin-types";
-import type { AuthPlugin, ChannelPlugin, DirectoryPlugin, VectorIndexPlugin } from "@mercury-fw/channel-types";
+import type { AuthPlugin, ChannelPlugin, ConversationStorePlugin, DirectoryPlugin, VectorIndexPlugin } from "@mercury-fw/channel-types";
 import type { Persona } from "../session/system-prompt.ts";
 import type { Messages } from "../i18n/i18n.ts";
 import type { MercuryTraces } from "../traces/trace-loader.ts";
@@ -72,7 +72,8 @@ export type MercuryModel = {
  * channel like HTTP who is calling (one, or several tried in order; that
  * channel won't start without one),
  * the directory that tells the core who that is and their roles, the vector
- * index the memory is found in (`vectorIndex`; none, no memory), who may
+ * index the memory is found in (`vectorIndex`; none, no memory), the store
+ * the conversations are kept in (`conversationStore`; none, no archive), who may
  * use what (`access`), the languages it speaks (`i18n`), the assistant's
  * persona (its identity and tone; the defaults when left out), how the main
  * model generates (`model`), where the traces of what it does go (`traces`),
@@ -85,6 +86,8 @@ export type MercuryConfig = {
   directory?: DirectoryPlugin;
   /** Where what's found by meaning is kept: the episodic memory, the semantic facts, the procedural corrections and `recall_verbatim`'s search. Left out, none of them runs. */
   vectorIndex?: VectorIndexPlugin;
+  /** Where what was said is kept: every conversation's messages, read back to reopen and list them, and their titles. Left out, nothing is archived (and `recall_verbatim` has nothing to search). */
+  conversationStore?: ConversationStorePlugin;
   access?: MercuryAccess;
   i18n?: MercuryI18n;
   persona?: Persona;
