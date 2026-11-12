@@ -20,10 +20,7 @@ import type { CallRecord } from "./call-record.ts";
 /**
  * A single turn's worth of conversation content. `calls`, on an answer, are
  * the tool calls it was written from, reduced (`call-record.ts`): absent when
- * there were none.
- */
-/**
- * A message of the conversation. `context`, on a person's message, is what the
+ * there were none. `context`, on a person's message, is what the
  * instance's `turn` context layers put in front of it (`../context/context.ts`):
  * the model reads it there on every later call too, so each call starts with
  * the previous one and the model's cache of it holds; everything else (the
