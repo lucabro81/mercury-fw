@@ -578,3 +578,11 @@ describe("loadPlugins: hooks and jobs (#387)", () => {
     expect(seen).toBeUndefined();
   });
 });
+
+describe("loadPlugins: context layers (#387)", () => {
+  it("keeps a plugin's context layer with the plugin", async () => {
+    const context = { scope: "turn" as const, build: async () => ["block"] };
+    const loaded = await loadPlugins([plug({ name: "rag", build: () => ({ context }) })], baseCtx());
+    expect(loaded.plugins[0]!.context).toBe(context);
+  });
+});

@@ -24,7 +24,7 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { LanguageModel } from "ai";
 import { PLUGIN_API_VERSION } from "@mercury-fw/plugin-types";
-import type { Plugin, ClosedSession, CliPostProcessor, FinishedTurn, JobUrgency, MercuryModelHandle, Messages, PersonLogin, PostTurnGuard, Skill, SessionToolContext, Translate } from "@mercury-fw/plugin-types";
+import type { Plugin, ClosedSession, CliPostProcessor, ContextLayer, FinishedTurn, JobUrgency, MercuryModelHandle, Messages, PersonLogin, PostTurnGuard, Skill, SessionToolContext, Translate } from "@mercury-fw/plugin-types";
 import { catalogErrors } from "../i18n/i18n.ts";
 import type { Tool } from "ai";
 
@@ -61,6 +61,8 @@ export interface LoadedPlugin {
   afterTurn?: (turn: FinishedTurn) => void | Promise<void>;
   /** Its hook for a session closed for being quiet (see `PluginRuntimeContributions.onSessionClose`). */
   onSessionClose?: (session: ClosedSession) => void | Promise<void>;
+  /** What it adds to what the model reads, when a context profile lists it (see `ContextLayer`). */
+  context?: ContextLayer;
 }
 
 /** What the loader hands back to the composition root. The core knows nothing
@@ -285,6 +287,7 @@ export async function loadPlugins(plugins: Plugin[], ctx: PluginLoadContext): Pr
         source: plugin,
         ...(contributions.afterTurn === undefined ? {} : { afterTurn: contributions.afterTurn }),
         ...(contributions.onSessionClose === undefined ? {} : { onSessionClose: contributions.onSessionClose }),
+        ...(contributions.context === undefined ? {} : { context: contributions.context }),
       });
       if (actsAs === "mercury") {
         ctx.log(
