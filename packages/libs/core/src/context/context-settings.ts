@@ -73,7 +73,9 @@ function orderError(profile: ResolvedProfile, value: unknown): string | undefine
 function knobError(profile: ResolvedProfile, plugin: string, knob: string, value: unknown): string | undefined {
   const layer = profile.layers.find((p) => p.name === plugin);
   if (layer === undefined) return `the profile has no layer of "${plugin}"`;
-  const spec = layer.context!.knobs?.[knob];
+  const declared = layer.context!.knobs ?? {};
+  // Own keys only: "constructor" and the like are every object's, never a knob.
+  const spec = Object.hasOwn(declared, knob) ? declared[knob] : undefined;
   if (spec === undefined) return `the layer of "${plugin}" has no knob "${knob}"`;
   if (value === null) return undefined;
   const error = knobValueError(spec, value);
@@ -120,13 +122,13 @@ export function createContextSettings(deps: {
     };
   }
 
-  /** Sets `knob` of `plugin` in `profile` to `value`, or back to its default when `null`. */
-  function setKnob(profile: ResolvedProfile, plugin: string, knob: string, value: KnobValue | null): void {
-    const set = { ...profile.knobs.get(plugin) };
+  /** Sets `knob` of `plugin` in `knobs` (a profile's, by plugin) to `value`, or back to its default when `null`. */
+  function setKnob(knobs: ResolvedProfile["knobs"], plugin: string, knob: string, value: KnobValue | null): void {
+    const set = { ...knobs.get(plugin) };
     if (value === null) delete set[knob];
     else set[knob] = value;
-    if (Object.keys(set).length === 0) profile.knobs.delete(plugin);
-    else profile.knobs.set(plugin, set);
+    if (Object.keys(set).length === 0) knobs.delete(plugin);
+    else knobs.set(plugin, set);
   }
 
   /** Puts `profile`'s layers in `order`, by name. */
@@ -178,7 +180,7 @@ export function createContextSettings(deps: {
             log(`[context] kept knob "${knob}" of "${plugin}" in profile "${name}" ignored: ${error}`);
             continue;
           }
-          setKnob(profile, plugin, knob, value as KnobValue);
+          setKnob(profile.knobs, plugin, knob, value as KnobValue);
           entry.knobs = { ...entry.knobs, [plugin]: { ...entry.knobs?.[plugin], [knob]: value as KnobValue } };
         }
       }
@@ -235,6 +237,8 @@ export function createContextSettings(deps: {
       if (error !== undefined) return { ok: false, status: "invalid", error };
       if (unreadable) throw new Error(`the context settings in ${settingsPath} can't be read: fix or remove the file first`);
 
+      // The new state is worked out apart, kept and recorded, and only then
+      // applied: a write that fails leaves the running profile as it was.
       const before: ContextProfileChange = {};
       const after: ContextProfileChange = {};
       const changed: string[] = [];
@@ -243,33 +247,53 @@ export function createContextSettings(deps: {
         before.maxChars = profile.maxChars;
         after.maxChars = change.maxChars;
         changed.push("maxChars");
-        profile.maxChars = change.maxChars;
         entry.maxChars = change.maxChars;
       }
       if (change.order !== undefined) {
         before.order = profile.layers.map((p) => p.name);
         after.order = [...change.order];
         changed.push("order");
-        reorder(profile, change.order);
         entry.order = [...change.order];
       }
-      for (const [plugin, knobs] of Object.entries(change.knobs ?? {})) {
-        for (const [knob, value] of Object.entries(knobs)) {
+      const knobs = new Map([...profile.knobs].map(([plugin, set]) => [plugin, { ...set }]));
+      for (const [plugin, values] of Object.entries(change.knobs ?? {})) {
+        for (const [knob, value] of Object.entries(values)) {
           before.knobs = { ...before.knobs, [plugin]: { ...before.knobs?.[plugin], [knob]: profile.knobs.get(plugin)?.[knob] ?? null } };
           after.knobs = { ...after.knobs, [plugin]: { ...after.knobs?.[plugin], [knob]: value } };
           changed.push(`knobs.${plugin}.${knob}`);
-          setKnob(profile, plugin, knob, value);
+          setKnob(knobs, plugin, knob, value);
         }
       }
-      const knobs = Object.fromEntries([...profile.knobs].map(([plugin, set]) => [plugin, { ...set }]));
-      if (Object.keys(knobs).length > 0) entry.knobs = knobs;
+      if (knobs.size > 0) entry.knobs = Object.fromEntries(knobs);
       else delete entry.knobs;
-      kept[name] = entry;
-      save();
 
+      const previous = kept[name];
+      /** Puts back what was kept before this change. */
+      const restore = () => {
+        if (previous === undefined) delete kept[name];
+        else kept[name] = previous;
+      };
+      kept[name] = entry;
+      try {
+        save();
+      } catch (err) {
+        restore();
+        throw err;
+      }
       const record: ContextChangeEntry = { at: now().toISOString(), by, profile: name, before, after };
-      mkdirSync(dirname(changesPath), { recursive: true });
-      appendFileSync(changesPath, `${JSON.stringify(record)}\n`);
+      try {
+        mkdirSync(dirname(changesPath), { recursive: true });
+        appendFileSync(changesPath, `${JSON.stringify(record)}\n`);
+      } catch (err) {
+        // A change that can't be recorded doesn't happen: the kept settings go back too.
+        restore();
+        save();
+        throw err;
+      }
+
+      if (change.maxChars !== undefined) profile.maxChars = change.maxChars;
+      if (change.order !== undefined) reorder(profile, change.order);
+      profile.knobs = knobs;
       deps.emit?.({ kind: "context.changed", person: by, profile: name, changed, args: { before, after } });
       return { ok: true, value: profileView(profile) };
     },

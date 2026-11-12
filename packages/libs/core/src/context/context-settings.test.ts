@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ContextLayer, Plugin } from "@mercury-fw/plugin-types";
@@ -204,6 +204,37 @@ describe("createContextSettings: update", () => {
         args: { before: { maxChars: 5000, knobs: { rag: { mode: null } } }, after: { maxChars: 4000, knobs: { rag: { mode: "deep" } } } },
       },
     ]);
+  });
+});
+
+// Review of #387: a knob name inherited from Object.prototype ("constructor")
+// was taken for a declared knob, and any value for it was accepted and kept.
+describe("createContextSettings: knob names", () => {
+  it("refuses a knob the layer doesn't declare even when its name is an object's own member", () => {
+    const s = settings();
+    for (const knob of ["constructor", "toString", "__proto__", "hasOwnProperty"]) {
+      const change = JSON.parse(`{"knobs":{"rag":{"${knob}":{"x":1}}}}`);
+      expect(s.update("u:admin", "default", change)).toEqual({ ok: false, status: "invalid", error: `the layer of "rag" has no knob "${knob}"` });
+    }
+    expect(s.changes(10)).toEqual([]);
+  });
+});
+
+// Review of #387: a change applied to the running profile before it was kept
+// and recorded stayed live, unrecorded, when writing failed.
+describe("createContextSettings: a write that fails", () => {
+  it("leaves the running profile and the kept settings as they were when the change can't be recorded", () => {
+    const context = resolved();
+    const s = settings(context);
+    s.update("u:admin", "default", { maxChars: 900 });
+    const keptBefore = readFileSync(join(dir, "context-settings.json"), "utf8");
+    rmSync(join(dir, "context-changes.jsonl"));
+    mkdirSync(join(dir, "context-changes.jsonl"));
+    expect(() => s.update("u:admin", "default", { maxChars: 10, order: ["rag", "wiki", "notes"], knobs: { rag: { topK: 2 } } })).toThrow();
+    const profile = context.profiles.get("default")!;
+    expect([profile.maxChars, profile.layers.map((p) => p.name), profile.knobs]).toEqual([900, ["wiki", "rag", "notes"], new Map()]);
+    expect(readFileSync(join(dir, "context-settings.json"), "utf8")).toBe(keptBefore);
+    expect(events.map((e) => e.kind)).toEqual(["context.changed"]);
   });
 });
 

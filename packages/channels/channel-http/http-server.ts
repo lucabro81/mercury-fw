@@ -676,7 +676,12 @@ export function contextRoutes(
           return json({ ok: false, error: "the body must be a JSON object with maxChars, order or knobs" }, 400);
         }
         // The last path segment, so the handler reads the same with Bun's params or without.
-        const name = decodeURIComponent(new URL(req.url).pathname.split("/").pop() ?? "");
+        let name: string;
+        try {
+          name = decodeURIComponent(new URL(req.url).pathname.split("/").pop() ?? "");
+        } catch {
+          return json({ ok: false, error: "there's no context profile with that name" }, 404);
+        }
         return admin.update(principal, name, body as ContextProfileChange);
       }),
       OPTIONS: options,

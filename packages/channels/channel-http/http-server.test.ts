@@ -1762,6 +1762,14 @@ describe("the context routes", () => {
     expect((await routes["/context/changes"]!.GET!(new Request("http://x/context/changes"))).status).toBe(403);
   });
 
+  // Review of #387: a malformed percent-escape in the name threw out of the handler, a 500.
+  it("is 404 for a profile name that isn't a valid escape, without asking the core", async () => {
+    const a = admin();
+    const res = await contextRoutes(a.contextAdmin, asAlice)["/context/profiles/:name"]!.PATCH!(patch("%E0%A4%A", JSON.stringify({ maxChars: 1 })));
+    expect([res.status, await res.json()]).toEqual([404, { ok: false, error: "there's no context profile with that name" }]);
+    expect(a.calls).toEqual([]);
+  });
+
   it("is 400 for a body that isn't a JSON object, without asking the core", async () => {
     const a = admin();
     const route = contextRoutes(a.contextAdmin, asAlice)["/context/profiles/:name"]!;
