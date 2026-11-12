@@ -521,8 +521,8 @@ describe("publishAll", () => {
     expect(count).toBe(2);
   });
 
-  // A failed publish must stop the run before the count reaches the
-  // workflow, so the site job doesn't deploy a half-published release.
+  // A failed publish must stop the run: the publish job fails, so the site
+  // job doesn't deploy a half-published release.
   test("a failing publish throws, after publishing what came before it", async () => {
     const published: string[] = [];
     const run = publishAll(three, {

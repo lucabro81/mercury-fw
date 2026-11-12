@@ -11,7 +11,8 @@ name: Publish to npm
 # Then the releases job creates the GitHub Release of each tag on the
 # release commit (scripts/github-releases.ts), and the site job publishes
 # the docs site (apps/docs) on GitHub Pages, its changelog included: only
-# when packages were published, so the site always describes what is on npm.
+# when the commit is a release (it carries tags) and its publish and
+# Releases succeeded, a rerun's included, so the site describes what is on npm.
 # One-time setup: repo Settings -> Pages -> Source = "GitHub Actions".
 #
 # No token: npm trusts this workflow as the packages' publisher (trusted
