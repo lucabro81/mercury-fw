@@ -206,6 +206,8 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   /** Runs `fn` as one background job on the queue. */
   const backgroundJob = <T,>(job: BackgroundJobName, urgency: Urgency, fn: () => Promise<T>): Promise<T> =>
     scheduler.job({ job, urgency }, fn);
+  // The turn model's queue, made now: its capacity is checked at the start.
+  scheduler.declare(config.models.turn);
   const model = models.turn;
   const backgroundModel = scheduler.languageModel(config.models.background ?? config.models.turn, models.background);
   const embeddingModel =

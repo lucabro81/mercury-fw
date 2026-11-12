@@ -45,6 +45,8 @@ export class DroppedError extends Error {
 }
 
 export type Scheduler = {
+  /** Makes `handle`'s queue now, so a capacity or background slots that can't make one throw at the start. */
+  declare(handle: QueuedHandle): void;
   /** Counts a turn on `handle`'s model until the returned release is called (calling it again does nothing). */
   holdTurn(handle: QueuedHandle): () => void;
   /** Runs `fn` as one background job: its model calls are steps, and one `background.job` event says how it went (none for a job done without a model call). */
@@ -170,6 +172,7 @@ export function createScheduler(
   };
 
   return {
+    declare: (handle) => void queueOf(handle),
     holdTurn,
     call,
     async job(meta, fn) {

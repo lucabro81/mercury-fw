@@ -76,14 +76,22 @@ export function createSessionCapture(deps: SessionCaptureDeps): SessionCapture {
     return job(async () => {
       const captureId = crypto.randomUUID();
       const { t } = texts.forPerson(userId);
-      status?.onToolStart(t("core.status.remembering"), deps.describe?.(pending, t), captureId);
+      // The capture can run long after its turn: a channel gone by now never loses it.
+      const ping = (fn: () => void) => {
+        try {
+          fn();
+        } catch (err) {
+          log(`[capture] status for ${sessionKey} not shown: ${String(err)}`);
+        }
+      };
+      ping(() => status?.onToolStart(t("core.status.remembering"), deps.describe?.(pending, t), captureId));
       try {
         await deps.capture(userId, sessionKey, pending, trigger);
-        status?.onToolFinish?.(captureId, "success");
+        ping(() => status?.onToolFinish?.(captureId, "success"));
         return true;
       } catch (err) {
         log(`[capture] failed for ${sessionKey}, will retry next trigger: ${String(err)}`);
-        status?.onToolFinish?.(captureId, "failed");
+        ping(() => status?.onToolFinish?.(captureId, "failed"));
         return false;
       }
     }).catch(() => false);

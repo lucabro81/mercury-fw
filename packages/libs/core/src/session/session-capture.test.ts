@@ -70,6 +70,27 @@ describe("createSessionCapture", () => {
     expect(r.captured).toEqual([["m0", "m1"]]);
   });
 
+  // #383: a capture can run long after its turn, when the channel that asked is gone: its status failing never loses the capture.
+  test("a status callback that throws doesn't stop the capture", async () => {
+    const r = recorder();
+    const c = createSessionCapture({ capture: r.capture, threshold: 1, log: () => {} });
+    c.track("s", "u1");
+    c.registerCallbacks("s", {
+      onToolStart: () => {
+        throw new Error("sink disposed");
+      },
+      onToolFinish: () => {
+        throw new Error("sink disposed");
+      },
+    });
+    await c.maybeCapture("s", msgs(0, 1));
+    await c.settled();
+    expect(r.captured).toEqual([["m0"]]);
+    await c.maybeCapture("s", msgs(0, 2));
+    await c.settled();
+    expect(r.captured).toEqual([["m0"], ["m1"]]);
+  });
+
   test("each capture runs as a job, its status pinged from inside it", async () => {
     const order: string[] = [];
     const c = createSessionCapture({

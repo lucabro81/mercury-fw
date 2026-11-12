@@ -300,7 +300,23 @@ describe("composeMercury", () => {
   // #383: the turn runs on `turn`, the conversation's title on `background`,
   // as a background job the traces report.
   it("runs the turn on the turn model and the conversation's title on the background model, as a job", async () => {
-    const { sink, events } = collectingSink();
+    // Waited on as promises the fakes resolve, never on the clock.
+    const events: Array<Record<string, unknown>> = [];
+    let titleJobReported!: () => void;
+    const titleJob = new Promise<void>((resolve) => {
+      titleJobReported = resolve;
+    });
+    const sink = {
+      apiVersion: 1,
+      name: "collect",
+      build: () => ({
+        write: (e: Record<string, unknown>) => {
+          events.push(e);
+          if (e.kind === "background.job") titleJobReported();
+        },
+        flush: async () => {},
+      }),
+    };
     const asked: string[] = [];
     const realFetch = globalThis.fetch;
     globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
@@ -330,10 +346,8 @@ describe("composeMercury", () => {
         { channel: "http", multiUser: false, text: "hello", sessionKey: "http:alice:c1", principal: { provider: "static", id: "alice" }, logPrefix: "" },
         { onToolStart: () => {}, finalize: async () => {}, dispose: () => {} } as never,
       );
-      for (let i = 0; i < 500 && asked.length < 2; i++) await new Promise((resolve) => setTimeout(resolve, 10));
-      expect(asked[0]).toBe("big");
-      expect(asked.slice(1)).toEqual(["small"]);
-      for (let i = 0; i < 500 && !events.some((e) => e.kind === "background.job"); i++) await new Promise((resolve) => setTimeout(resolve, 10));
+      await titleJob;
+      expect(asked).toEqual(["big", "small"]);
       await app.tracer.flush();
       expect(events.filter((e) => e.kind === "background.job")).toEqual([
         expect.objectContaining({ kind: "background.job", job: "title", urgency: "soon", models: ["small"], steps: 1, outcome: "done" }),
@@ -341,6 +355,16 @@ describe("composeMercury", () => {
     } finally {
       globalThis.fetch = realFetch;
     }
+  });
+
+  // #383: a handle written by hand skips ollamaModel's checks; the turn
+  // model's queue is made at the start, so a wrong one stops it there, not at
+  // the first turn.
+  it("refuses to start on a turn model whose capacity can't make a queue, with a background model of its own", async () => {
+    const turn = { provider: "ollama", kind: "language", name: "hand-made", settings: {}, capacity: 0, backgroundSlots: 1 } as const;
+    await expect(composeMercury({ plugins: [], models: { turn, background: ollamaModel("small") } })).rejects.toThrow(
+      'model "hand-made": capacity must be a whole number from 1 up, got 0',
+    );
   });
 
   // A stale config (the old `model`, no `models`) is refused by tsc; without it, the start stops saying what's missing.
