@@ -49,6 +49,7 @@ const CORE_ENV: EnvVar[] = [
   { name: "OLLAMA_TEMPERATURE", comment: "The chat model's temperature, from 0 up (empty: the model's own)" },
   { name: "OLLAMA_TOP_P", comment: "The chat model's top_p, above 0 and at most 1 (empty: the model's own)" },
   { name: "OLLAMA_TOP_K", comment: "The chat model's top_k, a whole number from 1 up (empty: the model's own)" },
+  { name: "OLLAMA_CAPACITY", comment: "How many requests the chat model's runtime serves at once (empty: 1)" },
   { name: "OLLAMA_EMBEDDING_MODEL", comment: "Embedding model for the episodic memory", value: "nomic-embed-text" },
   { name: "QDRANT_URL", comment: "Qdrant, the compose service", value: "http://qdrant:6333" },
   { name: "WIKI_VAULT_PATH", comment: "Wiki vault, the named volume's mount point", value: "/app/wiki-vault" },
@@ -64,15 +65,30 @@ const CORE_ENV: EnvVar[] = [
   },
 ];
 
-/** The config's `model` section: the main model's settings, each from its env variable (#355). */
-const MODEL_SECTION = [
-  "  // How the main model generates, each value from .env: left empty, the",
-  "  // model's own applies (thinking stays on).",
-  "  model: {",
-  '    think: envBoolean("OLLAMA_THINK", true),',
-  '    temperature: envNumber("OLLAMA_TEMPERATURE"),',
-  '    topP: envNumber("OLLAMA_TOP_P"),',
-  '    topK: envNumber("OLLAMA_TOP_K"),',
+/** Above the config: the turn model, its name, settings and capacity each from its env variable (#355, #383). */
+const MAIN_MODEL = [
+  "/**",
+  " * The model the assistant runs on, from .env: a setting left empty is the",
+  " * model's own (thinking stays on), and capacity, how many requests its",
+  " * runtime serves at once, is 1.",
+  " */",
+  "const main = ollamaModel(process.env.OLLAMA_MODEL, {",
+  '  think: envBoolean("OLLAMA_THINK", true),',
+  '  temperature: envNumber("OLLAMA_TEMPERATURE"),',
+  '  topP: envNumber("OLLAMA_TOP_P"),',
+  '  topK: envNumber("OLLAMA_TOP_K"),',
+  '  capacity: envNumber("OLLAMA_CAPACITY"),',
+  "});",
+].join("\n");
+
+/** The config's `models` section: the model of each of the core's roles (#383). */
+const MODELS_SECTION = [
+  "  // The models it runs on, by role: the turns on `main`, and the work no one",
+  "  // waits on too unless a `background` model is added here; the memory",
+  "  // found by meaning is embedded with `embedding`.",
+  "  models: {",
+  "    turn: main,",
+  '    embedding: ollamaEmbedding(process.env.OLLAMA_EMBEDDING_MODEL ?? "nomic-embed-text"),',
   "  },",
 ].join("\n");
 
@@ -271,7 +287,7 @@ function renderConfig(
 ): string {
   const withRules = tools.filter((t) => t.formatter);
   const imports = [
-    'import { defineMercuryConfig, envBoolean, envNumber } from "@mercury-fw/core";',
+    'import { defineMercuryConfig, envBoolean, envNumber, ollamaEmbedding, ollamaModel } from "@mercury-fw/core";',
     'import en from "./locales/en.json";',
     'import pkg from "./package.json";',
   ];
@@ -304,6 +320,8 @@ function renderConfig(
     "/** The assistant's name: what the persona calls it, and every text the model reads. */",
     `const name = ${JSON.stringify(assistantName)};`,
     "",
+    MAIN_MODEL,
+    "",
     `${helpers}export default defineMercuryConfig({`,
     ...renderPersona(role),
     plugins,
@@ -311,7 +329,7 @@ function renderConfig(
     ...(auth ? [`  auth: ${auth.exportName},`] : []),
     ...(directory ? [`  directory: ${directory.exportName},`] : []),
     VECTOR_INDEX_SECTION,
-    MODEL_SECTION,
+    MODELS_SECTION,
     "  i18n: { locales: { en } },",
     TRACES_SECTION,
     VERSION_COMMENT,

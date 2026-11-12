@@ -222,24 +222,41 @@ describe("renderApp: mercury.config.ts", () => {
     expect(config).not.toContain("tooling");
   });
 
-  // #355: how the main model generates is the config's, each value read from
-  // the env, none with a fallback of the app's: empty means the model's own.
-  test("declares the main model's settings, each from its env variable", () => {
+  // #383: the models are declared in the config, by role: the turn model's
+  // name, settings and capacity each read from the env, none with a fallback
+  // of the app's (empty means the model's own, and capacity 1).
+  test("declares the turn model from the env and the embedding model, by role", () => {
     for (const chosen of [EMPTY, HTTP_JIRA, FULL]) {
       const config = renderApp(chosen).get("mercury.config.ts") ?? "";
-      expect(config).toContain('import { defineMercuryConfig, envBoolean, envNumber } from "@mercury-fw/core";\n');
+      expect(config).toContain('import { defineMercuryConfig, envBoolean, envNumber, ollamaEmbedding, ollamaModel } from "@mercury-fw/core";\n');
       expect(config).toContain(
         [
-          "  // How the main model generates, each value from .env: left empty, the",
-          "  // model's own applies (thinking stays on).",
-          "  model: {",
-          '    think: envBoolean("OLLAMA_THINK", true),',
-          '    temperature: envNumber("OLLAMA_TEMPERATURE"),',
-          '    topP: envNumber("OLLAMA_TOP_P"),',
-          '    topK: envNumber("OLLAMA_TOP_K"),',
+          "/**",
+          " * The model the assistant runs on, from .env: a setting left empty is the",
+          " * model's own (thinking stays on), and capacity, how many requests its",
+          " * runtime serves at once, is 1.",
+          " */",
+          "const main = ollamaModel(process.env.OLLAMA_MODEL, {",
+          '  think: envBoolean("OLLAMA_THINK", true),',
+          '  temperature: envNumber("OLLAMA_TEMPERATURE"),',
+          '  topP: envNumber("OLLAMA_TOP_P"),',
+          '  topK: envNumber("OLLAMA_TOP_K"),',
+          '  capacity: envNumber("OLLAMA_CAPACITY"),',
+          "});",
+        ].join("\n"),
+      );
+      expect(config).toContain(
+        [
+          "  // The models it runs on, by role: the turns on `main`, and the work no one",
+          "  // waits on too unless a `background` model is added here; the memory",
+          "  // found by meaning is embedded with `embedding`.",
+          "  models: {",
+          "    turn: main,",
+          '    embedding: ollamaEmbedding(process.env.OLLAMA_EMBEDDING_MODEL ?? "nomic-embed-text"),',
           "  },",
         ].join("\n"),
       );
+      expect(config).not.toContain("  model: {");
     }
   });
 
@@ -368,8 +385,8 @@ describe("renderApp: .env.example", () => {
     expect(env).not.toContain("# ---");
   });
 
-  // #355: the variables the config's model section reads, empty, right after the model.
-  test("the main model's settings, empty, after OLLAMA_MODEL", () => {
+  // #355, #383: the variables the turn model is declared from, empty, right after the model.
+  test("the turn model's settings and capacity, empty, after OLLAMA_MODEL", () => {
     const env = renderApp(EMPTY).get(".env.example") ?? "";
     expect(env).toContain(
       [
@@ -383,6 +400,8 @@ describe("renderApp: .env.example", () => {
         "OLLAMA_TOP_P=",
         "# The chat model's top_k, a whole number from 1 up (empty: the model's own)",
         "OLLAMA_TOP_K=",
+        "# How many requests the chat model's runtime serves at once (empty: 1)",
+        "OLLAMA_CAPACITY=",
         "",
       ].join("\n"),
     );
@@ -443,7 +462,7 @@ function evaluatedConfig(config: string): { persona: { name: string; identity: s
   // The imports are dropped: the language file's stands in as the empty file it
   // is, the package.json's as a manifest with a version, the core's env helpers
   // as an empty environment.
-  const body = `const en = {};\nconst pkg = { version: "0.1.0" };\nconst envBoolean = (_, fallback) => fallback;\nconst envNumber = (_, fallback) => fallback;\nconst jsonlTraces = () => ({});\nconst qdrantIndex = () => ({});\nconst qdrantConversations = () => ({});\n${config.replace(/^import .*$/gm, "").replace("export default defineMercuryConfig(", "return (")}`;
+  const body = `const en = {};\nconst pkg = { version: "0.1.0" };\nconst envBoolean = (_, fallback) => fallback;\nconst envNumber = (_, fallback) => fallback;\nconst ollamaModel = (name) => ({ name });\nconst ollamaEmbedding = (name) => ({ name });\nconst jsonlTraces = () => ({});\nconst qdrantIndex = () => ({});\nconst qdrantConversations = () => ({});\n${config.replace(/^import .*$/gm, "").replace("export default defineMercuryConfig(", "return (")}`;
   return new Function(body)();
 }
 
