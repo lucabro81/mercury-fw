@@ -1,5 +1,37 @@
 # @mercury-fw/plugin-types
 
+## 0.73.0
+
+### Minor Changes
+
+- a8e2fe9: - the work nobody waits on (titles, memory captures, corrections, the archive's index, the nightly review) waits for the model: it runs only in the requests the turns leave free of the model's `capacity`, one model call at a time, titles, corrections and the archive's index first
+  - `ollamaModel(name, { backgroundSlots })`: how many of the model's requests that work may take at once; 1 when left out, below `capacity` when it's above 1
+  - a turn's corrections, its threshold capture and its message's indexing no longer hold the conversation's next turn
+  - a model of a plugin's own (`ctx.modelFor`) goes through the same queue
+  - `background.job` in the traces: each piece of that work that called a model, its models, model calls, time waited, time taken, and whether it was done, failed or dropped at stop
+  - `mfw create`: `backgroundSlots` read from `OLLAMA_BACKGROUND_SLOTS`, in the env example
+  - **Migration:** to set it from the environment, add `backgroundSlots: envNumber("OLLAMA_BACKGROUND_SLOTS"),` to the turn model's `ollamaModel(...)` in `mercury.config.ts`
+- 40fde6b: - `ollamaModel(name, settings?)` and `ollamaEmbedding(name, { capacity }?)` declare a model; `capacity`, how many requests its server answers at once, 1 when left out
+  - `models` in `mercury.config.ts`: `turn` (required), `background` (titles, memory captures, corrections, nightly review; the turn's when left out), `embedding`
+  - a `vectorIndex` without `models.embedding` stops the start
+  - `ctx.modelFor(handle)` in a plugin's `build()`: the model of a handle the plugin was given in its configuration
+  - `system.start` carries `models` (each role's name and capacity) instead of `model` and `modelSettings`
+  - the startup log names each role's model
+  - `mfw create`: the config declares `main` from `OLLAMA_MODEL` and its settings, and `models` with `turn` and `embedding`; `OLLAMA_CAPACITY` in the env example
+  - **Breaking:** `model` is gone from `mercury.config.ts`, and the core no longer reads `OLLAMA_MODEL` or `OLLAMA_EMBEDDING_MODEL`: declare the models in `models`
+  - **Migration:** in `mercury.config.ts`, import `ollamaEmbedding` and `ollamaModel` from `@mercury-fw/core`, add above the config `const main = ollamaModel(process.env.OLLAMA_MODEL, { think: envBoolean("OLLAMA_THINK", true), temperature: envNumber("OLLAMA_TEMPERATURE"), topP: envNumber("OLLAMA_TOP_P"), topK: envNumber("OLLAMA_TOP_K"), capacity: envNumber("OLLAMA_CAPACITY") });`, and replace the `model: { ... }` section with `models: { turn: main, embedding: ollamaEmbedding(process.env.OLLAMA_EMBEDDING_MODEL ?? "nomic-embed-text") },`; `OLLAMA_CAPACITY` is optional
+
+### Patch Changes
+
+- 4a00b0c: - **Breaking:** new required `MERCURY_DATA_PATH`, the folder for Mercury's own state (account links, profiles, plugins' `dataDir`, traces, `trace-secret`), no longer in the vault's `.mercury/`; the start stops without it
+  - first start with an empty data folder copies the vault's `.mercury/` into it, leaving the original in place; a failed copy is undone and stops the start
+  - `system.migrated` trace event when that copy happens
+  - `mfw identity` reads the links from `MERCURY_DATA_PATH`
+  - `mfw reset wiki` no longer deletes links, profiles and traces
+  - `mfw reset data` deletes the `mercury-data` volume
+  - `mfw create`: new apps get a `mercury-data` volume mounted at `/app/data` and `MERCURY_DATA_PATH=/app/data`
+  - **Migration:** in `Dockerfile`, add `/app/data` to the `mkdir -p` and the `chown mercury:mercury` of the volumes' mount points; in `docker-compose.yml`, add `- mercury-data:/app/data` to the `mercury` service's `volumes` and `mercury-data:` with `name: <app>_mercury-data` under the top-level `volumes`; in `.env`, add `MERCURY_DATA_PATH=/app/data`; then `mfw start`
+
 ## 0.72.0
 
 ## 0.71.0

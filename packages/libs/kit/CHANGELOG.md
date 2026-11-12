@@ -1,5 +1,48 @@
 # @mercury-fw/kit
 
+## 0.73.0
+
+### Minor Changes
+
+- a8e2fe9: - the work nobody waits on (titles, memory captures, corrections, the archive's index, the nightly review) waits for the model: it runs only in the requests the turns leave free of the model's `capacity`, one model call at a time, titles, corrections and the archive's index first
+  - `ollamaModel(name, { backgroundSlots })`: how many of the model's requests that work may take at once; 1 when left out, below `capacity` when it's above 1
+  - a turn's corrections, its threshold capture and its message's indexing no longer hold the conversation's next turn
+  - a model of a plugin's own (`ctx.modelFor`) goes through the same queue
+  - `background.job` in the traces: each piece of that work that called a model, its models, model calls, time waited, time taken, and whether it was done, failed or dropped at stop
+  - `mfw create`: `backgroundSlots` read from `OLLAMA_BACKGROUND_SLOTS`, in the env example
+  - **Migration:** to set it from the environment, add `backgroundSlots: envNumber("OLLAMA_BACKGROUND_SLOTS"),` to the turn model's `ollamaModel(...)` in `mercury.config.ts`
+- 40fde6b: - `ollamaModel(name, settings?)` and `ollamaEmbedding(name, { capacity }?)` declare a model; `capacity`, how many requests its server answers at once, 1 when left out
+  - `models` in `mercury.config.ts`: `turn` (required), `background` (titles, memory captures, corrections, nightly review; the turn's when left out), `embedding`
+  - a `vectorIndex` without `models.embedding` stops the start
+  - `ctx.modelFor(handle)` in a plugin's `build()`: the model of a handle the plugin was given in its configuration
+  - `system.start` carries `models` (each role's name and capacity) instead of `model` and `modelSettings`
+  - the startup log names each role's model
+  - `mfw create`: the config declares `main` from `OLLAMA_MODEL` and its settings, and `models` with `turn` and `embedding`; `OLLAMA_CAPACITY` in the env example
+  - **Breaking:** `model` is gone from `mercury.config.ts`, and the core no longer reads `OLLAMA_MODEL` or `OLLAMA_EMBEDDING_MODEL`: declare the models in `models`
+  - **Migration:** in `mercury.config.ts`, import `ollamaEmbedding` and `ollamaModel` from `@mercury-fw/core`, add above the config `const main = ollamaModel(process.env.OLLAMA_MODEL, { think: envBoolean("OLLAMA_THINK", true), temperature: envNumber("OLLAMA_TEMPERATURE"), topP: envNumber("OLLAMA_TOP_P"), topK: envNumber("OLLAMA_TOP_K"), capacity: envNumber("OLLAMA_CAPACITY") });`, and replace the `model: { ... }` section with `models: { turn: main, embedding: ollamaEmbedding(process.env.OLLAMA_EMBEDDING_MODEL ?? "nomic-embed-text") },`; `OLLAMA_CAPACITY` is optional
+
+### Patch Changes
+
+- fb1f30a: - conversation-store contract: `ConversationStorePlugin`, `ConversationStore`, `StoredMessage`, `StoredTitle`, `CONVERSATION_STORE_API_VERSION`
+  - `conversationStore` in `mercury.config.ts`: where every conversation's messages and title are kept
+  - **Breaking:** without `conversationStore` nothing is archived: no reopened or listed conversations, no titles, no `recall_verbatim`
+  - `qdrantConversations()` in `@mercury-fw/store-qdrant`: messages in `conversation_messages` (`QDRANT_MESSAGES_COLLECTION`), titles in `conversation_titles` (`QDRANT_TITLES_COLLECTION`); on start, copies the messages of `verbatim_archive` into `conversation_messages` once, marking the copy done only when all are in
+  - `@mercury-fw/core` no longer depends on `@qdrant/js-client-rest` and no longer reads `QDRANT_URL`
+  - **Breaking:** `GET /health` (HTTP): `conversationStoreReachable` and `vectorIndexReachable` (`null` when not declared) instead of `qdrantReachable`
+  - **Breaking:** channel contract 7: `ChannelHostReads.conversation`, `conversations` and `memoryScroll` optional, given only with a conversation store / a vector index; channels written for contract 6 are refused
+  - `channel-http`, `channel-google-chat`: channel contract 7, framework 0.73 or later
+  - `channel-http`: `/conversation`, `/conversations` (`GET`, `PATCH`) only with a conversation store, `/memory/scroll` only with a vector index; `404` otherwise
+  - `system.start` trace event: `conversationStore` (`declared`, `active`)
+  - `mfw create`: new apps declare `conversationStore: qdrantConversations()`
+  - **Migration:** in `mercury.config.ts`, import `qdrantConversations` from `@mercury-fw/store-qdrant` and add `conversationStore: qdrantConversations(),`; upgrade `@mercury-fw/channel-http` and `@mercury-fw/channel-google-chat` with the framework; a UI reading `qdrantReachable` from `/health` reads the two new fields
+- Updated dependencies [a8e2fe9]
+- Updated dependencies [fb1f30a]
+- Updated dependencies [4a00b0c]
+- Updated dependencies [40fde6b]
+- Updated dependencies [b634bd1]
+  - @mercury-fw/plugin-types@0.73.0
+  - @mercury-fw/channel-types@0.73.0
+
 ## 0.72.0
 
 ### Patch Changes
