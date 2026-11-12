@@ -3,7 +3,8 @@
  * add, composed by the instance's `context` profiles.
  *
  * - `resolveContext` checks the config at startup: a layer pointing at a
- *   plugin that isn't declared, or at one that adds no layer, or a budget
+ *   plugin that isn't declared, or at one that adds no layer, a plugin
+ *   listed twice in a profile, or a budget
  *   that isn't a whole number, stops the start (a contradiction in the
  *   config); a plugin that didn't load (a condition outside the config) only
  *   loses its layer, with a line; a layer a profile can never use, its
@@ -15,7 +16,8 @@
  * - `createContextAssembler` builds a turn's context. A layer runs only for
  *   a plugin offered to the person (the same roles and permissions as its
  *   tools), with the identity its tools would have. `session` layers are
- *   built once per session, when it opens, and go into the system prompt,
+ *   built once per session and person (in a shared space each sender gets
+ *   their own, never another's), at their first turn in it, and go into the system prompt,
  *   which stays the same for the session so the model's cache of the
  *   conversation stays valid; `turn` layers are built every turn and go in
  *   front of the person's message for that call only. The budget counts the
@@ -55,7 +57,12 @@ export function resolveContext(
       throw new Error(`context profile "${name}": budget.maxChars must be a whole number from 0 up`);
     }
     const layers: LoadedPlugin[] = [];
+    const listed = new Set<string>();
     for (const plugin of profile.layers) {
+      if (listed.has(plugin.name)) {
+        throw new Error(`context profile "${name}" lists the plugin "${plugin.name}" twice: its layer would be built and charged twice`);
+      }
+      listed.add(plugin.name);
       if (!declared.has(plugin)) {
         throw new Error(`context profile "${name}" lists the plugin "${plugin.name}", which isn't in plugins: declare it there, the same object`);
       }
@@ -115,7 +122,7 @@ export type ContextTurn = { sessionKey: string; input: string; multiUser: boolea
 export type ContextAssembler = {
   /** Builds `who`'s context for a turn; never throws. */
   forTurn: (who: TurnWho, turn: ContextTurn) => Promise<ContextAssembly>;
-  /** Forgets a session's `session` layers: built again if it opens again. */
+  /** Forgets a session's `session` layers, everyone's: built again if it opens again. */
   forget: (sessionKey: string) => void;
 };
 
@@ -153,7 +160,8 @@ export function createContextAssembler(deps: {
   offered: (who: TurnWho) => OfferedEntry[];
   log: (message: string) => void;
 }): ContextAssembler {
-  const sessions = new Map<string, SessionPart>();
+  /** Each open session's `session` layers, per person who wrote in it: in a shared space each sender has their own. */
+  const sessions = new Map<string, Map<string, SessionPart>>();
 
   /** Builds the layers of `scope` in `profile` for `who`: each offered one's blocks, or why it has none. */
   async function build(profile: ResolvedProfile, scope: "session" | "turn", who: TurnWho, turn: ContextTurn): Promise<Built[]> {
@@ -185,7 +193,12 @@ export function createContextAssembler(deps: {
   return {
     async forTurn(who, turn) {
       const profile = profileFor(deps.resolved, who);
-      let session = sessions.get(turn.sessionKey);
+      let people = sessions.get(turn.sessionKey);
+      if (people === undefined) {
+        people = new Map();
+        sessions.set(turn.sessionKey, people);
+      }
+      let session = people.get(who.person.key);
       if (session === undefined) {
         const fitted = fit(await build(profile, "session", who, turn), profile.maxChars, "session");
         session = {
@@ -194,7 +207,7 @@ export function createContextAssembler(deps: {
           used: fitted.used,
           reports: new Map(fitted.reports.map((r) => [r.plugin, r])),
         };
-        sessions.set(turn.sessionKey, session);
+        people.set(who.person.key, session);
       }
       const forTurn = fit(await build(profile, "turn", who, turn), profile.maxChars - session.used, "turn");
       const turnReports = new Map(forTurn.reports.map((r) => [r.plugin, r]));

@@ -206,3 +206,61 @@ describe("createContextAssembler", () => {
     expect(result.turn).toBeUndefined();
   });
 });
+
+describe("context in a shared space (#387)", () => {
+  // Regression: session layers were built once per session, under whoever
+  // wrote first, and every later sender in a shared space got that text,
+  // personal content included.
+  it("builds a session's session layers for each person who writes in it, under their own profile and identity", async () => {
+    const seen: ContextRequest[] = [];
+    const notes = plugin("notes", layer("session", async () => [`notes of ${seen.at(-1)!.person.key}`], seen));
+    const resolved = resolveContext(
+      {
+        profiles: { default: { layers: [], budget: { maxChars: 0 } }, premium: { layers: [notes.declared], budget: { maxChars: 100 } } },
+        assign: { premium: ["staff"] },
+      },
+      { declared: [notes.declared], loaded: [notes.loaded], log: () => {} },
+    )!;
+    const a = createContextAssembler({ resolved, offered: () => [{ plugin: notes.loaded, as: "person" }], log: () => {} });
+    const shared = (input: string) => ({ sessionKey: "space", input, multiUser: true });
+    const outsider: TurnWho = { person: { key: "u:carol", roles: [] }, operator: false };
+
+    const fromAlice = await a.forTurn(alice, shared("a1"));
+    const fromCarol = await a.forTurn(outsider, shared("c1"));
+    const fromAliceAgain = await a.forTurn(alice, shared("a2"));
+
+    expect(fromAlice.system).toBe("notes of u:alice");
+    expect(fromCarol.system).toBeUndefined();
+    expect(fromCarol.event).toEqual({ profile: "default", budget: 0, used: 0, layers: [] });
+    expect(fromAliceAgain.system).toBe("notes of u:alice");
+    expect(seen.map((r) => `${r.person.key}:${r.input}`)).toEqual(["u:alice:a1"]);
+  });
+
+  it("forgets every person's session layers when the session closes", async () => {
+    const seen: ContextRequest[] = [];
+    const wiki = plugin("wiki", layer("session", ["index"], seen));
+    const resolved = resolveContext(
+      { profiles: { default: { layers: [wiki.declared], budget: { maxChars: 100 } } } },
+      { declared: [wiki.declared], loaded: [wiki.loaded], log: () => {} },
+    )!;
+    const a = createContextAssembler({ resolved, offered: () => [{ plugin: wiki.loaded, as: "anyone" }], log: () => {} });
+    await a.forTurn(alice, turn("a", "space"));
+    await a.forTurn(paid, turn("b", "space"));
+    a.forget("space");
+    await a.forTurn(alice, turn("c", "space"));
+    await a.forTurn(paid, turn("d", "space"));
+    expect(seen.map((r) => r.input)).toEqual(["a", "b", "c", "d"]);
+  });
+});
+
+describe("resolveContext: a plugin listed twice (#387)", () => {
+  it("stops the start: its layer would be built and charged twice", () => {
+    const wiki = plugin("wiki", layer("session", []));
+    expect(() =>
+      resolveContext(
+        { profiles: { default: { layers: [wiki.declared, wiki.declared], budget: { maxChars: 100 } } } },
+        { declared: [wiki.declared], loaded: [wiki.loaded], log: () => {} },
+      ),
+    ).toThrow('context profile "default" lists the plugin "wiki" twice');
+  });
+});
