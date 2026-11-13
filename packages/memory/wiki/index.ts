@@ -12,6 +12,7 @@
  * with its folders) and moves notes from an older layout into each person's
  * area.
  */
+import { createWikiNotes, type WikiNotes } from "./notes.ts";
 import { resolve } from "node:path";
 import { PLUGIN_API_VERSION, type Plugin } from "@mercury-fw/plugin-types";
 import { findOrphanCuratedDocs } from "./orphan-detector.ts";
@@ -61,8 +62,14 @@ export const WIKI_PROMPT_FRAGMENT = [
   "- DON'T write a wiki document restating a CLI's syntax or flags — a plugin's skill and --help are the source for those, and a note written after a failed attempt ends up contradicting them.",
 ].join("\n");
 
+/**
+ * The wiki as a plugin, with `notes`: what the memory plugins write into it
+ * and read back (see `notes.ts`), on the same vault.
+ */
+export type WikiPlugin = Plugin & { notes: WikiNotes };
+
 /** The wiki as a plugin, on the vault `options.vaultPath` (else `WIKI_VAULT_PATH`). */
-export function wiki(options: WikiOptions = {}): Plugin {
+export function wiki(options: WikiOptions = {}): WikiPlugin {
   const vaultPath = options.vaultPath || process.env.WIKI_VAULT_PATH;
   if (!vaultPath) {
     throw new Error("wiki: no vault: pass vaultPath or set WIKI_VAULT_PATH to the folder, on a volume of its own, the wiki lives in");
@@ -70,6 +77,7 @@ export function wiki(options: WikiOptions = {}): Plugin {
   const review = options.review === undefined ? { at: DEFAULT_REVIEW_AT } : options.review;
 
   return {
+    notes: createWikiNotes(vaultPath),
     apiVersion: PLUGIN_API_VERSION,
     name: "wiki",
     description: "The team's wiki: shared notes everyone reads and each person's own, searched, read and written by the agent.",
@@ -121,3 +129,5 @@ export function wiki(options: WikiOptions = {}): Plugin {
     },
   };
 }
+
+export { CONSOLIDATION_WINDOW, type Cluster, type ConsolidationDecision, type Occurrence, type WikiFact, type WikiNotes } from "./notes.ts";
