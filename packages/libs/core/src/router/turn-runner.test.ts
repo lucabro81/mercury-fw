@@ -93,6 +93,9 @@ describe("createTurnRunner", () => {
     await runner(baseTurn({ sessionKey: "session-3", resume: {} }), baseSink());
 
     expect(seen.map((args) => args[3])).toEqual([{ maxChars: 500 }, undefined, undefined]);
+    // Whom the turn is for, so a new session keeps its conversation with their profile's plugin (#393).
+    expect(seen.map((args) => (args[5] as { person: { key: string }; operator: boolean }).operator)).toEqual([false, false, true]);
+    expect((seen[0]![5] as { person: { key: string } }).person.key).toBe("google-chat:u1");
   });
 
   test("forwards sink.onTextChunk into runTurn's deps when the sink defines it", async () => {

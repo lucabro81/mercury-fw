@@ -215,14 +215,17 @@ export type TurnRunnerDeps = {
    * nobody vouched for the person, since a primer needs a real identity.
    * `resume` is the turn's own (`InboundTurn.resume`), for a tracked turn
    * only: a history created for it is rebuilt from the archive, its person's
-   * messages stamped in `timeZone`, the turn's, when there is one.
+   * messages stamped in `timeZone`, the turn's, when there is one. `who` is
+   * whom the turn is for: a new session keeps its conversation with the
+   * plugin their context profile names.
    */
   getOrCreateHistory: (
     sessionKey: string,
     trackForCapture: boolean,
     key: string | undefined,
-    resume?: InboundTurn["resume"],
-    timeZone?: string,
+    resume: InboundTurn["resume"] | undefined,
+    timeZone: string | undefined,
+    who: TurnWho,
   ) => Promise<SessionHistory> | SessionHistory;
   /** Layer-3 session tracking (sessionUsers map + idle scanner touch). Only for turns whose person a provider vouched for. */
   trackSession: (sessionKey: string, key: string, at: number) => void;
@@ -603,6 +606,7 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
         tracked ? key : undefined,
         tracked ? turn.resume : undefined,
         tracked ? timeZone : undefined,
+        who,
       );
       lastBefore = history.getMessages().at(-1);
       watchdog = createWatchdog(

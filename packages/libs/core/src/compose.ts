@@ -22,7 +22,7 @@ import { createDisplayStore } from "./tools/display-store.ts";
 import { createPresentTool } from "./tools/present-tool.ts";
 import { loadPlugins } from "./plugins/plugin-loader.ts";
 import { createPluginHooks } from "./plugins/plugin-hooks.ts";
-import { createContextAssembler, resolveContext } from "./context/context.ts";
+import { createContextAssembler, profileFor, resolveContext } from "./context/context.ts";
 import { createChannelContextAdmin } from "./context/context-admin.ts";
 import { createContextSettings } from "./context/context-settings.ts";
 import { materializeCliCredentials } from "./credentials/materialize.ts";
@@ -30,6 +30,7 @@ import type { MercuryConfig } from "./config/define-config.ts";
 import { createResumeSlots } from "./session/resume-slots.ts";
 import { createSessionHistory, type SessionHistory, type Message, type ResumedConversation } from "./session/history.ts";
 import { createSummarizer } from "./session/summarizer.ts";
+import { createConversations } from "./session/conversations.ts";
 import { createConversationTitler } from "./session/conversation-titler.ts";
 import { createEpisodicSummarizer } from "./session/episodic-summarizer.ts";
 import { createSemanticFactExtractor } from "./session/semantic-fact-extractor.ts";
@@ -410,28 +411,56 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   // that receives the provider's redirect.
   const personLogins = createPersonLogins({ log: (msg) => console.error(msg), emit: (event) => tracer.emit(event), assistantName, texts });
 
-  const histories = new Map<string, SessionHistory>();
   /**
-   * `trackForCapture` wires `onBeforeCompress` so a Layer 1 compression also
-   * mirrors the compressed batch to Qdrant (see `session-capture.ts`) — only
-   * meaningful for sessions it tracks (a real per-user identity); an
-   * identity-less channel omits it.
+   * Today's window, inside the core, for a profile that names no plugin to
+   * keep its conversation. `trackForCapture` wires `onBeforeCompress` so a
+   * Layer 1 compression also mirrors the compressed batch to memory (see
+   * `session-capture.ts`) — only meaningful for sessions it tracks (a real
+   * per-user identity); an identity-less channel omits it.
    */
-  function getOrCreateHistory(key: string, trackForCapture = false, primer?: ContextPrimer, resumed?: ResumedConversation): SessionHistory {
-    let history = histories.get(key);
-    if (!history) {
-      history = createSessionHistory(
-        withCompressionEvents(summarize, { emit: (event) => tracer.emit({ ...event, session: key }), now: () => Date.now() }),
-        trackForCapture && vectorIndex !== undefined
-          ? (messages) => sessionCapture.onCompress(key, messages)
-          : undefined,
-        primer,
-        resumed,
-      );
-      histories.set(key, history);
-    }
-    return history;
+  function createInternalHistory(key: string, trackForCapture = false, primer?: ContextPrimer, resumed?: ResumedConversation): SessionHistory {
+    return createSessionHistory(
+      withCompressionEvents(summarize, { emit: (event) => tracer.emit({ ...event, session: key }), now: () => Date.now() }),
+      trackForCapture && vectorIndex !== undefined
+        ? (messages) => sessionCapture.onCompress(key, messages)
+        : undefined,
+      primer,
+      resumed,
+    );
   }
+
+  /** What the person's earlier conversations left for a new one (see session/context-primer.ts); none for one its client reopens at will (#233). */
+  const primerFor = (userId: string, resume: { maxChars?: number } | undefined) =>
+    buildContextPrimer(userId, {
+      vaultPath: wikiVaultPath,
+      getLastSessionEntries: async (uid) =>
+        vectorIndex === undefined ? [] : getLastSessionEpisodicSummaries(vectorIndex, { userId: uid }),
+      listWikiFilesInRootsFn: listWikiFilesInRoots,
+      readWikiFileInRootsFn: readWikiFileInRoots,
+      readIndexFileFn: readIndexFile,
+      log: (msg) => console.error(`[memory] ${msg}`),
+    }, primerOptions(resume));
+
+  // The open conversations, one per session (see session/conversations.ts):
+  // kept by the plugin the first person's profile names, else by the window above.
+  const conversations = createConversations({
+    ownerFor: (who) => (resolvedContext === undefined ? undefined : profileFor(resolvedContext, who).conversation?.conversation),
+    internal: async ({ sessionKey, tracked, userId, resume, timeZone }) => {
+      if (!tracked || userId === undefined) return createInternalHistory(sessionKey);
+      // A conversation its client reopens comes back from the archive (#163).
+      const resumed = await resumeConversation(
+        { userId, sessionKey, maxChars: resumeBudget(resume, resumeMaxChars) },
+        {
+          readTail: async (q) => (conversationStore === undefined ? { messages: [], complete: true } : listVerbatimTail(conversationStore, q)),
+          readSummaries: async (q) => (vectorIndex === undefined ? [] : getEpisodicSummariesBySession(vectorIndex, q)),
+          log: (msg) => console.error(msg),
+        },
+        timeZone,
+      );
+      return createInternalHistory(sessionKey, true, await primerFor(userId, resume), resumed);
+    },
+    primerFor,
+  });
 
   // Session persistence, Layer 3: a tracked session idle past
   // SESSION_IDLE_TIMEOUT_MS is summarized and written to Qdrant as a dated
@@ -780,33 +809,14 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
     postTurnGuards: loadedPlugins.postTurnGuards,
     afterTurn: pluginHooks.afterTurn,
     ...(contextAssembler === undefined ? {} : { contextFor: contextAssembler.forTurn }),
-    getOrCreateHistory: async (key, trackForCapture, userId, resume, timeZone) => {
-      if (trackForCapture && userId && !histories.has(key)) {
-        // A conversation its client reopens comes back from the archive (#163).
-        const resumed = await resumeConversation(
-          { userId, sessionKey: key, maxChars: resumeBudget(resume, resumeMaxChars) },
-          {
-            readTail: async (q) => (conversationStore === undefined ? { messages: [], complete: true } : listVerbatimTail(conversationStore, q)),
-            readSummaries: async (q) => (vectorIndex === undefined ? [] : getEpisodicSummariesBySession(vectorIndex, q)),
-            log: (msg) => console.error(msg),
-          },
-          timeZone,
-        );
-        // A conversation its client reopens at will starts without the last
-        // one (#233): the person opened a new one on purpose.
-        const primer = await buildContextPrimer(userId, {
-          vaultPath: wikiVaultPath,
-          getLastSessionEntries: async (uid) =>
-            vectorIndex === undefined ? [] : getLastSessionEpisodicSummaries(vectorIndex, { userId: uid }),
-          listWikiFilesInRootsFn: listWikiFilesInRoots,
-          readWikiFileInRootsFn: readWikiFileInRoots,
-          readIndexFileFn: readIndexFile,
-          log: (msg) => console.error(`[memory] ${msg}`),
-        }, primerOptions(resume));
-        return getOrCreateHistory(key, trackForCapture, primer, resumed);
-      }
-      return getOrCreateHistory(key, trackForCapture);
-    },
+    getOrCreateHistory: (key, tracked, userId, resume, timeZone, who) =>
+      conversations.open(who, {
+        sessionKey: key,
+        tracked,
+        ...(userId === undefined ? {} : { userId }),
+        ...(resume === undefined ? {} : { resume }),
+        ...(timeZone === undefined ? {} : { timeZone }),
+      }),
     trackSession: (key, userId, at) => {
       sessionCapture.track(key, userId);
       idleScanner.touch(key, at);
@@ -908,7 +918,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
       idleScanner,
       {
         getSession: (key) => {
-          const history = histories.get(key);
+          const history = conversations.get(key);
           const userId = sessionCapture.userOf(key);
           if (!history || !userId) {
             return undefined;
@@ -916,7 +926,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
           return { key, userId, messages: history.getCapturable() };
         },
         closeSession: (key) => {
-          histories.delete(key);
+          conversations.close(key);
           contextAssembler?.forget(key);
           sessionCapture.close(key);
           displayStore.forget(key);
