@@ -1,5 +1,81 @@
 # @mercury-fw/core
 
+## 0.75.0
+
+### Minor Changes
+
+- 21716af: - new `@mercury-fw/archive`: `archive()`, every conversation word for word in the conversation store, from each turn's and resolved confirmation's record, never the operator's; `needs: ["conversationStore"]`; in the framework's fixed group
+  - new `@mercury-fw/titles`: `titles()`, each conversation's generated title after the first turn the person wrote, as the `titles:title` job on the background model, never replacing the person's; `needs: ["conversationStore"]`; in the framework's fixed group
+  - new `@mercury-fw/profile`: `profile()`, the tools `set_preferred_name`, `set_time_zone`, `set_preferred_language` and the system prompt's lines on the name, on `ctx.profiles`; in the framework's fixed group
+  - plugin contract: `onTurnRecord(record)`, every turn the model ran (`outcome` `"done"`, `"cancelled"`, `"failed"`) and every resolved confirmation, as a `TurnRecord` (`TurnRecordOfTurn`, `TurnRecordOfConfirmation`)
+  - plugin contract: `archivedMessages(record)`, the messages an archive keeps of a record, in the `StoredMessage` shape
+  - `plugin.hook` events for `onTurnRecord`
+  - a conversation store declared with no plugin needing it is a line in the log at startup
+  - an opening turn tells the model to save the person's name only when it has `set_preferred_name`
+  - the person's archived message is timestamped when its turn started running, the answer when the turn ended
+  - **Breaking:** the core no longer writes the archive, titles conversations or offers `set_preferred_name`, `set_time_zone`, `set_preferred_language`: declare `archive()`, `titles()`, `profile()`
+  - **Breaking:** no `title` event in the traces: a title is the `titles:title` `background.job`; an archive write that fails is a failed `plugin.hook`, no `system.error` with area `archive`
+  - `mfw create` declares `archive()`, `titles()`, `profile()` in `plugins`
+  - **Migration:** `bun add @mercury-fw/archive @mercury-fw/titles @mercury-fw/profile`, then in `mercury.config.ts` add `import { archive } from "@mercury-fw/archive";`, `import { titles } from "@mercury-fw/titles";`, `import { profile } from "@mercury-fw/profile";` and `archive(), titles(), profile()` to `plugins`
+- 4d0c1ed: - new `@mercury-fw/conversation-window`: `conversationWindow({ maxChars?, overflow?, reopen?, earlier? })`, the conversation a context profile keeps, with `recall_tool_calls`
+  - **Breaking:** the core keeps no conversation of its own: a profile without `conversation` reads only the current message. **Migration:** `bun add @mercury-fw/conversation-window`, add `const conversation = conversationWindow();` (from `@mercury-fw/conversation-window`), put `conversation` in `plugins` and `context: { profiles: { default: { conversation, layers: [], budget: { maxChars: 8000 } } } }` in `mercury.config.ts` (or `conversation` in each profile you already have); without a `conversationStore`, use `conversationWindow({ reopen: false })`, or the app doesn't start
+  - **Breaking:** `SESSION_RESUME_MAX_CHARS` is gone. **Migration:** `conversationWindow({ reopen: { maxChars } })`
+  - `recall_tool_calls` and its prompt text come from `conversation-window`; its status line is `conversation-window.status.recall`, and `core.status.memory` and `core.status.call-history` are gone
+  - a summary that fails no longer fails the turn: the window stays as it was and the next message tries again
+  - `Conversation.addUserMessage` and `addAssistantMessage` may resolve to a `CompressionReport`, recorded as `history.compressed`
+  - `formatTurnStamp` in the plugin contract
+  - `mfw create`: new apps declare `conversationWindow()` and name it in the `default` profile
+  - `HTTP_SURFACE_RESUME_MAX_CHARS` unset: the conversation window's own budget
+- bcabfa1: - new `@mercury-fw/memory`: `memory({ wiki?, captureEvery? })`, episodic summaries every few messages and on a session's close, facts promoted to the person's `inferred/` notes through the wiki, every turn's messages indexed for `recall_verbatim`, a `session` layer with the last conversation's recap, `summariesOf` for `conversationWindow({ earlier })`; `needs: ["vectorIndex", "embedding"]`; in the framework's fixed group
+  - new `@mercury-fw/corrections`: `corrections({ wiki })`, a failed command and a later one that worked in the same turn, kept in `tool_corrections` and promoted to `curated/standards/<tool>-<topic>.md`; `needs: ["vectorIndex", "embedding"]`; in the framework's fixed group
+  - `wiki()` returns `notes`: `promoteFact`, `promoteCorrection`, `facts`, the deterministic consolidation into the vault
+  - background jobs named `memory:capture`, `memory:archive-index`, `corrections:correction`
+  - `SESSION_CAPTURE_MESSAGE_THRESHOLD` is read by `memory()`
+  - **Breaking:** the core keeps no long-term memory: no episodic summaries, no facts, no corrections, no `recall_verbatim`, no recap of the last session: declare `memory()` and `corrections()`
+  - **Breaking:** no `memory.capture`, `memory.consolidate`, `memory.correction` events in the traces, and no "Noting down something important" status while a conversation is captured; `core.status.remembering`, `core.status.capture-detail`, `core.status.correction-detail` are gone
+  - `mfw create` declares `memory({ wiki: teamWiki })` (in `plugins` and in the `default` profile's `layers`), `corrections({ wiki: teamWiki })`, and `conversationWindow({ earlier: longTermMemory })`
+  - **Migration:** `bun add @mercury-fw/memory @mercury-fw/corrections`, then in `mercury.config.ts` add `import { memory } from "@mercury-fw/memory";`, `import { corrections } from "@mercury-fw/corrections";`, `const longTermMemory = memory({ wiki: teamWiki });` (declared before the conversation), `conversationWindow({ earlier: longTermMemory })`, `longTermMemory` and `corrections({ wiki: teamWiki })` in `plugins`, and `longTermMemory` in the `layers` of each context profile that should start with the last conversation's recap
+  - **Migration:** an app's language files translating `core.status.remembering`, `core.status.capture-detail`, `core.status.correction-detail` can drop them
+- bf7b7f3: - **Breaking:** plugin contract 7 (`PLUGIN_API_VERSION`): a plugin written for contract 6 isn't loaded, and the log says why: rebuild it against 7
+  - `Plugin.needs` (`PluginNeed`: `"vectorIndex"`, `"conversationStore"`, `"embedding"`): the plugin's `build()` context gets `vectorIndex`, `conversations`, `embed`; a need the config doesn't declare stops the start, one declared that didn't start leaves the plugin out
+  - `build()` may return a promise, awaited at startup; one that rejects leaves the plugin out
+  - every plugin's `build()` context gets `backgroundModel`, `daily(name, { at, timeZone? }, fn)`, `profiles` and `toolLog`
+  - `daily`: work every day at `"HH:MM"` in `timeZone` or `i18n.timeZone`, run by the service only, a missed day never made up; an `at` or a time zone that can't be stops the start
+  - `PluginRuntimeContributions.conversation` (`ConversationOwner`, `Conversation`, `ConversationOpen`, `ConversationMessage`): a plugin keeping a session's conversation
+  - `context.profiles.<p>.conversation`: the plugin keeping that profile's conversations. One not in `plugins` or keeping none, and a plugin keeping conversations that no profile names, stop the start
+  - `ContextRequest.reopened`: whether the conversation is one its client reopened
+  - `VectorIndex`, `ConversationStore`, `StoredMessage`, `StoredTitle`, `CallRecord`, `CallResult`, `TraceEntry`, `ArchivedConfirmation`, `ToolOutcome` are in the plugin contract; `@mercury-fw/channel-types` re-exports them
+  - **Breaking:** `StoredMessage` lists its fields (`role`, `content`, `displays`, `calls`, `interrupted`, `trace`, `pendingNote`, `confirmation`, `turnId`): a store or a writer adding other fields no longer typechecks
+  - `formatterPlugin` awaits the plugin's `build()`: its own `build()` returns a promise
+  - **Migration:** a test calling a plugin's `build()` awaits it: `await plugin.build!(ctx)`
+- 2df58af: - new `@mercury-fw/wiki`: `wiki({ vaultPath?, review? })`, the vault (`WIKI_VAULT_PATH` by default), the tools `list_files`, `read_file`, `grep`, `write_file`, `promote_note`, a `session` layer with `index.md`, the nightly review at `review.at` (`"03:00"` by default, `false` for none); in the framework's fixed group
+  - the nightly review's passes are `background.job` events `wiki:review-raw`, `wiki:review-index`, `wiki:review-contradictions`; no `review.pass` event
+  - the wiki tools' status lines are `wiki.status.read`, `wiki.status.write`, `wiki.status.search`; `core.status.wiki-read`, `core.status.wiki-write`, `core.status.searching` are gone
+  - **Breaking:** the core keeps no wiki: no wiki tools, no wiki text in the system prompt, no wiki index in the primer, no nightly review, `WIKI_VAULT_PATH` no longer required: declare `wiki()`
+  - the confirmation notes are kept in the data folder, `confirmations/<key>/<token>.md`; the ones in the vault (`users/<key>/confirmations/`) are copied there at the first start, from `WIKI_VAULT_PATH`
+  - an old vault layout's `inferred/confirmations/` stays where it is
+  - `resolve_reference` is the core's, offered on every turn
+  - **Breaking:** `ChannelHostReads` has no `wikiList`, `wikiRead`, `wikiGrep`
+  - **Breaking:** `channel-http` has no `GET /wiki/list`, `/wiki/read`, `/wiki/grep`
+  - **Breaking:** confirm-engine's `WriteConfirmationNote` takes no path, and `ConfirmDeps` and the staging deps have no `vaultPath`
+  - `mfw create` declares `const teamWiki = wiki()`, in `plugins` and in the `default` profile's `layers`
+  - `mfw vault` runs `@mercury-fw/wiki`'s CLI
+  - **Migration:** keep `WIKI_VAULT_PATH` set on the first start, so the confirmation notes are copied from the vault
+  - **Migration:** an app's language files translating `core.status.wiki-read`, `core.status.wiki-write`, `core.status.searching` translate `wiki.status.read`, `wiki.status.write`, `wiki.status.search` instead
+  - **Migration:** `bun add @mercury-fw/wiki`, then in `mercury.config.ts` add `import { wiki } from "@mercury-fw/wiki";`, `const teamWiki = wiki();`, `teamWiki` in `plugins`, and `teamWiki` in the `layers` of each context profile that should read the wiki's index
+
+### Patch Changes
+
+- Updated dependencies [21716af]
+- Updated dependencies [4d0c1ed]
+- Updated dependencies [bf7b7f3]
+- Updated dependencies [2df58af]
+  - @mercury-fw/plugin-types@0.75.0
+  - @mercury-fw/channel-types@0.75.0
+  - @mercury-fw/confirm-engine@0.75.0
+  - @mercury-fw/cli-engine@0.75.0
+  - @mercury-fw/utils@0.75.0
+
 ## 0.74.0
 
 ### Minor Changes

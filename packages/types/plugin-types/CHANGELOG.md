@@ -1,5 +1,44 @@
 # @mercury-fw/plugin-types
 
+## 0.75.0
+
+### Minor Changes
+
+- 21716af: - new `@mercury-fw/archive`: `archive()`, every conversation word for word in the conversation store, from each turn's and resolved confirmation's record, never the operator's; `needs: ["conversationStore"]`; in the framework's fixed group
+  - new `@mercury-fw/titles`: `titles()`, each conversation's generated title after the first turn the person wrote, as the `titles:title` job on the background model, never replacing the person's; `needs: ["conversationStore"]`; in the framework's fixed group
+  - new `@mercury-fw/profile`: `profile()`, the tools `set_preferred_name`, `set_time_zone`, `set_preferred_language` and the system prompt's lines on the name, on `ctx.profiles`; in the framework's fixed group
+  - plugin contract: `onTurnRecord(record)`, every turn the model ran (`outcome` `"done"`, `"cancelled"`, `"failed"`) and every resolved confirmation, as a `TurnRecord` (`TurnRecordOfTurn`, `TurnRecordOfConfirmation`)
+  - plugin contract: `archivedMessages(record)`, the messages an archive keeps of a record, in the `StoredMessage` shape
+  - `plugin.hook` events for `onTurnRecord`
+  - a conversation store declared with no plugin needing it is a line in the log at startup
+  - an opening turn tells the model to save the person's name only when it has `set_preferred_name`
+  - the person's archived message is timestamped when its turn started running, the answer when the turn ended
+  - **Breaking:** the core no longer writes the archive, titles conversations or offers `set_preferred_name`, `set_time_zone`, `set_preferred_language`: declare `archive()`, `titles()`, `profile()`
+  - **Breaking:** no `title` event in the traces: a title is the `titles:title` `background.job`; an archive write that fails is a failed `plugin.hook`, no `system.error` with area `archive`
+  - `mfw create` declares `archive()`, `titles()`, `profile()` in `plugins`
+  - **Migration:** `bun add @mercury-fw/archive @mercury-fw/titles @mercury-fw/profile`, then in `mercury.config.ts` add `import { archive } from "@mercury-fw/archive";`, `import { titles } from "@mercury-fw/titles";`, `import { profile } from "@mercury-fw/profile";` and `archive(), titles(), profile()` to `plugins`
+- 4d0c1ed: - new `@mercury-fw/conversation-window`: `conversationWindow({ maxChars?, overflow?, reopen?, earlier? })`, the conversation a context profile keeps, with `recall_tool_calls`
+  - **Breaking:** the core keeps no conversation of its own: a profile without `conversation` reads only the current message. **Migration:** `bun add @mercury-fw/conversation-window`, add `const conversation = conversationWindow();` (from `@mercury-fw/conversation-window`), put `conversation` in `plugins` and `context: { profiles: { default: { conversation, layers: [], budget: { maxChars: 8000 } } } }` in `mercury.config.ts` (or `conversation` in each profile you already have); without a `conversationStore`, use `conversationWindow({ reopen: false })`, or the app doesn't start
+  - **Breaking:** `SESSION_RESUME_MAX_CHARS` is gone. **Migration:** `conversationWindow({ reopen: { maxChars } })`
+  - `recall_tool_calls` and its prompt text come from `conversation-window`; its status line is `conversation-window.status.recall`, and `core.status.memory` and `core.status.call-history` are gone
+  - a summary that fails no longer fails the turn: the window stays as it was and the next message tries again
+  - `Conversation.addUserMessage` and `addAssistantMessage` may resolve to a `CompressionReport`, recorded as `history.compressed`
+  - `formatTurnStamp` in the plugin contract
+  - `mfw create`: new apps declare `conversationWindow()` and name it in the `default` profile
+  - `HTTP_SURFACE_RESUME_MAX_CHARS` unset: the conversation window's own budget
+- bf7b7f3: - **Breaking:** plugin contract 7 (`PLUGIN_API_VERSION`): a plugin written for contract 6 isn't loaded, and the log says why: rebuild it against 7
+  - `Plugin.needs` (`PluginNeed`: `"vectorIndex"`, `"conversationStore"`, `"embedding"`): the plugin's `build()` context gets `vectorIndex`, `conversations`, `embed`; a need the config doesn't declare stops the start, one declared that didn't start leaves the plugin out
+  - `build()` may return a promise, awaited at startup; one that rejects leaves the plugin out
+  - every plugin's `build()` context gets `backgroundModel`, `daily(name, { at, timeZone? }, fn)`, `profiles` and `toolLog`
+  - `daily`: work every day at `"HH:MM"` in `timeZone` or `i18n.timeZone`, run by the service only, a missed day never made up; an `at` or a time zone that can't be stops the start
+  - `PluginRuntimeContributions.conversation` (`ConversationOwner`, `Conversation`, `ConversationOpen`, `ConversationMessage`): a plugin keeping a session's conversation
+  - `context.profiles.<p>.conversation`: the plugin keeping that profile's conversations. One not in `plugins` or keeping none, and a plugin keeping conversations that no profile names, stop the start
+  - `ContextRequest.reopened`: whether the conversation is one its client reopened
+  - `VectorIndex`, `ConversationStore`, `StoredMessage`, `StoredTitle`, `CallRecord`, `CallResult`, `TraceEntry`, `ArchivedConfirmation`, `ToolOutcome` are in the plugin contract; `@mercury-fw/channel-types` re-exports them
+  - **Breaking:** `StoredMessage` lists its fields (`role`, `content`, `displays`, `calls`, `interrupted`, `trace`, `pendingNote`, `confirmation`, `turnId`): a store or a writer adding other fields no longer typechecks
+  - `formatterPlugin` awaits the plugin's `build()`: its own `build()` returns a promise
+  - **Migration:** a test calling a plugin's `build()` awaits it: `await plugin.build!(ctx)`
+
 ## 0.74.0
 
 ### Minor Changes
