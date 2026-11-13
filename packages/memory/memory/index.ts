@@ -67,7 +67,7 @@ const DEFAULT_CAPTURE_EVERY = 6;
 
 /** The memory plugin (see the module comment). */
 export function memory(options: MemoryOptions = {}): MemoryPlugin {
-  let built: { index: VectorIndex } | undefined;
+  let built: { index: VectorIndex; ready: () => Promise<void> } | undefined;
   return {
     apiVersion: PLUGIN_API_VERSION,
     name: "memory",
@@ -78,12 +78,14 @@ export function memory(options: MemoryOptions = {}): MemoryPlugin {
     summariesOf: async ({ person, sessionKey }) =>
       built === undefined
         ? []
-        : (await getEpisodicSummariesBySession(built.index, { userId: person, sessionKey })).map(({ summary, timestamp }) => ({ summary, timestamp })),
+        : (await built.ready(), await getEpisodicSummariesBySession(built.index, { userId: person, sessionKey })).map(({ summary, timestamp }) => ({
+            summary,
+            timestamp,
+          })),
     build: (ctx) => {
       const index = ctx.vectorIndex;
       const embed = ctx.embed;
       if (index === undefined || embed === undefined) throw new Error("memory: no vector index or embedding model (needs: vectorIndex, embedding)");
-      built = { index };
       const model = ctx.backgroundModel ?? ctx.model;
       const job = ctx.job ?? (<T,>(_name: string, _urgency: string, fn: () => Promise<T>) => fn());
       const wiki = options.wiki;
@@ -103,6 +105,8 @@ export function memory(options: MemoryOptions = {}): MemoryPlugin {
           spaces = undefined;
           throw err;
         }));
+
+      built = { index, ready };
 
       const summarize = createEpisodicSummarizer(model);
       const extractFacts = createSemanticFactExtractor(model);

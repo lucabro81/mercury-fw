@@ -45,8 +45,14 @@ export function corrections(options: CorrectionsOptions): Plugin {
           if (!hasCorrectionCandidates(turn.calls)) return;
           await job("correction", "soon", async () => {
             for (const correction of await extract(turn.calls)) {
-              await ready();
-              await storeToolCorrection(index, embed, { ...correction, timestamp: new Date().toISOString() });
+              // Each correction on its own: one the index or the wiki can't take never costs the others.
+              try {
+                await ready();
+                await storeToolCorrection(index, embed, { ...correction, timestamp: new Date().toISOString() });
+              } catch (err) {
+                ctx.log(`[corrections] ${correction.tool}/${correction.topic}: not kept: ${err instanceof Error ? err.message : String(err)}`);
+                continue;
+              }
               try {
                 const decision = await options.wiki.notes.promoteCorrection(correction.tool, correction.topic, (limit) =>
                   searchToolCorrectionsByTopic(index, embed, { tool: correction.tool, topic: correction.topic, limit }),

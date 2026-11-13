@@ -43,8 +43,3 @@ export function resolveTimeZone(saved: string | undefined, hint: string | undefi
 
 /** The stamp for a message written at a date in a time zone, line break included: the contract's, so a conversation plugin stamps what it brings back the same way. */
 export { formatTurnStamp } from "@mercury-fw/plugin-types";
-
-/** `text` without the stamp at its start, for whatever reads the history but isn't the model's turn. */
-export function stripTurnStamp(text: string): string {
-  return text.replace(STAMP_RE, "");
-}

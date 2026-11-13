@@ -123,8 +123,9 @@ area, keeps the index in line with it, and looks for documents that contradict e
 
 ## The long-term memory
 
-`@mercury-fw/memory` (`memory()`) remembers each person across conversations. Every few messages they write
-(`captureEvery`, 6 by default), and when a conversation closes, the model writes a short summary of what was said,
+`@mercury-fw/memory` (`memory()`) remembers each person across conversations. Every few messages of theirs in a
+conversation, counting the answers too (`captureEvery`, 6 by default: three exchanges), and when a conversation
+closes, the model writes a short summary of what was said,
 asked and decided (never the data a tool returned, which goes stale), and finds the facts about the person that are
 likely to stay true (their team, their role, the tools they use). Both go to the app's **vector index**, `vectorIndex`
 in its config: Qdrant, in an app made with `mfw create`. Finding things there by meaning is what the **embedding
@@ -158,7 +159,7 @@ embedding model (`needs: ["vectorIndex", "embedding"]`): an app declaring them w
 | `memory()` option | |
 |---|---|
 | `wiki` | The wiki the facts are promoted to and read back from; without one they stay in the index. |
-| `captureEvery` | How many new messages of a person in a conversation make a summary; `SESSION_CAPTURE_MESSAGE_THRESHOLD`, else 6, when left out. |
+| `captureEvery` | How many new messages of a person in a conversation, theirs and the answers, make a summary; `SESSION_CAPTURE_MESSAGE_THRESHOLD`, else 6, when left out. |
 
 `mfw memory` lists and reads what's stored.
 

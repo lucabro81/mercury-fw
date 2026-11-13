@@ -116,4 +116,39 @@ describe("createSessionBuffers (#393)", () => {
     expect(logs).toEqual(["[memory] capture of s1 failed, kept for the next one: index down"]);
     expect(buffers.pending("s1", "static:alice")).toBe(4);
   });
+
+  // Review of #393: close found the buffer capturing and returned; what came
+  // after that capture started was never captured, and a failure lost it all.
+  it("on close, waits for a capture already running, then captures what came after it", async () => {
+    const captured: number[] = [];
+    let release!: () => void;
+    let first = true;
+    const buffers = createSessionBuffers({
+      threshold: 2,
+      capture: async (_person, _session, messages) => {
+        if (first) {
+          first = false;
+          await new Promise<void>((resolve) => (release = resolve));
+        }
+        captured.push(messages.length);
+      },
+      job: (fn) => fn(),
+      log: () => {},
+    });
+    const running = buffers.add("s1", "static:alice", msgs(2));
+    await buffers.add("s1", "static:alice", msgs(1));
+    const closing = buffers.close("s1");
+    release();
+    await running;
+    await closing;
+    expect(captured).toEqual([2, 1]);
+  });
+
+  it("drops what a capture on close couldn't keep, after one try, and logs it", async () => {
+    const { buffers, logs } = setUp(true);
+    await buffers.add("s1", "static:alice", msgs(2));
+    await buffers.close("s1");
+    expect(logs).toEqual(["[memory] capture of s1 failed, its messages are dropped: index down"]);
+    expect(buffers.pending("s1", "static:alice")).toBe(0);
+  });
 });

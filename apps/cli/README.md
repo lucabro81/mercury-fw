@@ -377,7 +377,7 @@ To see what happens when people talk at the same time, an HTTP case can have `la
 
 It can test how the model uses a plugin through its skill (the commands and flags it picks, rejected or failed calls, how many calls it takes), what the answer says or must not say, what a turn changed in an external system, the confirmation of an irreversible command, conversations over several turns, several plugins working together, and what the wiki and memory make of a conversation.
 
-It can't test how Google Chat shows a turn (its cards), the background jobs (the nightly wiki review, idle-session capture), or the exact wording of an answer: checks look for properties, and `repeat` with `minPasses` says how steady the behaviour is. Durations are in the report and in `e2e/results/`, never a check.
+It can't test how Google Chat shows a turn (its cards), the background jobs (the nightly wiki review, the memory's capture when a conversation closes), or the exact wording of an answer: checks look for properties, and `repeat` with `minPasses` says how steady the behaviour is. Durations are in the report and in `e2e/results/`, never a check.
 
 ```bash
 mfw e2e

@@ -84,7 +84,7 @@ describe("corrections", () => {
   });
 
   it("learns a correction from a failed command fixed in the same turn: a job on the background model, kept in tool_corrections, promoted through the wiki", async () => {
-    const { afterTurn, index, used, jobs, promoted } = await setUp();
+    const { afterTurn, index, used, jobs, promoted, logs } = await setUp();
     await afterTurn(turn([failed, fixed]));
     expect(jobs).toEqual(["correction:soon"]);
     expect(used).toEqual(["background"]);
@@ -92,6 +92,22 @@ describe("corrections", () => {
     const kept = (index.spaces.get("tool_corrections") ?? []).map((p) => p.payload);
     expect(kept).toEqual([{ tool: "jira", topic: "select-flag", value: "Every --select starts with issues.", timestamp: expect.any(String) }]);
     expect(promoted).toEqual([{ tool: "jira", topic: "select-flag", occurrences: kept }]);
+    expect(logs).toEqual(["[corrections] jira/select-flag: written"]);
+  });
+
+  // As before #393: a command the terminal fixed teaches the same rule.
+  it("learns from the operator's turns too", async () => {
+    const { afterTurn, jobs } = await setUp();
+    await afterTurn({ ...turn([failed, fixed]), operator: true });
+    expect(jobs).toEqual(["correction:soon"]);
+  });
+
+  it("logs a correction the index can't keep, and goes on", async () => {
+    const { afterTurn, index, logs, promoted } = await setUp();
+    index.fail = new Error("index down");
+    await afterTurn(turn([failed, fixed]));
+    expect(promoted).toEqual([]);
+    expect(logs).toEqual(["[corrections] jira/select-flag: not kept: index down"]);
   });
 
   it("does nothing, and calls no model, for a turn with nothing to learn from", async () => {

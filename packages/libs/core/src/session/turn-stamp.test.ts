@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { formatTurnStamp, resolveTimeZone, stripTurnStamp, timeZoneName } from "./turn-stamp.ts";
+import { formatTurnStamp, resolveTimeZone, timeZoneName } from "./turn-stamp.ts";
 
 // 2026-10-21T12:32:00Z: a Wednesday in Rome (14:32, summer time) and in New York (08:32).
 const NOON = new Date("2026-10-21T12:32:00Z");
@@ -17,20 +17,6 @@ describe("formatTurnStamp", () => {
 
   test("follows summer time: the same zone is an hour apart across the change", () => {
     expect(formatTurnStamp(new Date("2026-12-01T12:00:00Z"), "Europe/Rome")).toBe("[Tuesday 2026-12-01 13:00 Europe/Rome]\n");
-  });
-});
-
-describe("stripTurnStamp", () => {
-  test("takes the stamp off the start of a message, and only that", () => {
-    expect(stripTurnStamp(`${formatTurnStamp(NOON, "Europe/Rome")}ciao`)).toBe("ciao");
-    expect(stripTurnStamp(`${formatTurnStamp(NOON, "Etc/GMT+1")}[Da: Luca]\nciao`)).toBe("[Da: Luca]\nciao");
-  });
-
-  test("leaves a message without a stamp, or with one in the middle, as it is", () => {
-    expect(stripTurnStamp("ciao")).toBe("ciao");
-    const quoted = `see ${formatTurnStamp(NOON, "Europe/Rome")}`;
-    expect(stripTurnStamp(quoted)).toBe(quoted);
-    expect(stripTurnStamp(stripTurnStamp(`${formatTurnStamp(NOON, "UTC")}ciao`))).toBe("ciao");
   });
 });
 

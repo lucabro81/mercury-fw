@@ -72,29 +72,40 @@ export type SessionBuffers = {
 
 /** The buffers of the sessions open (see the module comment). */
 export function createSessionBuffers(deps: SessionBuffersDeps): SessionBuffers {
-  // Per session, per person: the messages not captured yet, and whether a capture of them runs.
-  const sessions = new Map<string, Map<string, { messages: Message[]; capturing: boolean }>>();
+  // Per session, per person: the messages not captured yet, and the capture of them running, if any.
+  type Buffer = { messages: Message[]; running?: Promise<void> };
+  const sessions = new Map<string, Map<string, Buffer>>();
 
-  /** Captures what `buffer` holds now; on success drops those messages, on failure keeps them. */
-  async function flush(sessionKey: string, person: string, buffer: { messages: Message[]; capturing: boolean }): Promise<void> {
-    if (buffer.capturing || buffer.messages.length === 0) return;
-    buffer.capturing = true;
+  /**
+   * Captures what `buffer` holds now; on success drops those messages, on
+   * failure keeps them for the next capture, or drops them when it's the last
+   * one (`last`, the session closed).
+   */
+  function flush(sessionKey: string, person: string, buffer: Buffer, last = false): Promise<void> {
+    if (buffer.running !== undefined || buffer.messages.length === 0) return Promise.resolve();
     const taken = buffer.messages.length;
-    try {
-      await deps.job(() => deps.capture(person, sessionKey, buffer.messages.slice(0, taken)));
-      buffer.messages.splice(0, taken);
-    } catch (err) {
-      deps.log(`[memory] capture of ${sessionKey} failed, kept for the next one: ${err instanceof Error ? err.message : String(err)}`);
-    } finally {
-      buffer.capturing = false;
-    }
+    buffer.running = (async () => {
+      try {
+        await deps.job(() => deps.capture(person, sessionKey, buffer.messages.slice(0, taken)));
+        buffer.messages.splice(0, taken);
+      } catch (err) {
+        const why = err instanceof Error ? err.message : String(err);
+        if (last) {
+          buffer.messages.splice(0, taken);
+          deps.log(`[memory] capture of ${sessionKey} failed, its messages are dropped: ${why}`);
+        } else deps.log(`[memory] capture of ${sessionKey} failed, kept for the next one: ${why}`);
+      } finally {
+        buffer.running = undefined;
+      }
+    })();
+    return buffer.running;
   }
 
   return {
     add: async (sessionKey, person, messages) => {
-      const people = sessions.get(sessionKey) ?? new Map();
+      const people = sessions.get(sessionKey) ?? new Map<string, Buffer>();
       sessions.set(sessionKey, people);
-      const buffer = people.get(person) ?? { messages: [], capturing: false };
+      const buffer = people.get(person) ?? { messages: [] };
       people.set(person, buffer);
       buffer.messages.push(...messages);
       if (buffer.messages.length >= deps.threshold) await flush(sessionKey, person, buffer);
@@ -103,7 +114,11 @@ export function createSessionBuffers(deps: SessionBuffersDeps): SessionBuffers {
       const people = sessions.get(sessionKey);
       if (people === undefined) return;
       sessions.delete(sessionKey);
-      for (const [person, buffer] of people) await flush(sessionKey, person, buffer);
+      for (const [person, buffer] of people) {
+        // A capture already running finishes first: what came after it is the last one.
+        await buffer.running;
+        await flush(sessionKey, person, buffer, true);
+      }
     },
     pending: (sessionKey, person) => sessions.get(sessionKey)?.get(person)?.messages.length ?? 0,
   };

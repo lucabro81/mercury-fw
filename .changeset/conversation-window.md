@@ -13,6 +13,5 @@
 - a summary that fails no longer fails the turn: the window stays as it was and the next message tries again
 - `Conversation.addUserMessage` and `addAssistantMessage` may resolve to a `CompressionReport`, recorded as `history.compressed`
 - `formatTurnStamp` in the plugin contract
-- `memory.capture` events no longer have `trigger: "compress"`
 - `mfw create`: new apps declare `conversationWindow()` and name it in the `default` profile
 - `HTTP_SURFACE_RESUME_MAX_CHARS` unset: the conversation window's own budget

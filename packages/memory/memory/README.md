@@ -27,7 +27,7 @@ It needs the vector index and the embedding model (`needs: ["vectorIndex", "embe
 | Option | |
 |---|---|
 | `wiki` | The wiki the facts are promoted to and read back from (`wiki()`, declared in `plugins` too). Without one, the facts stay in the index. |
-| `captureEvery` | How many new messages of a person in a conversation make a summary. `SESSION_CAPTURE_MESSAGE_THRESHOLD` when left out, else 6. |
+| `captureEvery` | How many new messages of a person in a conversation, theirs and the answers, make a summary. `SESSION_CAPTURE_MESSAGE_THRESHOLD` when left out, else 6. |
 
 ## What it keeps
 

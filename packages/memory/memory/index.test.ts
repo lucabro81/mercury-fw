@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { PLUGIN_API_VERSION, type ContextRequest, type FinishedTurn, type PluginRuntimeContext, type SessionToolContext, type TurnRecord } from "@mercury-fw/plugin-types";
 import type { WikiFact } from "@mercury-fw/wiki";
-import { memory, MEMORY_PROMPT_FRAGMENT, RECAP_INTRO } from "./index.ts";
+import { memory, MEMORY_PROMPT_FRAGMENT, RECAP_INTRO, type MemoryOptions } from "./index.ts";
 import { fakeVectorIndex } from "./__fixtures__/fake-vector-index.ts";
 
 /** A model answering facts when asked for JSON and a summary otherwise, recording who called it. */
@@ -29,31 +29,43 @@ function fakeModel(id: string, used: string[], prompts: string[] = []) {
 }
 
 /** `memory()` built on a fake index, its jobs recorded and run at once. */
-async function setUp(opts: { facts?: WikiFact[]; captureEvery?: number; index?: ReturnType<typeof fakeVectorIndex> } = {}) {
+async function setUp(
+  opts: {
+    facts?: WikiFact[];
+    captureEvery?: number;
+    index?: ReturnType<typeof fakeVectorIndex>;
+    /** The options as given to `memory()`, in place of the defaults below. */
+    options?: MemoryOptions;
+    env?: Record<string, string>;
+    timeZone?: string;
+  } = {},
+) {
   const index = opts.index ?? fakeVectorIndex();
   const used: string[] = [];
   const prompts: string[] = [];
   const jobs: string[] = [];
   const logs: string[] = [];
   const promoted: string[] = [];
-  const plugin = memory({
-    captureEvery: opts.captureEvery ?? 4,
-    wiki: {
-      notes: {
-        promoteFact: async (key, topic) => (promoted.push(`${key}/${topic}`), "written"),
-        facts: async () => opts.facts ?? [],
+  const plugin = memory(
+    opts.options ?? {
+      captureEvery: opts.captureEvery ?? 4,
+      wiki: {
+        notes: {
+          promoteFact: async (key, topic) => (promoted.push(`${key}/${topic}`), "written"),
+          facts: async () => opts.facts ?? [],
+        },
       },
     },
-  });
+  );
   const ctx = {
     model: fakeModel("turn", used),
     backgroundModel: fakeModel("background", used, prompts),
-    env: {},
+    env: opts.env ?? {},
     log: (m: string) => void logs.push(m),
     vectorIndex: index,
     embed: async () => [1, 0, 0],
     job: async <T,>(name: string, urgency: string, fn: () => Promise<T>) => (jobs.push(`${name}:${urgency}`), fn()),
-    profiles: { timeZoneOf: () => "Europe/Rome" },
+    profiles: { timeZoneOf: () => ("timeZone" in opts ? opts.timeZone : "Europe/Rome") },
   } as unknown as PluginRuntimeContext;
   const built = await plugin.build!(ctx);
   return { plugin, built, index, used, prompts, jobs, logs, promoted };
@@ -132,6 +144,57 @@ describe("memory", () => {
       await built.afterTurn!(turn());
       await built.afterTurn!(turn());
       expect(prompts[0]).toMatch(/user: \[[A-Z][a-z]+day \d{4}-\d{2}-\d{2} \d{2}:\d{2} Europe\/Rome\]\\nWhat's open on KAN\?/);
+    });
+
+    it("stamps in the machine's time zone for a person who saved none", async () => {
+      const { built, prompts } = await setUp({ timeZone: undefined });
+      await built.afterTurn!(turn());
+      await built.afterTurn!(turn());
+      expect(prompts[0]).toContain(`${Intl.DateTimeFormat().resolvedOptions().timeZone}]\\nWhat's open on KAN?`);
+    });
+  });
+
+  describe("how often it captures", () => {
+    /** Turns of alice until the first capture: each one is two messages. */
+    async function turnsUntilCapture(opts: Parameters<typeof setUp>[0]): Promise<number> {
+      const { built, jobs } = await setUp(opts);
+      for (let n = 1; n <= 10; n++) {
+        await built.afterTurn!(turn());
+        if (jobs.length > 0) return n;
+      }
+      return -1;
+    }
+
+    it("every 6 messages by default: three turns", async () => {
+      expect(await turnsUntilCapture({ options: {} })).toBe(3);
+    });
+
+    it("every SESSION_CAPTURE_MESSAGE_THRESHOLD messages without captureEvery, and captureEvery wins over it", async () => {
+      expect(await turnsUntilCapture({ options: {}, env: { SESSION_CAPTURE_MESSAGE_THRESHOLD: "2" } })).toBe(1);
+      expect(await turnsUntilCapture({ options: { captureEvery: 8 }, env: { SESSION_CAPTURE_MESSAGE_THRESHOLD: "2" } })).toBe(4);
+    });
+  });
+
+  describe("without a wiki", () => {
+    it("keeps the facts in the index only, and the recap has no known facts", async () => {
+      const index = fakeVectorIndex();
+      const { built, promoted } = await setUp({ index, options: { captureEvery: 4 } });
+      await built.afterTurn!(turn());
+      await built.afterTurn!(turn());
+      expect(payloads(index, "semantic_facts")).toHaveLength(1);
+      expect(promoted).toEqual([]);
+      const [recap] = (await built.context!.build({
+        sessionKey: "s2",
+        person: { key: "static:alice" },
+        operator: false,
+        as: "anyone",
+        input: "hi",
+        multiUser: false,
+        knobs: {},
+        reopened: false,
+      }))!;
+      expect(recap).toContain("Last session:");
+      expect(recap).not.toContain("Known facts");
     });
   });
 
