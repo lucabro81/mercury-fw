@@ -1,20 +1,18 @@
 /**
  * The model's way to save how the person it's talking to wants to be called,
- * the language they want to be talked to in and the time zone they're in (see
- * `profiles.ts`): it writes only for the turn's person, and only those
- * settings. The language is one of those the instance ships, and its tool is
- * there only when it ships more than English. Same `tool()`-wrapping split as `wiki-tools.ts`.
+ * the language they want to be talked to in and the time zone they're in, in
+ * the core's profiles (`ctx.profiles`): it writes only for the turn's person,
+ * and only those settings. The language is one of those the instance ships,
+ * and its tool is there only when it ships more than one.
  */
 import { tool } from "ai";
 import { z } from "zod";
-import type { ExecutableTool } from "@mercury-fw/plugin-types";
-import type { ProfileStore } from "./profiles.ts";
+import type { ExecutableTool, Profiles } from "@mercury-fw/plugin-types";
 
+/** The profile tools for the person with `key`, writing `profiles`. */
 export function createProfileTools(deps: {
-  store: ProfileStore;
+  profiles: Profiles;
   key: string;
-  /** The languages the instance ships (`I18n.supported`), English when left out. */
-  languages?: string[];
 }): { set_preferred_name: ExecutableTool; set_time_zone: ExecutableTool; set_preferred_language?: ExecutableTool } {
   const set_preferred_name = tool({
     description:
@@ -25,7 +23,7 @@ export function createProfileTools(deps: {
     }),
     execute: async ({ name }) => {
       try {
-        return { ok: true as const, name: deps.store.setName(deps.key, name) };
+        return { ok: true as const, name: deps.profiles.setName(deps.key, name) };
       } catch (err) {
         return { ok: false as const, error: err instanceof Error ? err.message : String(err) };
       }
@@ -41,13 +39,13 @@ export function createProfileTools(deps: {
     }),
     execute: async ({ timeZone }) => {
       try {
-        return { ok: true as const, timeZone: deps.store.setTimeZone(deps.key, timeZone) };
+        return { ok: true as const, timeZone: deps.profiles.setTimeZone(deps.key, timeZone) };
       } catch (err) {
         return { ok: false as const, error: err instanceof Error ? err.message : String(err) };
       }
     },
   });
-  const languages = deps.languages ?? ["en"];
+  const languages = deps.profiles.languages;
   if (languages.length < 2) return { set_preferred_name, set_time_zone };
   const set_preferred_language = tool({
     description:
@@ -58,7 +56,7 @@ export function createProfileTools(deps: {
     }),
     execute: async ({ language }) => {
       try {
-        return { ok: true as const, language: deps.store.setLanguage(deps.key, language) };
+        return { ok: true as const, language: deps.profiles.setLanguage(deps.key, language) };
       } catch (err) {
         return { ok: false as const, error: err instanceof Error ? err.message : String(err) };
       }
