@@ -15,7 +15,6 @@ type CapturedHandleInput = (
 function fakeConfirmDeps() {
   return {
     store: {} as any,
-    vaultPath: "/vault",
     writeConfirmationNoteFn: (async () => {}) as any,
   };
 }

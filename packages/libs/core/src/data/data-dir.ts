@@ -39,7 +39,7 @@ async function entriesOf(dir: string): Promise<string[]> {
 
 /**
  * Copies `<vaultPath>/.mercury/` into `dataPath` when the data folder is
- * empty (or missing) and the vault has one, leaving the original where it is,
+ * empty (or missing) and there is a vault with one, leaving the original where it is,
  * and returns the names it copied. A data folder that already holds anything
  * is never touched, so this runs on every start and acts at most once.
  * Creates the data folder either way.
@@ -50,14 +50,16 @@ async function entriesOf(dir: string): Promise<string[]> {
  */
 export async function migrateLegacyState(deps: {
   dataPath: string;
-  vaultPath: string;
+  /** The vault of an older instance; without one there is nothing to copy. */
+  vaultPath?: string;
   log: (msg: string) => void;
   copy?: (from: string, to: string) => Promise<void>;
 }): Promise<string[]> {
   const copy = deps.copy ?? ((from, to) => cp(from, to, { recursive: true, preserveTimestamps: true }));
-  const legacy = resolve(deps.vaultPath, ".mercury");
   const target = resolve(deps.dataPath);
   await mkdir(target, { recursive: true });
+  if (deps.vaultPath === undefined) return [];
+  const legacy = resolve(deps.vaultPath, ".mercury");
   if ((await entriesOf(target)).length > 0) return [];
   const entries = await entriesOf(legacy);
   if (entries.length === 0) return [];

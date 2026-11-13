@@ -11,8 +11,10 @@ import type { Message } from "../session/history.ts";
 import type { EpisodicSummary } from "../memory/episodic-store.ts";
 import type { SemanticFact } from "../session/semantic-fact-extractor.ts";
 import type { SemanticFactEntry } from "../memory/semantic-facts-store.ts";
-import type { ConsolidationDecision } from "./semantic-consolidation.ts";
 import type { TraceInput } from "../traces/tracer.ts";
+
+/** What turning a fact's topic into a note decided: a note written, no value dominant enough, or the note there kept. */
+export type ConsolidationDecision = "written" | "no-dominant" | "kept-incumbent";
 
 /** What made a capture happen: the idle sweep, or the message-count threshold. */
 export type CaptureTrigger = "idle" | "threshold";

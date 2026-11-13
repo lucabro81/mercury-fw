@@ -1,15 +1,14 @@
 /**
  * The read-only getters the core hands a channel that exposes an API (the HTTP
  * surface), each scoped to the caller: their own conversations, confirmations,
- * tool calls and memory, the wiki as they see it (the common area plus their
- * own area), and the plugins they're offered (the manifest). The channel
- * authenticates; the core identifies the person (`identity/people.ts`) and
- * decides what they can see. Only health stays global.
+ * tool calls and memory, and the plugins they're offered (the manifest). The
+ * channel authenticates; the core identifies the person (`identity/people.ts`)
+ * and decides what they can see. Only health stays global.
  *
  * A getter answers `null` for something that isn't there for this person: a
- * wiki path outside their scope (or missing), a collection that isn't kept per
- * person, anything at all for someone the core doesn't admit. The channel
- * turns that into its own "not found" or "bad request".
+ * collection that isn't kept per person, anything at all for someone the core
+ * doesn't admit. The channel turns that into its own "not found" or "bad
+ * request".
  */
 import type { ChannelHostReads, ConversationStore, Principal, VectorIndex } from "@mercury-fw/channel-types";
 import type { ConfirmationStore } from "@mercury-fw/confirm-engine";
@@ -20,10 +19,8 @@ import { listVerbatimBySession, listVerbatimSessions } from "../memory/verbatim-
 import type { ConversationTitle } from "../memory/conversation-titles-store.ts";
 import { getToolLog } from "../session/tool-log-buffer.ts";
 import { createPeople, type People, type TurnWho } from "./people.ts";
-import { grepVisible, listVisible, readVisible } from "./vault-access.ts";
 
 export type HostReadsDeps = {
-  vaultPath: string;
   /** Where the conversations are read from; without one there are no conversation reads. */
   store?: ConversationStore;
   /** Where `memoryScroll` reads; without one there's no memory read. */
@@ -44,9 +41,9 @@ export type HostReadsDeps = {
   titlesOf?: (key: string, sessionKeys: string[]) => Promise<Map<string, ConversationTitle>>;
 };
 
-/** Builds the per-person `ChannelHostReads` over this instance's vault, conversation store, vector index and confirmations. */
+/** Builds the per-person `ChannelHostReads` over this instance's conversation store, vector index and confirmations. */
 export function createHostReads(deps: HostReadsDeps): ChannelHostReads {
-  const { vaultPath, store, index } = deps;
+  const { store, index } = deps;
   // The spaces whose points carry a person's `userId`: the only ones `memoryScroll` opens.
   const perPerson = new Set([VERBATIM_SPACE, EPISODIC_SPACE, SEMANTIC_FACTS_SPACE]);
   const identify = deps.identify ?? createPeople({ directory: "none" }).identify;
@@ -59,7 +56,6 @@ export function createHostReads(deps: HostReadsDeps): ChannelHostReads {
       if (!identified.ok) return null;
       return read({ person: identified.person, operator: identified.operator }, ...args);
     };
-  const scope = (who: TurnWho) => ({ vaultPath, key: who.person.key });
   /** The titles of `sessionKeys` for `who`; none when the instance keeps no titles or they can't be read (enrichment, like the archive). */
   const titles = async (who: TurnWho, sessionKeys: string[]): Promise<Map<string, ConversationTitle>> => {
     if (deps.titlesOf === undefined || sessionKeys.length === 0) return new Map();
@@ -110,9 +106,6 @@ export function createHostReads(deps: HostReadsDeps): ChannelHostReads {
     manifest: forPerson((who) => deps.manifest(who)),
     health: deps.health,
     pendingConfirmations: forPerson((who) => deps.confirmationStore.pending(who.person.key)),
-    wikiList: forPerson((who) => listVisible(scope(who))),
-    wikiRead: forPerson((who, path: string) => readVisible(scope(who), path).catch(() => null)),
-    wikiGrep: forPerson((who, pattern: string) => grepVisible(scope(who), pattern)),
     toolLog: forPerson((who) => getToolLog({ owner: who.person.key })),
     me: forPerson((who) => ({
       name: deps.preferredName?.(who.person.key) ?? null,

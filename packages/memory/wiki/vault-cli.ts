@@ -18,7 +18,7 @@
  * the only thing that reads raw/ back to triage it into curated/.
  *
  * `list`/`read`/`grep` intentionally bypass the per-person scoping in
- * `identity/vault-access.ts`: that scoping exists to isolate what each
+ * `vault-access.ts`: that scoping exists to isolate what each
  * person (and the model on their behalf) can see; a maintainer running this
  * CLI is the operator, so these walk the whole vault, and only the vault.
  */

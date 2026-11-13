@@ -94,6 +94,7 @@ const versions: Record<string, string> = {
   "@mercury-fw/trace-jsonl": cliVersion(),
   "@mercury-fw/store-qdrant": cliVersion(),
   "@mercury-fw/conversation-window": cliVersion(),
+  "@mercury-fw/wiki": cliVersion(),
   "@mercury-fw/channel-http": PLUGIN_VERSION,
   "@mercury-fw/auth-static": PLUGIN_VERSION,
   "@mercury-fw/plugin-jira": PLUGIN_VERSION,
@@ -239,6 +240,7 @@ describe("mfw create --local-packages", () => {
         "@mercury-fw/core": "^0.35.0",
         "@mercury-fw/store-qdrant": "^0.35.0",
         "@mercury-fw/trace-jsonl": "^0.35.0",
+        "@mercury-fw/wiki": `^${cliVersion()}`,
       });
       // Named after their content in the app (#169).
       const named = (file: string) =>

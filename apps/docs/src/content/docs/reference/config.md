@@ -19,9 +19,11 @@ import pkg from "./package.json";
 import { jsonlTraces } from "@mercury-fw/trace-jsonl";
 import { qdrantConversations, qdrantIndex } from "@mercury-fw/store-qdrant";
 import { conversationWindow } from "@mercury-fw/conversation-window";
+import { wiki } from "@mercury-fw/wiki";
 
 const name = "Hermes";
 const conversation = conversationWindow();
+const teamWiki = wiki();
 
 const main = ollamaModel(process.env.OLLAMA_MODEL, {
   think: envBoolean("OLLAMA_THINK", true),
@@ -42,7 +44,7 @@ export default defineMercuryConfig({
       // …
     ].join("\n"),
   },
-  plugins: [conversation],
+  plugins: [conversation, teamWiki],
   channels: [httpChannel],
   auth: oidcAuth,
   directory: staticDirectory,
@@ -53,7 +55,7 @@ export default defineMercuryConfig({
     turn: main,
     embedding: ollamaEmbedding(process.env.OLLAMA_EMBEDDING_MODEL ?? "nomic-embed-text"),
   },
-  context: { profiles: { default: { conversation, layers: [], budget: { maxChars: 8000 } } } },
+  context: { profiles: { default: { conversation, layers: [teamWiki], budget: { maxChars: 8000 } } } },
   i18n: { defaultLocale: "it", locales: { en, it } },
   traces: { sink: jsonlTraces(), level: "meta" },
   version: pkg.version,
@@ -282,14 +284,14 @@ What the model reads besides the conversation, by profile. See [Context](../../c
 
 ```ts
 const conversation = conversationWindow();
-const wiki = myWiki({ ... });
+const teamWiki = wiki();
 const rag = myRag({ ... });
 
-plugins: [conversation, wiki, rag],
+plugins: [conversation, teamWiki, rag],
 context: {
   profiles: {
-    default: { conversation, layers: [wiki], budget: { maxChars: 4000 } },
-    premium: { conversation, layers: [wiki, rag], budget: { maxChars: 12000 } },
+    default: { conversation, layers: [teamWiki], budget: { maxChars: 4000 } },
+    premium: { conversation, layers: [teamWiki, rag], budget: { maxChars: 12000 } },
   },
   assign: { premium: ["paid"] },
 },

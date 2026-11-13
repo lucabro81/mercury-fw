@@ -7,7 +7,7 @@
  * depends on the model). It reports outcomes, never texts: what the person is
  * told is the core's, in their language.
  *
- * The core creates the single store instance and binds the store/vault/writer,
+ * The core creates the single store instance and binds the store and the note writer,
  * then hands channels only the injected `confirm`/`resolveConfirmation` closures
  * (via `ChannelRuntimeContext`) — a channel never imports this library. Nothing
  * here imports the app; the note writer is an injected `WriteConfirmationNote`.

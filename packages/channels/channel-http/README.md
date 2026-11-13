@@ -1,6 +1,6 @@
 # @mercury-fw/channel-http
 
-Gives a [Mercury](https://github.com/lucabro81/mercury-fw) agent an HTTP surface to build a custom UI on: one conversational turn per request, streamed back as Server-Sent Events, plus confirmation and read-only routes over what the agent holds (conversations, the wiki, memory, its plugins).
+Gives a [Mercury](https://github.com/lucabro81/mercury-fw) agent an HTTP surface to build a custom UI on: one conversational turn per request, streamed back as Server-Sent Events, plus confirmation and read-only routes over what the agent holds (conversations, memory, its plugins).
 
 On Mercury's documentation site: [its page](https://lucabro81.github.io/mercury-fw/plugins/channel-http/).
 
@@ -33,7 +33,7 @@ It's active whenever it's declared in `mercury.config.ts`'s `channels` with an a
 
 **Authentication.** Every route except `GET /openapi.yaml`, `GET /version`, `GET /login/callback` and the `OPTIONS` preflights needs `Authorization: Bearer <token>`, and the auth providers decide who the token belongs to: the first that recognizes it. A missing or refused token gets `401` with `WWW-Authenticate: Bearer` before anything runs. Then the core decides whether it talks to that person at all: someone the app's directory doesn't know gets `403` (unless the app lets unknown people in), and `503` when the directory can't be reached, both with `{ ok: false, error, reason }`, where `error` is what to tell them.
 
-**Conversations belong to whoever opened them.** The session key is `<caller id>:<conversationId>`, so the same `conversationId` sent by someone else is a conversation of their own, and a confirmation token staged in your conversation can't be confirmed from theirs. Each authenticated caller also gets their own episodic memory and wiki area, as on Google Chat.
+**Conversations belong to whoever opened them.** The session key is `<caller id>:<conversationId>`, so the same `conversationId` sent by someone else is a conversation of their own, and a confirmation token staged in your conversation can't be confirmed from theirs. Each authenticated caller also gets their own episodic memory, and their own area of the wiki when the agent declares one, as on Google Chat.
 
 **CORS** is enabled on every response and every route answers an `OPTIONS` preflight, so a browser UI on another origin can call it. The allowed origin is `HTTP_SURFACE_CORS_ORIGIN` (default `*`: the token travels in a header, never in a cookie the browser would send on its own).
 
@@ -117,7 +117,7 @@ Explicit alternative to re-sending a token as `/turn` `text`. Body `{ token, con
 
 ## Read-only introspection
 
-All `GET`, all JSON, all reporting state already held in-process. `/conversation` and `/conversations` exist only on an agent with a conversation store, `/memory/scroll` only on one with a vector index: on any other they answer `404`, as an unknown route does. They need an authenticated caller and show only what belongs to them: their conversations, confirmations, tool calls and memory, and the wiki as they see it (the team's `curated/` plus their own notes as `personal/`). Someone else's data doesn't exist as far as a caller can tell. `/manifest` lists what the caller is offered (a plugin acting as Mercury only for someone allowed to use it), and only `/health` is the same for everyone.
+All `GET`, all JSON, all reporting state already held in-process. `/conversation` and `/conversations` exist only on an agent with a conversation store, `/memory/scroll` only on one with a vector index: on any other they answer `404`, as an unknown route does. They need an authenticated caller and show only what belongs to them: their conversations, confirmations, tool calls and memory. Someone else's data doesn't exist as far as a caller can tell. `/manifest` lists what the caller is offered (a plugin acting as Mercury only for someone allowed to use it), and only `/health` is the same for everyone.
 
 | endpoint | `data` on success |
 |---|---|
@@ -128,9 +128,6 @@ All `GET`, all JSON, all reporting state already held in-process. `/conversation
 | `GET /me` | `{ name, language, timeZone }` — how you asked the assistant to call you, the language you asked it to use and the time zone you saved, `null` when you never said; `language` and `timeZone` are missing on a core that doesn't know them, and the route isn't there on a core older than this channel |
 | `GET /tool-log` | `{ entries: [...] }` — the tool calls of your recent turns |
 | `GET /health` | `{ uptimeSeconds, memory, conversationStoreReachable, vectorIndexReachable, ollamaReachable }` — whether each answers, `null` for one the agent doesn't declare |
-| `GET /wiki/list` | `{ files: [...] }` — `curated/...` and `personal/...` paths |
-| `GET /wiki/read?path=<path>` | `{ content }` — a path as `/wiki/list` gives it; `400` if `path` is missing, `404` if it isn't among yours |
-| `GET /wiki/grep?pattern=<regex>` | `{ matches: [...] }` — `400` if `pattern` is missing |
 | `GET /memory/scroll?collection=<name>&limit=<n>&offset=<cursor>` | one page of your points in a space of the vector index kept per person (`verbatim_archive`, `episodic_memory`, `semantic_facts`), each with its whole payload (a verbatim answer's `displays` and `calls` included, and an interrupted answer's `interrupted: true` with the note the model gets in its `content`); `400` for any other |
 | `GET /openapi.yaml` | the OpenAPI document for this surface (`text/yaml`) |
 

@@ -15,11 +15,10 @@ import { isTokenShaped, type ConfirmationStore } from "./confirmation-store.ts";
 
 /**
  * Signature of the persistent confirmation-note writer the core injects (the
- * app's `writeConfirmationNote`, kept in `wiki/`). Declared here so this library
+ * core's `writeConfirmationNote`, which decides where the notes are kept). Declared here so this library
  * stays free of any app import; the real writer is structurally assignable.
  */
 export type WriteConfirmationNote = (
-  vaultPath: string,
   owner: string,
   token: string,
   fields: { status: "pending" | "confirmed" | "failed"; requestedAt: string; resolvedAt: string | null; command: string },
@@ -42,7 +41,6 @@ export type ConfirmDeps = {
   onResume?: (sessionKey: string, action: ResumedAction) => void;
   /** The person confirming (the core's user key): the token resolves only if they staged it. */
   owner: string;
-  vaultPath: string;
   writeConfirmationNoteFn: WriteConfirmationNote;
   /** Told once a staged action has run, however it went; never for input that resolved nothing. */
   onResolved?: (action: ResolvedAction) => void;
@@ -82,9 +80,9 @@ export async function resolveConfirmation(
   // `confirmation-staging.ts`) so the persistent record reflects what actually
   // happened, never stuck saying "pending" — see the stale-primer bug this
   // guards against. Same resilience tradeoff as the propose side: a
-  // wiki-write failure must not stop the user from getting their result.
+  // note-write failure must not stop the user from getting their result.
   try {
-    await deps.writeConfirmationNoteFn(deps.vaultPath, deps.owner, staged.noteToken ?? token, {
+    await deps.writeConfirmationNoteFn(deps.owner, staged.noteToken ?? token, {
       status: result.ok ? "confirmed" : "failed",
       requestedAt: staged.requestedAt ?? resolvedAt,
       resolvedAt,

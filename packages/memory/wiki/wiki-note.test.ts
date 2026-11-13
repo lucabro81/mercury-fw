@@ -11,7 +11,6 @@ import {
   writeRawEntry,
   deleteRawEntry,
   deleteCuratedEntry,
-  writeConfirmationNote,
   updateIndexFile,
 } from "./wiki-note.ts";
 import { initVault } from "./vault-init.ts";
@@ -405,80 +404,6 @@ describe("deleteCuratedEntry", () => {
     const vaultPath = await makeTempVault();
     await expect(deleteCuratedEntry(vaultPath, "never-existed.md")).resolves.toBe(true);
     expect(await gitStatusPorcelain(vaultPath)).toBe("");
-  });
-});
-
-// Regression guard for the stale-primer bug: a confirm-required action's
-// lifecycle (staged, then confirmed/failed) must live somewhere the model
-// can't stumble onto by browsing (a person's confirmations/ folder is outside
-// what identity/vault-access.ts exposes to the model's own tools) but
-// Mercury's own code can still read deterministically: see resolve_reference
-// in wiki-tools.ts and the "Open references" section in context-primer.ts.
-describe("writeConfirmationNote", () => {
-  it("writes a note in the person's area, users/<encoded key>/confirmations/<token>.md", async () => {
-    const vaultPath = await makeTempVault();
-    await writeConfirmationNote(vaultPath, "google-chat:users/42", "j3h4b5", {
-      status: "pending",
-      requestedAt: "2026-07-27T12:20:00Z",
-      resolvedAt: null,
-      command: "jira issue delete KAN-1 --confirm",
-    });
-
-    const text = await readFile(join(vaultPath, "users/google-chat%3Ausers%2F42/confirmations/j3h4b5.md"), "utf-8");
-    const { frontmatter } = splitFrontmatter(text);
-    expect(frontmatter).toEqual({
-      type: "confirmation",
-      status: "pending",
-      requested_at: "2026-07-27T12:20:00Z",
-      resolved_at: null,
-      command: "jira issue delete KAN-1 --confirm",
-    });
-  });
-
-  it("overwrites the same note when the action is later resolved", async () => {
-    const vaultPath = await makeTempVault();
-    await writeConfirmationNote(vaultPath, "google-chat:users/42", "j3h4b5", {
-      status: "pending",
-      requestedAt: "2026-07-27T12:20:00Z",
-      resolvedAt: null,
-      command: "jira issue delete KAN-1 --confirm",
-    });
-    await writeConfirmationNote(vaultPath, "google-chat:users/42", "j3h4b5", {
-      status: "confirmed",
-      requestedAt: "2026-07-27T12:20:00Z",
-      resolvedAt: "2026-07-27T12:25:00Z",
-      command: "jira issue delete KAN-1 --confirm",
-    });
-
-    const text = await readFile(join(vaultPath, "users/google-chat%3Ausers%2F42/confirmations/j3h4b5.md"), "utf-8");
-    const { frontmatter } = splitFrontmatter(text);
-    expect(frontmatter).toMatchObject({ status: "confirmed", resolved_at: "2026-07-27T12:25:00Z" });
-  });
-
-  it("commits the write, leaving a clean working tree", async () => {
-    const vaultPath = await makeTempVault();
-    await writeConfirmationNote(vaultPath, "google-chat:users/42", "j3h4b5", {
-      status: "pending",
-      requestedAt: "2026-07-27T12:20:00Z",
-      resolvedAt: null,
-      command: "jira issue delete KAN-1 --confirm",
-    });
-
-    const log = await gitLog(vaultPath);
-    expect(log[0]).toContain("j3h4b5");
-    expect(await gitStatusPorcelain(vaultPath)).toBe("");
-  });
-
-  it("rejects a token containing a path separator", async () => {
-    const vaultPath = await makeTempVault();
-    await expect(
-      writeConfirmationNote(vaultPath, "google-chat:users/42", "../../evil", {
-        status: "pending",
-        requestedAt: "2026-07-27T12:20:00Z",
-        resolvedAt: null,
-        command: "jira issue delete KAN-1 --confirm",
-      }),
-    ).rejects.toThrow();
   });
 });
 

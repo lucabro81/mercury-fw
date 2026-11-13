@@ -1,7 +1,7 @@
 /**
  * Read-side access to the wiki vault: listing, reading, and searching, each
  * scoped to the roots the caller passes. What a person can see is decided in
- * `identity/vault-access.ts`, which builds on these; the nightly self-review
+ * `vault-access.ts`, which builds on these; the nightly self-review
  * uses `selfReviewRoots`. Plain functions, not model-invocable tools.
  */
 import { readFile, stat } from "node:fs/promises";

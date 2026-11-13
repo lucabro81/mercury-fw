@@ -15,7 +15,6 @@ describe("createStageConfirmation", () => {
       store,
       sessionKey: "terminal",
       owner: OWNER,
-      vaultPath: "/vault",
       writeConfirmationNoteFn: noopWrite,
     });
 
@@ -30,15 +29,14 @@ describe("createStageConfirmation", () => {
 
   it("writes a pending confirmation note keyed by the minted token, with describe as the command", async () => {
     const store = createConfirmationStore({ tokenFn: () => "TOK1" });
-    const writes: Array<{ vaultPath: string; owner: string; token: string; fields: unknown }> = [];
-    const writeConfirmationNoteFn: WriteConfirmationNote = async (vaultPath, owner, token, fields) => {
-      writes.push({ vaultPath, owner, token, fields });
+    const writes: Array<{ owner: string; token: string; fields: unknown }> = [];
+    const writeConfirmationNoteFn: WriteConfirmationNote = async (owner, token, fields) => {
+      writes.push({ owner, token, fields });
     };
     const stage = createStageConfirmation({
       store,
       sessionKey: "terminal",
       owner: OWNER,
-      vaultPath: "/my-vault",
       writeConfirmationNoteFn,
       nowFn: () => new Date("2026-09-18T10:00:00Z"),
     });
@@ -47,7 +45,6 @@ describe("createStageConfirmation", () => {
 
     expect(writes).toEqual([
       {
-        vaultPath: "/my-vault",
         owner: OWNER,
         token: "TOK1",
         fields: {
@@ -69,7 +66,6 @@ describe("createStageConfirmation", () => {
       store,
       sessionKey: "terminal",
       owner: OWNER,
-      vaultPath: "/vault",
       writeConfirmationNoteFn: async () => {
         throw new Error("disk full");
       },
@@ -92,7 +88,6 @@ describe("createStageChoices", () => {
         store,
         sessionKey: "s1",
         owner: OWNER,
-        vaultPath: "/vault",
         writeConfirmationNoteFn,
         nowFn: () => new Date("2026-10-18T10:00:00Z"),
       }),
@@ -129,7 +124,7 @@ describe("createStageChoices", () => {
 
   it("writes one pending note for the whole group, under its first token", async () => {
     const writes: Array<{ token: string; fields: unknown }> = [];
-    const { stage } = deps(async (_vault, _owner, token, fields) => {
+    const { stage } = deps(async (_owner, token, fields) => {
       writes.push({ token, fields });
     });
 
@@ -151,7 +146,7 @@ describe("createStageChoices", () => {
 
   it("refuses a group with no choice, staging nothing", async () => {
     const writes: string[] = [];
-    const { store, stage } = deps(async (_v, _o, token) => {
+    const { store, stage } = deps(async (_o, token) => {
       writes.push(token);
     });
 

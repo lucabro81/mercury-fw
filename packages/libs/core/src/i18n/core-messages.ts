@@ -43,9 +43,6 @@ export const CORE_MESSAGES: Messages = {
 
   // What a tool call is doing, on the channel's status (`session/tool-start-hook.ts`).
   "core.status.instructions": "Checking the instructions…",
-  "core.status.searching": "Searching…",
-  "core.status.wiki-read": "Reading the wiki…",
-  "core.status.wiki-write": "Writing to the wiki…",
   "core.status.tool": "Using {tool}…",
   "core.status.wiki-all": "Every document in the wiki",
   // A CLI command a plugin runs, unless the plugin words it itself (`defaultStatusLabel`, `@mercury-fw/cli-engine`).

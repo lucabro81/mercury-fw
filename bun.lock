@@ -38,6 +38,7 @@
         "@mercury-fw/store-qdrant": "workspace:*",
         "@mercury-fw/typescript-config": "*",
         "@mercury-fw/web-search-searxng": "workspace:*",
+        "@mercury-fw/wiki": "workspace:*",
         "@types/bun": "^1.4.2",
         "typescript": "^6.0.3",
       },
@@ -160,7 +161,7 @@
         "typescript": "^6.0.3",
       },
       "peerDependencies": {
-        "@mercury-fw/channel-types": ">=0.68.0 <1.0.0",
+        "@mercury-fw/channel-types": ">=0.73.0 <1.0.0",
       },
     },
     "packages/channels/channel-http": {
@@ -174,7 +175,7 @@
         "typescript": "^6.0.3",
       },
       "peerDependencies": {
-        "@mercury-fw/channel-types": ">=0.70.0 <1.0.0",
+        "@mercury-fw/channel-types": ">=0.74.0 <1.0.0",
       },
     },
     "packages/config/typescript-config": {
@@ -283,6 +284,22 @@
       "dependencies": {
         "@mercury-fw/plugin-types": "workspace:*",
         "ai": "^7.0.126",
+        "zod": "^4.6.5",
+      },
+      "devDependencies": {
+        "@mercury-fw/typescript-config": "*",
+        "@types/bun": "^1.4.2",
+        "typescript": "^6.0.3",
+      },
+    },
+    "packages/memory/wiki": {
+      "name": "@mercury-fw/wiki",
+      "version": "0.74.0",
+      "dependencies": {
+        "@mercury-fw/plugin-types": "workspace:*",
+        "ai": "^7.0.126",
+        "ai-sdk-ollama": "^4.4.0",
+        "yaml": "^2.9.1",
         "zod": "^4.6.5",
       },
       "devDependencies": {
@@ -758,6 +775,8 @@
     "@mercury-fw/utils": ["@mercury-fw/utils@workspace:packages/libs/utils"],
 
     "@mercury-fw/web-search-searxng": ["@mercury-fw/web-search-searxng@workspace:packages/tools/web-search-searxng"],
+
+    "@mercury-fw/wiki": ["@mercury-fw/wiki@workspace:packages/memory/wiki"],
 
     "@mozilla/readability": ["@mozilla/readability@0.6.0", "", {}, "sha512-juG5VWh4qAivzTAeMzvY9xs9HY5rAcr2E4I7tiSSCokRFi7XIZCAu92ZkSTsIj1OPceCifL3cpfteP3pDT9/QQ=="],
 

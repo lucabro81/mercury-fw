@@ -495,7 +495,6 @@ export function readRoutes(
   const json = (payload: object, status = 200): Response =>
     Response.json(payload, { status, headers: cors });
   const badRequest = (message: string): Response => json({ ok: false, error: message }, 400);
-  const requireParam = (req: Request, name: string): string | null => new URL(req.url).searchParams.get(name);
   const options = () => preflight(corsOrigin);
   // Read once, so each stays narrowed inside its routes.
   const { conversation, conversations: listConversations, memoryScroll } = reads;
@@ -591,18 +590,6 @@ export function readRoutes(
           },
         }),
     "/health": route(async () => json({ ok: true, ...(await reads.health() as object) })),
-    "/wiki/list": route(async (_req, principal) => json({ ok: true, files: await reads.wikiList(principal) })),
-    "/wiki/read": route(async (req, principal) => {
-      const path = requireParam(req, "path");
-      if (!path) return badRequest("missing ?path");
-      const content = await reads.wikiRead(principal, path);
-      return content === null ? json({ ok: false, error: "not found" }, 404) : json({ ok: true, content });
-    }),
-    "/wiki/grep": route(async (req, principal) => {
-      const pattern = requireParam(req, "pattern");
-      if (!pattern) return badRequest("missing ?pattern");
-      return json({ ok: true, matches: await reads.wikiGrep(principal, pattern) });
-    }),
     // The memory, on an instance with a vector index.
     ...(memoryScroll === undefined
       ? {}

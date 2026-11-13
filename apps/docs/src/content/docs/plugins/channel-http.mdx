@@ -10,7 +10,7 @@ import PluginFacts from "../../../components/PluginFacts.astro";
 The HTTP channel lets any program talk to the agent: a web page you build, a mobile app, a script. Each message is
 one request, and the answer comes back as it's written, as a stream of **Server-Sent Events** (a standard way for a
 server to send a sequence of messages over one HTTP response). Next to it there are routes to confirm actions and
-to read what the agent holds: conversations, the wiki, the memory, its plugins.
+to read what the agent holds: conversations, the memory, its plugins.
 
 It needs an [auth provider](../../concepts/people/) to tell who is calling, and doesn't start without one:
 [OpenID Connect](../auth-oidc/) for real people, [static tokens](../auth-static/) to try it on your machine.

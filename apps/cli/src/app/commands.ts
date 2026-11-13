@@ -43,7 +43,7 @@ const SERVICE = "mercury";
  * memory's in its Qdrant package. A path and not a bin: a monorepo image
  * installs before copying the sources, and Bun doesn't link a bin whose file
  * isn't there yet. Both packages move in lockstep with this CLI. */
-export const VAULT_CLI = "node_modules/@mercury-fw/core/src/wiki/vault-cli.ts";
+export const VAULT_CLI = "node_modules/@mercury-fw/wiki/vault-cli.ts";
 export const MEMORY_CLI = "node_modules/@mercury-fw/store-qdrant/memory-cli.ts";
 export const IDENTITY_CLI = "node_modules/@mercury-fw/core/src/identity/links-cli.ts";
 

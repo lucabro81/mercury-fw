@@ -93,30 +93,13 @@ export function buildSystemPrompt(opts: {
       ].join("\n"),
     );
   }
-  // Always present (WIKI_VAULT_PATH is a required env var, the vault
-  // always exists once Mercury boots) — unlike jira, this
-  // block doesn't need its own opts flag.
+  // Always present: every confirm-required action leaves a note, and the
+  // primer points at the ones still open (see data/confirmation-notes.ts).
   lines.push(
     [
-      "You have access to wiki tools: list_files, read_file, grep, write_file, promote_note, resolve_reference — your own knowledge base. " +
-        "curated/ is the team's common knowledge (conventions, docs, project status), shared by everyone: you can read it, not write it. " +
-        "personal/ belongs to the person you're talking to and nobody else sees it: personal/notes/ is where you write for them, " +
-        "personal/inferred/ is what you learned about them, kept by a separate process.",
+      "You have access to the resolve_reference tool.",
       "DO:",
       "- If your context contains an opaque `[REQ:<token>]` marker, that's a reference to a past confirm-required request — call resolve_reference with that token to see what it was, don't guess at what it means.",
-      "- For a CLI's own syntax/flags, rely on --help first. Only check the wiki if --help doesn't cover something specific to how this team uses that tool (a convention, a naming pattern, a policy).",
-      "- When a command's --select flag description is generic/shared across multiple subcommands, don't take its inline example at face value — check that command's own \"Examples\" section at the bottom of its --help output for the syntax that actually works with it.",
-      "- For anything else — documentation, project status, how some tool or process is used, team conventions — consult the wiki FIRST (grep/read_file/list_files), before trying a CLI or answering from general knowledge.",
-      "- If the wiki doesn't have the answer, try a live CLI query if one is relevant, before giving up.",
-      "- If you still don't know after checking both, say so plainly — don't guess or invent an answer.",
-      "- If you learn something worth remembering (a correction from the user, a new convention, how this team uses a tool), first grep the wiki for a note on the same topic in personal/notes/: if there is one, read it and update it with write_file; create a new, clearly-named file under personal/notes/ only when nothing covers it.",
-      "- If the person asks to share one of their notes with the team, call promote_note: it copies the note into curated/ once they confirm, and it's the only way to write there.",
-      "",
-      "DON'T:",
-      "- DON'T claim something is documented in the wiki without actually reading it via read_file/grep first.",
-      "- DON'T call promote_note unless the person asked to share that note.",
-      "- DON'T write_file over an existing note without reading it first — write_file replaces the whole file, it doesn't merge, so an unread overwrite silently destroys whatever was already there.",
-      "- DON'T write a wiki document restating a CLI's syntax or flags — a plugin's skill and --help are the source for those, and a note written after a failed attempt ends up contradicting them.",
     ].join("\n"),
   );
   lines.push(

@@ -28,14 +28,12 @@ import {
   CuratedFrontmatterSchema,
   PersonalFrontmatterSchema,
   InferredFrontmatterSchema,
-  ConfirmationFrontmatterSchema,
   type CuratedFrontmatter,
   type PersonalFrontmatter,
   type InferredFrontmatter,
-  type ConfirmationFrontmatter,
 } from "./frontmatter-schema.ts";
-import { userArea } from "../identity/user-key.ts";
-import { personalNotePath } from "../identity/vault-access.ts";
+import { userArea } from "./user-area.ts";
+import { personalNotePath } from "./vault-access.ts";
 
 /**
  * Resolves `segments` against `root` and checks the result stays inside
@@ -220,7 +218,7 @@ async function writeVerbatimFile(
 async function writeNoteFile(
   vaultPath: string,
   fullPath: string,
-  frontmatter: CuratedFrontmatter | PersonalFrontmatter | InferredFrontmatter | ConfirmationFrontmatter,
+  frontmatter: CuratedFrontmatter | PersonalFrontmatter | InferredFrontmatter,
   body: string,
   commitMessage: string,
   condition: WriteCondition = {},
@@ -356,34 +354,6 @@ export async function writeToolCorrectionNote(
   const standardsRoot = resolve(vaultPath, "curated", "standards");
   const fullPath = resolveWithinRoot(standardsRoot, `${tool}-${topic}.md`);
   return writeNoteFile(vaultPath, fullPath, frontmatter, body, `inferred: standards/${tool}-${topic}`, condition);
-}
-
-/**
- * Writes (or overwrites) the deterministic lifecycle record for one
- * confirm-required action at `<userArea(key)>/confirmations/<token>.md`, the
- * area of the person who staged it (see `ConfirmationFrontmatterSchema`'s own
- * doc comment for why the model can't browse it). Called twice per action: once
- * at staging (`status: "pending"`, `resolvedAt: null`), once at resolution
- * (`"confirmed"`/`"failed"`, `resolvedAt` set) — the whole-file replace
- * every writer here already does, not a partial update.
- */
-export async function writeConfirmationNote(
-  vaultPath: string,
-  key: string,
-  token: string,
-  fields: { status: "pending" | "confirmed" | "failed"; requestedAt: string; resolvedAt: string | null; command: string },
-): Promise<void> {
-  assertNoPathSeparator("token", token);
-  const frontmatter = ConfirmationFrontmatterSchema.parse({
-    type: "confirmation",
-    status: fields.status,
-    requested_at: fields.requestedAt,
-    resolved_at: fields.resolvedAt,
-    command: fields.command,
-  });
-  const confirmationsRoot = resolve(vaultPath, userArea(key), "confirmations");
-  const fullPath = resolveWithinRoot(confirmationsRoot, `${token}.md`);
-  await writeNoteFile(vaultPath, fullPath, frontmatter, "", `confirmation: ${key}/${token} (${fields.status})`);
 }
 
 /** Writes a raw/ inbox entry verbatim at `raw/<relativePath>` — no

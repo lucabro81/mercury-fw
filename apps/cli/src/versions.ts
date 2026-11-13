@@ -14,6 +14,7 @@ export const FRAMEWORK_PACKAGES = [
   "@mercury-fw/formatter",
   "@mercury-fw/store-qdrant",
   "@mercury-fw/trace-jsonl",
+  "@mercury-fw/wiki",
 ];
 
 /** The registry asked when `MFW_REGISTRY` doesn't name another. */

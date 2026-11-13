@@ -14,7 +14,7 @@ function setup(opts: { identify?: () => Promise<Identified>; failingArchive?: bo
   const store: ConfirmationStore = createConfirmationStore({ tokenFn: () => `tok${++n}-aaaa` });
   const archived: VerbatimExchange[] = [];
   const bound = bindConfirm(
-    { store, vaultPath: "/nowhere", writeConfirmationNoteFn: async () => {}, onResume: () => {} },
+    { store, writeConfirmationNoteFn: async () => {}, onResume: () => {} },
     opts.identify ?? asAlice,
     undefined,
     undefined,
@@ -149,7 +149,7 @@ describe("bindConfirm: confirmation.resolved in the traces", () => {
     const store: ConfirmationStore = createConfirmationStore({ tokenFn: () => `tok${++n}-aaaa` });
     const events: Array<Record<string, unknown>> = [];
     const bound = bindConfirm(
-      { store, vaultPath: "/nowhere", writeConfirmationNoteFn: async () => {}, onResume: () => {} },
+      { store, writeConfirmationNoteFn: async () => {}, onResume: () => {} },
       asAlice,
       undefined,
       undefined,
@@ -186,7 +186,7 @@ describe("bindConfirm: an archive failure in the traces", () => {
     const store: ConfirmationStore = createConfirmationStore({ tokenFn: () => "tok1-aaaa" });
     const events: Array<Record<string, unknown>> = [];
     const bound = bindConfirm(
-      { store, vaultPath: "/nowhere", writeConfirmationNoteFn: async () => {}, onResume: () => {} },
+      { store, writeConfirmationNoteFn: async () => {}, onResume: () => {} },
       asAlice,
       undefined,
       undefined,

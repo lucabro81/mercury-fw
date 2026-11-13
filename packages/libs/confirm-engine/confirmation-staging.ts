@@ -4,11 +4,11 @@
  * future memory-deleting plugin all the same). It mints the confirmation token,
  * stashes the opaque action in the `ConfirmationStore`, and writes the "pending"
  * paper-trail note — so the caller never touches the store internals or the
- * wiki, and the confirmation subsystem stays the one place that knows an action
+ * notes, and the confirmation subsystem stays the one place that knows an action
  * is confirmable. The "resolve" side (running the staged thunk once the token
  * comes back) is `resolveConfirmation` in `confirm-flow.ts`.
  *
- * Bound per session (sessionKey/owner/vaultPath) at the composition root, so
+ * Bound per session (sessionKey/owner) at the composition root, so
  * the returned function takes only the action itself. `owner` is the person
  * staging it: only they can confirm it, and the note is written for them. The
  * note's write is best-effort: a failure is logged, never thrown, so it can't
@@ -26,8 +26,7 @@ type StagingDeps = {
   sessionKey: string;
   /** The person staging the action (the core's user key): the only one who can confirm it, and whose note it is. */
   owner: string;
-  vaultPath: string;
-  /** The note writer, injected by the core (the app's `writeConfirmationNote`). */
+  /** The note writer, injected by the core, which decides where notes are kept. */
   writeConfirmationNoteFn: WriteConfirmationNote;
   /** Test seam; defaults to `() => new Date()`. */
   nowFn?: () => Date;
@@ -36,7 +35,7 @@ type StagingDeps = {
 /** Writes the "pending" note of what was staged under `token`; best-effort, a failure is only logged. */
 async function writePendingNote(deps: StagingDeps, token: string, requestedAt: string, describe: string): Promise<void> {
   try {
-    await deps.writeConfirmationNoteFn(deps.vaultPath, deps.owner, token, {
+    await deps.writeConfirmationNoteFn(deps.owner, token, {
       status: "pending",
       requestedAt,
       resolvedAt: null,

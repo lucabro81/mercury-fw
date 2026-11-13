@@ -773,9 +773,6 @@ describe("read routes the instance has", () => {
   const base: ChannelHostReads = {
     manifest: async () => ({ plugins: [] }),
     pendingConfirmations: async () => [],
-    wikiList: async () => [],
-    wikiRead: async () => "",
-    wikiGrep: async () => [],
     toolLog: async () => [],
     health: async () => ({}),
   };
@@ -811,9 +808,6 @@ describe("CORS", () => {
     pendingConfirmations: async () => [],
     conversation: async () => ({ messages: [], nextOffset: null }),
     conversations: async () => ({ conversations: [] }),
-    wikiList: async () => [],
-    wikiRead: async () => "",
-    wikiGrep: async () => [],
     memoryScroll: async () => ({ points: [] }),
     toolLog: async () => [],
     health: async () => ({}),
@@ -862,7 +856,7 @@ describe("CORS", () => {
   });
 });
 
-// #37: the reads expose conversations, the wiki and memory, so each one needs
+// #37: the reads expose conversations and memory, so each one needs
 // an authenticated caller; #38: and each per-person getter is told who is
 // asking, so the core returns only what belongs to them.
 describe("authentication on the read routes", () => {
@@ -872,20 +866,17 @@ describe("authentication on the read routes", () => {
     pendingConfirmations: async (p) => (calls.push(["pendingConfirmations", p]), []),
     conversation: async (p) => (calls.push(["conversation", p]), {}),
     conversations: async (p) => (calls.push(["conversations", p]), { conversations: [] }),
-    wikiList: async (p) => (calls.push(["wikiList", p]), []),
-    wikiRead: async (p) => (calls.push(["wikiRead", p]), ""),
-    wikiGrep: async (p) => (calls.push(["wikiGrep", p]), []),
     memoryScroll: async (p) => (calls.push(["memoryScroll", p]), {}),
     toolLog: async (p) => (calls.push(["toolLog", p]), []),
     health: async () => (calls.push(["health", undefined]), {}),
   };
   /** A request every route accepts once authenticated (each required parameter present). */
-  const get = (path: string) => new Request(`http://x${path}?id=c&path=a.md&pattern=x&collection=m`);
+  const get = (path: string) => new Request(`http://x${path}?id=c&collection=m`);
 
   it("answers 401 on every read route without calling its getter", async () => {
     calls.length = 0;
     const routes = readRoutes(spyReads, refuse);
-    expect(Object.keys(routes).length).toBe(10);
+    expect(Object.keys(routes).length).toBe(7);
     for (const [path, route] of Object.entries(routes)) {
       const res = await route.GET(get(path));
       expect(res.status).toBe(401);
@@ -908,9 +899,6 @@ describe("authentication on the read routes", () => {
       ["memoryScroll", ALICE],
       ["pendingConfirmations", ALICE],
       ["toolLog", ALICE],
-      ["wikiGrep", ALICE],
-      ["wikiList", ALICE],
-      ["wikiRead", ALICE],
     ]);
   });
 
@@ -964,9 +952,6 @@ describe("admission", () => {
       pendingConfirmations: spy("pendingConfirmations"),
       conversation: spy("conversation"),
       conversations: spy("conversations"),
-      wikiList: spy("wikiList"),
-      wikiRead: spy("wikiRead"),
-      wikiGrep: spy("wikiGrep"),
       memoryScroll: spy("memoryScroll"),
       toolLog: spy("toolLog"),
       health: spy("health"),
@@ -1024,25 +1009,16 @@ describe("POST /link", () => {
   });
 });
 
-describe("GET /wiki/read and /memory/scroll", () => {
+describe("GET /memory/scroll", () => {
   const reads: ChannelHostReads = {
     manifest: async () => ({}),
     pendingConfirmations: async () => [],
     conversation: async () => ({}),
     conversations: async () => ({ conversations: [] }),
-    wikiList: async () => [],
-    wikiRead: async () => null,
-    wikiGrep: async () => [],
     memoryScroll: async () => null,
     toolLog: async () => [],
     health: async () => ({}),
   };
-
-  it("answers 404 for a wiki path the caller can't see, as if it didn't exist", async () => {
-    const res = await readRoutes(reads, asAlice)["/wiki/read"]!.GET(new Request("http://x/wiki/read?path=../etc/passwd"));
-    expect(res.status).toBe(404);
-    expect(await res.json()).toEqual({ ok: false, error: "not found" });
-  });
 
   it("answers 400 for a collection that isn't kept per person", async () => {
     const res = await readRoutes(reads, asAlice)["/memory/scroll"]!.GET(new Request("http://x/memory/scroll?collection=tool_corrections"));
@@ -1087,9 +1063,6 @@ describe("startHttpServer", () => {
         pendingConfirmations: async () => [],
         conversation: async () => ({}),
         conversations: async () => ({}),
-        wikiList: async () => [],
-        wikiRead: async () => "",
-        wikiGrep: async () => [],
         memoryScroll: async () => ({}),
         toolLog: async () => [],
         health: async () => ({}),
@@ -1202,9 +1175,6 @@ describe("GET /conversation", () => {
     pendingConfirmations: async () => [],
     conversation: async () => ({ messages: [], nextOffset: null }),
     conversations: async () => ({ conversations: [] }),
-    wikiList: async () => [],
-    wikiRead: async () => "",
-    wikiGrep: async () => [],
     memoryScroll: async () => ({ points: [] }),
     toolLog: async () => [],
     health: async () => ({}),
@@ -1310,9 +1280,6 @@ describe("conversation titles", () => {
         { sessionKey: "alice:conv-1", lastTimestamp: "t1", preview: "hi" },
       ],
     }),
-    wikiList: async () => [],
-    wikiRead: async () => "",
-    wikiGrep: async () => [],
     memoryScroll: async () => ({ points: [] }),
     toolLog: async () => [],
     health: async () => ({}),
@@ -1480,9 +1447,6 @@ describe("GET /me", () => {
     pendingConfirmations: async () => [],
     conversation: async () => ({}),
     conversations: async () => ({ conversations: [] }),
-    wikiList: async () => [],
-    wikiRead: async () => null,
-    wikiGrep: async () => [],
     memoryScroll: async () => null,
     toolLog: async () => [],
     health: async () => ({}),
@@ -1646,9 +1610,6 @@ describe("the caller's time zone", () => {
       pendingConfirmations: async () => [],
       conversation: async () => ({}),
       conversations: async () => ({ conversations: [] }),
-      wikiList: async () => [],
-      wikiRead: async () => null,
-      wikiGrep: async () => [],
       memoryScroll: async () => null,
       toolLog: async () => [],
       health: async () => ({}),

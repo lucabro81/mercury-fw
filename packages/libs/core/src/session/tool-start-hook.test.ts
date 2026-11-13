@@ -28,6 +28,11 @@ const statusMap: Record<string, (input: unknown, t: Translate) => string> = {
     const command = (input as { command?: unknown }).command;
     return typeof command === "string" ? describeCli(command, t) : t("core.status.command-unknown");
   },
+  // Labels a plugin contributes for its own tools, the way the wiki does.
+  read_file: () => "Reading the wiki…",
+  list_files: () => "Reading the wiki…",
+  write_file: () => "Writing to the wiki…",
+  grep: () => "Searching…",
 };
 
 describe("createCliStatusDescriber", () => {
@@ -75,19 +80,13 @@ describe("describeToolStart", () => {
     expect(describeToolStart("runCommand", {}, statusMap)).toBe("Running a command");
   });
 
-  it("labels the wiki read tools as reading the wiki", () => {
+  it("labels a plugin's tools with the describers it contributes", () => {
     expect(describeToolStart("read_file", { path: "x" }, statusMap)).toBe("Reading the wiki…");
     expect(describeToolStart("list_files", {}, statusMap)).toBe("Reading the wiki…");
   });
 
-  it("labels grep as searching, not generically reading", () => {
-    expect(describeToolStart("grep", { pattern: "x" }, statusMap)).toBe("Searching…");
-  });
-
-  it("labels write_file as writing to the wiki", () => {
-    expect(describeToolStart("write_file", { path: "x", content: "y" }, statusMap)).toBe(
-      "Writing to the wiki…",
-    );
+  it("labels a tool nobody describes generically, whatever its name", () => {
+    expect(describeToolStart("grep", { pattern: "x" }, {})).toBe("Using grep…");
   });
 
   it("falls back to the raw tool name for an unmapped/future tool", () => {
@@ -170,15 +169,21 @@ describe("withToolStartHook", () => {
     return (tools[name] as unknown as { execute: WrappedExecute }).execute;
   }
 
-  it("labels and details come out in the turn's language; a plugin's own label is left as it says", async () => {
+  it("labels and details come out in the turn's language, a plugin's label through the same texts", async () => {
     const italian: Translate = (key, params) =>
-      ({ "core.status.wiki-read": "Leggo il wiki…", "core.status.wiki-all": "Tutto il wiki" })[key] ?? `${key}${JSON.stringify(params ?? {})}`;
+      ({ "wiki.status.read": "Leggo il wiki…", "core.status.wiki-all": "Tutto il wiki" })[key] ?? `${key}${JSON.stringify(params ?? {})}`;
     const calls: [string, string | undefined][] = [];
     const tools: Record<string, Tool> = {
       list_files: fakeTool(async () => []),
       jiraCommand: fakeTool(async () => ({ ok: true })),
     };
-    const wrapped = withToolStartHook(tools, (label, detail) => calls.push([label, detail]), { jiraCommand: () => "Jira" }, undefined, italian);
+    const wrapped = withToolStartHook(
+      tools,
+      (label, detail) => calls.push([label, detail]),
+      { jiraCommand: () => "Jira", list_files: (_input, t) => t("wiki.status.read") },
+      undefined,
+      italian,
+    );
     await execOf(wrapped, "list_files")({}, { toolCallId: "tc-1" });
     await execOf(wrapped, "jiraCommand")({ command: "jira x" }, { toolCallId: "tc-2" });
     expect(calls).toEqual([
