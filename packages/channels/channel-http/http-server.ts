@@ -94,7 +94,7 @@ export type TurnRequestDeps = {
   corsOrigin?: string;
   /** Test seam for the ephemeral session key when the client sends no conversationId. */
   newSessionKey?: () => string;
-  /** How much of a reopened conversation comes back once the core let its history go (`HTTP_SURFACE_RESUME_MAX_CHARS`); absent, the core's own. */
+  /** How much of a reopened conversation comes back once the core let its history go (`HTTP_SURFACE_RESUME_MAX_CHARS`); absent, the budget of the plugin keeping the conversation. */
   resumeMaxChars?: number;
 };
 

@@ -50,8 +50,10 @@ import { defineMercuryConfig } from "@mercury-fw/core";
 import { formatterPlugin, formatter } from "@mercury-fw/formatter";
 import { jiraPlugin, type JiraDisplays } from "@mercury-fw/plugin-jira";
 import { httpChannel } from "@mercury-fw/channel-http";
+import { conversationWindow } from "@mercury-fw/conversation-window";
 
 const name = "Hermes";
+const conversation = conversationWindow();
 
 const jiraIssueLine = (issue: JiraDisplays["issue-list"]) =>
   `${issue.key} ${issue.status ? `[${issue.status}] ` : ""}${issue.summary}\n${issue.url}`;
@@ -67,6 +69,7 @@ export default defineMercuryConfig({
     ].join("\n"),
   },
   plugins: [
+    conversation,
     formatterPlugin(
       jiraPlugin,
       formatter<JiraDisplays>({
@@ -75,10 +78,11 @@ export default defineMercuryConfig({
     ),
   ],
   channels: [httpChannel],
+  context: { profiles: { default: { conversation, layers: [], budget: { maxChars: 8000 } } } },
 });
 ```
 
-`plugins` are the tool plugins and `channels` the channels, each active as soon as it's declared: a plugin missing a setting it requires (Jira's `JIRA_SITE_URL`) refuses to load and says why at startup, and a channel left unconfigured stays inert.
+`plugins` are the plugins (the conversation the agent keeps, `conversationWindow()`, which the `default` context profile names: without it the model reads each message alone, and the tool plugins) and `channels` the channels, each active as soon as it's declared: a plugin missing a setting it requires (Jira's `JIRA_SITE_URL`) refuses to load and says why at startup, and a channel left unconfigured stays inert.
 
 A plugin can hand the user a list (Jira does, for `issue search`), and how that list reads is the app's call: `formatterPlugin` wraps the plugin and `formatter` takes one rule per kind of list, the line for each item plus an optional text for an empty list, and `always: true` for a kind the person always gets (a link they asked for) without the model choosing to show it. The kinds come typed from the plugin (`JiraDisplays`), so a kind it doesn't emit fails the typecheck, and a kind left without a rule isn't shown at all (the model still gets the data, and the log says which rule is missing).
 

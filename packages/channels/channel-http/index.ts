@@ -60,7 +60,7 @@ export const httpChannel: ChannelPlugin = {
   },
 };
 
-/** `HTTP_SURFACE_RESUME_MAX_CHARS`: unset or empty leaves the core's budget, otherwise a whole number from 0 up (0 turns resuming off on this surface); throws on anything else. */
+/** `HTTP_SURFACE_RESUME_MAX_CHARS`: unset or empty leaves the budget of the plugin keeping the conversation, otherwise a whole number from 0 up (0 turns resuming off on this surface); throws on anything else. */
 function parseResumeMaxChars(text: string | undefined): number | undefined {
   const trimmed = text?.trim() ?? "";
   if (trimmed === "") return undefined;

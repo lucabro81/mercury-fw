@@ -60,6 +60,11 @@ The window takes these options:
 | `reopen` | `{ maxChars }`, how many characters of a reopened conversation come back when the channel sets no budget of its own (default half of `maxChars`, `0` for nothing); `false` never reads the archive, and the window then doesn't need a conversation store. |
 | `earlier` | What reads the summaries of a reopened conversation's older part. Without it, only the newest messages come back. |
 
+Reopening reads the app's conversation store, so the window needs one (`needs: ["conversationStore"]`) unless
+`reopen` is `false`: an app that declares none doesn't start, and says why. A store that can't be reached while the
+agent runs only means a reopened conversation starts empty; a store that couldn't start at all (a setting missing)
+leaves the window out, and the log says so: the model then reads each message alone.
+
 It also gives the model `recall_tool_calls`: what it ran earlier in the conversation and what came back, from the
 log of the recent tool calls, so it quotes them instead of guessing.
 

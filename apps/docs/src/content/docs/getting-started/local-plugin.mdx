@@ -111,14 +111,14 @@ export default defineMercuryConfig({
       // …
     ].join("\n"),
   },
-  plugins: [guestWifiPlugin],
+  plugins: [conversation, guestWifiPlugin],
   channels: [],
   i18n: { locales: { en } },
   version: pkg.version,
 });
 ```
 
-The rest of the file is what `mfw create` wrote, shortened here: the model and the `models` section, `i18n`, the `traces` that record what the agent does (see [Traces](../../concepts/traces/)) and `version`, the app's own (see [`version`](../../reference/config/#version)).
+The rest of the file is what `mfw create` wrote, shortened here: the model and the `models` section, the conversation (`conversation`, see [Memory](../../concepts/memory/#the-conversation)) and the `context` that keeps it, `i18n`, the `traces` that record what the agent does (see [Traces](../../concepts/traces/)) and `version`, the app's own (see [`version`](../../reference/config/#version)).
 
 ## Its settings
 

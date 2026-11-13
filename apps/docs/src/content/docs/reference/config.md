@@ -18,8 +18,10 @@ import it from "./locales/it.json";
 import pkg from "./package.json";
 import { jsonlTraces } from "@mercury-fw/trace-jsonl";
 import { qdrantConversations, qdrantIndex } from "@mercury-fw/store-qdrant";
+import { conversationWindow } from "@mercury-fw/conversation-window";
 
 const name = "Hermes";
+const conversation = conversationWindow();
 
 const main = ollamaModel(process.env.OLLAMA_MODEL, {
   think: envBoolean("OLLAMA_THINK", true),
@@ -40,7 +42,7 @@ export default defineMercuryConfig({
       // …
     ].join("\n"),
   },
-  plugins: [],
+  plugins: [conversation],
   channels: [httpChannel],
   auth: oidcAuth,
   directory: staticDirectory,
@@ -51,6 +53,7 @@ export default defineMercuryConfig({
     turn: main,
     embedding: ollamaEmbedding(process.env.OLLAMA_EMBEDDING_MODEL ?? "nomic-embed-text"),
   },
+  context: { profiles: { default: { conversation, layers: [], budget: { maxChars: 8000 } } } },
   i18n: { defaultLocale: "it", locales: { en, it } },
   traces: { sink: jsonlTraces(), level: "meta" },
   version: pkg.version,
