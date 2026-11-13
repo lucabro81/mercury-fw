@@ -59,11 +59,11 @@ describe("zitadelPlugin", () => {
     }
   });
 
-  it("acts as the person and contributes only its own tool", () => {
+  it("acts as the person and contributes only its own tool", async () => {
     expect(zitadelPlugin.actsAs).toBe("person");
     expect(zitadelPlugin.systemPromptFragment).toBeUndefined();
     expect(zitadelPlugin.surfaces).toBeUndefined();
-    const c = zitadelPlugin.build!(buildCtx);
+    const c = (await zitadelPlugin.build!(buildCtx));
     expect(c.postProcess).toBeUndefined();
     expect(c.postTurnGuards ?? []).toEqual([]);
     expect(Object.keys(c.sessionTools!(sctx(null), c.postProcess))).toEqual(["zitadelCommand"]);
@@ -75,7 +75,7 @@ describe("zitadelPlugin", () => {
 
   it("runs a command with --user for the person the turn is for", async () => {
     const { plugin, calls } = recording();
-    const c = plugin.build!(buildCtx);
+    const c = (await plugin.build!(buildCtx));
     const tool = c.sessionTools!(sctx({ key: "static:alice" }), c.postProcess).zitadelCommand!;
     await tool.execute!({ command: "zitadel user get 123" }, {} as never);
     expect(calls).toEqual([{ binary: "zitadel", args: ["user", "get", "123", "--user", "static:alice"] }]);
@@ -84,7 +84,7 @@ describe("zitadelPlugin", () => {
   // On the terminal there's no person: the command runs as the service user.
   it("runs a command without --user when there is no person", async () => {
     const { plugin, calls } = recording();
-    const c = plugin.build!(buildCtx);
+    const c = (await plugin.build!(buildCtx));
     await c.sessionTools!(sctx(null), c.postProcess).zitadelCommand!.execute!({ command: "zitadel user get 123" }, {} as never);
     expect(calls).toEqual([{ binary: "zitadel", args: ["user", "get", "123"] }]);
   });
@@ -93,7 +93,7 @@ describe("zitadelPlugin", () => {
   // never reaches the CLI.
   it("refuses a --user written by the model, without running anything", async () => {
     const { plugin, calls } = recording();
-    const c = plugin.build!(buildCtx);
+    const c = (await plugin.build!(buildCtx));
     const result = await c.sessionTools!(sctx({ key: "static:alice" }), c.postProcess).zitadelCommand!.execute!(
       { command: "zitadel user get 123 --user static:bob" },
       {} as never,
@@ -109,7 +109,7 @@ describe("zitadelPlugin", () => {
       ok: true,
       data: { authorize_url: "https://idp.example.com/oauth/v2/authorize?x=1", state: "st", expires_at: "2026-10-08T10:10:00Z" },
     });
-    const login = plugin.build!(buildCtx).login!;
+    const login = (await plugin.build!(buildCtx)).login!;
     await login.start("static:alice", "https://mercury.example.com/login/callback");
     expect(calls).toEqual([
       {
@@ -121,7 +121,7 @@ describe("zitadelPlugin", () => {
 
   it("finishes the person's login with the code and the state", async () => {
     const { plugin, calls } = recording();
-    const result = await plugin.build!(buildCtx).login!.complete("static:alice", "the-code", "st");
+    const result = await (await plugin.build!(buildCtx)).login!.complete("static:alice", "the-code", "st");
     expect(result).toEqual({ ok: true });
     expect(calls).toEqual([
       { binary: "zitadel", args: ["auth", "login", "--user", "static:alice", "--code", "the-code", "--state", "st"] },
@@ -132,8 +132,8 @@ describe("zitadelPlugin", () => {
 // #222: the model took "Mercury" for its own name because the texts it read used
 // it; the assistant's name is the app's, and the system is "the system".
 describe("zitadelPlugin's texts for the model", () => {
-  it("never name Mercury", () => {
-    const c = zitadelPlugin.build!(buildCtx);
+  it("never name Mercury", async () => {
+    const c = (await zitadelPlugin.build!(buildCtx));
     const texts = [
       zitadelPlugin.description,
       zitadelPlugin.systemPromptFragment ?? "",

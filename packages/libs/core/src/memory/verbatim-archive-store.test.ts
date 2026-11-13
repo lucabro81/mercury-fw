@@ -652,12 +652,12 @@ describe("what the person saw of the turn besides its text (#370)", () => {
   }
 
   it("keeps the trace and the pending note in the payload", async () => {
-    expect((await appendedOne(answer as never)).payload).toEqual(answer);
+    expect((await appendedOne(answer as never)).payload as unknown).toEqual(answer);
   });
 
   it("keeps a confirmation's outcome in the payload, embedded on the reply", async () => {
     const { payload, embedded } = await appendedOne(outcome as never);
-    expect(payload).toEqual(outcome);
+    expect(payload as unknown).toEqual(outcome);
     expect(embedded).toBe("Done.");
   });
 

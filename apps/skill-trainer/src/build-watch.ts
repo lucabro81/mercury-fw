@@ -14,12 +14,17 @@ export function watchBuild(plugin: Plugin): { plugin: Plugin; failure: () => str
   if (original === undefined) return { plugin, failure: () => undefined };
   let called = false;
   let error: string | undefined;
+  const remember = (err: unknown) => {
+    error = err instanceof Error ? err.message : String(err);
+  };
   const build: NonNullable<Plugin["build"]> = (ctx) => {
     called = true;
     try {
-      return original(ctx);
+      const built = original(ctx);
+      // A build may return a promise: its rejection is a failure too.
+      return built instanceof Promise ? built.catch((err: unknown) => (remember(err), Promise.reject(err))) : built;
     } catch (err) {
-      error = err instanceof Error ? err.message : String(err);
+      remember(err);
       throw err;
     }
   };

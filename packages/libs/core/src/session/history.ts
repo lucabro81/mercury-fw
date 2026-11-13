@@ -16,9 +16,11 @@
 
 import type { ContextPrimer } from "./context-primer.ts";
 import type { CallRecord } from "./call-record.ts";
+import type { ConversationMessage } from "@mercury-fw/plugin-types";
 
 /**
- * A single turn's worth of conversation content. `calls`, on an answer, are
+ * A single turn's worth of conversation content, the contract's
+ * `ConversationMessage`. `calls`, on an answer, are
  * the tool calls it was written from, reduced (`call-record.ts`): absent when
  * there were none. `context`, on a person's message, is what the
  * instance's `turn` context layers put in front of it (`../context/context.ts`):
@@ -26,7 +28,7 @@ import type { CallRecord } from "./call-record.ts";
  * the previous one and the model's cache of it holds; everything else (the
  * archive, the memory, the plugins' hooks, the summary) reads `content` only.
  */
-export type Message = { role: "user" | "assistant"; content: string; calls?: CallRecord[]; context?: string };
+export type Message = ConversationMessage;
 
 /**
  * Character-count threshold (not a real tokenizer count — a `chars/4`

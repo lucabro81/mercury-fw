@@ -116,8 +116,8 @@ describe("jiraPlugin", () => {
     });
   });
 
-  it("builds a jiraCommand tool and its status describer", () => {
-    const c = jiraPlugin.build!({ model: MODEL, env: ENV, log: noLog });
+  it("builds a jiraCommand tool and its status describer", async () => {
+    const c = (await jiraPlugin.build!({ model: MODEL, env: ENV, log: noLog }));
     const tools = c.sessionTools!(sctx, c.postProcess);
     expect(Object.keys(tools)).toEqual(["jiraCommand"]);
     expect(c.toolStatusDescribers!.jiraCommand!({ command: "jira issue search --jql X" }, echo)).toBe(
@@ -136,7 +136,7 @@ describe("jiraPlugin", () => {
         return args[0] === "doctor" ? { ok: true, data: {} } : { ok: false, error: "jira exited with code 3: not logged in", exitCode: 3 };
       },
     });
-    const c = plugin.build!({ model: MODEL, env: ENV, log: noLog });
+    const c = (await plugin.build!({ model: MODEL, env: ENV, log: noLog }));
     const login = { ok: false as const, loginRequired: true as const, service: "jira", authorizeUrl: "https://auth", error: "log in" };
     const tool = c.sessionTools!({ ...sctx, person: { key: "static:alice" }, requireLogin: async () => login }, c.postProcess).jiraCommand!;
     await tool.execute!({ command: "jira doctor" }, {} as never);
@@ -145,13 +145,13 @@ describe("jiraPlugin", () => {
     expect(typeof c.login?.start).toBe("function");
   });
 
-  it("contributes no post-turn guard — the model-backed issue-list corrector is retired", () => {
-    const c = jiraPlugin.build!({ model: MODEL, env: ENV, log: noLog });
+  it("contributes no post-turn guard — the model-backed issue-list corrector is retired", async () => {
+    const c = (await jiraPlugin.build!({ model: MODEL, env: ENV, log: noLog }));
     expect(c.postTurnGuards ?? []).toEqual([]);
   });
 
-  it("contributes the issue-list extractor as its post-processor when JIRA_SITE_URL is set", () => {
-    const c = jiraPlugin.build!({ model: MODEL, env: { JIRA_SITE_URL: "https://example.atlassian.net" }, log: noLog });
+  it("contributes the issue-list extractor as its post-processor when JIRA_SITE_URL is set", async () => {
+    const c = (await jiraPlugin.build!({ model: MODEL, env: { JIRA_SITE_URL: "https://example.atlassian.net" }, log: noLog }));
     expect(typeof c.postProcess).toBe("function");
     const searched = c.postProcess!(
       { binary: "jira", args: ["issue", "search"], prefix: ["issue", "search"] },
@@ -164,9 +164,9 @@ describe("jiraPlugin", () => {
   // #114: without JIRA_SITE_URL the plugin loaded with no post-processor, so
   // the model lost issueCount. A Jira instance has a Jira site: the variable
   // is required, and the loader reports the throw as "failed to load, skipped".
-  it("refuses to build without JIRA_SITE_URL, or with it empty, naming the variable", () => {
+  it("refuses to build without JIRA_SITE_URL, or with it empty, naming the variable", async () => {
     for (const env of [{}, { JIRA_SITE_URL: "" }]) {
-      expect(() => jiraPlugin.build!({ model: MODEL, env, log: noLog })).toThrow(/JIRA_SITE_URL is not set/);
+      await expect(Promise.resolve().then(() => jiraPlugin.build!({ model: MODEL, env, log: noLog }))).rejects.toThrow(/JIRA_SITE_URL is not set/);
     }
   });
 });
@@ -174,8 +174,8 @@ describe("jiraPlugin", () => {
 // #222: the model took "Mercury" for its own name because the texts it read used
 // it; the assistant's name is the app's, and the system is "the system".
 describe("jiraPlugin's texts for the model", () => {
-  it("never name Mercury", () => {
-    const c = jiraPlugin.build!({ model: MODEL, env: ENV, log: noLog });
+  it("never name Mercury", async () => {
+    const c = (await jiraPlugin.build!({ model: MODEL, env: ENV, log: noLog }));
     const texts = [
       jiraPlugin.description,
       jiraPlugin.systemPromptFragment ?? "",

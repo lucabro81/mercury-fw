@@ -70,16 +70,8 @@ export type VerbatimMessage = {
   timestamp: string;
 };
 
-/**
- * How a staged action was resolved: `id` is the staging's (`confirmationId`),
- * the one its trace entry carries, with what the action was; `choice` the
- * label of the choice taken, when it was one of several.
- */
-export type ArchivedConfirmation = {
-  id: string;
-  status: "ok" | "failed" | "resume";
-  choice?: string;
-};
+export type { ArchivedConfirmation } from "@mercury-fw/plugin-types";
+import type { ArchivedConfirmation } from "@mercury-fw/plugin-types";
 
 /**
  * What the person saw: the model's text followed by the displays, non-empty

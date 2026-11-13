@@ -22,7 +22,7 @@ import { createDisplayStore } from "./tools/display-store.ts";
 import { createPresentTool } from "./tools/present-tool.ts";
 import { loadPlugins } from "./plugins/plugin-loader.ts";
 import { createPluginHooks } from "./plugins/plugin-hooks.ts";
-import { createContextAssembler, resolveContext } from "./context/context.ts";
+import { createContextAssembler, profileFor, resolveContext } from "./context/context.ts";
 import { createChannelContextAdmin } from "./context/context-admin.ts";
 import { createContextSettings } from "./context/context-settings.ts";
 import { materializeCliCredentials } from "./credentials/materialize.ts";
@@ -30,6 +30,7 @@ import type { MercuryConfig } from "./config/define-config.ts";
 import { createResumeSlots } from "./session/resume-slots.ts";
 import { createSessionHistory, type SessionHistory, type Message, type ResumedConversation } from "./session/history.ts";
 import { createSummarizer } from "./session/summarizer.ts";
+import { createConversations } from "./session/conversations.ts";
 import { createConversationTitler } from "./session/conversation-titler.ts";
 import { createEpisodicSummarizer } from "./session/episodic-summarizer.ts";
 import { createSemanticFactExtractor } from "./session/semantic-fact-extractor.ts";
@@ -44,7 +45,7 @@ import { loadAuth } from "./router/auth-loader.ts";
 import { loadDirectory } from "./router/directory-loader.ts";
 import type { TurnSink } from "./router/provider.ts";
 import type { HandleTurn, ChannelRuntimeContext, ChannelPlugin, VectorIndex } from "@mercury-fw/channel-types";
-import type { MercuryModelHandle } from "@mercury-fw/plugin-types";
+import type { MercuryModelHandle, PluginNeed } from "@mercury-fw/plugin-types";
 import {
   truncateForDisplay,
   describeToolOutcome,
@@ -84,7 +85,7 @@ import { listWikiFilesInRoots, readWikiFileInRoots, readIndexFile } from "./wiki
 import { createHostReads } from "./identity/host-reads.ts";
 import { createChannelSettings } from "./identity/channel-settings.ts";
 import { createChannelConversations } from "./identity/channel-conversations.ts";
-import { resolveTimeZone, stripTurnStamp } from "./session/turn-stamp.ts";
+import { resolveTimeZone, stripTurnStamp, timeZoneName } from "./session/turn-stamp.ts";
 import { bindConfirm } from "./identity/confirm-binding.ts";
 import { createPersonLogins } from "./identity/person-logins.ts";
 import { createProfileStore, profilesPath } from "./identity/profiles.ts";
@@ -100,6 +101,9 @@ import { buildOfferedTools } from "./plugins/offered-tools.ts";
 import { migrateMemoryToUserKeys, migrateVaultToUserAreas } from "./identity/migrate-layout.ts";
 import { runRawTriagePass, runIndexAndOrphanPass, runContradictionCheckPass } from "./wiki/self-review-runner.ts";
 import { startSelfReviewCron } from "./cron/self-review-cron.ts";
+import { createDaily } from "./cron/daily.ts";
+import { getToolLog } from "./session/tool-log-buffer.ts";
+import { pluginProfiles } from "./identity/plugin-profiles.ts";
 import { loadTracer } from "./traces/trace-loader.ts";
 import { migrateLegacyState, pluginDataRoot, requireDataPath } from "./data/data-dir.ts";
 import type { Tracer } from "./traces/tracer.ts";
@@ -141,7 +145,7 @@ export type ComposedApp = {
   ollamaHost: string;
   /** The turn model's name, for the terminal's context-size line. */
   ollamaModel: string;
-  /** Starts the Layer-3 idle-capture and self-review crons; returns a single stopper for shutdown. */
+  /** Starts the Layer-3 idle-capture and self-review crons and the plugins' daily work; returns a single stopper for shutdown. */
   startCrons: () => Stoppable;
   /** Where this instance's trace events go (#23): for the entrypoint's channel report (`loadChannels`) and to flush on shutdown. Records nothing without `traces` in the config. */
   tracer: Tracer;
@@ -255,6 +259,43 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
     },
   });
 
+  // Without a vector index nothing is embedded, and none is declared.
+  const embed =
+    embeddingModel === undefined
+      ? async (): Promise<number[]> => {
+          throw new Error("no embedding model declared (models.embedding)");
+        }
+      : createEmbedder(embeddingModel);
+  // Where what was said is kept (the archive and the titles): the declared
+  // conversation store. Without one nothing is archived: no conversations to
+  // reopen or list, no titles, no recall.
+  const conversationStore = loadConversationStore(config.conversationStore, {
+    env: process.env,
+    log: (msg) => console.error(`[archive] ${msg}`),
+  });
+  // Where what's found by meaning lives (the episodes, the facts, the
+  // corrections, the archive's search): the declared vector index. Without
+  // one Mercury keeps no memory and offers no recall.
+  const vectorIndex = loadVectorIndex(config.vectorIndex, { env: process.env, log: (msg) => console.error(`[memory] ${msg}`) });
+
+  // How each person wants to be called and the language they want, kept next to the links.
+  const profiles = createProfileStore({ path: profilesPath(dataPath) });
+  // The work plugins run every day at a set time (see cron/daily.ts), in the
+  // instance's time zone unless they ask for another: registered while they
+  // build, started with the crons.
+  const dailyWork = createDaily({
+    defaultTimeZone: (config.i18n?.timeZone === undefined ? undefined : timeZoneName(config.i18n.timeZone)) ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
+    log: (msg) => console.error(msg),
+  });
+  // What the config declares of what a plugin may need (see `Plugin.needs`).
+  const declaredNeeds: PluginNeed[] = [
+    ...(config.vectorIndex === undefined ? [] : (["vectorIndex"] as const)),
+    ...(config.conversationStore === undefined ? [] : (["conversationStore"] as const)),
+    ...(config.models.embedding === undefined ? [] : (["embedding"] as const)),
+  ];
+  // The instance's languages, known once the plugins' texts are (see `i18n` below).
+  let shippedLanguages: string[] = ["en"];
+
   const loadedPlugins = await loadPlugins(plugins, {
     model: pluginModel,
     modelFor,
@@ -263,6 +304,16 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
     log: (msg) => console.error(msg),
     pluginDataRoot: pluginDataRoot(dataPath),
     job: (name, urgency, fn) => backgroundJob(name as BackgroundJobName, urgency, fn),
+    backgroundModel,
+    declared: declaredNeeds,
+    provided: {
+      ...(vectorIndex === undefined ? {} : { vectorIndex }),
+      ...(conversationStore === undefined ? {} : { conversations: conversationStore }),
+      ...(embeddingModel === undefined ? {} : { embed }),
+    },
+    daily: dailyWork.daily,
+    toolLog: { read: ({ person, sessionKey }) => getToolLog({ owner: person, ...(sessionKey === undefined ? {} : { sessionKey }) }) },
+    profiles: pluginProfiles(profiles, () => shippedLanguages),
   });
 
   // Status labels for the tool-start hook, keyed by tool name: each plugin's
@@ -278,8 +329,6 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   // know unless the config opens it. The links live in the data folder,
   // where no model tool or HTTP read reaches.
   const accountLinks = createLinkStore({ path: linksPath(dataPath) });
-  // How each person wants to be called and the language they want, kept next to the links.
-  const profiles = createProfileStore({ path: profilesPath(dataPath) });
 
   // The texts a person sees, in their language (see i18n/i18n.ts): the
   // core's and the loaded plugins' English, the instance's language files over it. A default
@@ -287,6 +336,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   // logged, and show as their keys.
   // The declared channels' texts too, those of the channels the loader will load.
   const i18n = instanceI18n({ ...loadedPlugins.messages, ...channelMessages(config.channels ?? []) }, config.i18n);
+  shippedLanguages = i18n.supported;
   const i18nReport = i18n.report();
   for (const line of i18nReport) console.error(line);
   const texts = createTexts(i18n, (key) => profiles.languageOf(key));
@@ -361,28 +411,56 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   // that receives the provider's redirect.
   const personLogins = createPersonLogins({ log: (msg) => console.error(msg), emit: (event) => tracer.emit(event), assistantName, texts });
 
-  const histories = new Map<string, SessionHistory>();
   /**
-   * `trackForCapture` wires `onBeforeCompress` so a Layer 1 compression also
-   * mirrors the compressed batch to Qdrant (see `session-capture.ts`) — only
-   * meaningful for sessions it tracks (a real per-user identity); an
-   * identity-less channel omits it.
+   * Today's window, inside the core, for a profile that names no plugin to
+   * keep its conversation. `trackForCapture` wires `onBeforeCompress` so a
+   * Layer 1 compression also mirrors the compressed batch to memory (see
+   * `session-capture.ts`) — only meaningful for sessions it tracks (a real
+   * per-user identity); an identity-less channel omits it.
    */
-  function getOrCreateHistory(key: string, trackForCapture = false, primer?: ContextPrimer, resumed?: ResumedConversation): SessionHistory {
-    let history = histories.get(key);
-    if (!history) {
-      history = createSessionHistory(
-        withCompressionEvents(summarize, { emit: (event) => tracer.emit({ ...event, session: key }), now: () => Date.now() }),
-        trackForCapture && vectorIndex !== undefined
-          ? (messages) => sessionCapture.onCompress(key, messages)
-          : undefined,
-        primer,
-        resumed,
-      );
-      histories.set(key, history);
-    }
-    return history;
+  function createInternalHistory(key: string, trackForCapture = false, primer?: ContextPrimer, resumed?: ResumedConversation): SessionHistory {
+    return createSessionHistory(
+      withCompressionEvents(summarize, { emit: (event) => tracer.emit({ ...event, session: key }), now: () => Date.now() }),
+      trackForCapture && vectorIndex !== undefined
+        ? (messages) => sessionCapture.onCompress(key, messages)
+        : undefined,
+      primer,
+      resumed,
+    );
   }
+
+  /** What the person's earlier conversations left for a new one (see session/context-primer.ts); none for one its client reopens at will (#233). */
+  const primerFor = (userId: string, resume: { maxChars?: number } | undefined) =>
+    buildContextPrimer(userId, {
+      vaultPath: wikiVaultPath,
+      getLastSessionEntries: async (uid) =>
+        vectorIndex === undefined ? [] : getLastSessionEpisodicSummaries(vectorIndex, { userId: uid }),
+      listWikiFilesInRootsFn: listWikiFilesInRoots,
+      readWikiFileInRootsFn: readWikiFileInRoots,
+      readIndexFileFn: readIndexFile,
+      log: (msg) => console.error(`[memory] ${msg}`),
+    }, primerOptions(resume));
+
+  // The open conversations, one per session (see session/conversations.ts):
+  // kept by the plugin the first person's profile names, else by the window above.
+  const conversations = createConversations({
+    ownerFor: (who) => (resolvedContext === undefined ? undefined : profileFor(resolvedContext, who).conversation?.conversation),
+    internal: async ({ sessionKey, tracked, userId, resume, timeZone }) => {
+      if (!tracked || userId === undefined) return createInternalHistory(sessionKey);
+      // A conversation its client reopens comes back from the archive (#163).
+      const resumed = await resumeConversation(
+        { userId, sessionKey, maxChars: resumeBudget(resume, resumeMaxChars) },
+        {
+          readTail: async (q) => (conversationStore === undefined ? { messages: [], complete: true } : listVerbatimTail(conversationStore, q)),
+          readSummaries: async (q) => (vectorIndex === undefined ? [] : getEpisodicSummariesBySession(vectorIndex, q)),
+          log: (msg) => console.error(msg),
+        },
+        timeZone,
+      );
+      return createInternalHistory(sessionKey, true, await primerFor(userId, resume), resumed);
+    },
+    primerFor,
+  });
 
   // Session persistence, Layer 3: a tracked session idle past
   // SESSION_IDLE_TIMEOUT_MS is summarized and written to Qdrant as a dated
@@ -390,24 +468,6 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   // never tracked here — per-user isolation needs a real sender identity.
   const idleScanner = createIdleSessionScanner();
   const episodicSummarize = createEpisodicSummarizer(backgroundModel);
-  // Without a vector index nothing is embedded, and none is declared.
-  const embed =
-    embeddingModel === undefined
-      ? async (): Promise<number[]> => {
-          throw new Error("no embedding model declared (models.embedding)");
-        }
-      : createEmbedder(embeddingModel);
-  // Where what was said is kept (the archive and the titles): the declared
-  // conversation store. Without one nothing is archived: no conversations to
-  // reopen or list, no titles, no recall.
-  const conversationStore = loadConversationStore(config.conversationStore, {
-    env: process.env,
-    log: (msg) => console.error(`[archive] ${msg}`),
-  });
-  // Where what's found by meaning lives (the episodes, the facts, the
-  // corrections, the archive's search): the declared vector index. Without
-  // one Mercury keeps no memory and offers no recall.
-  const vectorIndex = loadVectorIndex(config.vectorIndex, { env: process.env, log: (msg) => console.error(`[memory] ${msg}`) });
 
   // Verbatim conversation archive (#4): the raw user<->model exchange,
   // lossless and durable — separate from the lossy Layer-1 window and the
@@ -749,33 +809,14 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
     postTurnGuards: loadedPlugins.postTurnGuards,
     afterTurn: pluginHooks.afterTurn,
     ...(contextAssembler === undefined ? {} : { contextFor: contextAssembler.forTurn }),
-    getOrCreateHistory: async (key, trackForCapture, userId, resume, timeZone) => {
-      if (trackForCapture && userId && !histories.has(key)) {
-        // A conversation its client reopens comes back from the archive (#163).
-        const resumed = await resumeConversation(
-          { userId, sessionKey: key, maxChars: resumeBudget(resume, resumeMaxChars) },
-          {
-            readTail: async (q) => (conversationStore === undefined ? { messages: [], complete: true } : listVerbatimTail(conversationStore, q)),
-            readSummaries: async (q) => (vectorIndex === undefined ? [] : getEpisodicSummariesBySession(vectorIndex, q)),
-            log: (msg) => console.error(msg),
-          },
-          timeZone,
-        );
-        // A conversation its client reopens at will starts without the last
-        // one (#233): the person opened a new one on purpose.
-        const primer = await buildContextPrimer(userId, {
-          vaultPath: wikiVaultPath,
-          getLastSessionEntries: async (uid) =>
-            vectorIndex === undefined ? [] : getLastSessionEpisodicSummaries(vectorIndex, { userId: uid }),
-          listWikiFilesInRootsFn: listWikiFilesInRoots,
-          readWikiFileInRootsFn: readWikiFileInRoots,
-          readIndexFileFn: readIndexFile,
-          log: (msg) => console.error(`[memory] ${msg}`),
-        }, primerOptions(resume));
-        return getOrCreateHistory(key, trackForCapture, primer, resumed);
-      }
-      return getOrCreateHistory(key, trackForCapture);
-    },
+    getOrCreateHistory: (key, tracked, userId, resume, timeZone, who) =>
+      conversations.open(who, {
+        sessionKey: key,
+        tracked,
+        ...(userId === undefined ? {} : { userId }),
+        ...(resume === undefined ? {} : { resume }),
+        ...(timeZone === undefined ? {} : { timeZone }),
+      }),
     trackSession: (key, userId, at) => {
       sessionCapture.track(key, userId);
       idleScanner.touch(key, at);
@@ -871,13 +912,13 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
     ...(appVersion === undefined ? {} : { appVersion }),
   };
 
-  /** Starts the Layer-3 idle-capture and self-review crons; returns one stopper. */
+  /** Starts the Layer-3 idle-capture and self-review crons and the plugins' daily work; returns one stopper. */
   function startCrons(): Stoppable {
     const idleCron = startIdleSessionCron(
       idleScanner,
       {
         getSession: (key) => {
-          const history = histories.get(key);
+          const history = conversations.get(key);
           const userId = sessionCapture.userOf(key);
           if (!history || !userId) {
             return undefined;
@@ -885,7 +926,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
           return { key, userId, messages: history.getCapturable() };
         },
         closeSession: (key) => {
-          histories.delete(key);
+          conversations.close(key);
           contextAssembler?.forget(key);
           sessionCapture.close(key);
           displayStore.forget(key);
@@ -915,10 +956,12 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
       log: (msg) => console.error(`[cron] ${msg}`),
       emit: (event) => tracer.emit(event),
     });
+    const daily = dailyWork.start();
     return {
       stop: () => {
         idleCron.stop();
         selfReviewCron.stop();
+        daily.stop();
         // Model work still waiting is dropped; what's running finishes.
         scheduler.stop();
       },

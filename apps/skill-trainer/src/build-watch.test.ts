@@ -23,6 +23,12 @@ describe("watchBuild", () => {
     expect(watched.failure()).toBe("the jira plugin didn't load: JIRA_SITE_URL is not set");
   });
 
+  test("a build that rejects is remembered and still rejects (plugin contract 7 lets build return a promise)", async () => {
+    const watched = watchBuild(plugin(async () => Promise.reject(new Error("index away"))));
+    await expect(Promise.resolve(watched.plugin.build?.(ctx))).rejects.toThrow("index away");
+    expect(watched.failure()).toBe("the jira plugin didn't load: index away");
+  });
+
   test("a build that works returns what it built and leaves no failure", () => {
     const built = { postProcess: [] } as unknown as ReturnType<Build>;
     const watched = watchBuild(plugin(() => built));

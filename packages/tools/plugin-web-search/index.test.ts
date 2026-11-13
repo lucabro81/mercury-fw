@@ -86,8 +86,8 @@ describe("webSearchPlugin", () => {
     expect(Object.keys(WEB_SEARCH_MESSAGES).filter((key) => !key.startsWith("web-search."))).toEqual([]);
   });
 
-  it("builds both tools, their status labels and the sources guard", () => {
-    const built = webSearchPlugin({ backend }).build!(ctx({ dataDir: mkdtempSync(join(tmpdir(), "ws-")) }));
+  it("builds both tools, their status labels and the sources guard", async () => {
+    const built = (await webSearchPlugin({ backend }).build!(ctx({ dataDir: mkdtempSync(join(tmpdir(), "ws-")) })));
     expect(Object.keys(built.sessionTools!(session()))).toEqual(["web_search", "web_fetch"]);
     expect(built.toolStatusDescribers!.web_search!({ query: "bun 2" }, english)).toBe('Searching the web: "bun 2"');
     expect(built.toolStatusDescribers!.web_fetch!({ url: "https://docs.bun.sh/x" }, english)).toBe("Reading docs.bun.sh");
@@ -95,9 +95,9 @@ describe("webSearchPlugin", () => {
     expect(built.postTurnGuards!.map((g) => g.statusId)).toEqual(["web-search-sources"]);
   });
 
-  it("refuses a backend written for another version of the interface, contributing nothing", () => {
+  it("refuses a backend written for another version of the interface, contributing nothing", async () => {
     const logs: string[] = [];
-    const built = webSearchPlugin({ backend: { ...backend, apiVersion: 99 } }).build!(ctx({}, logs));
+    const built = (await webSearchPlugin({ backend: { ...backend, apiVersion: 99 } }).build!(ctx({}, logs)));
     expect(built).toEqual({});
     expect(logs).toEqual([`web-search: backend "fake" is for version 99 of the backend interface, this plugin speaks ${WEB_SEARCH_BACKEND_API_VERSION}: no tools`]);
   });
@@ -105,9 +105,9 @@ describe("webSearchPlugin", () => {
   it("drops an allowlist entry that can't be one, saying why, and keeps the rest", async () => {
     const logs: string[] = [];
     const labels: string[][] = [];
-    const built = webSearchPlugin({ backend, allowedHosts: ["bun.sh", "github.io", "https://x.org"] }, deps).build!(
+    const built = (await webSearchPlugin({ backend, allowedHosts: ["bun.sh", "github.io", "https://x.org"] }, deps).build!(
       ctx({ dataDir: mkdtempSync(join(tmpdir(), "ws-")) }, logs),
-    );
+    ));
 
     expect(logs).toEqual([
       "web-search: allowedHosts entry dropped: github.io is a public suffix: it would allow every site under it",
@@ -122,7 +122,7 @@ describe("webSearchPlugin", () => {
   it("without a data folder, offers only this time and says why once", async () => {
     const logs: string[] = [];
     const labels: string[][] = [];
-    const built = webSearchPlugin({ backend }, deps).build!(ctx({}, logs));
+    const built = (await webSearchPlugin({ backend }, deps).build!(ctx({}, logs)));
 
     await built.sessionTools!(session(recordingStage(labels))).web_fetch!.execute!({ url: "https://example.org/" } as never, {} as never);
 
@@ -133,9 +133,9 @@ describe("webSearchPlugin", () => {
   it("asks about a host nobody allowed without looking it up in DNS first", async () => {
     const looked: string[] = [];
     const labels: string[][] = [];
-    const built = webSearchPlugin({ backend }, { ...deps, resolve: async (host) => (looked.push(host), ["93.184.216.34"]) }).build!(
+    const built = (await webSearchPlugin({ backend }, { ...deps, resolve: async (host) => (looked.push(host), ["93.184.216.34"]) }).build!(
       ctx({ dataDir: mkdtempSync(join(tmpdir(), "ws-")) }),
-    );
+    ));
 
     await built.sessionTools!(session(recordingStage(labels))).web_fetch!.execute!({ url: "https://secret.attacker.example/" } as never, {} as never);
 
@@ -145,7 +145,7 @@ describe("webSearchPlugin", () => {
 
   it("with a data folder, offers both choices", async () => {
     const labels: string[][] = [];
-    const built = webSearchPlugin({ backend }, deps).build!(ctx({ dataDir: mkdtempSync(join(tmpdir(), "ws-")) }));
+    const built = (await webSearchPlugin({ backend }, deps).build!(ctx({ dataDir: mkdtempSync(join(tmpdir(), "ws-")) })));
 
     await built.sessionTools!(session(recordingStage(labels))).web_fetch!.execute!({ url: "https://example.org/" } as never, {} as never);
 

@@ -26,7 +26,12 @@ A plugin may also contribute:
 - **a context layer**, text the model reads besides the conversation, when the app asks for it (see
   [Context](../context/));
 - **hooks**, code Mercury runs after a turn and when a conversation closes, for a plugin that learns from what was
-  said (below).
+  said (below);
+- **the way the conversation is kept**, when the app names it in a context profile (see
+  [What a plugin can use](../primitives/#keeping-the-conversation)).
+
+What a plugin can reach of the agent while it does any of this (the models, the vector index, the conversation
+store, work at a set time) is in [What a plugin can use](../primitives/).
 
 ## Skills
 
@@ -146,4 +151,5 @@ and `app` can't be plugin names: their keys are Mercury's and the app's.
 Every plugin declares the version of the plugin contract it was written for (`apiVersion`). When the core loads a
 plugin written for another version, it skips that plugin and says why in the log, so an old plugin never runs half
 broken. A plugin can also require another one (`dependsOn`): if that one is missing or failed, this one is skipped
-too.
+too. And it names what it needs of the app (`needs`, such as the vector index): an app that declares the plugin
+without it doesn't start.

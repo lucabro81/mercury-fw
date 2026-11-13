@@ -93,6 +93,9 @@ describe("createTurnRunner", () => {
     await runner(baseTurn({ sessionKey: "session-3", resume: {} }), baseSink());
 
     expect(seen.map((args) => args[3])).toEqual([{ maxChars: 500 }, undefined, undefined]);
+    // Whom the turn is for, so a new session keeps its conversation with their profile's plugin (#393).
+    expect(seen.map((args) => (args[5] as { person: { key: string }; operator: boolean }).operator)).toEqual([false, false, true]);
+    expect((seen[0]![5] as { person: { key: string } }).person.key).toBe("google-chat:u1");
   });
 
   test("forwards sink.onTextChunk into runTurn's deps when the sink defines it", async () => {
@@ -3658,7 +3661,16 @@ describe("createTurnRunner: the context (#387)", () => {
     )(baseTurn({ principal: verified("u1"), text: "hello" }), baseSink());
 
     expect(seen).toEqual([{ system: "BASE\n\nPRIMER\n\nSESSION LAYERS", turnContext: "<context>\nT\n</context>" }]);
-    expect(asked[0]![1]).toEqual({ sessionKey: "session-1", input: "hello", multiUser: false });
+    expect(asked[0]![1]).toEqual({ sessionKey: "session-1", input: "hello", multiUser: false, reopened: false });
+  });
+
+  test("tells the context a conversation its client reopens, for a person someone vouched for", async () => {
+    const asked: unknown[][] = [];
+    const contextFor = async (...args: unknown[]) => (asked.push(args), { event: { profile: "default", budget: 10, used: 0, layers: [] } });
+    await runnerWith({ contextFor }, [])(baseTurn({ principal: verified("u1"), text: "hello", resume: {} }), baseSink());
+    await runnerWith({ contextFor }, [])(baseTurn({ text: "hello", resume: {} }), baseSink());
+    await runnerWith({ contextFor }, [])(baseTurn({ principal: verified("u1"), text: "hello" }), baseSink());
+    expect(asked.map((a) => (a[1] as { reopened: boolean }).reopened)).toEqual([true, false, false]);
   });
 
   test("reports what the context held as a context.assembled event of the turn", async () => {

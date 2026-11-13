@@ -87,7 +87,7 @@ describe("formatter", () => {
     expect(formatter<Displays>({ "thing-list": { item: thingLine, always: true } })({ type: "thing-list", items: [] }, t)).toBeUndefined();
   });
 
-  test("rejects, at compile time, a kind the plugin doesn't declare", () => {
+  test("rejects, at compile time, a kind the plugin doesn't declare", async () => {
     // @ts-expect-error — "thing-lsit" is not a declared kind
     formatter<Displays>({ "thing-lsit": thingLine });
     // @ts-expect-error — the rule's item type must match the kind's item shape
@@ -113,7 +113,7 @@ function emitting(output: unknown, extra: Partial<Plugin> = {}): Plugin {
 
 /** Builds `plugin` and runs its tool `name` with `input`, as the core would. */
 async function run(plugin: Plugin, input: unknown = {}, name = "find"): Promise<unknown> {
-  const tools = plugin.build!(ctx).sessionTools!(sctx);
+  const tools = (await plugin.build!(ctx)).sessionTools!(sctx);
   return (tools[name]!.execute as (i: unknown, o: unknown) => Promise<unknown>)(input, callOptions);
 }
 
@@ -163,7 +163,7 @@ describe("formatterPlugin", () => {
         return { find: { execute: async (...a: unknown[]) => ((received = a), { ok: true }) } as Tool };
       },
     });
-    const built = formatterPlugin(base, () => ({ text: "R" })).build!(ctx);
+    const built = (await formatterPlugin(base, () => ({ text: "R" })).build!(ctx));
     const tools = built.sessionTools!(sctx, postProcess);
     await (tools.find!.execute as (i: unknown, o: unknown) => Promise<unknown>)({ query: "x" }, callOptions);
 
@@ -199,20 +199,20 @@ describe("formatterPlugin", () => {
     expect(called).toBe(false);
   });
 
-  test("keeps every other field of a tool, and a tool without execute as it is", () => {
+  test("keeps every other field of a tool, and a tool without execute as it is", async () => {
     const toModelOutput = () => ({ type: "text" as const, value: "x" });
     const bare = { description: "No execute." } as unknown as Tool;
     const base = pluginWith({
       sessionTools: () => ({ find: { description: "Finds.", toModelOutput, execute: async () => ({ ok: true }) } as unknown as Tool, bare }),
     });
-    const tools = formatterPlugin(base, () => ({ text: "R" })).build!(ctx).sessionTools!(sctx);
+    const tools = (await formatterPlugin(base, () => ({ text: "R" })).build!(ctx)).sessionTools!(sctx);
 
     expect(tools.find!.description).toBe("Finds.");
     expect(tools.find!.toModelOutput).toBe(toModelOutput);
     expect(tools.bare).toBe(bare);
   });
 
-  test("passes through every other contribution and top-level field", () => {
+  test("passes through every other contribution and top-level field", async () => {
     const guard = { statusLabel: () => "g", statusId: "g", shouldRun: () => false, run: async (text: string) => ({ text, outcome: "success" as const }) };
     const describers = { find: () => "Finding" };
     const base = pluginWith(
@@ -220,7 +220,7 @@ describe("formatterPlugin", () => {
       { name: "jira", dependsOn: ["x"], systemPromptFragment: "frag", skills: [{ name: "s", description: "d", body: "b" }] },
     );
     const decorated = formatterPlugin(base, () => ({ text: "R" }));
-    const built = decorated.build!(ctx);
+    const built = (await decorated.build!(ctx));
 
     expect(decorated.name).toBe("jira");
     expect(decorated.dependsOn).toEqual(["x"]);
@@ -230,9 +230,9 @@ describe("formatterPlugin", () => {
     expect(built.toolStatusDescribers).toBe(describers);
   });
 
-  test("a plugin without tools, or without a build, gets none", () => {
-    expect(formatterPlugin(pluginWith({}), () => ({ text: "R" })).build!(ctx).sessionTools).toBeUndefined();
-    expect(formatterPlugin({ apiVersion: PLUGIN_API_VERSION, name: "n", description: "N." }, () => ({ text: "R" })).build!(ctx)).toEqual({});
+  test("a plugin without tools, or without a build, gets none", async () => {
+    expect((await formatterPlugin(pluginWith({}), () => ({ text: "R" })).build!(ctx)).sessionTools).toBeUndefined();
+    expect((await formatterPlugin({ apiVersion: PLUGIN_API_VERSION, name: "n", description: "N." }, () => ({ text: "R" })).build!(ctx))).toEqual({});
   });
 
   test("keeps the plugin's name and description", () => {
@@ -241,10 +241,10 @@ describe("formatterPlugin", () => {
     expect(wrapped.description).toBe("Reads data.");
   });
 
-  test("passes the runtime context through to the inner build", () => {
+  test("passes the runtime context through to the inner build", async () => {
     let received: PluginRuntimeContext | undefined;
     const base: Plugin = { apiVersion: PLUGIN_API_VERSION, name: "n", description: "N.", build: (c) => ((received = c), {}) };
-    formatterPlugin(base, () => ({ text: "R" })).build!(ctx);
+    (await formatterPlugin(base, () => ({ text: "R" })).build!(ctx));
     expect(received).toBe(ctx);
   });
 });

@@ -1,6 +1,6 @@
 # @mercury-fw/plugin-confluence
 
-Gives a [Mercury](https://github.com/lucabro81/mercury-fw) agent read access to Confluence, through the `confluence` CLI: searching pages with Confluence CQL, reading a page as Markdown, browsing a space through its pages' children, finding where a page sits, and reading its comments. It's read-only, so the CLI's commands that create, change or delete pages never run. The pinned `confluence` binary downloads when the package installs, so nothing else needs installing. This version is written for version 6 of the plugin contract and needs the framework at 0.55 or later: an older core skips it, and the log says why.
+Gives a [Mercury](https://github.com/lucabro81/mercury-fw) agent read access to Confluence, through the `confluence` CLI: searching pages with Confluence CQL, reading a page as Markdown, browsing a space through its pages' children, finding where a page sits, and reading its comments. It's read-only, so the CLI's commands that create, change or delete pages never run. The pinned `confluence` binary downloads when the package installs, so nothing else needs installing. This version is written for version 7 of the plugin contract and needs the framework at 0.75 or later: an older core skips it, and the log says why.
 
 On Mercury's documentation site: [its page](https://lucabro81.github.io/mercury-fw/plugins/plugin-confluence/).
 

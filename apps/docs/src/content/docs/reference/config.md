@@ -120,7 +120,8 @@ vectorIndex: qdrantIndex(),
 ```
 
 Left out, the agent keeps no long-term memory: it doesn't summarize conversations, doesn't learn corrections, and
-the model isn't offered the tool that searches past messages. An index that can't start leaves the agent the same
+the model isn't offered the tool that searches past messages. A plugin that needs it (`needs: ["vectorIndex"]`) stops
+the agent at startup when it's left out (see [What a plugin can use](../../concepts/primitives/)). An index that can't start leaves the agent the same
 way, said once in the log; an index that isn't answering yet only delays the memory until it does.
 
 ## `conversationStore`
@@ -135,7 +136,8 @@ conversationStore: qdrantConversations(),
 ```
 
 Left out, nothing is archived: no conversation is reopened or listed, there are no titles, and the HTTP channel
-serves no conversation routes. A store that can't start leaves the agent the same way, said once in the log.
+serves no conversation routes. A plugin that needs it (`needs: ["conversationStore"]`) stops the agent at startup
+when it's left out. A store that can't start leaves the agent the same way, said once in the log.
 
 ## `access`
 
@@ -291,13 +293,16 @@ context: {
 
 | Field | |
 |---|---|
-| `profiles` | The profiles by name; `default` is required. Each has `layers`, the plugins whose layers the model reads, in order, and `budget.maxChars`, how many characters of them at most (a whole number from 0 up). |
+| `profiles` | The profiles by name; `default` is required. Each has `layers`, the plugins whose layers the model reads, in order, and `budget.maxChars`, how many characters of them at most (a whole number from 0 up). It may also name `conversation`, the plugin that keeps its conversations (see [What a plugin can use](../../concepts/primitives/#keeping-the-conversation)); left out, the agent keeps them itself, as it always has. |
 | `assign` | Which roles get which profile: `{ premium: ["paid"] }`. Someone holding roles for more than one gets the first profile listed here. Everyone else, and the terminal, gets `default`. |
 
 A layer names the plugin itself, the same object as in `plugins`: declare the plugin once, in a constant, and use it in
 both places. The agent stops at startup when a layer names a plugin that isn't in `plugins`, or one that adds nothing to
-the context, when a profile lists the same plugin twice, or when a budget isn't a whole number. A plugin that couldn't
-load loses its layer, said once in the log, and the agent starts anyway.
+the context, when a profile lists the same plugin twice, or when a budget isn't a whole number. The same for
+`conversation`: the agent stops when it names a plugin that isn't in `plugins` or keeps no conversation, and when a
+plugin in `plugins` keeps conversations but no profile names it. A plugin that couldn't load loses its layer (or its
+conversation), said once in the log, and the agent starts anyway. In a space several people write in, the
+conversation is kept by the profile of whoever wrote first.
 
 These are the values the agent starts from. Someone holding `mercury.context-admin` can change a profile's budget, its
 layers' order and its layers' knobs while the agent runs; those changes are kept in the data folder and win over

@@ -11,12 +11,25 @@
  * `resolveConfirmation`) stays in the core and reaches a channel via
  * `ctx.confirm`.
  */
-import type { KnobSpec, KnobValue, Messages, StepInfo, Translate } from "@mercury-fw/plugin-types";
+import type { ConversationStore, KnobSpec, KnobValue, Messages, StepInfo, ToolOutcome, Translate, VectorIndex } from "@mercury-fw/plugin-types";
 
 export type { Messages, Translate };
+// The storage primitives are the plugins' contract too (a plugin reaches them through `needs`): defined there, the same types here.
+export type {
+  ArchivedConfirmation,
+  CallRecord,
+  CallResult,
+  ConversationStore,
+  StoredMessage,
+  StoredTitle,
+  ToolOutcome,
+  TraceEntry,
+  VectorIndex,
+  VectorPoint,
+  VectorSpaceSpec,
+  VectorWhere,
+} from "@mercury-fw/plugin-types";
 
-/** Settled outcome of a tool call (or guard/capture-ping) reported via `onToolFinish`. `pending` = action deferred behind a token, not run. */
-export type ToolOutcome = "success" | "failed" | "pending";
 
 /** One way the person can answer a staging: the token to send back and the words on its button (empty when the tool gave none: the channel words it). */
 export type ConfirmChoice = { token: string; label: string };
@@ -328,46 +341,6 @@ export type TraceSinkPlugin = {
 /** Vector-index contract version: the core refuses an index with a different `apiVersion`, and then runs without one. */
 export const VECTOR_INDEX_API_VERSION = 1;
 
-/** Equality filters on a space's keyword fields: every field must hold exactly that value. */
-export type VectorWhere = Record<string, string>;
-
-/** A point of a space: its id (a UUID), its vector and what it carries. */
-export type VectorPoint = { id: string; vector: number[]; payload: Record<string, unknown> };
-
-/**
- * What a space needs: the length of its vectors, the payload fields it's
- * filtered on (`keys`) and those it's ordered by (`ordered`, ISO 8601 times).
- */
-export type VectorSpaceSpec = { dimensions: number; keys?: string[]; ordered?: string[] };
-
-/**
- * Where the core keeps what it finds by meaning: named spaces of points, each
- * a vector and a payload. The core computes the vectors; the index keeps them,
- * finds the nearest ones (`query`), lists points in an order (`scroll`) and
- * rewrites payload fields (`setPayload`), always within the points `where`
- * selects. A scroll is paged by the opaque `cursor` the previous page gave as
- * `next`. Every method may reject when the index can't be reached: the core
- * treats that as the index being away for now.
- */
-export type VectorIndex = {
-  /** Creates `space` when it's missing, and the indexes its fields need; idempotent. */
-  ensure: (space: string, spec: VectorSpaceSpec) => Promise<void>;
-  upsert: (space: string, points: VectorPoint[]) => Promise<void>;
-  /** The `limit` points nearest to `vector`, nearest first. */
-  query: (
-    space: string,
-    q: { vector: number[]; where?: VectorWhere; limit: number },
-  ) => Promise<Array<{ id: string; score: number; payload: Record<string, unknown> }>>;
-  scroll: (
-    space: string,
-    q: { where?: VectorWhere; orderBy?: { key: string; direction: "asc" | "desc" }; limit: number; cursor?: string },
-  ) => Promise<{ points: Array<{ id: string; payload: Record<string, unknown> }>; next?: string }>;
-  /** Sets `payload`'s fields on every point `where` selects, keeping the rest. */
-  setPayload: (space: string, q: { where: VectorWhere; payload: Record<string, unknown> }) => Promise<void>;
-  /** Whether the index answers now, and why not when it doesn't. */
-  health: () => Promise<{ ok: boolean; detail?: string }>;
-};
-
 /**
  * A vector index, declared as `vectorIndex` in `mercury.config.ts`. `build`
  * reads its own settings from `env` and throws when it can't work: the core
@@ -381,51 +354,6 @@ export type VectorIndexPlugin = {
 
 /** Conversation-store contract version: the core refuses a store with a different `apiVersion`, and then runs without one. */
 export const CONVERSATION_STORE_API_VERSION = 1;
-
-/**
- * A message as the store keeps it: its id (a UUID), whose it is, which
- * conversation, when (ISO 8601, the order the store reads them in), and
- * whatever else the core records with it, kept as it is.
- */
-export type StoredMessage = {
-  id: string;
-  userId: string;
-  sessionKey: string;
-  timestamp: string;
-  [field: string]: unknown;
-};
-
-/** A conversation's title as the store keeps it: one per person and conversation, the newest replacing the one before. */
-export type StoredTitle = { userId: string; sessionKey: string; title: string; source: string; updatedAt: string };
-
-/**
- * Where the core keeps what was said: every message of every conversation,
- * read back by key and in time order, never searched by meaning (that's the
- * vector index's), and each conversation's title. Every read is scoped to one
- * person (`userId`). `messages` pages one conversation by the opaque
- * `cursor` the previous page gave as `next`. Every method may reject when the
- * store can't be reached: the core treats that as the store being away for now.
- */
-export type ConversationStore = {
-  /** Gets the store ready to be written and read (creating what it needs); idempotent, retried while it rejects. */
-  ready: () => Promise<void>;
-  append: (message: StoredMessage) => Promise<void>;
-  /** One conversation's messages, oldest first (`asc`) or newest first (`desc`). */
-  messages: (q: {
-    userId: string;
-    sessionKey: string;
-    order: "asc" | "desc";
-    limit: number;
-    cursor?: string;
-  }) => Promise<{ messages: StoredMessage[]; next?: string }>;
-  /** The person's newest `limit` messages across their conversations, newest first. */
-  recent: (q: { userId: string; limit: number }) => Promise<StoredMessage[]>;
-  setTitle: (title: StoredTitle) => Promise<void>;
-  /** The titles of the person's conversations among `sessionKeys`; a conversation with none is missing. */
-  titles: (q: { userId: string; sessionKeys: string[] }) => Promise<StoredTitle[]>;
-  /** Whether the store answers now, and why not when it doesn't. */
-  health: () => Promise<{ ok: boolean; detail?: string }>;
-};
 
 /**
  * A conversation store, declared as `conversationStore` in `mercury.config.ts`.

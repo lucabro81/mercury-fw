@@ -44,7 +44,7 @@ const message = (id: string, extra: Record<string, unknown> = {}) => ({
   id,
   userId: "static:alice",
   sessionKey: "alice:c1",
-  role: "user",
+  role: "user" as const,
   content: `message ${id}`,
   timestamp: "2026-11-12T10:00:00.000Z",
   ...extra,
@@ -150,7 +150,7 @@ describe("messages", () => {
     });
     const store = createQdrantConversations(client, {}, () => {});
     const page = await store.messages({ userId: "static:alice", sessionKey: "alice:c1", order: "desc", limit: 1 });
-    expect(page).toEqual({ messages: [{ id: "m1", userId: "static:alice", sessionKey: "alice:c1", timestamp: "t1" }], next: "1" });
+    expect(page as unknown).toEqual({ messages: [{ id: "m1", userId: "static:alice", sessionKey: "alice:c1", timestamp: "t1" }], next: "1" });
     await store.messages({ userId: "static:alice", sessionKey: "alice:c1", order: "asc", limit: 1, cursor: page.next! });
     expect(calls.map((c) => c[2])).toEqual([
       {
@@ -184,7 +184,7 @@ describe("messages", () => {
 
   test("recent reads the person's newest messages across conversations", async () => {
     const { client, calls } = fakeQdrant({ conversation_messages: [{ id: "m1", payload: { userId: "u", sessionKey: "a", timestamp: "t" } }] });
-    expect(await createQdrantConversations(client, {}, () => {}).recent({ userId: "u", limit: 500 })).toEqual([
+    expect((await createQdrantConversations(client, {}, () => {}).recent({ userId: "u", limit: 500 })) as unknown).toEqual([
       { id: "m1", userId: "u", sessionKey: "a", timestamp: "t" },
     ]);
     expect(calls[0]![2]).toEqual({
