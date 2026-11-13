@@ -97,27 +97,29 @@ export const notesPlugin: Plugin = {
   apiVersion: PLUGIN_API_VERSION,
   name: "notes",
   description: "Remembers what each person asked to note down.",
+  // It reaches no outside service: no one's identity, offered to everyone.
+  actsAs: "anyone",
   needs: ["vectorIndex", "embedding"],
-  build: async (ctx) => {
-    await ctx.vectorIndex!.ensure("notes", { dimensions: 1024, keys: ["person"] });
-    return {
-      afterTurn: async (turn) => {
-        if (!/^note:/i.test(turn.input)) return;
-        // Mercury doesn't wait for this, and logs it if it fails; the embedding waits until nobody else needs the model.
-        await ctx.job!("store", "soon", async () => {
-          const vector = await ctx.embed!(turn.input);
-          await ctx.vectorIndex!.upsert("notes", [{ id: crypto.randomUUID(), vector, payload: { person: turn.person.key, text: turn.input } }]);
-        });
+  build: (ctx) => ({
+    afterTurn: async (turn) => {
+      if (!/^note:/i.test(turn.input)) return;
+      // Mercury doesn't wait for this, and logs it if it fails.
+      await ctx.job!("store", "soon", async () => {
+        const vector = await ctx.embed!(turn.input);
+        // The space's vectors are as long as the app's embedding model makes them.
+        await ctx.vectorIndex!.ensure("notes", { dimensions: vector.length, keys: ["person"] });
+        await ctx.vectorIndex!.upsert("notes", [{ id: crypto.randomUUID(), vector, payload: { person: turn.person.key, text: turn.input } }]);
+      });
+    },
+    context: {
+      scope: "session",
+      build: async (req) => {
+        // No note written yet means no space yet: nothing to add.
+        const found = await ctx.vectorIndex!.scroll("notes", { where: { person: req.person.key }, limit: 20 }).catch(() => undefined);
+        return found?.points.map((p) => String(p.payload.text));
       },
-      context: {
-        scope: "session",
-        build: async (req) => {
-          const found = await ctx.vectorIndex!.scroll("notes", { where: { person: req.person.key }, limit: 20 });
-          return found.points.map((p) => String(p.payload.text));
-        },
-      },
-    };
-  },
+    },
+  }),
 };
 ```
 
