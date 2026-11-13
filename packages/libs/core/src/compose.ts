@@ -435,7 +435,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   const episodicSummarize = createEpisodicSummarizer(backgroundModel);
 
   // Verbatim conversation archive (#4): the raw user<->model exchange,
-  // lossless and durable — separate from the lossy Layer-1 window and the
+  // lossless and durable — separate from the lossy conversation window and the
   // derived episodic summaries above — in the store, searched in the index.
   const verbatimProvider =
     conversationStore === undefined
@@ -498,7 +498,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   };
 
   // Shared by the idle sweep (final capture + close) and by sessionCapture
-  // (the two mid-conversation triggers, neither of which closes the session) —
+  // (the mid-conversation threshold, which doesn't close the session) —
   // one definition of "how to capture", reused everywhere.
   const captureDeps: CaptureDeps = {
     summarize: episodicSummarize,
@@ -531,7 +531,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   }
 
   // Who each tracked session belongs to and how much of it is already in
-  // memory; mirrors the rest at the two mid-conversation triggers.
+  // memory; mirrors the rest every few messages.
   const sessionCapture = createSessionCapture({
     capture: (userId, sessionKey, messages, trigger) => captureSessionToMemory(userId, sessionKey, messages, Date.now(), captureDeps, trigger),
     job: (fn) => backgroundJob("capture", "idle", fn),

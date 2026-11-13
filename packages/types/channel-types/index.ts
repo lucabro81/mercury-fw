@@ -164,9 +164,10 @@ export type InboundTurn = {
    * Set when `sessionKey` names a conversation its client reopens whenever it
    * wants (one of many a person keeps, as on HTTP), rather than a single
    * running thread (as a Google Chat space): once the core has let go of its
-   * history, the next turn rebuilds it from the archive. `maxChars` is the
-   * channel's own budget for what comes back; absent, the core's
-   * (`SESSION_RESUME_MAX_CHARS`), and 0 turns resuming off.
+   * history, the next turn rebuilds it from the archive, when the plugin
+   * keeping the conversation does that (`ConversationOpen.reopen`).
+   * `maxChars` is the channel's own budget for what comes back; absent, the
+   * plugin's, and 0 turns resuming off.
    */
   resume?: { maxChars?: number };
   /**

@@ -4,8 +4,8 @@
  * every other memory layer.
  *
  * How it differs from the neighbours in this directory:
- * - Layer-1 history (`../session/history.ts`) is a sliding window that
- *   summarizes itself away — lossy by design.
+ * - The conversation's window (a plugin's, see `../session/conversations.ts`)
+ *   shortens itself as it grows: lossy by design.
  * - The episodic store (`./episodic-store.ts`) captures a *summary* of a
  *   closed session — derived, not raw.
  * This archive instead keeps what was actually said, verbatim, so a later

@@ -554,11 +554,11 @@ describe("memory events", () => {
           emit: (e) => void events.push(e),
           clock: () => 0,
         },
-        "compress",
+        "threshold",
       ),
     ).rejects.toThrow("qdrant unreachable");
     expect(events).toEqual([
-      { kind: "memory.capture", session: "sk", person: "static:alice", trigger: "compress", messages: 2, durationMs: 0, outcome: "failed", args: { error: "qdrant unreachable" } },
+      { kind: "memory.capture", session: "sk", person: "static:alice", trigger: "threshold", messages: 2, durationMs: 0, outcome: "failed", args: { error: "qdrant unreachable" } },
     ]);
   });
 
