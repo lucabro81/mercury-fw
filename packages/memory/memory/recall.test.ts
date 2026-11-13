@@ -1,6 +1,6 @@
 import { describe, it, expect } from "bun:test";
 import type { TurnRecord } from "@mercury-fw/plugin-types";
-import { createVerbatimRecall } from "./memory-provider.ts";
+import { createVerbatimRecall } from "./recall.ts";
 import { fakeVectorIndex } from "./__fixtures__/fake-vector-index.ts";
 
 /** A recall on a fake index, counting what was embedded. */

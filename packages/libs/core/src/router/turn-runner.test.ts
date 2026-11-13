@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { createTurnRunner, parseStallTimeoutMs, DEFAULT_STALL_TIMEOUT_MS, OPENING_CUE, OPENING_NOTE, PREFERRED_LANGUAGE_NOTE, PREFERRED_NAME_NOTE, RECAP_NOTE, SHOWN_LISTS_NOTE, RESUMED_LINE, type PostTurnGuard, type TurnRunnerDeps } from "./turn-runner.ts";
+import { createTurnRunner, parseStallTimeoutMs, DEFAULT_STALL_TIMEOUT_MS, OPENING_CUE, OPENING_NOTE, PREFERRED_LANGUAGE_NOTE, PREFERRED_NAME_NOTE, SHOWN_LISTS_NOTE, RESUMED_LINE, type PostTurnGuard, type TurnRunnerDeps } from "./turn-runner.ts";
 import type { InboundTurn, TurnSink } from "./provider.ts";
 import type { Principal } from "@mercury-fw/channel-types";
 import type { SessionHistory } from "../session/history.ts";
@@ -100,9 +100,6 @@ describe("createTurnRunner", () => {
       buildTools: () => ({}),
       getOrCreateHistory: (...args: unknown[]) => (seen.push(args), fakeHistory()),
       trackSession: () => {},
-      registerCaptureCallback: () => {},
-      maybeCapture: async () => {},
-      processToolCorrections: async () => {},
       logStep: () => {},
       runTurnFn: async () => "reply",
     });
@@ -125,9 +122,6 @@ describe("createTurnRunner", () => {
       buildTools: () => ({}),
       getOrCreateHistory: () => fakeHistory(),
       trackSession: () => {},
-      registerCaptureCallback: () => {},
-      maybeCapture: async () => {},
-      processToolCorrections: async () => {},
       logStep: () => {},
       runTurnFn: async (_history, _input, deps) => {
         receivedOnTextChunk = deps.onTextChunk;
@@ -153,9 +147,6 @@ describe("createTurnRunner", () => {
       buildTools: () => ({}),
       getOrCreateHistory: () => fakeHistory(),
       trackSession: () => {},
-      registerCaptureCallback: () => {},
-      maybeCapture: async () => {},
-      processToolCorrections: async () => {},
       logStep: () => {},
       runTurnFn: async (_history, _input, deps) => {
         receivedOnTextChunk = deps.onTextChunk;
@@ -177,9 +168,6 @@ describe("createTurnRunner", () => {
       buildTools: () => ({}),
       getOrCreateHistory: () => fakeHistory(),
       trackSession: () => {},
-      registerCaptureCallback: () => {},
-      maybeCapture: async () => {},
-      processToolCorrections: async () => {},
       logStep: () => {},
       runTurnFn: async (_history, _input, deps) => {
         receivedOnReasoningChunk = deps.onReasoningChunk;
@@ -213,9 +201,6 @@ describe("createTurnRunner", () => {
       buildTools: () => ({}),
       getOrCreateHistory: () => fakeHistory(),
       trackSession: () => {},
-      registerCaptureCallback: () => {},
-      maybeCapture: async () => {},
-      processToolCorrections: async () => {},
       logStep: () => {},
       runTurnFn: async (_history, _input, deps) => {
         receivedOnReasoningChunk = deps.onReasoningChunk;
@@ -238,9 +223,6 @@ describe("createTurnRunner", () => {
       buildTools: () => ({}),
       getOrCreateHistory: () => fakeHistory(),
       trackSession: () => {},
-      registerCaptureCallback: () => {},
-      maybeCapture: async () => {},
-      processToolCorrections: async () => {},
       logStep: () => {},
       runTurnFn: async (_history, _input, deps) => {
         systems.push(deps.system);
@@ -271,9 +253,6 @@ describe("createTurnRunner", () => {
       },
       getOrCreateHistory: () => fakeHistory(),
       trackSession: () => {},
-      registerCaptureCallback: () => {},
-      maybeCapture: async () => {},
-      processToolCorrections: async () => {},
       logStep: () => {},
       runTurnFn: async (_history, _input, deps) => {
         systems.push(deps.system);
@@ -308,12 +287,9 @@ describe("createTurnRunner", () => {
       },
       getOrCreateHistory: () => fakeHistory(),
       trackSession: (_sk, key) => keys.track!.push(key),
-      registerCaptureCallback: () => {},
-      maybeCapture: async () => {},
       turnRecord: archiveVia(async (msg) => {
         keys.verbatim!.push(msg.userId);
       }),
-      processToolCorrections: async () => {},
       logStep: () => {},
       recordStepFn: (_channel, _sk, owner) => keys.record!.push(owner),
       runTurnFn: async (_history, _input, deps) => {
@@ -345,10 +321,7 @@ describe("createTurnRunner", () => {
         buildTools: () => (ran.push("buildTools"), {}),
         getOrCreateHistory: () => (ran.push("history"), fakeHistory()),
         trackSession: () => ran.push("track"),
-        registerCaptureCallback: () => ran.push("register"),
-        maybeCapture: async () => void ran.push("capture"),
         turnRecord: archiveVia(async () => void ran.push("verbatim")),
-        processToolCorrections: async () => void ran.push("corrections"),
         logStep: () => {},
         runTurnFn: async () => (ran.push("model"), "reply"),
       });
@@ -379,9 +352,6 @@ describe("createTurnRunner", () => {
       },
       getOrCreateHistory: () => fakeHistory(),
       trackSession: () => {},
-      registerCaptureCallback: () => {},
-      maybeCapture: async () => {},
-      processToolCorrections: async () => {},
       logStep: () => {},
       runTurnFn: async () => "reply",
     });
@@ -407,9 +377,6 @@ describe("createTurnRunner", () => {
       buildTools: () => ({}),
       getOrCreateHistory: () => fakeHistory(),
       trackSession: () => {},
-      registerCaptureCallback: () => {},
-      maybeCapture: async () => {},
-      processToolCorrections: async () => {},
       logStep: (prefix, s) => logged.push([prefix, s]),
       recordStepFn: (channel, sessionKey, owner, s) => recorded.push([channel, sessionKey, owner, s]),
       runTurnFn: async (_history, _input, deps) => {
@@ -436,9 +403,6 @@ describe("createTurnRunner", () => {
       buildTools: () => ({}),
       getOrCreateHistory: () => fakeHistory(),
       trackSession: () => {},
-      registerCaptureCallback: () => {},
-      maybeCapture: async () => {},
-      processToolCorrections: async () => {},
       logStep: () => {},
       runTurnFn: async () => "the final answer",
     });
@@ -460,9 +424,6 @@ describe("createTurnRunner", () => {
       buildTools: () => ({}),
       getOrCreateHistory: () => fakeHistory(),
       trackSession: () => {},
-      registerCaptureCallback: () => {},
-      maybeCapture: async () => {},
-      processToolCorrections: async () => {},
       logStep: () => {},
       takeSurfacedDisplays: () => ["MER-1\nhttps://x"],
       runTurnFn: async () => "Here you go.",
@@ -481,9 +442,6 @@ describe("createTurnRunner", () => {
       buildTools: () => ({}),
       getOrCreateHistory: () => fakeHistory(),
       trackSession: () => {},
-      registerCaptureCallback: () => {},
-      maybeCapture: async () => {},
-      processToolCorrections: async () => {},
       logStep: () => {},
       takeSurfacedDisplays: () => ["list-a", "list-b"],
       runTurnFn: async () => "Done.",
@@ -502,9 +460,6 @@ describe("createTurnRunner", () => {
       buildTools: () => ({}),
       getOrCreateHistory: () => fakeHistory(),
       trackSession: () => {},
-      registerCaptureCallback: () => {},
-      maybeCapture: async () => {},
-      processToolCorrections: async () => {},
       logStep: () => {},
       takeSurfacedDisplays: () => [],
       runTurnFn: async () => "There are 3 open.",
@@ -523,9 +478,6 @@ describe("createTurnRunner", () => {
       buildTools: () => ({}),
       getOrCreateHistory: () => fakeHistory(),
       trackSession: () => {},
-      registerCaptureCallback: () => {},
-      maybeCapture: async () => {},
-      processToolCorrections: async () => {},
       logStep: () => {},
       runTurnFn: async () => "plain reply",
     });
@@ -546,9 +498,6 @@ describe("createTurnRunner", () => {
       buildTools: () => ({}),
       getOrCreateHistory: () => fakeHistory(),
       trackSession: () => {},
-      registerCaptureCallback: () => {},
-      maybeCapture: async () => {},
-      processToolCorrections: async () => {},
       logStep: () => {},
       takeSurfacedDisplays: (k) => store.takeSurfaced(k),
       discardSurfacedDisplays: (k) => store.discardSurfaced(k),
@@ -577,9 +526,6 @@ describe("createTurnRunner", () => {
         buildTools: () => ({}),
         getOrCreateHistory: () => fakeHistory(),
         trackSession: () => {},
-        registerCaptureCallback: () => {},
-        maybeCapture: async () => {},
-        processToolCorrections: async () => {},
         logStep: () => {},
         takeSurfacedDisplays: (k) => store.takeSurfaced(k),
         discardSurfacedDisplays: (k) => store.discardSurfaced(k),
@@ -612,9 +558,6 @@ describe("createTurnRunner", () => {
       buildTools: () => ({}),
       getOrCreateHistory: () => fakeHistory(),
       trackSession: () => {},
-      registerCaptureCallback: () => {},
-      maybeCapture: async () => {},
-      processToolCorrections: async () => {},
       logStep: () => {},
       takeSurfacedDisplays: (sessionKey) => {
         received.push(sessionKey);
@@ -644,9 +587,6 @@ describe("createTurnRunner", () => {
         throw new Error("qdrant boom");
       },
       trackSession: () => {},
-      registerCaptureCallback: () => {},
-      maybeCapture: async () => {},
-      processToolCorrections: async () => {},
       logStep: () => {},
       runTurnFn: async () => "reply",
     });
@@ -664,9 +604,6 @@ describe("createTurnRunner", () => {
       buildTools: () => ({}),
       getOrCreateHistory: () => fakeHistory(),
       trackSession: () => {},
-      registerCaptureCallback: () => {},
-      maybeCapture: async () => {},
-      processToolCorrections: async () => {},
       logStep: () => {},
       runTurnFn: async () => {
         throw new Error("boom");
@@ -701,9 +638,6 @@ describe("createTurnRunner", () => {
       buildTools: () => ({}),
       getOrCreateHistory: () => fakeHistory(),
       trackSession: () => {},
-      registerCaptureCallback: () => {},
-      maybeCapture: async () => {},
-      processToolCorrections: async () => void events.push("corrections"),
       logStep: () => {},
       runTurnFn: () => new Promise<string>((resolve) => answers.push(() => resolve("reply"))),
     });
@@ -716,7 +650,7 @@ describe("createTurnRunner", () => {
     await Bun.sleep(0);
     answers.shift()?.();
     await second;
-    expect(events).toEqual(["hold 1", "hold 2", "finalize 1", "release 1", "corrections", "finalize 2", "release 2", "corrections"]);
+    expect(events).toEqual(["hold 1", "hold 2", "finalize 1", "release 1", "finalize 2", "release 2"]);
   });
 
   test("a turn that fails or is refused releases the turn model too", async () => {
@@ -727,9 +661,6 @@ describe("createTurnRunner", () => {
       buildTools: () => ({}),
       getOrCreateHistory: () => fakeHistory(),
       trackSession: () => {},
-      registerCaptureCallback: () => {},
-      maybeCapture: async () => {},
-      processToolCorrections: async () => {},
       logStep: () => {},
     };
     const failing = createTurnRunner({
@@ -750,111 +681,6 @@ describe("createTurnRunner", () => {
     expect(released).toEqual(["failed", "refused"]);
   });
 
-  // #383: the corrections run as background work, queued for the model: the
-  // turn (and the next one of its session) never waits for them.
-  test("doesn't wait for the turn's corrections, and a second turn of the session runs meanwhile", async () => {
-    let finishCorrections!: () => void;
-    const corrections = new Promise<void>((resolve) => {
-      finishCorrections = resolve;
-    });
-    const replies: string[] = [];
-    const runner = createTurnRunner({
-      model: {} as any,
-      systemPrompts: { singleUser: "s", multiUser: "m" },
-      buildTools: () => ({}),
-      getOrCreateHistory: () => fakeHistory(),
-      trackSession: () => {},
-      registerCaptureCallback: () => {},
-      maybeCapture: async () => {},
-      processToolCorrections: () => corrections,
-      logStep: () => {},
-      runTurnFn: async () => "reply",
-    });
-    await runner(baseTurn(), baseSink({ finalize: async (text) => void replies.push(`1: ${text}`) }));
-    await runner(baseTurn(), baseSink({ finalize: async (text) => void replies.push(`2: ${text}`) }));
-    expect(replies).toEqual(["1: reply", "2: reply"]);
-    finishCorrections();
-  });
-
-  test("corrections that fail are logged, never thrown at the turn", async () => {
-    const logged: string[] = [];
-    const original = console.log;
-    console.log = (msg: string) => void logged.push(String(msg));
-    try {
-      const runner = createTurnRunner({
-        model: {} as any,
-        systemPrompts: { singleUser: "s", multiUser: "m" },
-        buildTools: () => ({}),
-        getOrCreateHistory: () => fakeHistory(),
-        trackSession: () => {},
-        registerCaptureCallback: () => {},
-        maybeCapture: async () => {},
-        processToolCorrections: async () => {
-          throw new Error("index down");
-        },
-        logStep: () => {},
-        runTurnFn: async () => "reply",
-      });
-      await runner(baseTurn(), baseSink());
-      await Bun.sleep(0);
-    } finally {
-      console.log = original;
-    }
-    expect(logged.some((line) => line.includes("[corrections] failed, turn unaffected: index down"))).toBe(true);
-  });
-
-  test("processToolCorrections is skipped when the turn throws", async () => {
-    let correctionsCalled = false;
-    const runner = createTurnRunner({
-      model: {} as any,
-      systemPrompts: { singleUser: "s", multiUser: "m" },
-      buildTools: () => ({}),
-      getOrCreateHistory: () => fakeHistory(),
-      trackSession: () => {},
-      registerCaptureCallback: () => {},
-      maybeCapture: async () => {},
-      processToolCorrections: async () => {
-        correctionsCalled = true;
-      },
-      logStep: () => {},
-      runTurnFn: async () => {
-        throw new Error("boom");
-      },
-    });
-
-    await expect(runner(baseTurn(), baseSink())).rejects.toThrow("boom");
-    expect(correctionsCalled).toBe(false);
-  });
-
-  test("processToolCorrections receives every step accumulated during the turn", async () => {
-    const stepA: StepInfo = { toolCalls: [{ toolCallId: "1", toolName: "a", input: {} }], toolResults: [], content: [] };
-    const stepB: StepInfo = { toolCalls: [{ toolCallId: "2", toolName: "b", input: {} }], toolResults: [], content: [] };
-    let received: StepInfo[] = [];
-
-    const runner = createTurnRunner({
-      model: {} as any,
-      systemPrompts: { singleUser: "s", multiUser: "m" },
-      buildTools: () => ({}),
-      getOrCreateHistory: () => fakeHistory(),
-      trackSession: () => {},
-      registerCaptureCallback: () => {},
-      maybeCapture: async () => {},
-      processToolCorrections: async (steps) => {
-        received = steps;
-      },
-      logStep: () => {},
-      runTurnFn: async (_history, _input, deps) => {
-        deps.onStepFinish?.(stepA);
-        deps.onStepFinish?.(stepB);
-        return "reply";
-      },
-    });
-
-    await runner(baseTurn(), baseSink());
-
-    expect(received).toEqual([stepA, stepB]);
-  });
-
   test("two providers issuing the same id reach buildTools as two people, and nobody's principal still gets a key of its own", async () => {
     const keys: string[] = [];
     const runner = createTurnRunner({
@@ -866,9 +692,6 @@ describe("createTurnRunner", () => {
       },
       getOrCreateHistory: () => fakeHistory(),
       trackSession: () => {},
-      registerCaptureCallback: () => {},
-      maybeCapture: async () => {},
-      processToolCorrections: async () => {},
       logStep: () => {},
       runTurnFn: async () => "reply",
     });
@@ -894,9 +717,6 @@ describe("createTurnRunner", () => {
       },
       getOrCreateHistory: () => fakeHistory(),
       trackSession: () => {},
-      registerCaptureCallback: () => {},
-      maybeCapture: async () => {},
-      processToolCorrections: async () => {},
       logStep: () => {},
       runTurnFn: async () => "reply",
     });
@@ -908,10 +728,8 @@ describe("createTurnRunner", () => {
     expect(sink.finalized).toEqual(["reply"]);
   });
 
-  test("when the principal is verified: trackSession, registerCaptureCallback, and maybeCapture all run, and getOrCreateHistory is asked to track for capture", async () => {
+  test("when the principal is verified: trackSession runs, and getOrCreateHistory is asked to track the session", async () => {
     const tracked: Array<[string, string]> = [];
-    const registered: string[] = [];
-    const captured: string[] = [];
     let historyTrackForCapture: boolean | undefined;
     const fakeHist = fakeHistory();
 
@@ -924,11 +742,6 @@ describe("createTurnRunner", () => {
         return fakeHist;
       },
       trackSession: (sessionKey, userId) => tracked.push([sessionKey, userId]),
-      registerCaptureCallback: (sessionKey) => registered.push(sessionKey),
-      maybeCapture: async (sessionKey) => {
-        captured.push(sessionKey);
-      },
-      processToolCorrections: async () => {},
       logStep: () => {},
       runTurnFn: async () => "reply",
     });
@@ -940,57 +753,7 @@ describe("createTurnRunner", () => {
       ["sk", "google-chat:users/42"],
       ["sk", "google-chat:users/42"],
     ]);
-    expect(registered).toEqual(["sk"]);
-    expect(captured).toEqual(["sk"]);
     expect(historyTrackForCapture).toBe(true);
-  });
-
-  test("registerCaptureCallback receives both the sink's onToolStart and onToolFinish, so a capture-ping can also patch a status card", async () => {
-    const registered: Array<[string, unknown, unknown]> = [];
-    const onToolStart = () => {};
-    const onToolFinish = () => {};
-
-    const runner = createTurnRunner({
-      model: {} as any,
-      systemPrompts: { singleUser: "s", multiUser: "m" },
-      buildTools: () => ({}),
-      getOrCreateHistory: () => fakeHistory(),
-      trackSession: () => {},
-      registerCaptureCallback: (sessionKey, cb, finishCb) => registered.push([sessionKey, cb, finishCb]),
-      maybeCapture: async () => {},
-      processToolCorrections: async () => {},
-      logStep: () => {},
-      runTurnFn: async () => "reply",
-    });
-
-    await runner(baseTurn({ sessionKey: "sk", principal: verified("u1") }), baseSink({ onToolStart, onToolFinish }));
-
-    expect(registered).toEqual([["sk", onToolStart, onToolFinish]]);
-  });
-
-  test("processToolCorrections receives both the sink's onToolStart and onToolFinish, and whose turn it is", async () => {
-    const received: Array<[unknown, unknown, unknown]> = [];
-    const onToolStart = () => {};
-    const onToolFinish = () => {};
-
-    const runner = createTurnRunner({
-      model: {} as any,
-      systemPrompts: { singleUser: "s", multiUser: "m" },
-      buildTools: () => ({}),
-      getOrCreateHistory: () => fakeHistory(),
-      trackSession: () => {},
-      registerCaptureCallback: () => {},
-      maybeCapture: async () => {},
-      processToolCorrections: async (_steps, cb, finishCb, key) => {
-        received.push([cb, finishCb, key]);
-      },
-      logStep: () => {},
-      runTurnFn: async () => "reply",
-    });
-
-    await runner(baseTurn({ principal: verified("u1") }), baseSink({ onToolStart, onToolFinish }));
-
-    expect(received).toEqual([[onToolStart, onToolFinish, "google-chat:u1"]]);
   });
 
   test("getOrCreateHistory receives the verified principal's user key as its third argument (undefined when nobody vouched for it), so a provider can decide whether to seed a context primer", async () => {
@@ -1004,9 +767,6 @@ describe("createTurnRunner", () => {
         return fakeHistory();
       },
       trackSession: () => {},
-      registerCaptureCallback: () => {},
-      maybeCapture: async () => {},
-      processToolCorrections: async () => {},
       logStep: () => {},
       runTurnFn: async () => "reply",
     });
@@ -1033,11 +793,6 @@ describe("createTurnRunner", () => {
         return fakeHist;
       },
       trackSession: (...args) => tracked.push(args),
-      registerCaptureCallback: (...args) => registered.push(args),
-      maybeCapture: async (...args) => {
-        captured.push(args);
-      },
-      processToolCorrections: async () => {},
       logStep: () => {},
       runTurnFn: async () => "reply",
     });
@@ -1074,9 +829,6 @@ describe("createTurnRunner", () => {
         buildTools: () => ({}),
         getOrCreateHistory: () => fakeHistory(),
         trackSession: () => {},
-        registerCaptureCallback: () => {},
-        maybeCapture: async () => {},
-        processToolCorrections: async () => {},
         logStep: () => {},
         runTurnFn: async () => "model text",
         ...overrides,
@@ -1364,9 +1116,6 @@ describe("createTurnRunner", () => {
         buildTools: () => ({}),
         getOrCreateHistory: () => fakeHistory(),
         trackSession: () => {},
-        registerCaptureCallback: () => {},
-        maybeCapture: async () => {},
-        processToolCorrections: async () => {},
         logStep: () => {},
         turnRecord: archiveVia(async (msg) => {
           captured.push(archivedFields(msg));
@@ -1391,9 +1140,6 @@ describe("createTurnRunner", () => {
         buildTools: () => ({}),
         getOrCreateHistory: () => fakeHistory(),
         trackSession: () => {},
-        registerCaptureCallback: () => {},
-        maybeCapture: async () => {},
-        processToolCorrections: async () => {},
         logStep: () => {},
         turnRecord: archiveVia(async () => {
           called = true;
@@ -1414,9 +1160,6 @@ describe("createTurnRunner", () => {
         buildTools: () => ({}),
         getOrCreateHistory: () => fakeHistory(),
         trackSession: () => {},
-        registerCaptureCallback: () => {},
-        maybeCapture: async () => {},
-        processToolCorrections: async () => {},
         logStep: () => {},
         turnRecord: archiveVia(async (msg) => {
           captured.push({ role: msg.role, content: msg.content });
@@ -1449,9 +1192,6 @@ describe("createTurnRunner", () => {
         buildTools: () => ({}),
         getOrCreateHistory: () => fakeHistory(),
         trackSession: () => {},
-        registerCaptureCallback: () => {},
-        maybeCapture: async () => {},
-        processToolCorrections: async () => {},
         logStep: () => {},
         takeSurfacedDisplays: () => ["MER-1\nhttps://x"],
         turnRecord: archiveVia(async (msg) => {
@@ -1490,9 +1230,6 @@ describe("createTurnRunner", () => {
         buildTools: () => ({}),
         getOrCreateHistory: () => history,
         trackSession: () => {},
-        registerCaptureCallback: () => {},
-        maybeCapture: async () => {},
-        processToolCorrections: async () => {},
         logStep: () => {},
         turnRecord: archiveVia(async (msg) => {
           captured.push(archivedFields(msg));
@@ -1521,9 +1258,6 @@ describe("createTurnRunner", () => {
         buildTools: () => ({}),
         getOrCreateHistory: () => fakeHistory(),
         trackSession: () => {},
-        registerCaptureCallback: () => {},
-        maybeCapture: async () => {},
-        processToolCorrections: async () => {},
         logStep: () => {},
         takeSurfacedDisplays: () => ["MER-1\nhttps://x"],
         turnRecord: archiveVia(async (msg) => {
@@ -1542,8 +1276,7 @@ describe("createTurnRunner", () => {
     // that throws must never take down the turn: the answer is already
     // delivered, and a throw here would otherwise propagate out of the
     // awaited handler.
-    test("a turnRecord that throws never breaks the turn: it still finalizes and runs corrections", async () => {
-      let correctionsRan = false;
+    test("a turnRecord that throws never breaks the turn: it still finalizes", async () => {
       const sink = baseSink();
       const runner = createTurnRunner({
         model: {} as any,
@@ -1551,11 +1284,6 @@ describe("createTurnRunner", () => {
         buildTools: () => ({}),
         getOrCreateHistory: () => fakeHistory(),
         trackSession: () => {},
-        registerCaptureCallback: () => {},
-        maybeCapture: async () => {},
-        processToolCorrections: async () => {
-          correctionsRan = true;
-        },
         logStep: () => {},
         turnRecord: () => {
           throw new Error("hook broke");
@@ -1565,7 +1293,6 @@ describe("createTurnRunner", () => {
 
       await expect(runner(baseTurn({ principal: verified("u1") }), sink)).resolves.toBeUndefined();
       expect(sink.finalized).toEqual(["delivered anyway"]);
-      expect(correctionsRan).toBe(true);
     });
 
     test("does nothing when no turnRecord is wired", async () => {
@@ -1576,9 +1303,6 @@ describe("createTurnRunner", () => {
         buildTools: () => ({}),
         getOrCreateHistory: () => fakeHistory(),
         trackSession: () => {},
-        registerCaptureCallback: () => {},
-        maybeCapture: async () => {},
-        processToolCorrections: async () => {},
         logStep: () => {},
         runTurnFn: async () => "reply",
       });
@@ -1610,9 +1334,6 @@ describe("createTurnRunner", () => {
         buildTools: () => ({}),
         getOrCreateHistory: () => fakeHistory(),
         trackSession: () => {},
-        registerCaptureCallback: () => {},
-        maybeCapture: async () => {},
-        processToolCorrections: async () => {},
         logStep: () => {},
         ...overrides,
       });
@@ -1631,9 +1352,6 @@ describe("createTurnRunner", () => {
           await h.addAssistantMessage(`answer to ${input}`);
           return `answer to ${input}`;
         },
-        processToolCorrections: async () => {
-          events.push("corrections");
-        },
       });
 
       const first = runner(baseTurn({ text: "first" }), baseSink());
@@ -1643,7 +1361,7 @@ describe("createTurnRunner", () => {
 
       firstGate.open();
       await Promise.all([first, second]);
-      expect(events).toEqual(["start:first", "corrections", "start:second", "corrections"]);
+      expect(events).toEqual(["start:first", "start:second"]);
       expect(history.getMessages()).toEqual([
         { role: "user", content: "first" },
         { role: "assistant", content: "answer to first" },
@@ -1761,9 +1479,6 @@ describe("createTurnRunner: preferred name and opening turn", () => {
       buildTools: () => opts.tools ?? {},
       getOrCreateHistory: (sessionKey: string) => (histories.push(sessionKey), fakeHistory()),
       trackSession: () => {},
-      registerCaptureCallback: () => {},
-      maybeCapture: async () => {},
-      processToolCorrections: async () => {},
       logStep: () => {},
       turnRecord: archiveVia(async (msg) => {
         captured.push({ role: msg.role, content: msg.content });
@@ -1860,9 +1575,6 @@ describe("createTurnRunner: preferred name and opening turn", () => {
       buildTools: () => ({}),
       getOrCreateHistory: () => fakeHistory(),
       trackSession: () => {},
-      registerCaptureCallback: () => {},
-      maybeCapture: async () => {},
-      processToolCorrections: async () => {},
       logStep: () => {},
       turnRecord: archiveVia(async (msg) => {
         captured.push(archivedFields(msg));
@@ -1919,9 +1631,6 @@ describe("createTurnRunner: lists already shown", () => {
       buildTools: () => ({}),
       getOrCreateHistory: () => fakeHistory(),
       trackSession: () => {},
-      registerCaptureCallback: () => {},
-      maybeCapture: async () => {},
-      processToolCorrections: async () => {},
       logStep: () => {},
       preferredName: (key) => names[key],
       shownLists: (sessionKey) => (asked.push(sessionKey), shown),
@@ -1977,9 +1686,9 @@ describe("createTurnRunner: lists already shown", () => {
 
 // #233: the primer led the history as the assistant's own message, so the model
 // picked an earlier conversation's thread back up and listed its data unasked.
-// It comes as background in the prompt, framed as possibly out of date.
-describe("createTurnRunner: the primer as background", () => {
-  function setup(primer: { current: string; recap: string } | undefined) {
+// It comes in the prompt; the recap of earlier conversations is the memory plugin's layer (#393).
+describe("createTurnRunner: the primer in the prompt", () => {
+  function setup(primer: { current: string } | undefined) {
     const systems: string[] = [];
     const runner = createTurnRunner({
       model: {} as any,
@@ -1987,9 +1696,6 @@ describe("createTurnRunner: the primer as background", () => {
       buildTools: () => ({}),
       getOrCreateHistory: () => fakeHistory({ primer: () => primer }),
       trackSession: () => {},
-      registerCaptureCallback: () => {},
-      maybeCapture: async () => {},
-      processToolCorrections: async () => {},
       logStep: () => {},
       preferredName: () => "Luca",
       shownLists: () => [{ ref: "d1", label: "x (1 item)" }],
@@ -2001,14 +1707,13 @@ describe("createTurnRunner: the primer as background", () => {
     return { runner, systems };
   }
 
-  test("goes into the prompt before the name and the lists already shown: the current state as is, the recap framed", async () => {
-    const { runner, systems } = setup({ current: "Open references:\n- [REQ:t1]", recap: "Last session:\n- asked for SUP tickets" });
+  test("goes into the prompt before the name and the lists already shown, as is", async () => {
+    const { runner, systems } = setup({ current: "Open references:\n- [REQ:t1]" });
     await runner(baseTurn({ principal: verified("u1") }), baseSink());
     expect(systems).toEqual([
       [
         "single",
         "Open references:\n- [REQ:t1]",
-        RECAP_NOTE("Last session:\n- asked for SUP tickets"),
         PREFERRED_NAME_NOTE("Luca"),
         SHOWN_LISTS_NOTE([{ ref: "d1", label: "x (1 item)" }]),
       ].join("\n\n"),
@@ -2018,22 +1723,7 @@ describe("createTurnRunner: the primer as background", () => {
   test("adds nothing without a primer", async () => {
     const { runner, systems } = setup(undefined);
     await runner(baseTurn({ principal: verified("u1") }), baseSink());
-    expect(systems[0]).not.toContain("Background from");
-  });
-
-  test("a primer with no recap brings only the current state, unframed", async () => {
-    const { runner, systems } = setup({ current: "Wiki index:\n- curated/team.md", recap: "" });
-    await runner(baseTurn({ principal: verified("u1") }), baseSink());
-    expect(systems[0]).toContain("single\n\nWiki index:\n- curated/team.md\n\n");
-    expect(systems[0]).not.toContain("Background from");
-  });
-
-  test("frames the recap as possibly out of date, only when the person refers to it, never as current", () => {
-    expect(RECAP_NOTE("X")).toBe(
-      "Background from your earlier conversations with this person, for reference only (it may be out of date):\n" +
-        "X\n" +
-        "Don't bring it up unless the person refers to it, never present it as current, and read any data from a service again with its tool.",
-    );
+    expect(systems[0]).toBe(["single", PREFERRED_NAME_NOTE("Luca"), SHOWN_LISTS_NOTE([{ ref: "d1", label: "x (1 item)" }])].join("\n\n"));
   });
 });
 
@@ -2051,9 +1741,6 @@ describe("createTurnRunner: turn log", () => {
       buildTools: () => ({}),
       getOrCreateHistory: () => fakeHistory(),
       trackSession: () => {},
-      registerCaptureCallback: () => {},
-      maybeCapture: async () => {},
-      processToolCorrections: async () => {},
       logStep: () => {},
       now: () => now,
       logTurnFn: (line) => lines.push(line),
@@ -2217,9 +1904,6 @@ describe("createTurnRunner: stall watchdog", () => {
       buildTools: (_s, _k, _w, onToolStart, onToolFinish) => (opts.tools?.(onToolStart!, onToolFinish), {}),
       getOrCreateHistory: () => fakeHistory(),
       trackSession: () => {},
-      registerCaptureCallback: () => {},
-      maybeCapture: async () => {},
-      processToolCorrections: async () => {},
       logStep: () => {},
       logTurnFn: (line) => lines.push(line),
       heartbeat: () => () => {},
@@ -2428,9 +2112,6 @@ describe("createTurnRunner: a turn resumed after a confirmation", () => {
       },
       ...(translatorFor === undefined ? {} : { translatorFor }),
       trackSession: () => {},
-      registerCaptureCallback: () => {},
-      maybeCapture: async () => {},
-      processToolCorrections: async () => {},
       logStep: () => {},
       turnRecord: archiveVia(async (msg) => {
         captured.push({ role: msg.role, content: msg.content });
@@ -2566,9 +2247,6 @@ describe("createTurnRunner: a turn resumed after a confirmation", () => {
       buildTools: () => ({}),
       getOrCreateHistory: () => fakeHistory(),
       trackSession: () => {},
-      registerCaptureCallback: () => {},
-      maybeCapture: async () => {},
-      processToolCorrections: async () => {},
       logStep: () => {},
       takeResumed: () => resumed,
       runTurnFn: async (_h, _t, deps) => {
@@ -2615,9 +2293,6 @@ describe("createTurnRunner: the turn's language and the pending note", () => {
       },
       getOrCreateHistory: () => fakeHistory(),
       trackSession: () => {},
-      registerCaptureCallback: () => {},
-      maybeCapture: async () => {},
-      processToolCorrections: async () => {},
       logStep: () => {},
       takeSurfacedDisplays: () => opts.displays ?? [],
       runTurnFn: async (_history, _input, deps) => {
@@ -2695,9 +2370,6 @@ describe("createTurnRunner: the turn's language and the pending note", () => {
       translatorFor: () => (k, params) => `${k}${params === undefined ? "" : JSON.stringify(params)}`,
       getOrCreateHistory: () => fakeHistory(),
       trackSession: () => {},
-      registerCaptureCallback: () => {},
-      maybeCapture: async () => {},
-      processToolCorrections: async () => {},
       logStep: () => {},
       runTurnFn: async (_history, _input, deps) => {
         note = deps.loginNote?.([]);
@@ -2731,9 +2403,6 @@ describe("createTurnRunner: the turn's time", () => {
       buildTools: () => ({}),
       getOrCreateHistory: (_sessionKey, _tracked, _key, _resume, timeZone) => (histories.push(timeZone), fakeHistory()),
       trackSession: () => {},
-      registerCaptureCallback: () => {},
-      maybeCapture: async () => {},
-      processToolCorrections: async () => {},
       logStep: () => {},
       logTurnFn: () => {},
       now: () => NOON,
@@ -2821,9 +2490,6 @@ describe("createTurnRunner: a turn the person cancels", () => {
       buildTools: () => ({}),
       getOrCreateHistory: () => fakeHistory(),
       trackSession: () => void ran.push("track"),
-      registerCaptureCallback: () => {},
-      maybeCapture: async () => void ran.push("capture"),
-      processToolCorrections: async () => {},
       logStep: () => {},
       logTurnFn: (line) => lines.push(line),
       heartbeat: () => () => {},
@@ -2913,9 +2579,6 @@ describe("createTurnRunner: what a cancelled turn leaves in the archive", () => 
       buildTools: () => ({}),
       getOrCreateHistory: () => history,
       trackSession: () => void ran.push("track"),
-      registerCaptureCallback: () => {},
-      maybeCapture: async () => void ran.push("capture"),
-      processToolCorrections: async () => void ran.push("corrections"),
       logStep: () => {},
       logTurnFn: (line) => lines.push(line),
       heartbeat: () => () => {},
@@ -3039,9 +2702,6 @@ describe("createTurnRunner: what the person saw of the turn, in the archive (#37
       },
       getOrCreateHistory: () => history,
       trackSession: () => {},
-      registerCaptureCallback: (_sessionKey, start, finish) => void registered.push(start, finish),
-      maybeCapture: async () => {},
-      processToolCorrections: async () => {},
       logStep: () => {},
       logTurnFn: () => {},
       heartbeat: () => () => {},
@@ -3153,9 +2813,6 @@ describe("createTurnRunner: what the person saw of the turn, in the archive (#37
         });
       },
       trackSession: () => {},
-      registerCaptureCallback: () => {},
-      maybeCapture: async () => {},
-      processToolCorrections: async () => {},
       logStep: () => {},
       logTurnFn: () => {},
       heartbeat: () => () => {},
@@ -3177,13 +2834,6 @@ describe("createTurnRunner: what the person saw of the turn, in the archive (#37
     expect(captured[1]).toMatchObject({ interrupted: true, trace: [{ type: "reasoning", text: "halfway", failed: true }] });
   });
 
-  // A capture ping runs after the turn, on the session's later idle sweep: it
-  // isn't this turn's, so it must reach the channel without the recording.
-  test("the session's capture pings get the channel's own callbacks, not the recording ones", async () => {
-    const { runner, sink, registered } = setup({ text: "ok" });
-    await runner(baseTurn({ principal: verified("u1") }), sink);
-    expect(registered).toEqual([sink.onToolStart, sink.onToolFinish]);
-  });
 });
 
 // #214: a conversation is titled after a turn the person wrote, from what the
@@ -3200,9 +2850,6 @@ describe("traces of a turn", () => {
       buildTools: () => ({}),
       getOrCreateHistory: () => fakeHistory(),
       trackSession: () => {},
-      registerCaptureCallback: () => {},
-      maybeCapture: async () => {},
-      processToolCorrections: async () => {},
       logStep: () => {},
       logTurnFn: () => {},
       heartbeat: () => () => {},
@@ -3322,9 +2969,6 @@ describe("the turn id in the archive", () => {
       buildTools: () => ({}),
       getOrCreateHistory: () => fakeHistory(),
       trackSession: () => {},
-      registerCaptureCallback: () => {},
-      maybeCapture: async () => {},
-      processToolCorrections: async () => {},
       logStep: () => {},
       logTurnFn: () => {},
       heartbeat: () => () => {},
@@ -3351,9 +2995,6 @@ describe("traces of a turn: stalled, and stood in", () => {
       buildTools: () => ({}),
       getOrCreateHistory: () => fakeHistory(),
       trackSession: () => {},
-      registerCaptureCallback: () => {},
-      maybeCapture: async () => {},
-      processToolCorrections: async () => {},
       logStep: () => {},
       logTurnFn: () => {},
       heartbeat: () => () => {},
@@ -3414,9 +3055,6 @@ describe("createTurnRunner: afterTurn (#387)", () => {
       buildTools: () => ({}),
       getOrCreateHistory: () => fakeHistory(),
       trackSession: () => {},
-      registerCaptureCallback: () => {},
-      maybeCapture: async () => {},
-      processToolCorrections: async () => {},
       logStep: () => {},
       runTurnFn: async () => "reply",
       afterTurn: (...args: unknown[]) => {
@@ -3505,31 +3143,6 @@ describe("createTurnRunner: afterTurn (#387)", () => {
   });
 });
 
-describe("createTurnRunner: afterTurn comes before the capture (#387)", () => {
-  // The person has the answer: a capture that fails, or takes its time, must not cost a plugin the turn.
-  test("a capture that fails still lets afterTurn hear the turn, and afterTurn comes first", async () => {
-    const order: string[] = [];
-    const runner = createTurnRunner({
-      model: {} as any,
-      systemPrompts: { singleUser: "s", multiUser: "m" },
-      buildTools: () => ({}),
-      getOrCreateHistory: () => fakeHistory(),
-      trackSession: () => {},
-      registerCaptureCallback: () => {},
-      maybeCapture: async () => {
-        order.push("capture");
-        throw new Error("capture broke");
-      },
-      processToolCorrections: async () => {},
-      logStep: () => {},
-      runTurnFn: async () => "reply",
-      afterTurn: () => void order.push("afterTurn"),
-    });
-    await runner(baseTurn({ principal: verified("u1") }), baseSink()).catch(() => {});
-    expect(order).toEqual(["afterTurn", "capture"]);
-  });
-});
-
 describe("createTurnRunner: the context (#387)", () => {
   /** A runner whose model call records what it's given, with `contextFor` and the rest overridable. */
   function runnerWith(overrides: Partial<TurnRunnerDeps>, seen: Array<{ system: string; turnContext?: string }>) {
@@ -3537,11 +3150,8 @@ describe("createTurnRunner: the context (#387)", () => {
       model: {} as any,
       systemPrompts: { singleUser: "BASE", multiUser: "MULTI" },
       buildTools: () => ({}),
-      getOrCreateHistory: () => fakeHistory({ primer: () => ({ current: "PRIMER", recap: "" }) }),
+      getOrCreateHistory: () => fakeHistory({ primer: () => ({ current: "PRIMER" }) }),
       trackSession: () => {},
-      registerCaptureCallback: () => {},
-      maybeCapture: async () => {},
-      processToolCorrections: async () => {},
       logStep: () => {},
       runTurnFn: async (_history, _input, deps) => {
         seen.push({ system: deps.system, ...(deps.turnContext === undefined ? {} : { turnContext: deps.turnContext }) });
@@ -3618,9 +3228,6 @@ describe("createTurnRunner: the turn's record (#393)", () => {
       buildTools: () => ({}),
       getOrCreateHistory: () => fakeHistory(),
       trackSession: () => {},
-      registerCaptureCallback: () => {},
-      maybeCapture: async () => {},
-      processToolCorrections: async () => {},
       logStep: () => {},
       logTurnFn: () => {},
       heartbeat: () => () => {},

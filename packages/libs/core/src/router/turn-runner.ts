@@ -76,18 +76,6 @@ export const OPENING_NOTE = (savesName: boolean): string =>
 export const OPENING_CUE = "(The person has just opened the conversation and hasn't written anything yet.)";
 
 /**
- * The recap of the person's earlier conversations, as background in the prompt
- * (see `context-primer.ts`): never as the assistant's own words, which it would
- * take up again as if just said, and framed as possibly out of date.
- */
-export const RECAP_NOTE = (recap: string): string =>
-  [
-    "Background from your earlier conversations with this person, for reference only (it may be out of date):",
-    recap,
-    "Don't bring it up unless the person refers to it, never present it as current, and read any data from a service again with its tool.",
-  ].join("\n");
-
-/**
  * Appended last to a turn's prompt when lists were shown in the conversation:
  * the history never keeps a list, so without it the model no longer knows
  * which list it showed. Refs and labels only, never the lists.
@@ -229,12 +217,8 @@ export type TurnRunnerDeps = {
     timeZone: string | undefined,
     who: TurnWho,
   ) => Promise<SessionHistory> | SessionHistory;
-  /** Layer-3 session tracking (sessionUsers map + idle scanner touch). Only for turns whose person a provider vouched for. */
+  /** The session's activity, for the idle sweep that closes it (the scanner's touch). Only for turns whose person a provider vouched for. */
   trackSession: (sessionKey: string, key: string, at: number) => void;
-  /** Refreshes this turn's tool-status callbacks for out-of-band capture messages. */
-  registerCaptureCallback: (sessionKey: string, onToolStart: TurnSink["onToolStart"], onToolFinish: TurnSink["onToolFinish"]) => void;
-  /** Mid-conversation Layer-3 capture threshold check. Only for turns whose person a provider vouched for. */
-  maybeCapture: (sessionKey: string, history: SessionHistory) => Promise<void>;
   /**
    * Told what every turn that ran left (#393), whatever its outcome, once the
    * turn is over: the composition root hands it to the plugins'
@@ -251,13 +235,6 @@ export type TurnRunnerDeps = {
    * more than once. Absent, nothing is counted.
    */
   holdTurn?: () => () => void;
-  /** `key` is the turn's person: the corrections' status reads in their language. */
-  processToolCorrections: (
-    steps: StepInfo[],
-    onToolStart: TurnSink["onToolStart"],
-    onToolFinish: TurnSink["onToolFinish"],
-    key: string,
-  ) => Promise<void>;
   logStep: (prefix: string, step: StepInfo) => void;
   /** Test seam; defaults to the real `recordStep`. */
   recordStepFn?: typeof recordStep;
@@ -448,14 +425,13 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
       return;
     }
     const shown = deps.shownLists?.(turn.sessionKey) ?? [];
-    /** The turn's prompt; the primer comes with the history: its current state as is, its recap framed as background. */
-    const systemFor = (primer: { current: string; recap: string } | undefined, context: string | undefined, savesName: boolean) =>
+    /** The turn's prompt; the primer comes with the history: the state the model uses as is. */
+    const systemFor = (primer: { current: string } | undefined, context: string | undefined, savesName: boolean) =>
       [
         // A resumed turn answers the person who confirmed, even in a shared
         // space: the multi-user prompt would let the model stay silent on it.
         turn.multiUser && !resumed ? prompts.multiUser : prompts.singleUser,
         ...(primer?.current ? [primer.current] : []),
-        ...(primer?.recap ? [RECAP_NOTE(primer.recap)] : []),
         ...(context ? [context] : []),
         ...(turn.opening ? [OPENING_NOTE(savesName)] : name === undefined ? [] : [PREFERRED_NAME_NOTE(name)]),
         ...(language === undefined ? [] : [PREFERRED_LANGUAGE_NOTE(language)]),
@@ -468,8 +444,6 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
     const input = timeZone === undefined ? message : `${formatTurnStamp(new Date((deps.now ?? Date.now)()), timeZone)}${message}`;
     if (tracked) {
       deps.trackSession(turn.sessionKey, key, (deps.now ?? Date.now)());
-      // The session's later capture pings aren't this turn's: they reach the channel unrecorded.
-      deps.registerCaptureCallback(turn.sessionKey, channelSink.onToolStart, channelSink.onToolFinish);
     }
 
     // The turn log (#238): a turn with no tool calls, or one that never ends,
@@ -811,7 +785,6 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
       // Activity at the end too: a turn longer than the idle timeout must not
       // look idle the moment it ends.
       deps.trackSession(turn.sessionKey, key, (deps.now ?? Date.now)());
-      await deps.maybeCapture(turn.sessionKey, history);
     }
     // What the turn left, for the plugins keeping it: the calls the answer was written from, as the history recorded them.
     const answered = history.getMessages().at(-1);
@@ -824,11 +797,5 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
       ...(seen.length > 0 ? { trace: seen } : {}),
       ...(stoodIn ? { pendingNote } : {}),
     });
-    // After the record: nothing of it belongs to the turn's trace. Background
-    // work, queued for the model (#383): neither this turn nor the next one of
-    // the session waits for it.
-    void deps.processToolCorrections(steps, channelSink.onToolStart, channelSink.onToolFinish, key).catch((err) =>
-      console.log(`[corrections] failed, turn unaffected: ${String(err instanceof Error ? err.message : err)}`),
-    );
   }
 }

@@ -12,9 +12,6 @@
  */
 import type { ChannelHostReads, ConversationStore, Principal, VectorIndex } from "@mercury-fw/channel-types";
 import type { ConfirmationStore } from "@mercury-fw/confirm-engine";
-import { EPISODIC_SPACE } from "../memory/episodic-store.ts";
-import { SEMANTIC_FACTS_SPACE } from "../memory/semantic-facts-store.ts";
-import { VERBATIM_SPACE } from "../memory/verbatim-archive-store.ts";
 import { listVerbatimBySession, listVerbatimSessions } from "../memory/verbatim-archive-store.ts";
 import type { ConversationTitle } from "../memory/conversation-titles-store.ts";
 import { getToolLog } from "../session/tool-log-buffer.ts";
@@ -44,8 +41,9 @@ export type HostReadsDeps = {
 /** Builds the per-person `ChannelHostReads` over this instance's conversation store, vector index and confirmations. */
 export function createHostReads(deps: HostReadsDeps): ChannelHostReads {
   const { store, index } = deps;
-  // The spaces whose points carry a person's `userId`: the only ones `memoryScroll` opens.
-  const perPerson = new Set([VERBATIM_SPACE, EPISODIC_SPACE, SEMANTIC_FACTS_SPACE]);
+  // The spaces whose points carry a person's `userId`, the memory plugin's
+  // (`@mercury-fw/memory`): the only ones `memoryScroll` opens.
+  const perPerson = new Set(["verbatim_archive", "episodic_memory", "semantic_facts"]);
   const identify = deps.identify ?? createPeople({ directory: "none" }).identify;
 
   /** Runs `read` for the person `principal` is, or answers `null` when the core doesn't admit them. */

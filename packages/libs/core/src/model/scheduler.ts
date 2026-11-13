@@ -30,8 +30,8 @@ import type { TraceInput } from "../traces/tracer.ts";
 /** How soon a job's work should run: `soon` (a correction, the archive's index, a title) goes before `idle` (captures, the nightly review). */
 export type Urgency = "soon" | "idle";
 
-/** The background jobs, as the traces name them: the core's own, and a plugin's as `<plugin>:<name>` (see `PluginRuntimeContext.job`). */
-export type BackgroundJobName = "capture" | "correction" | "archive-index" | `${string}:${string}`;
+/** The background jobs, as the traces name them: a plugin's, as `<plugin>:<name>` (see `PluginRuntimeContext.job`). */
+export type BackgroundJobName = `${string}:${string}`;
 
 /** A model the scheduler queues for: a declared handle. */
 export type QueuedHandle = MercuryModelHandle | MercuryEmbeddingHandle;

@@ -1,7 +1,7 @@
 import { describe, it, expect } from "bun:test";
 import { createSemanticFactExtractor, SemanticFactSchema, type SemanticFact } from "./semantic-fact-extractor.ts";
 import type { LanguageModel } from "ai";
-import type { Message } from "./history.ts";
+import type { Message } from "./messages.ts";
 
 const MODEL = "fake-model" as unknown as LanguageModel;
 

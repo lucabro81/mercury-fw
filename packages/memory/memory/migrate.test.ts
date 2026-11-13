@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { legacyUserKey, migrateMemoryToUserKeys, type MigrationIndex } from "./migrate-layout.ts";
+import { legacyUserKey, migrateMemoryToUserKeys, type MigrationIndex } from "./migrate.ts";
 
 describe("legacyUserKey", () => {
   it("attributes a Google Chat id, encoded once, twice or not at all, and the terminal", () => {

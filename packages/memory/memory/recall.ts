@@ -1,15 +1,16 @@
 /**
  * The search of what was said (issue #4): every message a turn or a resolved
  * confirmation leaves (`archivedMessages`, the record the plugins hear) is
- * indexed in the vector index's `verbatim_archive` space, and
- * `recall_verbatim` searches it by meaning, scoped to the person. Writing
- * the conversation store is the archive plugin's (`@mercury-fw/archive`);
- * this only indexes, never for the operator, whose turns nothing keeps.
+ * indexed in the vector index's `verbatim_archive` space
+ * (`verbatim-index.ts`), and `recall_verbatim` searches it by meaning,
+ * scoped to the person. Writing the conversation store is the archive
+ * plugin's (`@mercury-fw/archive`); this only indexes, never for the
+ * operator, whose turns nothing keeps.
  */
 import { tool, type Tool } from "ai";
 import { z } from "zod";
 import { archivedMessages, type TurnRecord, type VectorIndex } from "@mercury-fw/plugin-types";
-import { indexVerbatimMessage, searchVerbatim } from "./verbatim-archive-store.ts";
+import { indexVerbatimMessage, searchVerbatim } from "./verbatim-index.ts";
 
 /** Per-turn identity the recall tool is scoped to. `userId` is what makes recall cross-session. */
 export type VerbatimRecallContext = {
@@ -30,6 +31,8 @@ export type VerbatimRecallDeps = {
   embed: (text: string) => Promise<number[]>;
   /** Runs a message's indexing later, as background work (the core's queue for the model); awaited when absent. */
   indexInBackground?: (work: () => Promise<void>) => void;
+  /** Gets the index's space ready, before a message is indexed or searched; nothing to wait for when absent. */
+  ready?: () => Promise<void>;
 };
 
 const RECALL_DEFAULT_LIMIT = 5;
@@ -41,7 +44,10 @@ export function createVerbatimRecall(deps: VerbatimRecallDeps): VerbatimRecall {
     indexRecord: async (record) => {
       if (record.operator) return;
       for (const message of archivedMessages(record)) {
-        const work = () => indexVerbatimMessage(deps.index, deps.embed, message);
+        const work = async () => {
+          await deps.ready?.();
+          await indexVerbatimMessage(deps.index, deps.embed, message);
+        };
         if (deps.indexInBackground === undefined) await work();
         else deps.indexInBackground(work);
       }
@@ -57,6 +63,7 @@ export function createVerbatimRecall(deps: VerbatimRecallDeps): VerbatimRecall {
           limit: z.number().int().positive().max(RECALL_MAX_LIMIT).optional(),
         }),
         execute: async ({ query, limit }) => {
+          await deps.ready?.();
           const messages = await searchVerbatim(deps.index, deps.embed, {
             userId: ctx.userId,
             queryText: query,

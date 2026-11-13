@@ -52,7 +52,7 @@ describe("createConversations", () => {
   });
 
   it("gives the plugin's conversation the primer of the person's earlier conversations, and the plugin's own capturable or its messages", async () => {
-    const primer = { current: "INDEX", recap: "" };
+    const primer = { current: "INDEX" };
     const asked: unknown[] = [];
     const conversations = createConversations({
       ownerFor: () => recordingOwner().owner,
@@ -68,7 +68,7 @@ describe("createConversations", () => {
   it("has no primer when it's empty, or for a turn nobody vouched for", async () => {
     const conversations = createConversations({
       ownerFor: () => recordingOwner().owner,
-      primerFor: async () => ({ current: "", recap: "" }),
+      primerFor: async () => ({ current: "" }),
     });
     expect((await conversations.open(alice, { sessionKey: "s1", tracked: true, userId: "static:alice" })).primer()).toBeUndefined();
     expect((await conversations.open(alice, { sessionKey: "s2", tracked: false })).primer()).toBeUndefined();
@@ -90,7 +90,7 @@ describe("createConversations", () => {
   });
 
   it("keeps no conversation when the profile names no plugin: each turn sees only what it adds, while all of it stays capturable", async () => {
-    const conversations = createConversations({ ownerFor: () => undefined, primerFor: async () => ({ current: "INDEX", recap: "" }) });
+    const conversations = createConversations({ ownerFor: () => undefined, primerFor: async () => ({ current: "INDEX" }) });
     const history = await conversations.open(alice, { sessionKey: "s1", tracked: true, userId: "static:alice" });
     await history.addUserMessage("first", "CTX");
     await history.addAssistantMessage("one", [{ toolName: "t", input: {}, result: { ok: true, ran: "t" } }]);
@@ -108,7 +108,7 @@ describe("createConversations", () => {
     ]);
     expect(history.getCharCount()).toBe("second".length + "two, fixed".length);
     expect(history.getCapturable().map((m) => m.content)).toEqual(["first", "one", "second", "two, fixed"]);
-    expect(history.primer()).toEqual({ current: "INDEX", recap: "" });
+    expect(history.primer()).toEqual({ current: "INDEX" });
     expect(await conversations.open(alice, { sessionKey: "s1", tracked: true, userId: "static:alice" })).toBe(history);
   });
 

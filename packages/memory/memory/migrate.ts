@@ -9,7 +9,7 @@
  * left where it is and logged. Idempotent (a user key is never touched again)
  * and fail-soft: a failure is logged, and Mercury starts anyway.
  */
-import type { VectorIndex } from "@mercury-fw/channel-types";
+import type { VectorIndex } from "@mercury-fw/plugin-types";
 
 /** The user key a pre-key id stands for, decoding it as many times as it was encoded; `undefined` when it can't be attributed. */
 export function legacyUserKey(id: string): string | undefined {

@@ -16,7 +16,6 @@ import { createResolveReferenceTool } from "../tools/resolve-reference-tool.ts";
 import { createReadSkillTool } from "./read-skill-tool.ts";
 import { createPresentTool } from "../tools/present-tool.ts";
 import { createDisplayStore } from "../tools/display-store.ts";
-import { createVerbatimRecall } from "../memory/memory-provider.ts";
 import { actingAsSelf } from "../plugins/act-as-self.ts";
 import { toolsWithAssistantName } from "./assistant-name.ts";
 
@@ -28,10 +27,6 @@ function coreTools(): Record<string, Tool> {
     ...createResolveReferenceTool({ notesRoot, key: "static:alice" }),
     ...createReadSkillTool([{ name: "jira", description: "Jira.", body: "body" }]),
     ...createPresentTool({ sessionKey: "s", store: createDisplayStore() }),
-    ...createVerbatimRecall({ index: {} as never, embed: async () => [] }).sessionTools({
-      sessionKey: "s",
-      userId: "static:alice",
-    }),
     ...actingAsSelf({ jiraCommand: pluginTool }, { plugin: "jira", personKey: "static:alice", rename: true, log: () => {} }),
   };
 }

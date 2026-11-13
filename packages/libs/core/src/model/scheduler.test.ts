@@ -34,7 +34,7 @@ function backgroundStep(
   urgency: "soon" | "idle" = "idle",
 ) {
   const done = deferred();
-  const result = scheduler.job({ job: "capture", urgency }, () =>
+  const result = scheduler.job({ job: "memory:capture", urgency }, () =>
     scheduler.call(handle, async () => {
       started.push(label);
       await done.promise;
@@ -76,7 +76,7 @@ describe("scheduler: one slot (a model served one request at a time)", () => {
     const model = ollamaModel("qwen");
     const order: string[] = [];
     const first = deferred();
-    const job = scheduler.job({ job: "capture", urgency: "idle" }, async () => {
+    const job = scheduler.job({ job: "memory:capture", urgency: "idle" }, async () => {
       await scheduler.call(model, async () => {
         order.push("step 1");
         await first.promise;
@@ -362,7 +362,7 @@ describe("scheduler: the background.job event", () => {
     const model = ollamaModel("qwen");
     const embedding = ollamaEmbedding("nomic");
     const release = scheduler.holdTurn(model);
-    const job = scheduler.job({ job: "capture", urgency: "idle" }, async () => {
+    const job = scheduler.job({ job: "memory:capture", urgency: "idle" }, async () => {
       await scheduler.call(model, async () => {
         clock += 300;
       });
@@ -374,7 +374,7 @@ describe("scheduler: the background.job event", () => {
     release();
     await job;
     expect(events).toEqual([
-      { kind: "background.job", job: "capture", urgency: "idle", models: ["qwen", "nomic"], steps: 2, waitedMs: 1000, ms: 1320, outcome: "done" },
+      { kind: "background.job", job: "memory:capture", urgency: "idle", models: ["qwen", "nomic"], steps: 2, waitedMs: 1000, ms: 1320, outcome: "done" },
     ]);
   });
 
@@ -391,7 +391,7 @@ describe("scheduler: the background.job event", () => {
   test("a job done without a model call reports nothing", async () => {
     const events: Array<Record<string, unknown>> = [];
     const scheduler = createScheduler({ emit: (event) => events.push(event) });
-    await scheduler.job({ job: "correction", urgency: "soon" }, async () => "nothing to correct");
+    await scheduler.job({ job: "corrections:correction", urgency: "soon" }, async () => "nothing to correct");
     expect(events).toEqual([]);
   });
 
@@ -407,14 +407,14 @@ describe("scheduler: the background.job event", () => {
       )
       .catch(() => {});
     const release = scheduler.holdTurn(model);
-    const dropped = scheduler.job({ job: "capture", urgency: "idle" }, () => scheduler.call(model, async () => {})).catch(() => {});
+    const dropped = scheduler.job({ job: "memory:capture", urgency: "idle" }, () => scheduler.call(model, async () => {})).catch(() => {});
     await flush();
     scheduler.stop();
     await dropped;
     release();
     expect(events.map((e) => [e.job, e.outcome, e.steps])).toEqual([
       ["titles:title", "failed", 1],
-      ["capture", "dropped", 0],
+      ["memory:capture", "dropped", 0],
     ]);
   });
 
@@ -423,12 +423,12 @@ describe("scheduler: the background.job event", () => {
     const scheduler = createScheduler({ log: (line) => lines.push(line) });
     const model = ollamaModel("qwen");
     const release = scheduler.holdTurn(model);
-    const job = scheduler.job({ job: "capture", urgency: "idle" }, () => scheduler.call(model, async () => {})).catch(() => {});
+    const job = scheduler.job({ job: "memory:capture", urgency: "idle" }, () => scheduler.call(model, async () => {})).catch(() => {});
     await flush();
     scheduler.stop();
     await job;
     release();
-    expect(lines).toEqual(["[queue] capture dropped: the agent stopped before it could run"]);
+    expect(lines).toEqual(["[queue] memory:capture dropped: the agent stopped before it could run"]);
   });
 
   test("a job that swallowed a dropped step is still dropped", async () => {
@@ -436,7 +436,7 @@ describe("scheduler: the background.job event", () => {
     const scheduler = createScheduler({ emit: (event) => events.push(event) });
     const model = ollamaModel("qwen");
     const release = scheduler.holdTurn(model);
-    const job = scheduler.job({ job: "capture", urgency: "idle" }, async () => {
+    const job = scheduler.job({ job: "memory:capture", urgency: "idle" }, async () => {
       await scheduler.call(model, async () => {}).catch(() => {});
     });
     await flush();
@@ -488,7 +488,7 @@ describe("scheduler: wrapped models", () => {
       doStream: async () => ({ stream: convertArrayToReadableStream(["a", "b"]) }) as never,
     });
     const wrapped = scheduler.languageModel(handle, raw) as unknown as Callable;
-    const streamed = await scheduler.job({ job: "capture", urgency: "idle" }, () => wrapped.doStream({ prompt: [] }));
+    const streamed = await scheduler.job({ job: "memory:capture", urgency: "idle" }, () => wrapped.doStream({ prompt: [] }));
     const next = backgroundStep(scheduler, handle, "next", started);
     await flush();
     expect(started).toEqual([]);
@@ -507,7 +507,7 @@ describe("scheduler: wrapped models", () => {
       doStream: async () => ({ stream: convertArrayToReadableStream(["a", "b"]) }) as never,
     });
     const wrapped = scheduler.languageModel(handle, raw) as unknown as Callable;
-    const streamed = await scheduler.job({ job: "capture", urgency: "idle" }, () => wrapped.doStream({ prompt: [] }));
+    const streamed = await scheduler.job({ job: "memory:capture", urgency: "idle" }, () => wrapped.doStream({ prompt: [] }));
     const next = backgroundStep(scheduler, handle, "next", started);
     await streamed.stream.cancel();
     await flush();
@@ -523,7 +523,7 @@ describe("scheduler: wrapped models", () => {
     const wrapped = scheduler.embeddingModel(handle, raw) as unknown as { doEmbed: (o: unknown) => Promise<unknown> };
     const release = scheduler.holdTurn(handle);
     let done = false;
-    const job = scheduler.job({ job: "capture", urgency: "idle" }, () => wrapped.doEmbed({ values: ["x"] })).then((r) => {
+    const job = scheduler.job({ job: "memory:capture", urgency: "idle" }, () => wrapped.doEmbed({ values: ["x"] })).then((r) => {
       done = true;
       return r;
     });

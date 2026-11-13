@@ -115,29 +115,10 @@ describe("buildSystemPrompt preferred name", () => {
   });
 });
 
-// #379: recall_verbatim exists only with a vector index; a prompt naming an
-// absent tool sends the model after it.
+// #393: recall_verbatim is the memory plugin's, described in its own fragment.
 describe("buildSystemPrompt recall_verbatim", () => {
-  const base = { pluginFragments: [], plugins: [], skills: [], multiUserChannel: false };
-
-  it("describes recall_verbatim by default, as the goldens have it", () => {
-    expect(buildSystemPrompt(base)).toContain("You have access to the recall_verbatim tool.");
-  });
-
-  it("leaves recall_verbatim out entirely when the instance has no recall", () => {
-    const prompt = buildSystemPrompt({ ...base, recallVerbatim: false });
-    expect(prompt).not.toContain("recall_verbatim");
-    // Only that block goes: the one on resolve_reference stays.
-    expect(prompt).toContain("You have access to the resolve_reference tool.");
-    const withRecall = buildSystemPrompt(base);
-    const start = withRecall.indexOf("\nYou have access to the recall_verbatim tool.");
-    const last = "never for what you ran in the CURRENT one.";
-    const end = withRecall.indexOf(last) + last.length;
-    expect(withRecall.slice(0, start) + withRecall.slice(end)).toBe(prompt);
-  });
-
-  it("passes through buildSystemPrompts to both prompts", () => {
-    const built = buildSystemPrompts({ pluginFragments: [], plugins: [], skills: [], persona: undefined, recallVerbatim: false });
+  it("names no recall_verbatim of its own, in either prompt", () => {
+    const built = buildSystemPrompts({ pluginFragments: [], plugins: [], skills: [], persona: undefined });
     expect(built.system).not.toContain("recall_verbatim");
     expect(built.chatSystem).not.toContain("recall_verbatim");
   });
