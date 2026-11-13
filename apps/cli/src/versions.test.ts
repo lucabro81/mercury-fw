@@ -39,6 +39,7 @@ describe("appVersions", () => {
     });
     expect(versions).toEqual({
       "@mercury-fw/cli": pkg.version,
+      "@mercury-fw/conversation-window": pkg.version,
       "@mercury-fw/core": pkg.version,
       "@mercury-fw/formatter": pkg.version,
       "@mercury-fw/store-qdrant": pkg.version,
@@ -63,6 +64,7 @@ describe("appVersions", () => {
     });
     expect(versions).toEqual({
       "@mercury-fw/cli": pkg.version,
+      "@mercury-fw/conversation-window": pkg.version,
       "@mercury-fw/core": "0.35.0-dev",
       "@mercury-fw/formatter": pkg.version,
       "@mercury-fw/store-qdrant": pkg.version,

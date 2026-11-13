@@ -9,6 +9,7 @@ import pkg from "../package.json";
 /** The framework packages a new app can depend on: always at the CLI's version. */
 export const FRAMEWORK_PACKAGES = [
   "@mercury-fw/cli",
+  "@mercury-fw/conversation-window",
   "@mercury-fw/core",
   "@mercury-fw/formatter",
   "@mercury-fw/store-qdrant",

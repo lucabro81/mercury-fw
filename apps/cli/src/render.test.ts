@@ -18,7 +18,7 @@ const versions: Record<string, string> = {
   "@mercury-fw/formatter": "0.1.0",
   "@mercury-fw/trace-jsonl": "0.1.0",
   "@mercury-fw/store-qdrant": "0.1.0",
-  "@mercury-fw/conversation-window": "0.2.0",
+  "@mercury-fw/conversation-window": "0.1.0",
   "@mercury-fw/channel-google-chat": "0.1.0",
   "@mercury-fw/channel-http": "0.1.0",
   "@mercury-fw/auth-oidc": "0.1.0",
@@ -345,7 +345,7 @@ describe("renderApp: package.json", () => {
   test("nothing chosen: only the core, its trace sink, its vector index and its conversation window, no trustedDependencies", () => {
     const pkg = JSON.parse(renderApp(EMPTY).get("package.json") ?? "");
     expect(pkg.dependencies).toEqual({
-      "@mercury-fw/conversation-window": "^0.2.0",
+      "@mercury-fw/conversation-window": "^0.1.0",
       "@mercury-fw/core": "^0.1.0",
       "@mercury-fw/store-qdrant": "^0.1.0",
       "@mercury-fw/trace-jsonl": "^0.1.0",

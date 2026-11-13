@@ -93,6 +93,7 @@ const versions: Record<string, string> = {
   "@mercury-fw/formatter": cliVersion(),
   "@mercury-fw/trace-jsonl": cliVersion(),
   "@mercury-fw/store-qdrant": cliVersion(),
+  "@mercury-fw/conversation-window": cliVersion(),
   "@mercury-fw/channel-http": PLUGIN_VERSION,
   "@mercury-fw/auth-static": PLUGIN_VERSION,
   "@mercury-fw/plugin-jira": PLUGIN_VERSION,
@@ -233,6 +234,8 @@ describe("mfw create --local-packages", () => {
       expect(manifest.dependencies).toEqual({
         "@mercury-fw/auth-static": "^0.0.0",
         "@mercury-fw/channel-http": "^0.3.0",
+        // No tarball of it: the CLI's version, as any framework package.
+        "@mercury-fw/conversation-window": `^${cliVersion()}`,
         "@mercury-fw/core": "^0.35.0",
         "@mercury-fw/store-qdrant": "^0.35.0",
         "@mercury-fw/trace-jsonl": "^0.35.0",

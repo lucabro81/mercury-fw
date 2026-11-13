@@ -123,7 +123,7 @@ export const TRACE_SINK_PACKAGE = "@mercury-fw/trace-jsonl";
 /** The vector index and the conversation store every new app declares: Qdrant, the compose service. */
 export const VECTOR_INDEX_PACKAGE = "@mercury-fw/store-qdrant";
 
-/** The packages keeping memory every new app declares: versioned on their own, at the registry's latest. */
+/** The packages keeping memory every new app declares: framework packages, at the CLI's version. */
 export const MEMORY_PACKAGES = ["@mercury-fw/conversation-window"];
 
 /** Above the config: the conversation every new app keeps. */

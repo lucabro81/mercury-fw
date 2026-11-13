@@ -279,19 +279,16 @@
     },
     "packages/memory/conversation-window": {
       "name": "@mercury-fw/conversation-window",
-      "version": "0.0.0",
+      "version": "0.74.0",
       "dependencies": {
+        "@mercury-fw/plugin-types": "workspace:*",
         "ai": "^7.0.126",
         "zod": "^4.6.5",
       },
       "devDependencies": {
-        "@mercury-fw/plugin-types": "workspace:*",
         "@mercury-fw/typescript-config": "*",
         "@types/bun": "^1.4.2",
         "typescript": "^6.0.3",
-      },
-      "peerDependencies": {
-        "@mercury-fw/plugin-types": ">=0.75.0 <1.0.0",
       },
     },
     "packages/stores/store-qdrant": {
