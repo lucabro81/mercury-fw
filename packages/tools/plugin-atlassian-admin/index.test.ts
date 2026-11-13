@@ -11,17 +11,17 @@ describe("atlassianAdminPlugin", () => {
     expect(atlassianAdminPlugin.description).toBe("Looks up users in the Atlassian organization (read-only).");
   });
 
-  it("acts as Mercury, and logs nobody in", () => {
+  it("acts as Mercury, and logs nobody in", async () => {
     expect(atlassianAdminPlugin.actsAs).toBe("mercury");
-    expect(atlassianAdminPlugin.build!({ model: {} as never, env: {}, log: () => {} }).login).toBeUndefined();
+    expect((await atlassianAdminPlugin.build!({ model: {} as never, env: {}, log: () => {} })).login).toBeUndefined();
   });
 });
 
 // #222: the model took "Mercury" for its own name because the texts it read used
 // it; the assistant's name is the app's, and the system is "the system".
 describe("atlassianAdminPlugin's texts for the model", () => {
-  it("never name Mercury", () => {
-    const c = atlassianAdminPlugin.build!({ model: {} as never, env: {}, log: () => {} });
+  it("never name Mercury", async () => {
+    const c = (await atlassianAdminPlugin.build!({ model: {} as never, env: {}, log: () => {} }));
     const texts = [
       atlassianAdminPlugin.description,
       atlassianAdminPlugin.systemPromptFragment ?? "",

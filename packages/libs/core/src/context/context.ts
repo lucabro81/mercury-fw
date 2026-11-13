@@ -126,8 +126,8 @@ export type ContextAssembly = {
   event: { profile: string; budget: number; used: number; layers: LayerReport[] };
 };
 
-/** What the assembler is told about a turn: its session, what the person wrote, whether the space is shared. */
-export type ContextTurn = { sessionKey: string; input: string; multiUser: boolean };
+/** What the assembler is told about a turn: its session, what the person wrote, whether the space is shared, whether the conversation is one its client reopened. */
+export type ContextTurn = { sessionKey: string; input: string; multiUser: boolean; reopened: boolean };
 
 export type ContextAssembler = {
   /** Builds `who`'s context for a turn; never throws. */
@@ -195,6 +195,7 @@ export function createContextAssembler(deps: {
           input: turn.input,
           multiUser: turn.multiUser,
           knobs: knobsOf(profile, plugin),
+          reopened: turn.reopened,
         };
         try {
           return { plugin, blocks: ((await plugin.context!.build(req)) ?? []).filter((b) => typeof b === "string" && b !== "") };

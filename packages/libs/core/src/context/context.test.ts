@@ -27,7 +27,7 @@ function layer(scope: "session" | "turn", blocks: string[] | (() => Promise<stri
 const alice: TurnWho = { person: { key: "u:alice", roles: ["staff"] }, operator: false };
 const paid: TurnWho = { person: { key: "u:bob", roles: ["staff", "paid"] }, operator: false };
 const operator: TurnWho = { person: { key: "operator", roles: ["paid"] }, operator: true };
-const turn = (input = "hi", sessionKey = "s1") => ({ sessionKey, input, multiUser: false });
+const turn = (input = "hi", sessionKey = "s1", reopened = false) => ({ sessionKey, input, multiUser: false, reopened });
 
 describe("resolveContext: the checks at startup", () => {
   it("is nothing for an instance without context", () => {
@@ -146,7 +146,15 @@ describe("createContextAssembler", () => {
     expect([second.system, second.turn]).toEqual(["index", "<context>\nhit 2\n</context>"]);
     expect(sessionSeen.map((r) => r.input)).toEqual(["first"]);
     expect(turnSeen.map((r) => r.input)).toEqual(["first", "second"]);
-    expect(turnSeen[0]).toEqual({ sessionKey: "s1", person: { key: "u:alice" }, operator: false, as: "person", input: "first", multiUser: false, knobs: {} });
+    expect(turnSeen[0]).toEqual({ sessionKey: "s1", person: { key: "u:alice" }, operator: false, as: "person", input: "first", multiUser: false, knobs: {}, reopened: false });
+  });
+
+  it("tells the layers when the conversation is one its client reopened", async () => {
+    const seen: ContextRequest[] = [];
+    const a = assembler([plugin("memory", layer("session", ["recap"], seen))], 1000);
+    await a.forTurn(alice, turn("hi", "s1", true));
+    await a.forTurn(alice, turn("hi", "s2"));
+    expect(seen.map((r) => [r.sessionKey, r.reopened])).toEqual([["s1", true], ["s2", false]]);
   });
 
   it("builds the session layers again for a session it forgot (closed), and separately for each session", async () => {
@@ -222,7 +230,7 @@ describe("context in a shared space (#387)", () => {
       { declared: [notes.declared], loaded: [notes.loaded], log: () => {} },
     )!;
     const a = createContextAssembler({ resolved, offered: () => [{ plugin: notes.loaded, as: "person" }], log: () => {} });
-    const shared = (input: string) => ({ sessionKey: "space", input, multiUser: true });
+    const shared = (input: string) => ({ sessionKey: "space", input, multiUser: true, reopened: false });
     const outsider: TurnWho = { person: { key: "u:carol", roles: [] }, operator: false };
 
     const fromAlice = await a.forTurn(alice, shared("a1"));
@@ -288,10 +296,10 @@ describe("context per person and session (#387, review)", () => {
     const a = createContextAssembler({ resolved, offered: () => [{ plugin: notes.loaded, as: "person" }], log: () => {} });
     const bob: TurnWho = { person: { key: "u:bob", roles: ["staff"] }, operator: false };
 
-    const alicesText = (await a.forTurn(alice, { sessionKey: "space", input: "a", multiUser: true })).system;
-    const bobsText = (await a.forTurn(bob, { sessionKey: "space", input: "b", multiUser: true })).system;
-    const alicesAgain = (await a.forTurn(alice, { sessionKey: "space", input: "a2", multiUser: true })).system;
-    const aliceElsewhere = (await a.forTurn(alice, { sessionKey: "dm", input: "x", multiUser: false })).system;
+    const alicesText = (await a.forTurn(alice, { sessionKey: "space", input: "a", multiUser: true, reopened: false })).system;
+    const bobsText = (await a.forTurn(bob, { sessionKey: "space", input: "b", multiUser: true, reopened: false })).system;
+    const alicesAgain = (await a.forTurn(alice, { sessionKey: "space", input: "a2", multiUser: true, reopened: false })).system;
+    const aliceElsewhere = (await a.forTurn(alice, { sessionKey: "dm", input: "x", multiUser: false, reopened: false })).system;
 
     expect([alicesText, bobsText, alicesAgain, aliceElsewhere]).toEqual(["notes of u:alice", "notes of u:bob", "notes of u:alice", "notes of u:alice"]);
     expect(seen.map((r) => `${r.sessionKey}/${r.person.key}`)).toEqual(["space/u:alice", "space/u:bob", "dm/u:alice"]);

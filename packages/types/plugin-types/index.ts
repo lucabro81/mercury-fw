@@ -23,7 +23,7 @@ import type { LanguageModel, Tool } from "ai";
  * plugin's declared `apiVersion` and refuses a mismatch (fail-soft). A single
  * integer, bumped only on a breaking change to the shapes in this file.
  */
-export const PLUGIN_API_VERSION = 6;
+export const PLUGIN_API_VERSION = 7;
 
 /**
  * A catalog of texts a person sees: key → text, `{param}` marking where a
@@ -387,6 +387,139 @@ export type ConversationStore = {
   health: () => Promise<{ ok: boolean; detail?: string }>;
 };
 
+// ---- What else a plugin can use while it runs (see `PluginRuntimeContext`). ----
+
+/**
+ * What a plugin can ask the instance for in `needs`, beyond what every plugin
+ * gets: the vector index (`ctx.vectorIndex`), the conversation store
+ * (`ctx.conversations`), the embedding model (`ctx.embed`). Each is declared
+ * by the instance in its config; a plugin that needs one the instance didn't
+ * declare stops the instance at startup, saying which.
+ */
+export type PluginNeed = "vectorIndex" | "conversationStore" | "embedding";
+
+/**
+ * Turns a text into its vector with the instance's embedding model
+ * (`models.embedding`), through the core's queue: like every model call a
+ * plugin makes, it waits while people are waiting on the model, so call it
+ * inside `ctx.job` when nobody is waiting for it. Rejects when the model can't
+ * be reached.
+ */
+export type Embed = (text: string) => Promise<number[]>;
+
+/**
+ * Runs `fn` every day at `at` (`"HH:MM"`, 24 hours) in `timeZone` (an IANA
+ * name; the instance's `i18n.timeZone` when left out). `name` says what the
+ * work is, for the log and the traces (`<plugin>:<name>`).
+ *
+ * - Only the long-running service runs it, from its start: never the dev REPL.
+ * - If the instance isn't running at that minute, that day's run is skipped,
+ *   never made up later.
+ * - It runs once a day even across a change of the clocks; a day whose clocks
+ *   skip `at` has no run.
+ * - `fn` isn't held for a model: work that calls one belongs in `ctx.job`
+ *   inside it. One that throws or rejects is logged; the next day's run goes on.
+ * - An `at` that isn't `"HH:MM"`, or a time zone that doesn't exist, is a
+ *   mistake in the instance's config: the instance doesn't start.
+ */
+export type Daily = (name: string, when: { at: string; timeZone?: string }, fn: () => void | Promise<void>) => void;
+
+/**
+ * One tool call as the core's tool log keeps it: when, from which channel and
+ * session, for whom (`owner`, the person's key), the tool, its input and its
+ * output as text (cut when long; a login's link never kept).
+ */
+export type ToolLogEntry = {
+  timestamp: string;
+  channel: string;
+  sessionKey: string;
+  owner: string;
+  toolName: string;
+  input: string;
+  output: string;
+};
+
+/**
+ * The tool calls of the recent turns, kept in memory by the core (lost on a
+ * restart), the newest ones per person. `read` returns `person`'s, oldest
+ * first, only those of `sessionKey` when given.
+ */
+export type ToolLog = {
+  read: (q: { person: string; sessionKey?: string }) => ToolLogEntry[];
+};
+
+/**
+ * What a person told the agent about themselves, kept by the core (the
+ * channels read it too: their name, their language, their time zone). Each
+ * `of` is undefined when they never said. Each `set` saves and returns the
+ * value as stored, and throws on one that can't be kept: a name that can't
+ * stand in a prompt, a language the instance doesn't ship (`languages`), a
+ * time zone that doesn't exist.
+ */
+export type Profiles = {
+  nameOf: (person: string) => string | undefined;
+  setName: (person: string, name: string) => string;
+  languageOf: (person: string) => string | undefined;
+  setLanguage: (person: string, language: string) => string;
+  timeZoneOf: (person: string) => string | undefined;
+  setTimeZone: (person: string, timeZone: string) => string;
+  /** The languages the instance ships, its default first. */
+  languages: string[];
+};
+
+/**
+ * A message of a conversation as the model reads it: who spoke, the text,
+ * on an answer the tool calls it was written from, on a person's message what
+ * the instance's `turn` context layers put in front of it (which the model
+ * reads there on later calls too, so its cache holds).
+ */
+export type ConversationMessage = { role: "user" | "assistant"; content: string; calls?: CallRecord[]; context?: string };
+
+/**
+ * What a conversation is opened for: the session; whose it is (`person`,
+ * absent when nobody vouched for who writes, as on the terminal: nothing of
+ * it is theirs to keep or bring back); `reopen` when the channel keeps many
+ * conversations a person reopens at will, with the channel's budget for what
+ * comes back (`maxChars`, the owner's own when absent, 0 for nothing);
+ * `timeZone`, the turn's, to stamp what comes back.
+ */
+export type ConversationOpen = {
+  sessionKey: string;
+  person?: { key: string };
+  reopen?: { maxChars?: number };
+  timeZone?: string;
+};
+
+/**
+ * One open conversation, as the turn uses it: what the model reads
+ * (`getMessages`), the messages a turn adds (the person's with its context,
+ * then the answer with its calls; either may make the owner shorten what
+ * came before), the answer replaced after a post-turn guard rewrote it, and
+ * how long it is (`getCharCount`, for a channel showing how full it is).
+ * `getCapturable` is what the conversation added since it was opened, without
+ * what a reopening brought back: what a memory may still have to learn.
+ */
+export type Conversation = {
+  getMessages: () => ConversationMessage[];
+  addUserMessage: (content: string, context?: string) => Promise<void>;
+  addAssistantMessage: (content: string, calls?: CallRecord[]) => Promise<void>;
+  replaceLastAssistantMessage: (content: string) => void;
+  getCharCount: () => number;
+  getCapturable?: () => ConversationMessage[];
+};
+
+/**
+ * What a plugin contributes to keep conversations, when an instance's context
+ * profile names it as its `conversation`: the core `open`s one at a session's
+ * first turn and keeps it until the session closes (`close`, when the plugin
+ * keeps anything of its own per session). `open` may reject: the turn then
+ * fails, as it would without a model.
+ */
+export type ConversationOwner = {
+  open: (req: ConversationOpen) => Promise<Conversation>;
+  close?: (sessionKey: string) => void;
+};
+
 /**
  * What a plugin's `build()` receives — everything its runtime contributions may
  * need that isn't static data: the instance's turn model (for a model-backed
@@ -431,6 +564,24 @@ export type PluginRuntimeContext = {
    * with an older core: call the model directly.
    */
   job?: <T>(name: string, urgency: JobUrgency, fn: () => Promise<T>) => Promise<T>;
+  /**
+   * The instance's `background` model (its `turn` model when it declares
+   * none), through the core's queue: for work nobody waits on, in `ctx.job`.
+   * The core always sets it.
+   */
+  backgroundModel?: LanguageModel;
+  /** The instance's vector index (see `VectorIndex`): set when the plugin declares `needs: ["vectorIndex"]`. */
+  vectorIndex?: VectorIndex;
+  /** The instance's conversation store (see `ConversationStore`): set when the plugin declares `needs: ["conversationStore"]`. */
+  conversations?: ConversationStore;
+  /** The instance's embedding model (see `Embed`): set when the plugin declares `needs: ["embedding"]`. */
+  embed?: Embed;
+  /** Runs work every day at a set time (see `Daily`). The core always sets it. */
+  daily?: Daily;
+  /** The tool calls of the recent turns (see `ToolLog`). The core always sets it. */
+  toolLog?: ToolLog;
+  /** What people told the agent about themselves (see `Profiles`). The core always sets it. */
+  profiles?: Profiles;
 };
 
 /** How soon a piece of work nobody waits on should run: `"soon"` (a title, within minutes) goes before `"idle"` (whenever the model is free). */
@@ -477,7 +628,8 @@ export type ClosedSession = {
  * that turn was one the agent opened, or resumed after a confirmation),
  * whether the space is shared, and the value of each knob the layer
  * declares in the person's profile: the one the instance set, or the knob's
- * `default` (empty when it declares none).
+ * `default` (empty when it declares none), and whether the conversation was
+ * reopened.
  */
 export type ContextRequest = {
   sessionKey: string;
@@ -487,6 +639,8 @@ export type ContextRequest = {
   input: string;
   multiUser: boolean;
   knobs: Record<string, KnobValue>;
+  /** Whether the session is a conversation its client reopened (see `ConversationOpen.reopen`), rather than one started now or a single running thread. */
+  reopened: boolean;
 };
 
 /** A knob's value: what its `KnobSpec` allows. */
@@ -621,6 +775,8 @@ export type PersonLogin = {
  * - `context`: what the plugin adds to what the model reads, when the
  *   instance lists it in a context profile (see `ContextLayer`). Ignored by
  *   an older core, and by this one when no profile lists the plugin.
+ * - `conversation`: how the plugin keeps conversations, when a context profile
+ *   names it as its `conversation` (see `ConversationOwner`).
  *
  * A hook that throws, or rejects, is logged: nothing else is affected.
  */
@@ -633,6 +789,7 @@ export type PluginRuntimeContributions = {
   afterTurn?: (turn: FinishedTurn) => void | Promise<void>;
   onSessionClose?: (session: ClosedSession) => void | Promise<void>;
   context?: ContextLayer;
+  conversation?: ConversationOwner;
 };
 
 /**
@@ -745,12 +902,20 @@ export type PluginSurface = {
  *   failed (see `loadPlugins`). Presence + ordering only — a dependency shares
  *   its capability through the usual registries, not a handle injected here.
  *   Absent/empty ⇒ no dependency.
+ * - `needs`: what the plugin uses of the instance beyond what every plugin
+ *   gets (see `PluginNeed`), handed to its `build()` in the context. The
+ *   instance stops at startup when it declares the plugin without declaring
+ *   what it needs.
  * - `systemPromptFragment`: the tool-surface description spliced into the
  *   system prompt when the plugin is active.
  * - `build`: the env/model-dependent contributions (its tool, post-processors,
  *   status describers, guards). A plugin that owns a CLI tool validates its own
  *   allowlist here (schema only — its pinned binary is co-shipped) before
- *   building the tool.
+ *   building the tool. It may return a promise, for work the plugin does once
+ *   at startup (creating its spaces in the index, moving old data): the
+ *   instance waits for it before taking turns, so keep it short, and leave
+ *   to the plugin's first use anything that waits on a service that may be
+ *   away. One that throws or rejects leaves the plugin out, as below.
  * - `skills`: Agent-Skills the plugin contributes (see `Skill`); their
  *   descriptors go in the system prompt, their bodies load on demand.
  * - `surfaces`: reserved (see `PluginSurface`); absent for a plugin with none.
@@ -778,8 +943,9 @@ export type Plugin = {
   name: string;
   description: string;
   dependsOn?: string[];
+  needs?: PluginNeed[];
   systemPromptFragment?: string;
-  build?: (ctx: PluginRuntimeContext) => PluginRuntimeContributions;
+  build?: (ctx: PluginRuntimeContext) => PluginRuntimeContributions | Promise<PluginRuntimeContributions>;
   skills?: Skill[];
   surfaces?: PluginSurface[];
   actsAs?: "person" | "mercury" | "anyone";

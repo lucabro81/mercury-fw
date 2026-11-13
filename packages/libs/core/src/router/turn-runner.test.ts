@@ -3658,7 +3658,15 @@ describe("createTurnRunner: the context (#387)", () => {
     )(baseTurn({ principal: verified("u1"), text: "hello" }), baseSink());
 
     expect(seen).toEqual([{ system: "BASE\n\nPRIMER\n\nSESSION LAYERS", turnContext: "<context>\nT\n</context>" }]);
-    expect(asked[0]![1]).toEqual({ sessionKey: "session-1", input: "hello", multiUser: false });
+    expect(asked[0]![1]).toEqual({ sessionKey: "session-1", input: "hello", multiUser: false, reopened: false });
+  });
+
+  test("tells the context a conversation its client reopens, for a person someone vouched for", async () => {
+    const asked: unknown[][] = [];
+    const contextFor = async (...args: unknown[]) => (asked.push(args), { event: { profile: "default", budget: 10, used: 0, layers: [] } });
+    await runnerWith({ contextFor }, [])(baseTurn({ principal: verified("u1"), text: "hello", resume: {} }), baseSink());
+    await runnerWith({ contextFor }, [])(baseTurn({ text: "hello", resume: {} }), baseSink());
+    expect(asked.map((a) => (a[1] as { reopened: boolean }).reopened)).toEqual([true, false]);
   });
 
   test("reports what the context held as a context.assembled event of the turn", async () => {

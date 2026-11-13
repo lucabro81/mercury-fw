@@ -621,7 +621,13 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
       let context: ContextAssembly | undefined;
       if (deps.contextFor) {
         try {
-          context = await deps.contextFor(who, { sessionKey: turn.sessionKey, input: turn.opening || resumed ? "" : turn.text, multiUser: turn.multiUser });
+          context = await deps.contextFor(who, {
+            sessionKey: turn.sessionKey,
+            input: turn.opening || resumed ? "" : turn.text,
+            multiUser: turn.multiUser,
+            // Only someone vouched for has conversations to reopen.
+            reopened: tracked && turn.resume !== undefined,
+          });
           emit({ kind: "context.assembled", ...context.event }, key);
         } catch (err) {
           logTurn(`${turn.logPrefix}[context] failed, the turn goes without: ${err instanceof Error ? err.message : String(err)}`);

@@ -24,7 +24,29 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { LanguageModel } from "ai";
 import { PLUGIN_API_VERSION } from "@mercury-fw/plugin-types";
-import type { Plugin, ClosedSession, CliPostProcessor, ContextLayer, FinishedTurn, JobUrgency, MercuryModelHandle, Messages, PersonLogin, PostTurnGuard, Skill, SessionToolContext, Translate } from "@mercury-fw/plugin-types";
+import type {
+  Plugin,
+  ClosedSession,
+  CliPostProcessor,
+  ContextLayer,
+  ConversationOwner,
+  ConversationStore,
+  Daily,
+  Embed,
+  FinishedTurn,
+  JobUrgency,
+  MercuryModelHandle,
+  Messages,
+  PersonLogin,
+  PluginNeed,
+  PostTurnGuard,
+  Profiles,
+  Skill,
+  SessionToolContext,
+  ToolLog,
+  Translate,
+  VectorIndex,
+} from "@mercury-fw/plugin-types";
 import { catalogErrors } from "../i18n/i18n.ts";
 import type { Tool } from "ai";
 import { knobSpecError } from "../context/knobs.ts";
@@ -64,6 +86,8 @@ export interface LoadedPlugin {
   onSessionClose?: (session: ClosedSession) => void | Promise<void>;
   /** What it adds to what the model reads, when a context profile lists it (see `ContextLayer`). */
   context?: ContextLayer;
+  /** How it keeps conversations, when a context profile names it as its `conversation` (see `ConversationOwner`). */
+  conversation?: ConversationOwner;
 }
 
 /** What the loader hands back to the composition root. The core knows nothing
@@ -101,6 +125,31 @@ export interface PluginLoadContext {
   /** Where each plugin's own data folder goes (`<root>/<name>`, see
    * `PluginRuntimeContext.dataDir`); no plugin gets one when absent. */
   pluginDataRoot?: string;
+  /** The instance's `background` model, queued (see `PluginRuntimeContext.backgroundModel`). */
+  backgroundModel?: LanguageModel;
+  /** What the instance's config declares of what a plugin may need: a plugin needing anything else stops the start. */
+  declared?: PluginNeed[];
+  /** What of it started, handed to the plugins that need it: a need declared but missing here leaves its plugin out. */
+  provided?: { vectorIndex?: VectorIndex; conversations?: ConversationStore; embed?: Embed };
+  /** Runs work every day at a set time, named as the traces show it (`<plugin>:<name>`); throws on a time that can't be (see `PluginRuntimeContext.daily`). */
+  daily?: Daily;
+  /** The tool log, for every plugin (see `PluginRuntimeContext.toolLog`). */
+  toolLog?: ToolLog;
+  /** People's profiles, for every plugin (see `PluginRuntimeContext.profiles`). */
+  profiles?: Profiles;
+}
+
+/** What each need is, in the context a plugin gets. */
+const NEED_FIELD = { vectorIndex: "vectorIndex", conversationStore: "conversations", embedding: "embed" } as const;
+
+/** The context fields of `needs`, from what the instance provided: only those, and only what is there. */
+function neededFields(needs: PluginNeed[], provided: NonNullable<PluginLoadContext["provided"]>): Partial<NonNullable<PluginLoadContext["provided"]>> {
+  const fields: Record<string, unknown> = {};
+  for (const need of needs) {
+    const field = NEED_FIELD[need];
+    if (provided[field] !== undefined) fields[field] = provided[field];
+  }
+  return fields;
 }
 
 /** `plugin`'s `job`: the core's queue, with the job named after the plugin. */
@@ -109,6 +158,18 @@ function pluginJob(
   job: NonNullable<PluginLoadContext["job"]>,
 ): <T>(name: string, urgency: JobUrgency, fn: () => Promise<T>) => Promise<T> {
   return (name, urgency, fn) => job(`${plugin}:${name}`, urgency, fn);
+}
+
+/** `plugin`'s `daily`: the core's, with the work named after the plugin; a time that can't be is kept in `errors` (it stops the start) and thrown to the plugin too. */
+function pluginDaily(plugin: string, daily: Daily, errors: string[]): Daily {
+  return (name, when, fn) => {
+    try {
+      daily(`${plugin}:${name}`, when, fn);
+    } catch (err) {
+      errors.push(`plugin "${plugin}": its daily "${name}" can't be set: ${err instanceof Error ? err.message : String(err)}`);
+      throw err;
+    }
+  };
 }
 
 /** A plugin name usable as a folder name as is: the rule app names follow too. */
@@ -202,6 +263,17 @@ export async function loadPlugins(plugins: Plugin[], ctx: PluginLoadContext): Pr
     left.push({ name, reason });
   };
 
+  // A plugin needing what the config doesn't declare is a config that can't
+  // work: the start stops before any plugin builds.
+  const declared = new Set(ctx.declared ?? []);
+  for (const plugin of plugins) {
+    const missing = (plugin.needs ?? []).find((need) => !declared.has(need));
+    if (missing !== undefined) throw new Error(`plugin "${plugin.name}" needs the instance's ${missing}, which mercury.config.ts doesn't declare`);
+  }
+  // A plugin's daily at a time that can't be is a mistake in the config as
+  // well, found while it builds: the start stops once the plugins are done.
+  const configErrors: string[] = [];
+
   const { ordered, cyclic } = orderByDependencies(plugins);
   // A plugin caught in a cycle can't be ordered, so it can't load.
   for (const plugin of cyclic) {
@@ -253,12 +325,20 @@ export async function loadPlugins(plugins: Plugin[], ctx: PluginLoadContext): Pr
       leaveOut(plugin.name, textErrors.join("; "));
       continue;
     }
+    // A need the config declares but that didn't start (an index that
+    // isn't reachable at build time) is the outside world: the plugin is
+    // left out, the rest goes on.
+    const notStarted = (plugin.needs ?? []).find((need) => ctx.provided?.[NEED_FIELD[need]] === undefined);
+    if (notStarted !== undefined) {
+      leaveOut(plugin.name, `the instance's ${notStarted} didn't start`);
+      continue;
+    }
     try {
       // Stage into locals first: build() can throw, and a plugin must degrade
       // as a unit — nothing of it lands unless all of it succeeds.
       const dataDir = plugin.build ? dataDirFor(plugin.name, ctx.pluginDataRoot, ctx.log) : undefined;
       const contributions = plugin.build
-        ? plugin.build({
+        ? await plugin.build({
             model: ctx.model,
             ...(ctx.modelFor === undefined ? {} : { modelFor: ctx.modelFor }),
             env: ctx.env,
@@ -266,6 +346,11 @@ export async function loadPlugins(plugins: Plugin[], ctx: PluginLoadContext): Pr
             assistantName: ctx.assistantName,
             ...(dataDir === undefined ? {} : { dataDir }),
             ...(ctx.job === undefined ? {} : { job: pluginJob(plugin.name, ctx.job) }),
+            ...(ctx.backgroundModel === undefined ? {} : { backgroundModel: ctx.backgroundModel }),
+            ...neededFields(plugin.needs ?? [], ctx.provided ?? {}),
+            ...(ctx.daily === undefined ? {} : { daily: pluginDaily(plugin.name, ctx.daily, configErrors) }),
+            ...(ctx.toolLog === undefined ? {} : { toolLog: ctx.toolLog }),
+            ...(ctx.profiles === undefined ? {} : { profiles: ctx.profiles }),
           })
         : {};
       // A knob's spec is what an admin area draws and checks values against:
@@ -295,6 +380,7 @@ export async function loadPlugins(plugins: Plugin[], ctx: PluginLoadContext): Pr
         ...(contributions.afterTurn === undefined ? {} : { afterTurn: contributions.afterTurn }),
         ...(contributions.onSessionClose === undefined ? {} : { onSessionClose: contributions.onSessionClose }),
         ...(contributions.context === undefined ? {} : { context: contributions.context }),
+        ...(contributions.conversation === undefined ? {} : { conversation: contributions.conversation }),
       });
       if (actsAs === "mercury") {
         ctx.log(
@@ -317,5 +403,6 @@ export async function loadPlugins(plugins: Plugin[], ctx: PluginLoadContext): Pr
     }
   }
 
+  if (configErrors.length > 0) throw new Error(configErrors.join("; "));
   return { plugins: loaded, toolStatusDescribers, postTurnGuards, messages, activated: [...activated], left };
 }

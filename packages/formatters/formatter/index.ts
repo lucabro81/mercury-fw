@@ -109,8 +109,8 @@ function renderDisplay(output: unknown, handler: DisplayHandler, t: Translate, l
 export function formatterPlugin(plugin: Plugin, handler: DisplayHandler): Plugin {
   return {
     ...plugin,
-    build: (ctx) => {
-      const inner = plugin.build ? plugin.build(ctx) : {};
+    build: async (ctx) => {
+      const inner = plugin.build ? await plugin.build(ctx) : {};
       const factory = inner.sessionTools;
       if (factory === undefined) {
         return inner;

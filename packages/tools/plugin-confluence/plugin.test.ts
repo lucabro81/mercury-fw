@@ -39,8 +39,8 @@ describe("confluencePlugin", () => {
     expect(skill.body).toContain("confluenceCommand");
   });
 
-  it("builds a confluenceCommand tool and its status describer, and no guard", () => {
-    const c = confluencePlugin.build!({ model: MODEL, env: {}, log: noLog });
+  it("builds a confluenceCommand tool and its status describer, and no guard", async () => {
+    const c = (await confluencePlugin.build!({ model: MODEL, env: {}, log: noLog }));
     expect(Object.keys(c.sessionTools!(sctx, c.postProcess))).toEqual(["confluenceCommand"]);
     expect(c.toolStatusDescribers!.confluenceCommand!({ command: "confluence page search --cql X" }, echo)).toBe(
       'core.status.command {"binary":"confluence","command":"page search"}',
@@ -49,20 +49,20 @@ describe("confluencePlugin", () => {
     expect(c.postTurnGuards ?? []).toEqual([]);
   });
 
-  it("contributes nothing, and says why in the log, when its allowlist doesn't validate", () => {
+  it("contributes nothing, and says why in the log, when its allowlist doesn't validate", async () => {
     const logs: string[] = [];
     const plugin = createConfluencePlugin({ cliConfig: { binary: "confluence", commands: "not a list" } });
-    expect(plugin.build!({ model: MODEL, env: {}, log: (line) => logs.push(line) })).toEqual({});
+    expect((await plugin.build!({ model: MODEL, env: {}, log: (line) => logs.push(line) }))).toEqual({});
     expect(logs).toHaveLength(1);
     expect(logs[0]).toStartWith("confluence allowlist failed to load, confluence tool not contributed: ");
   });
 
-  it("needs no environment variable: the links come from the CLI", () => {
-    expect(() => confluencePlugin.build!({ model: MODEL, env: {}, log: noLog })).not.toThrow();
+  it("needs no environment variable: the links come from the CLI", async () => {
+    expect(await confluencePlugin.build!({ model: MODEL, env: {}, log: noLog })).toBeDefined();
   });
 
-  it("contributes the list extractor as its post-processor", () => {
-    const c = confluencePlugin.build!({ model: MODEL, env: {}, log: noLog });
+  it("contributes the list extractor as its post-processor", async () => {
+    const c = (await confluencePlugin.build!({ model: MODEL, env: {}, log: noLog }));
     expect(
       c.postProcess!({ binary: "confluence", args: ["page", "search"], prefix: ["page", "search"] }, { ok: true, data: { results: [] } }, echo),
     ).toEqual({ ok: true, data: { results: [], pageCount: 0 }, display: { type: "page-list", items: [] } });
@@ -79,7 +79,7 @@ describe("confluencePlugin", () => {
           : { ok: false, error: "confluence exited with code 3: user static:alice is not logged in", exitCode: 3 };
       },
     });
-    const c = plugin.build!({ model: MODEL, env: {}, log: noLog });
+    const c = (await plugin.build!({ model: MODEL, env: {}, log: noLog }));
     const login = { ok: false as const, loginRequired: true as const, service: "confluence", authorizeUrl: "https://auth", error: "log in" };
     const tool = c.sessionTools!({ ...sctx, person: { key: "static:alice" }, requireLogin: async () => login }, c.postProcess).confluenceCommand!;
     await tool.execute!({ command: "confluence doctor" }, {} as never);
@@ -97,7 +97,7 @@ describe("confluencePlugin", () => {
           : { ok: true, data: {} };
       },
     });
-    const login = plugin.build!({ model: MODEL, env: {}, log: noLog }).login!;
+    const login = (await plugin.build!({ model: MODEL, env: {}, log: noLog })).login!;
     expect(await login.start("static:alice", "https://mercury.example.com/login/callback")).toEqual({
       ok: true,
       authorizeUrl: "https://auth.atlassian.com/authorize?x",
@@ -177,8 +177,8 @@ describe("the confluence skill agrees with the CLI", () => {
 });
 
 describe("confluencePlugin's texts for the model", () => {
-  it("never name Mercury", () => {
-    const c = confluencePlugin.build!({ model: MODEL, env: {}, log: noLog });
+  it("never name Mercury", async () => {
+    const c = (await confluencePlugin.build!({ model: MODEL, env: {}, log: noLog }));
     const texts = [
       confluencePlugin.description,
       ...(confluencePlugin.skills ?? []).flatMap((s) => [s.description, s.body]),

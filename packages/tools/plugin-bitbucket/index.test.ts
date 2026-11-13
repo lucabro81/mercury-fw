@@ -47,7 +47,7 @@ describe("bitbucketPlugin", () => {
           : { ok: true, data: {} };
       },
     });
-    const login = plugin.build!({ model: {} as never, env: {}, log: () => {} }).login!;
+    const login = (await plugin.build!({ model: {} as never, env: {}, log: () => {} })).login!;
     expect(await login.start("static:alice", "https://mercury.example.com/login/callback")).toEqual({
       ok: true,
       authorizeUrl: "https://bitbucket.org/site/oauth2/authorize?x",
@@ -63,16 +63,16 @@ describe("bitbucketPlugin", () => {
     ]);
   });
 
-  it("contributes only its own tool — no prompt fragment, no surfaces, no post-processors, no guard", () => {
+  it("contributes only its own tool — no prompt fragment, no surfaces, no post-processors, no guard", async () => {
     expect(bitbucketPlugin.systemPromptFragment).toBeUndefined();
     expect(bitbucketPlugin.surfaces).toBeUndefined();
-    const c = bitbucketPlugin.build!({ model: {} as never, env: {}, log: () => {} });
+    const c = (await bitbucketPlugin.build!({ model: {} as never, env: {}, log: () => {} }));
     expect(c.postProcess).toBeUndefined();
     expect(c.postTurnGuards ?? []).toEqual([]);
   });
 
-  it("builds a bitbucketCommand tool and a status describer for it", () => {
-    const c = bitbucketPlugin.build!({ model: {} as never, env: {}, log: () => {} });
+  it("builds a bitbucketCommand tool and a status describer for it", async () => {
+    const c = (await bitbucketPlugin.build!({ model: {} as never, env: {}, log: () => {} }));
     const tools = c.sessionTools!(sctx, c.postProcess);
     expect(Object.keys(tools)).toEqual(["bitbucketCommand"]);
     expect(Object.keys(c.toolStatusDescribers ?? {})).toEqual(["bitbucketCommand"]);
@@ -86,8 +86,8 @@ describe("bitbucketPlugin", () => {
 // #222: the model took "Mercury" for its own name because the texts it read used
 // it; the assistant's name is the app's, and the system is "the system".
 describe("bitbucketPlugin's texts for the model", () => {
-  it("never name Mercury", () => {
-    const c = bitbucketPlugin.build!({ model: {} as never, env: {}, log: () => {} });
+  it("never name Mercury", async () => {
+    const c = (await bitbucketPlugin.build!({ model: {} as never, env: {}, log: () => {} }));
     const texts = [
       bitbucketPlugin.description,
       bitbucketPlugin.systemPromptFragment ?? "",

@@ -613,3 +613,119 @@ describe("loadPlugins: context layers (#387)", () => {
     expect(logs).toEqual(['plugin "rag" failed to load, skipped: its context knob "topK" doesn\'t hold: its default 5 is above its max 3']);
   });
 });
+
+describe("loadPlugins: what a plugin can use (#393)", () => {
+  const index = { kind: "index" } as never;
+  const store = { kind: "store" } as never;
+  const embed = async () => [1, 2];
+
+  it("waits for a build() that returns a promise, and keeps what it resolves with", async () => {
+    const afterTurn = () => {};
+    const loaded = await loadPlugins([plug({ name: "memo", build: async () => ({ afterTurn }) })], baseCtx());
+    expect(loaded.activated).toEqual(["memo"]);
+    expect(loaded.plugins[0]!.afterTurn).toBe(afterTurn);
+  });
+
+  it("leaves out, as a failure, a plugin whose build() rejects", async () => {
+    const logs: string[] = [];
+    const loaded = await loadPlugins([plug({ name: "memo", build: async () => Promise.reject(new Error("index away")) })], baseCtx({ log: (m) => logs.push(m) }));
+    expect(loaded.activated).toEqual([]);
+    expect(logs).toEqual(['plugin "memo" failed to load, skipped: index away']);
+  });
+
+  it("hands each plugin what it needs, and nothing it didn't ask for", async () => {
+    const seen: Record<string, unknown> = {};
+    const record = (name: string) => (ctx: Parameters<NonNullable<Plugin["build"]>>[0]) => {
+      seen[name] = { vectorIndex: ctx.vectorIndex, conversations: ctx.conversations, embed: ctx.embed };
+      return {};
+    };
+    await loadPlugins(
+      [
+        plug({ name: "memory", needs: ["vectorIndex", "embedding"], build: record("memory") }),
+        plug({ name: "archive", needs: ["conversationStore"], build: record("archive") }),
+        plug({ name: "jira", build: record("jira") }),
+      ],
+      baseCtx({ declared: ["vectorIndex", "conversationStore", "embedding"], provided: { vectorIndex: index, conversations: store, embed } }),
+    );
+    expect(seen).toEqual({
+      memory: { vectorIndex: index, conversations: undefined, embed },
+      archive: { vectorIndex: undefined, conversations: store, embed: undefined },
+      jira: { vectorIndex: undefined, conversations: undefined, embed: undefined },
+    });
+  });
+
+  it("stops the start when a plugin needs something the instance doesn't declare, naming the plugin and what", async () => {
+    const built: string[] = [];
+    await expect(
+      loadPlugins(
+        [plug({ name: "jira", build: () => (built.push("jira"), {}) }), plug({ name: "memory", needs: ["vectorIndex", "embedding"], build: () => (built.push("memory"), {}) })],
+        baseCtx({ declared: ["embedding"], provided: { embed } }),
+      ),
+    ).rejects.toThrow('plugin "memory" needs the instance\'s vectorIndex, which mercury.config.ts doesn\'t declare');
+    expect(built).toEqual([]);
+  });
+
+  it("leaves out a plugin whose need is declared but didn't start, and loads the rest", async () => {
+    const logs: string[] = [];
+    const loaded = await loadPlugins(
+      [plug({ name: "memory", needs: ["vectorIndex"], build: () => ({}) }), plug({ name: "jira" })],
+      baseCtx({ declared: ["vectorIndex"], provided: {}, log: (m) => logs.push(m) }),
+    );
+    expect(loaded.activated).toEqual(["jira"]);
+    expect(loaded.left).toEqual([{ name: "memory", reason: "the instance's vectorIndex didn't start" }]);
+    expect(logs).toEqual(['plugin "memory" not activated: the instance\'s vectorIndex didn\'t start']);
+  });
+
+  it("gives every plugin the background model, the tool log and the profiles", async () => {
+    const backgroundModel = { kind: "background" } as never;
+    const toolLog = { read: () => [] };
+    const profiles = { languages: ["en"] } as never;
+    let seen: unknown;
+    await loadPlugins(
+      [plug({ name: "memo", build: (ctx) => ((seen = [ctx.backgroundModel, ctx.toolLog, ctx.profiles]), {}) })],
+      baseCtx({ backgroundModel, toolLog, profiles }),
+    );
+    expect(seen).toEqual([backgroundModel, toolLog, profiles]);
+  });
+
+  it("gives build() a daily that registers the work under the plugin's name", async () => {
+    const registered: Array<[string, { at: string; timeZone?: string }]> = [];
+    const fn = () => {};
+    await loadPlugins(
+      [plug({ name: "wiki", build: (ctx) => (ctx.daily!("review", { at: "03:00" }, fn), {}) })],
+      baseCtx({ daily: (name, when) => void registered.push([name, when]) }),
+    );
+    expect(registered).toEqual([["wiki:review", { at: "03:00" }]]);
+  });
+
+  it("stops the start when a plugin asks daily for a time that can't be, even though its build() went on", async () => {
+    await expect(
+      loadPlugins(
+        [
+          plug({
+            name: "wiki",
+            build: (ctx) => {
+              try {
+                ctx.daily!("review", { at: "25:00" }, () => {});
+              } catch {
+                // a plugin swallowing the error doesn't make the config right
+              }
+              return {};
+            },
+          }),
+        ],
+        baseCtx({
+          daily: () => {
+            throw new Error('"25:00" isn\'t a time of day (HH:MM)');
+          },
+        }),
+      ),
+    ).rejects.toThrow('plugin "wiki": its daily "review" can\'t be set: "25:00" isn\'t a time of day (HH:MM)');
+  });
+
+  it("keeps a plugin's conversation owner with the plugin", async () => {
+    const conversation = { open: async () => ({}) as never };
+    const loaded = await loadPlugins([plug({ name: "window", build: () => ({ conversation }) })], baseCtx());
+    expect(loaded.plugins[0]!.conversation).toBe(conversation);
+  });
+});
