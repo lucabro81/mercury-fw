@@ -143,9 +143,10 @@ Two kinds of storage hold the memory, each declared in the app's config:
 | The **conversation store** (`conversationStore`) | every message word for word (written by `archive()`), and each conversation's title (by `titles()`, or the person) | person and conversation, in time order: to reopen a conversation, to list them | nothing is archived: no conversation to reopen or list, no titles |
 | The **vector index** (`vectorIndex`) | the summaries, what the agent learned, the corrections, and a copy of each message to search | meaning: the entries closest to what's asked | no long-term memory, nothing learned |
 
-The store is the record: what's in it is what was said. The index is derived from it, made to find things, and its
-answers are the closest matches, not exact ones. Searching past messages (`recall_verbatim`) needs both. An app made
-with `mfw create` declares Qdrant for both.
+The store is the record: what's in it is what was said. The index holds a copy of each message, made to find things,
+and its answers are the closest matches, not exact ones. Searching past messages (`recall_verbatim`) needs both
+declared: Mercury indexes every message a turn leaves, the same ones `archive()` writes, whether or not the app
+declares `archive()`. An app made with `mfw create` declares Qdrant for both.
 
 ## When something is missing
 
