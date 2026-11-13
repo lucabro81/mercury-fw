@@ -9,14 +9,14 @@
  * linking, whoever sent it. Anything else is left to the turn without asking
  * who sent it. What the person is told is the core's, in their language (the
  * one they saved, else the channel's hint, else the default). A token that
- * resolved leaves the reply in the archive, with how it went (#370), for
- * whoever the core tracks: never the operator.
+ * resolved leaves a record of the reply, with how it went (#370, #393), for
+ * the plugins keeping what was said.
  */
 import type { ChannelRuntimeContext, ConfirmOutcome, ConfirmReply } from "@mercury-fw/channel-types";
 import { isTokenShaped, resolveConfirmation, type ConfirmDeps, type ResolvedAction } from "@mercury-fw/confirm-engine";
-import type { VerbatimExchange } from "../memory/memory-provider.ts";
 import { confirmationId } from "../session/turn-trace.ts";
-import { createPeople, type People } from "./people.ts";
+import { createPeople, type People, type TurnWho } from "./people.ts";
+import type { TurnRecordInfo } from "../plugins/plugin-hooks.ts";
 import { isLinkCode, type Linking } from "./linking.ts";
 import { englishTexts, type Texts, type Translate } from "../i18n/i18n.ts";
 import type { TraceInput } from "../traces/tracer.ts";
@@ -44,8 +44,8 @@ export function confirmReply(outcome: ConfirmOutcome, t: Translate): ConfirmRepl
 /**
  * `confirm` and `resolveConfirmation` over `deps`, each resolving as the person
  * `identify` says the caller is, replying in their language (`texts`, English
- * when absent), and archiving how a resolved token went through `archive`
- * (the verbatim archive's capture), when given, and as a
+ * when absent), and telling how a resolved token went to `record` (the
+ * plugins' `onTurnRecord`), when given, at `now`, and as a
  * `confirmation.resolved` event through `emit` (the tracer's), when given.
  */
 export function bindConfirm(
@@ -53,42 +53,42 @@ export function bindConfirm(
   identify: People["identify"] = createPeople({ directory: "none" }).identify,
   redeemLink?: Linking["redeem"],
   texts: Texts = englishTexts(),
-  archive?: (exchange: VerbatimExchange) => Promise<void>,
+  record?: (who: TurnWho, record: TurnRecordInfo) => void,
   emit?: (input: TraceInput) => void,
+  now: () => Date = () => new Date(),
 ): Required<Pick<ChannelRuntimeContext, "confirm" | "resolveConfirmation">> {
   /**
-   * Resolves `token` for the person `key` and, once it resolved, archives the
-   * reply the person gets (`replyOf`; none when the turn resumes instead).
-   * Fail-soft: the archive is enrichment, the reply stands regardless.
+   * Resolves `token` for `who` and, once it resolved, records the reply the
+   * person gets (`replyOf`; none when the turn resumes instead). Fail-soft:
+   * the record is enrichment, the reply stands regardless.
    */
   async function resolveFor(
     token: string,
     sessionKey: string,
-    key: string,
-    tracked: boolean,
+    who: TurnWho,
     replyOf: (outcome: Awaited<ReturnType<typeof resolveConfirmation>>) => string,
   ) {
+    const key = who.person.key;
     let resolved: ResolvedAction | undefined;
     const outcome = await resolveConfirmation(token, sessionKey, { ...deps, owner: key, onResolved: (action) => (resolved = action) });
     if (resolved !== undefined) {
       emit?.({ kind: "confirmation.resolved", confirmationId: confirmationId(resolved.token), status: resolved.status, session: sessionKey, person: key });
     }
-    if (archive && tracked && resolved !== undefined) {
+    if (record && resolved !== undefined) {
       try {
-        await archive({
+        record(who, {
           sessionKey,
-          userId: key,
-          role: "assistant",
+          kind: "confirmation",
           content: resolved.status === "resume" ? "" : replyOf(outcome),
           confirmation: {
             id: confirmationId(resolved.token),
             status: resolved.status,
             ...(resolved.label === undefined ? {} : { choice: resolved.label }),
           },
+          at: now().toISOString(),
         });
       } catch (err) {
-        console.log(`[verbatim-archive] capture failed, confirmation unaffected: ${String(err instanceof Error ? err.message : err)}`);
-        emit?.({ kind: "system.error", area: "archive", session: sessionKey, person: key, args: { error: String(err instanceof Error ? err.message : err) } });
+        console.log(`[hooks] confirmation record failed, confirmation unaffected: ${String(err instanceof Error ? err.message : err)}`);
       }
     }
     return outcome;
@@ -104,7 +104,7 @@ export function bindConfirm(
       const identified = await identify(principal, hint);
       if (!identified.ok) return { text: identified.message };
       const { t } = texts.forPerson(identified.person.key, hint);
-      const outcome = await resolveFor(token, sessionKey, identified.person.key, !identified.operator, (o) => confirmReply(o, t)?.text ?? "");
+      const outcome = await resolveFor(token, sessionKey, { person: identified.person, operator: identified.operator }, (o) => confirmReply(o, t)?.text ?? "");
       return confirmReply(outcome, t);
     },
     resolveConfirmation: async (token, sessionKey, principal, hint) => {
@@ -112,7 +112,7 @@ export function bindConfirm(
       const identified = await identify(principal, hint);
       const { t } = texts.forPerson(identified.ok ? identified.person.key : undefined, hint);
       if (!identified.ok) return { status: "not-found", text: t("core.confirm.not-found") };
-      const outcome = await resolveFor(token, sessionKey, identified.person.key, !identified.operator, (o) => confirmReply(o, t)?.text ?? "");
+      const outcome = await resolveFor(token, sessionKey, { person: identified.person, operator: identified.operator }, (o) => confirmReply(o, t)?.text ?? "");
       return { ...outcome, text: confirmReply(outcome, t)?.text ?? null };
     },
   };

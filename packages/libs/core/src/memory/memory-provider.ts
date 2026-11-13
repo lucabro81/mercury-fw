@@ -1,107 +1,52 @@
 /**
- * The memory-provider seam (issue #4, built ahead of the broader #30
- * design): a memory mechanism that hooks the turn — capturing the
- * exchange after it happens, and contributing its own recall tools — kept
- * behind a small interface so the composition root wires it like any
- * other provider rather than hardwiring it into the pipeline. Only the two
- * hooks #4 exercises live here; the wider generalization (priming,
- * summarizer, wiki strategy as swappable providers) is deferred to #30.
- *
- * The one implementation today is the verbatim archive
- * (`./verbatim-archive-store.ts`).
+ * The search of what was said (issue #4): every message a turn or a resolved
+ * confirmation leaves (`archivedMessages`, the record the plugins hear) is
+ * indexed in the vector index's `verbatim_archive` space, and
+ * `recall_verbatim` searches it by meaning, scoped to the person. Writing
+ * the conversation store is the archive plugin's (`@mercury-fw/archive`);
+ * this only indexes, never for the operator, whose turns nothing keeps.
  */
 import { tool, type Tool } from "ai";
 import { z } from "zod";
-import { appendVerbatimMessage, searchVerbatim, shownText, type ArchivedConfirmation } from "./verbatim-archive-store.ts";
-import type { ConversationStore, VectorIndex } from "@mercury-fw/channel-types";
-import type { CallRecord } from "../session/call-record.ts";
-import type { TraceEntry } from "../session/turn-trace.ts";
+import { archivedMessages, type TurnRecord, type VectorIndex } from "@mercury-fw/plugin-types";
+import { indexVerbatimMessage, searchVerbatim } from "./verbatim-archive-store.ts";
 
-/**
- * One side of an exchange to archive — the provider stamps its own durable
- * timestamp. `displays` are what the turn showed after the answer, if anything.
- */
-export type VerbatimExchange = {
-  userId: string;
-  sessionKey: string;
-  role: "user" | "assistant";
-  content: string;
-  displays?: string[];
-  /** The tool calls an answer was written from, reduced (`../session/call-record.ts`). */
-  calls?: CallRecord[];
-  /** Set on the answer of a cancelled turn, whose `content` is the text the history kept for it. */
-  interrupted?: true;
-  /** What the person saw of the turn besides its text (`../session/turn-trace.ts`). */
-  trace?: TraceEntry[];
-  /** The core's stand-in sentence the answer begins with, when the turn only staged an action. */
-  pendingNote?: string;
-  /** How a staged action was resolved: the message is the reply the person got, empty when the turn resumed instead. */
-  confirmation?: ArchivedConfirmation;
-  /** The id of the turn the message belongs to, as the turn's trace events carry it; absent outside a turn (a resolved confirmation). */
-  turnId?: string;
-};
-
-/** Per-turn identity a provider's recall tools are scoped to. `userId` is what makes recall cross-session. */
-export type MemoryProviderContext = {
+/** Per-turn identity the recall tool is scoped to. `userId` is what makes recall cross-session. */
+export type VerbatimRecallContext = {
   sessionKey: string;
   userId: string;
 };
 
-/**
- * A memory mechanism the composition root can wire in. `captureExchange`
- * runs after a turn resolves (post-message); `sessionTools` contributes
- * model-invocable recall for the calling session. Both optional — a
- * provider may only capture, or only recall.
- */
-export type MemoryProvider = {
-  captureExchange?(exchange: VerbatimExchange): Promise<void>;
-  sessionTools?(ctx: MemoryProviderContext): Record<string, Tool>;
+export type VerbatimRecall = {
+  /** Indexes what `record` leaves, as background work when `indexInBackground` is given. */
+  indexRecord(record: TurnRecord): Promise<void>;
+  /** `recall_verbatim`, for the person of `ctx`. */
+  sessionTools(ctx: VerbatimRecallContext): Record<string, Tool>;
 };
 
-export type VerbatimArchiveProviderDeps = {
-  /** Where every message is kept. */
-  store: ConversationStore;
+export type VerbatimRecallDeps = {
+  /** Where messages are indexed and `recall_verbatim` searches. */
+  index: VectorIndex;
   embed: (text: string) => Promise<number[]>;
-  /** Where messages are indexed and `recall_verbatim` searches; without one nothing is embedded and the provider offers no recall. */
-  index?: VectorIndex;
-  /** Runs a message's indexing later, as background work (the core's queue for the model); awaited with the capture when absent. */
+  /** Runs a message's indexing later, as background work (the core's queue for the model); awaited when absent. */
   indexInBackground?: (work: () => Promise<void>) => void;
-  /** Test seam; defaults to `() => new Date()`. The provider owns the durable ordering timestamp. */
-  now?: () => Date;
 };
 
 const RECALL_DEFAULT_LIMIT = 5;
 const RECALL_MAX_LIMIT = 20;
 
-/**
- * Builds the verbatim-archive provider: captures every user/assistant
- * message verbatim to the conversation store and, when there's a vector
- * index, indexes it there and exposes a `recall_verbatim` tool that searches
- * the archive by meaning, scoped to the calling user — letting a later session resurface
- * what was actually said before, beyond the live history window.
- */
-export function createVerbatimArchiveProvider(deps: VerbatimArchiveProviderDeps): MemoryProvider {
-  const now = deps.now ?? (() => new Date());
+/** Builds the index of what was said and its `recall_verbatim` (see the module comment). */
+export function createVerbatimRecall(deps: VerbatimRecallDeps): VerbatimRecall {
   return {
-    captureExchange: async (exchange) => {
-      // An empty/whitespace-only message (e.g. a present()-only turn with no
-      // prose) has nothing to archive — skip it rather than store a
-      // meaningless point and embed an empty string. How a confirmation was
-      // resolved is kept all the same.
-      if (shownText(exchange.content, exchange.displays).trim() === "" && exchange.confirmation === undefined) {
-        return;
+    indexRecord: async (record) => {
+      if (record.operator) return;
+      for (const message of archivedMessages(record)) {
+        const work = () => indexVerbatimMessage(deps.index, deps.embed, message);
+        if (deps.indexInBackground === undefined) await work();
+        else deps.indexInBackground(work);
       }
-      await appendVerbatimMessage(
-        deps.store,
-        { ...exchange, timestamp: now().toISOString() },
-        deps.index === undefined
-          ? undefined
-          : { index: deps.index, embed: deps.embed, ...(deps.indexInBackground === undefined ? {} : { defer: deps.indexInBackground }) },
-      );
     },
     sessionTools: (ctx): Record<string, Tool> => {
-      const index = deps.index;
-      if (index === undefined) return {};
       const recall_verbatim = tool({
         description:
           "Search the durable verbatim archive of what you and this user actually said in earlier " +
@@ -112,7 +57,7 @@ export function createVerbatimArchiveProvider(deps: VerbatimArchiveProviderDeps)
           limit: z.number().int().positive().max(RECALL_MAX_LIMIT).optional(),
         }),
         execute: async ({ query, limit }) => {
-          const messages = await searchVerbatim(index, deps.embed, {
+          const messages = await searchVerbatim(deps.index, deps.embed, {
             userId: ctx.userId,
             queryText: query,
             limit: limit ?? RECALL_DEFAULT_LIMIT,

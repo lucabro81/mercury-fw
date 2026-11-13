@@ -16,6 +16,9 @@
       "@mercury-fw/store-qdrant",
       "@mercury-fw/conversation-window",
       "@mercury-fw/wiki",
+      "@mercury-fw/archive",
+      "@mercury-fw/titles",
+      "@mercury-fw/profile",
       "@mercury-fw/cli",
       "create-mercury-agent"
     ]

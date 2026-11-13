@@ -2,28 +2,40 @@ import { describe, expect, it } from "bun:test";
 import { createConfirmationStore, type ConfirmationStore } from "@mercury-fw/confirm-engine";
 import { bindConfirm } from "./confirm-binding.ts";
 import { confirmationId } from "../session/turn-trace.ts";
-import type { VerbatimExchange } from "../memory/memory-provider.ts";
-import type { Identified } from "./people.ts";
+import { archivedMessages, type StoredMessage } from "@mercury-fw/plugin-types";
+import type { Identified, TurnWho } from "./people.ts";
+import type { TurnRecordInfo } from "../plugins/plugin-hooks.ts";
 
 const alice = { id: "alice", provider: "static" as const };
 const asAlice = async (): Promise<Identified> => ({ ok: true, operator: false, person: { key: "static:alice", roles: [] } });
 
-/** A store whose tokens are `tok1-aaaa`, `tok2-aaaa`, …, and a binding over it that archives into `archived`. */
-function setup(opts: { identify?: () => Promise<Identified>; failingArchive?: boolean } = {}) {
+const AT = new Date("2026-11-13T10:00:00.000Z");
+
+/**
+ * A store whose tokens are `tok1-aaaa`, `tok2-aaaa`, …, and a binding over it
+ * whose records go to `records`, and what an archive keeps of them (never the
+ * operator's, without timestamps) to `archived`.
+ */
+function setup(opts: { identify?: () => Promise<Identified>; failingRecord?: boolean } = {}) {
   let n = 0;
   const store: ConfirmationStore = createConfirmationStore({ tokenFn: () => `tok${++n}-aaaa` });
-  const archived: VerbatimExchange[] = [];
+  const archived: Array<Omit<StoredMessage, "id" | "timestamp">> = [];
+  const records: Array<{ who: TurnWho; record: TurnRecordInfo }> = [];
   const bound = bindConfirm(
     { store, writeConfirmationNoteFn: async () => {}, onResume: () => {} },
     opts.identify ?? asAlice,
     undefined,
     undefined,
-    async (msg) => {
-      if (opts.failingArchive) throw new Error("qdrant down");
-      archived.push(msg);
+    (who, record) => {
+      if (opts.failingRecord) throw new Error("hook broke");
+      records.push({ who, record });
+      if (who.operator) return;
+      for (const { timestamp: _t, ...msg } of archivedMessages({ ...record, person: { key: who.person.key }, operator: false, as: "anyone" })) archived.push(msg);
     },
+    undefined,
+    () => AT,
   );
-  return { store, bound, archived };
+  return { store, bound, archived, records };
 }
 
 // #370: a conversation reopened later says how each staged action was resolved.
@@ -111,12 +123,27 @@ describe("bindConfirm: how a confirmation was resolved, in the archive", () => {
     expect(refused.archived).toEqual([]);
   });
 
-  // The operator (the terminal) is never tracked: nothing of theirs is archived, as for their turns.
-  it("archives nothing for the operator", async () => {
-    const { store, bound, archived } = setup({ identify: async () => ({ ok: true, operator: true, person: { key: "operator", roles: [] } }) });
+  it("records the confirmation, when it was resolved, as a record of its own", async () => {
+    const { store, bound, records } = setup();
+    const token = store.stage("s", "static:alice", { describe: "x", run: async () => ({ ok: true, data: null }) });
+
+    await bound.confirm(token, "s", alice);
+
+    expect(records).toEqual([
+      {
+        who: { operator: false, person: { key: "static:alice", roles: [] } },
+        record: { sessionKey: "s", kind: "confirmation", content: "Confirmed and done.", confirmation: { id: confirmationId(token), status: "ok" }, at: AT.toISOString() },
+      },
+    ]);
+  });
+
+  // The operator (the terminal): the record says so, and an archive keeps nothing of theirs, as for their turns.
+  it("hands the operator's confirmation over saying so", async () => {
+    const { store, bound, archived, records } = setup({ identify: async () => ({ ok: true, operator: true, person: { key: "operator", roles: [] } }) });
     const token = store.stage("s", "operator", { describe: "x", run: async () => ({ ok: true, data: null }) });
 
     expect(await bound.confirm(token, "s", alice)).toEqual({ text: "Confirmed and done." });
+    expect(records.map((r) => r.who.operator)).toEqual([true]);
     expect(archived).toEqual([]);
   });
 
@@ -134,8 +161,8 @@ describe("bindConfirm: how a confirmation was resolved, in the archive", () => {
     expect(Object.keys(archived[0]!.confirmation!)).toEqual(["id", "status"]);
   });
 
-  it("a failing archive leaves the reply as it was", async () => {
-    const { store, bound } = setup({ failingArchive: true });
+  it("a record that throws leaves the reply as it was", async () => {
+    const { store, bound } = setup({ failingRecord: true });
     const token = store.stage("s", "static:alice", { describe: "x", run: async () => ({ ok: true, data: null }) });
 
     expect(await bound.confirm(token, "s", alice)).toEqual({ text: "Confirmed and done." });
@@ -178,25 +205,5 @@ describe("bindConfirm: confirmation.resolved in the traces", () => {
     const { bound, events } = traced();
     await bound.confirm("zzzz-zzzz", "s", alice);
     expect(events).toEqual([]);
-  });
-});
-
-describe("bindConfirm: an archive failure in the traces", () => {
-  it("is a system.error with the session and the person, and the confirmation still resolves", async () => {
-    const store: ConfirmationStore = createConfirmationStore({ tokenFn: () => "tok1-aaaa" });
-    const events: Array<Record<string, unknown>> = [];
-    const bound = bindConfirm(
-      { store, writeConfirmationNoteFn: async () => {}, onResume: () => {} },
-      asAlice,
-      undefined,
-      undefined,
-      async () => {
-        throw new Error("qdrant down");
-      },
-      (e) => void events.push(e),
-    );
-    const token = store.stage("s", "static:alice", { describe: "x", run: async () => ({ ok: true, data: null }) });
-    expect(await bound.confirm(token, "s", alice)).toEqual({ text: "Confirmed and done." });
-    expect(events.at(-1)).toEqual({ kind: "system.error", area: "archive", session: "s", person: "static:alice", args: { error: "qdrant down" } });
   });
 });

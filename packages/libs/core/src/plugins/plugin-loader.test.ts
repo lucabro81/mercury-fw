@@ -535,16 +535,17 @@ describe("loadPlugins: hooks and jobs (#387)", () => {
     expect(loaded.plugins[0]!.source).toBe(plugin);
   });
 
-  it("keeps a plugin's afterTurn and onSessionClose with the plugin they came from", async () => {
+  it("keeps a plugin's afterTurn, onTurnRecord and onSessionClose with the plugin they came from", async () => {
     const afterTurn = () => {};
+    const onTurnRecord = () => {};
     const onSessionClose = () => {};
     const loaded = await loadPlugins(
-      [plug({ name: "memo", build: () => ({ afterTurn, onSessionClose }) }), plug({ name: "jira", build: () => ({}) })],
+      [plug({ name: "memo", build: () => ({ afterTurn, onTurnRecord, onSessionClose }) }), plug({ name: "jira", build: () => ({}) })],
       baseCtx(),
     );
-    expect(loaded.plugins.map((p) => [p.name, p.afterTurn, p.onSessionClose])).toEqual([
-      ["memo", afterTurn, onSessionClose],
-      ["jira", undefined, undefined],
+    expect(loaded.plugins.map((p) => [p.name, p.afterTurn, p.onTurnRecord, p.onSessionClose])).toEqual([
+      ["memo", afterTurn, onTurnRecord, onSessionClose],
+      ["jira", undefined, undefined, undefined],
     ]);
   });
 

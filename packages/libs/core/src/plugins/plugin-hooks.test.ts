@@ -1,11 +1,11 @@
 import { describe, expect, it } from "bun:test";
-import type { ClosedSession, FinishedTurn, Plugin } from "@mercury-fw/plugin-types";
+import type { ClosedSession, FinishedTurn, Plugin, TurnRecord } from "@mercury-fw/plugin-types";
 import { createPluginHooks } from "./plugin-hooks.ts";
 import type { LoadedPlugin } from "./plugin-loader.ts";
 import type { TurnWho } from "../identity/people.ts";
 
 /** A loaded plugin with only what the hooks look at. */
-function loaded(name: string, hooks: Pick<LoadedPlugin, "afterTurn" | "onSessionClose"> = {}): LoadedPlugin {
+function loaded(name: string, hooks: Pick<LoadedPlugin, "afterTurn" | "onTurnRecord" | "onSessionClose"> = {}): LoadedPlugin {
   return { name, description: name, actsAs: "anyone", skills: [], source: { name } as Plugin, ...hooks };
 }
 
@@ -142,6 +142,99 @@ describe("createPluginHooks (#387)", () => {
     await settle();
 
     expect(seen).toEqual(["memo"]);
+  });
+});
+
+describe("createPluginHooks: the record of a turn (#393)", () => {
+  const record = {
+    sessionKey: "s1",
+    kind: "turn" as const,
+    turnId: "t1",
+    multiUser: false,
+    outcome: "cancelled" as const,
+    origin: "person" as const,
+    input: "hi",
+    startedAt: "2026-11-13T10:00:00.000Z",
+    endedAt: "2026-11-13T10:00:05.000Z",
+  };
+
+  it("hands a turn's record to the onTurnRecord of each plugin offered in it, once per plugin, with whose it is and how it was offered", async () => {
+    const seen: Array<[string, TurnRecord]> = [];
+    const archive = loaded("archive", { onTurnRecord: (r) => void seen.push(["archive", r]) });
+    const jira = loaded("jira", { onTurnRecord: (r) => void seen.push(["jira", r]) });
+    const hooks = createPluginHooks({
+      offered: () => [
+        { plugin: jira, as: "person" },
+        { plugin: jira, as: "mercury" },
+        { plugin: archive, as: "anyone" },
+      ],
+      log: () => {},
+    });
+
+    hooks.turnRecord(alice, record);
+    await settle();
+
+    expect(seen).toEqual([
+      ["jira", { ...record, person: { key: "u:alice" }, operator: false, as: "person" }],
+      ["archive", { ...record, person: { key: "u:alice" }, operator: false, as: "anyone" }],
+    ]);
+  });
+
+  it("hands a resolved confirmation over the same way, the operator's too", async () => {
+    const seen: TurnRecord[] = [];
+    const archive = loaded("archive", { onTurnRecord: (r) => void seen.push(r) });
+    const hooks = createPluginHooks({ offered: () => [{ plugin: archive, as: "anyone" }], log: () => {} });
+    const confirmation = {
+      sessionKey: "s1",
+      kind: "confirmation" as const,
+      content: "Done.",
+      confirmation: { id: "c1", status: "ok" as const },
+      at: "2026-11-13T10:01:00.000Z",
+    };
+
+    hooks.turnRecord({ ...alice, operator: true }, confirmation);
+    await settle();
+
+    expect(seen).toEqual([{ ...confirmation, person: { key: "u:alice" }, operator: true, as: "anyone" }]);
+  });
+
+  it("returns before the hooks finish; one that throws is logged and traced as onTurnRecord, the others go on", async () => {
+    const logs: string[] = [];
+    const events: Array<Record<string, unknown>> = [];
+    const seen: string[] = [];
+    const thrower = loaded("thrower", {
+      onTurnRecord: () => {
+        throw new Error("broke");
+      },
+    });
+    const fine = loaded("fine", { onTurnRecord: () => void seen.push("fine") });
+    const hooks = createPluginHooks({
+      offered: () => [thrower, fine].map((plugin) => ({ plugin, as: "anyone" as const })),
+      log: (m) => void logs.push(m),
+      emit: (e) => void events.push(e as Record<string, unknown>),
+      now: () => 0,
+    });
+
+    hooks.turnRecord(alice, record);
+    await settle();
+
+    expect(seen).toEqual(["fine"]);
+    expect(logs).toEqual(['[hooks] plugin "thrower" onTurnRecord failed: broke']);
+    expect(events.map((e) => [e.plugin, e.hook, e.outcome])).toEqual([
+      ["thrower", "onTurnRecord", "failed"],
+      ["fine", "onTurnRecord", "done"],
+    ]);
+  });
+
+  // A record isn't a finished turn: it says nothing about whom a session's close goes to.
+  it("doesn't count as the session's last finished turn", async () => {
+    const seen: string[] = [];
+    const memo = loaded("memo", { onSessionClose: () => void seen.push("close") });
+    const hooks = createPluginHooks({ offered: () => [{ plugin: memo, as: "anyone" }], log: () => {} });
+    hooks.turnRecord(alice, record);
+    hooks.sessionClosed({ key: "s1", userId: "u:alice", messages: [] });
+    await settle();
+    expect(seen).toEqual([]);
   });
 });
 

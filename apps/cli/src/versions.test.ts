@@ -38,11 +38,14 @@ describe("appVersions", () => {
       fetchFn,
     });
     expect(versions).toEqual({
+      "@mercury-fw/archive": pkg.version,
       "@mercury-fw/cli": pkg.version,
       "@mercury-fw/conversation-window": pkg.version,
       "@mercury-fw/core": pkg.version,
       "@mercury-fw/formatter": pkg.version,
+      "@mercury-fw/profile": pkg.version,
       "@mercury-fw/store-qdrant": pkg.version,
+      "@mercury-fw/titles": pkg.version,
       "@mercury-fw/trace-jsonl": pkg.version,
       "@mercury-fw/wiki": pkg.version,
       "@mercury-fw/plugin-jira": "0.3.2",
@@ -64,11 +67,14 @@ describe("appVersions", () => {
       local: { "@mercury-fw/auth-static": "0.0.0", "@mercury-fw/core": "0.35.0-dev", "@mercury-fw/plugin-bitbucket": "9.9.9" },
     });
     expect(versions).toEqual({
+      "@mercury-fw/archive": pkg.version,
       "@mercury-fw/cli": pkg.version,
       "@mercury-fw/conversation-window": pkg.version,
       "@mercury-fw/core": "0.35.0-dev",
       "@mercury-fw/formatter": pkg.version,
+      "@mercury-fw/profile": pkg.version,
       "@mercury-fw/store-qdrant": pkg.version,
+      "@mercury-fw/titles": pkg.version,
       "@mercury-fw/trace-jsonl": pkg.version,
       "@mercury-fw/wiki": pkg.version,
       "@mercury-fw/plugin-jira": "0.3.2",

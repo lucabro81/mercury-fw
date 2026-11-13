@@ -1,15 +1,18 @@
 import { describe, expect, test } from "bun:test";
+import type { Profiles } from "@mercury-fw/plugin-types";
 import { createProfileTools } from "./profile-tools.ts";
-import type { ProfileStore } from "./profiles.ts";
 
-/** A store in memory, refusing what the real one refuses. */
-function memoryStore(): ProfileStore & { names: Map<string, string>; languages: Map<string, string>; timeZones: Map<string, string> } {
+/** The core's profiles in memory, shipping `shipped`, refusing what the real ones refuse. */
+function memoryStore(
+  shipped: string[] = ["en"],
+): Profiles & { names: Map<string, string>; savedLanguages: Map<string, string>; timeZones: Map<string, string> } {
   const names = new Map<string, string>();
   const languages = new Map<string, string>();
   const timeZones = new Map<string, string>();
   return {
     names,
-    languages,
+    savedLanguages: languages,
+    languages: shipped,
     timeZones,
     timeZoneOf: (key) => timeZones.get(key),
     setTimeZone: (key, timeZone) => {
@@ -44,18 +47,18 @@ const setTimeZone = (tools: ReturnType<typeof createProfileTools>, timeZone: str
 describe("set_preferred_name", () => {
   test("saves the name for the person the turn is for, and nobody else", async () => {
     const store = memoryStore();
-    expect(await run(createProfileTools({ store, key: "static:alice" }), " Luca ")).toEqual({ ok: true, name: "Luca" });
+    expect(await run(createProfileTools({ profiles: store, key: "static:alice" }), " Luca ")).toEqual({ ok: true, name: "Luca" });
     expect([...store.names]).toEqual([["static:alice", "Luca"]]);
   });
 
   test("a refused name is an error for the model, with the reason", async () => {
     const store = memoryStore();
-    expect(await run(createProfileTools({ store, key: "static:alice" }), "  ")).toEqual({ ok: false, error: "the name is empty" });
+    expect(await run(createProfileTools({ profiles: store, key: "static:alice" }), "  ")).toEqual({ ok: false, error: "the name is empty" });
     expect(store.names.size).toBe(0);
   });
 
   test("says when to use it", () => {
-    const { description } = createProfileTools({ store: memoryStore(), key: "k" }).set_preferred_name;
+    const { description } = createProfileTools({ profiles: memoryStore(), key: "k" }).set_preferred_name;
     expect(description).toContain("how the person you're talking to wants to be called");
   });
 });
@@ -64,25 +67,25 @@ describe("set_preferred_language", () => {
   const languages = ["en", "it"];
 
   test("isn't offered when the instance speaks English only: nothing to choose", () => {
-    expect(createProfileTools({ store: memoryStore(), key: "k" }).set_preferred_language).toBeUndefined();
-    expect(createProfileTools({ store: memoryStore(), key: "k", languages: ["en"] }).set_preferred_language).toBeUndefined();
+    expect(createProfileTools({ profiles: memoryStore(), key: "k" }).set_preferred_language).toBeUndefined();
+    expect(createProfileTools({ profiles: memoryStore(["en"]), key: "k" }).set_preferred_language).toBeUndefined();
   });
 
   test("saves a supported language for the person the turn is for, and nobody else", async () => {
-    const store = memoryStore();
-    expect(await setLanguage(createProfileTools({ store, key: "static:alice", languages }), "it")).toEqual({ ok: true, language: "it" });
-    expect([...store.languages]).toEqual([["static:alice", "it"]]);
+    const store = memoryStore(languages);
+    expect(await setLanguage(createProfileTools({ profiles: store, key: "static:alice" }), "it")).toEqual({ ok: true, language: "it" });
+    expect([...store.savedLanguages]).toEqual([["static:alice", "it"]]);
   });
 
   test("accepts only the languages the instance ships", () => {
-    const { set_preferred_language } = createProfileTools({ store: memoryStore(), key: "k", languages });
+    const { set_preferred_language } = createProfileTools({ profiles: memoryStore(languages), key: "k" });
     const schema = set_preferred_language!.inputSchema as { safeParse: (v: unknown) => { success: boolean } };
     expect(schema.safeParse({ language: "it" }).success).toBe(true);
     expect(schema.safeParse({ language: "fr" }).success).toBe(false);
   });
 
   test("names the languages the model can pick from", () => {
-    const { description } = createProfileTools({ store: memoryStore(), key: "k", languages }).set_preferred_language!;
+    const { description } = createProfileTools({ profiles: memoryStore(languages), key: "k" }).set_preferred_language!;
     expect(description).toContain("language the person you're talking to wants");
     expect(description).toContain("en, it");
   });
@@ -90,23 +93,23 @@ describe("set_preferred_language", () => {
 
 describe("set_time_zone", () => {
   test("is there whatever languages the instance ships", () => {
-    expect(createProfileTools({ store: memoryStore(), key: "k" }).set_time_zone).toBeDefined();
+    expect(createProfileTools({ profiles: memoryStore(), key: "k" }).set_time_zone).toBeDefined();
   });
 
   test("saves the zone for the person the turn is for, and nobody else", async () => {
     const store = memoryStore();
-    expect(await setTimeZone(createProfileTools({ store, key: "static:alice" }), "Asia/Tokyo")).toEqual({ ok: true, timeZone: "Asia/Tokyo" });
+    expect(await setTimeZone(createProfileTools({ profiles: store, key: "static:alice" }), "Asia/Tokyo")).toEqual({ ok: true, timeZone: "Asia/Tokyo" });
     expect([...store.timeZones]).toEqual([["static:alice", "Asia/Tokyo"]]);
   });
 
   test("a refused zone is an error for the model, with the reason", async () => {
     const store = memoryStore();
-    expect(await setTimeZone(createProfileTools({ store, key: "static:alice" }), "Rome")).toEqual({ ok: false, error: '"Rome" isn\'t a time zone' });
+    expect(await setTimeZone(createProfileTools({ profiles: store, key: "static:alice" }), "Rome")).toEqual({ ok: false, error: '"Rome" isn\'t a time zone' });
     expect(store.timeZones.size).toBe(0);
   });
 
   test("says when to use it and what a zone looks like", () => {
-    const { description } = createProfileTools({ store: memoryStore(), key: "k" }).set_time_zone;
+    const { description } = createProfileTools({ profiles: memoryStore(), key: "k" }).set_time_zone;
     expect(description).toContain("time zone the person you're talking to is in");
     expect(description).toContain("Europe/Rome");
   });

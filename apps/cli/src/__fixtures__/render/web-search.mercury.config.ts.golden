@@ -20,6 +20,9 @@ import { jsonlTraces } from "@mercury-fw/trace-jsonl";
 import { qdrantConversations, qdrantIndex } from "@mercury-fw/store-qdrant";
 import { conversationWindow } from "@mercury-fw/conversation-window";
 import { wiki } from "@mercury-fw/wiki";
+import { archive } from "@mercury-fw/archive";
+import { titles } from "@mercury-fw/titles";
+import { profile } from "@mercury-fw/profile";
 
 /** The assistant's name: what the persona calls it, and every text the model reads. */
 const name = "Mercury";
@@ -53,6 +56,14 @@ const conversation = conversationWindow();
  */
 const teamWiki = wiki();
 
+/*
+ * Also declared in `plugins`: `archive()` keeps every conversation as it was
+ * said, in the conversation store, so a person reopens and lists it;
+ * `titles()` names each one after its first turn; `profile()` lets the
+ * assistant save how each person wants to be called, their time zone and
+ * their language. Remove one to do without what it does.
+ */
+
 export default defineMercuryConfig({
   persona: {
     name,
@@ -73,6 +84,9 @@ export default defineMercuryConfig({
   plugins: [
     conversation,
     teamWiki,
+    archive(),
+    titles(),
+    profile(),
     webSearchPlugin({
       backend: searxngBackend({ url: process.env.SEARXNG_URL || "http://searxng:8080" }),
       // Hosts whose pages anyone may read without being asked; each covers its subdomains.

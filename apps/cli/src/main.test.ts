@@ -95,6 +95,9 @@ const versions: Record<string, string> = {
   "@mercury-fw/store-qdrant": cliVersion(),
   "@mercury-fw/conversation-window": cliVersion(),
   "@mercury-fw/wiki": cliVersion(),
+  "@mercury-fw/archive": cliVersion(),
+  "@mercury-fw/titles": cliVersion(),
+  "@mercury-fw/profile": cliVersion(),
   "@mercury-fw/channel-http": PLUGIN_VERSION,
   "@mercury-fw/auth-static": PLUGIN_VERSION,
   "@mercury-fw/plugin-jira": PLUGIN_VERSION,
@@ -233,12 +236,15 @@ describe("mfw create --local-packages", () => {
       expect(asked).toEqual([]);
       const manifest = JSON.parse(readFileSync(join(dir, "package.json"), "utf-8"));
       expect(manifest.dependencies).toEqual({
+        "@mercury-fw/archive": `^${cliVersion()}`,
         "@mercury-fw/auth-static": "^0.0.0",
         "@mercury-fw/channel-http": "^0.3.0",
         // No tarball of it: the CLI's version, as any framework package.
         "@mercury-fw/conversation-window": `^${cliVersion()}`,
         "@mercury-fw/core": "^0.35.0",
+        "@mercury-fw/profile": `^${cliVersion()}`,
         "@mercury-fw/store-qdrant": "^0.35.0",
+        "@mercury-fw/titles": `^${cliVersion()}`,
         "@mercury-fw/trace-jsonl": "^0.35.0",
         "@mercury-fw/wiki": `^${cliVersion()}`,
       });

@@ -102,13 +102,6 @@ export function buildSystemPrompt(opts: {
       "- If your context contains an opaque `[REQ:<token>]` marker, that's a reference to a past confirm-required request — call resolve_reference with that token to see what it was, don't guess at what it means.",
     ].join("\n"),
   );
-  lines.push(
-    [
-      "You have access to the set_preferred_name tool.",
-      "DO:",
-      "- When the person tells you how they want to be called, now or in any later conversation, save it with set_preferred_name.",
-    ].join("\n"),
-  );
   if (opts.recallVerbatim !== false) lines.push(
     [
       "You have access to the recall_verbatim tool.",

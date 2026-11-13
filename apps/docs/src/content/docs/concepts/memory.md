@@ -18,12 +18,15 @@ declares and names in its `default` [context profile](../context/):
 ```ts title="mercury.config.ts"
 import { conversationWindow } from "@mercury-fw/conversation-window";
 import { wiki } from "@mercury-fw/wiki";
+import { archive } from "@mercury-fw/archive";
+import { titles } from "@mercury-fw/titles";
+import { profile } from "@mercury-fw/profile";
 
 const conversation = conversationWindow();
 const teamWiki = wiki();
 
 export default defineMercuryConfig({
-  plugins: [conversation, teamWiki],
+  plugins: [conversation, teamWiki, archive(), titles(), profile()],
   context: { profiles: { default: { conversation, layers: [teamWiki], budget: { maxChars: 8000 } } } },
   // …
 });
@@ -39,13 +42,7 @@ the plugin's tools.
 
 When it grows past 60,000 characters, the window replaces its older part with a **summary** the model writes, and
 the conversation goes on from the summary plus the recent messages. The person's last message is never part of it:
-it's the question the model is about to answer. Every message is also kept word for word in
-an **archive**, which a chat interface shows when it reopens a conversation, and which the model can search when it
-needs an exact quote. With each answer the archive also keeps what the person saw while it was being written: the
-model's reasoning, the tools it used, the confirmations it asked for and how the person answered them. That part is
-only for the interface: the model never reads it back. Next to the archive, each conversation gets a **title**: after
-the first message the person writes, the model names the conversation from that message and its answer, and the
-person can rename it from a chat interface. A title the person chose is never replaced.
+it's the question the model is about to answer.
 
 After 30 minutes of silence (`SESSION_IDLE_TIMEOUT_MS`), Mercury frees the history. What happens next depends on
 the channel: on Google Chat the next message starts a new conversation, with a recap of the last one as background;
@@ -69,6 +66,35 @@ leaves the window out, and the log says so: the model then reads each message al
 
 It also gives the model `recall_tool_calls`: what it ran earlier in the conversation and what came back, from the
 log of the recent tool calls, so it quotes them instead of guessing.
+
+## The archive and the titles
+
+Every message is also kept word for word in an **archive**, by another plugin, `@mercury-fw/archive` (`archive()`):
+a chat interface shows it when it reopens a conversation, and the model can search it when it needs an exact quote.
+With each answer the archive also keeps what the person saw while it was being written: the model's reasoning, the
+tools it used, the confirmations it asked for and how the person answered them. That part is only for the
+interface: the model never reads it back. A turn that failed leaves nothing, and neither do the turns typed in the
+terminal (`mfw repl`).
+
+Next to the archive, `@mercury-fw/titles` (`titles()`) gives each conversation a **title**: after the first message
+the person writes, the model names the conversation from that message and its answer, and the person can rename it
+from a chat interface. A title the person chose is never replaced.
+
+Both write to the app's conversation store (see [Where it's kept](#where-its-kept)), so both need one
+(`needs: ["conversationStore"]`): an app that declares them without a store doesn't start, and says why. An app with
+a store and no plugin using it starts with a line in the log saying the store stays empty. Both write what the core
+hands every plugin once a turn is over (`onTurnRecord`, see
+[What a plugin can use](../primitives/)), so a plugin of your own can keep the conversation somewhere else.
+
+## What each person said about themselves
+
+`@mercury-fw/profile` (`profile()`) gives the model three tools to save what a person tells it about themselves: how
+they want to be called (`set_preferred_name`), the time zone they're in (`set_time_zone`) and the language they want
+(`set_preferred_language`, only when the app ships more than one). Mercury keeps them in its data folder, out of the
+wiki, and reads them back on every turn: the name in the model's instructions, the time zone on the stamp of each
+message, the language in the answers and in Mercury's own texts. A chat interface can save the time zone too.
+Without the plugin nothing changes them but a chat interface's settings, and an agent speaking first to someone it
+doesn't know still asks their name, without saving it.
 
 ## The wiki
 
@@ -114,15 +140,16 @@ Two kinds of storage hold the memory, each declared in the app's config:
 
 | | Holds | Read by | Left out |
 |---|---|---|---|
-| The **conversation store** (`conversationStore`) | every message word for word, and each conversation's title | person and conversation, in time order: to reopen a conversation, to list them | nothing is archived: no conversation to reopen or list, no titles |
+| The **conversation store** (`conversationStore`) | every message word for word (written by `archive()`), and each conversation's title (by `titles()`, or the person) | person and conversation, in time order: to reopen a conversation, to list them | nothing is archived: no conversation to reopen or list, no titles |
 | The **vector index** (`vectorIndex`) | the summaries, what the agent learned, the corrections, and a copy of each message to search | meaning: the entries closest to what's asked | no long-term memory, nothing learned |
 
-The store is the record: what's in it is what was said. The index is derived from it, made to find things, and its
-answers are the closest matches, not exact ones. Searching past messages (`recall_verbatim`) needs both. An app made
-with `mfw create` declares Qdrant for both.
+The store is the record: what's in it is what was said. The index holds a copy of each message, made to find things,
+and its answers are the closest matches, not exact ones. Searching past messages (`recall_verbatim`) needs both
+declared: Mercury indexes every message a turn leaves, the same ones `archive()` writes, whether or not the app
+declares `archive()`. An app made with `mfw create` declares Qdrant for both.
 
 ## When something is missing
 
 Without a plugin keeping the conversation the model reads each message alone, without a vector index there's no
-long-term memory at all, without a conversation store no archive; if either can't be reached, or the wiki is empty,
+long-term memory at all, without a conversation store or `archive()` no archive; if either can't be reached, or the wiki is empty,
 the agent still answers, it just remembers less.

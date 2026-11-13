@@ -114,10 +114,13 @@ rules for them are checked too.
 ## After a turn, and when a conversation closes
 
 Some plugins don't add a tool: they learn from what was said, to remember it later. A plugin like that gives Mercury
-two pieces of code to run:
+pieces of code to run:
 
 - **after a turn**, once the person has their answer: it gets what they wrote, the answer, and the tools the model
   called (what with, and whether they worked, never what they returned);
+- **on what a turn or a confirmation left**, whatever its outcome (a turn the person stopped, or one that failed,
+  included): everything an archive keeps of it, which is how `@mercury-fw/archive` keeps the conversations (see
+  [What a plugin can use](../primitives/#what-every-turn-leaves));
 - **when a conversation closes**, after half an hour with no message (`SESSION_IDLE_TIMEOUT_MS`): it gets the
   conversation's messages.
 

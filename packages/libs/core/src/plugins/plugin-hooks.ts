@@ -1,6 +1,8 @@
 /**
  * The plugins' hooks (#387): who hears about a turn that ended with an answer
- * (`afterTurn`) and about a session closed for being quiet (`onSessionClose`).
+ * (`afterTurn`), about what every turn and resolved confirmation left
+ * (`onTurnRecord`, #393) and about a session closed for being quiet
+ * (`onSessionClose`).
  *
  * A plugin hears about a turn only when it was offered in that turn: the same
  * roles and permissions that decide its tools decide what it learns, so a
@@ -12,10 +14,11 @@
  * turn must not wait either. Each hook's outcome becomes a `plugin.hook`
  * event; a hook that throws or rejects is logged, and the others go on.
  *
- * Used by: `compose.ts`, which hands `afterTurn` to the turn runner and
- * `sessionClosed` to the idle-session sweep.
+ * Used by: `compose.ts`, which hands `afterTurn` and `turnRecord` to the turn
+ * runner, `turnRecord` to the confirmations, and `sessionClosed` to the
+ * idle-session sweep.
  */
-import type { HookMessage } from "@mercury-fw/plugin-types";
+import type { HookMessage, TurnRecordOfConfirmation, TurnRecordOfTurn } from "@mercury-fw/plugin-types";
 import type { TurnWho } from "../identity/people.ts";
 import type { FinishedTurnInfo } from "../router/turn-runner.ts";
 import { hookCall } from "../session/call-record.ts";
@@ -37,9 +40,14 @@ export type PluginHooksDeps = {
 /** A closed session as the idle sweep hands it over: its key, whose it was, its messages. */
 export type ClosedSessionInfo = { key: string; userId: string; messages: Message[] };
 
+/** A turn's or a resolved confirmation's record as the core hands it over: the session and what it left, without whose it is. */
+export type TurnRecordInfo = { sessionKey: string } & (TurnRecordOfTurn | TurnRecordOfConfirmation);
+
 export type PluginHooks = {
   /** Hands a finished turn to the `afterTurn` of each plugin offered in it, and remembers who the session's last turn was for (not the terminal's, which is never closed for being quiet). Returns at once. */
   afterTurn: (who: TurnWho, turn: FinishedTurnInfo) => void;
+  /** Hands what a turn or a resolved confirmation left to the `onTurnRecord` of each plugin offered to `who`. Returns at once. */
+  turnRecord: (who: TurnWho, record: TurnRecordInfo) => void;
   /** Hands a closed session to the `onSessionClose` of each plugin offered in its last finished turn; nothing for a session with none. Returns at once. */
   sessionClosed: (session: ClosedSessionInfo) => void;
 };
@@ -66,7 +74,7 @@ export function createPluginHooks(deps: PluginHooksDeps): PluginHooks {
   const lastWho = new Map<string, TurnWho>();
 
   /** Runs one plugin's hook without waiting for it, and reports how it went once it settles. */
-  function run(plugin: string, hook: "afterTurn" | "onSessionClose", session: string, person: string, call: () => void | Promise<void>): void {
+  function run(plugin: string, hook: "afterTurn" | "onTurnRecord" | "onSessionClose", session: string, person: string, call: () => void | Promise<void>): void {
     const started = now();
     const report = (error?: unknown) => {
       const message = error === undefined ? undefined : error instanceof Error ? error.message : String(error);
@@ -104,6 +112,15 @@ export function createPluginHooks(deps: PluginHooksDeps): PluginHooks {
         if (hook === undefined) continue;
         run(plugin.name, "afterTurn", turn.sessionKey, who.person.key, () =>
           hook({ ...turn, person: { key: who.person.key }, operator: who.operator, as }),
+        );
+      }
+    },
+    turnRecord(who, record) {
+      for (const { plugin, as } of oncePerPlugin(deps.offered(who))) {
+        const hook = plugin.onTurnRecord;
+        if (hook === undefined) continue;
+        run(plugin.name, "onTurnRecord", record.sessionKey, who.person.key, () =>
+          hook({ ...record, person: { key: who.person.key }, operator: who.operator, as }),
         );
       }
     },

@@ -221,12 +221,12 @@ describe("scheduler: urgency", () => {
     const model = ollamaModel("qwen");
     const started: string[] = [];
     const release = scheduler.holdTurn(model);
-    const step = backgroundStep(scheduler, model, "title", started, "soon");
+    const step = backgroundStep(scheduler, model, "titles:title", started, "soon");
     await flush();
     expect(started).toEqual([]);
     release();
     await flush();
-    expect(started).toEqual(["title"]);
+    expect(started).toEqual(["titles:title"]);
     step.finish();
     await step.result;
   });
@@ -317,7 +317,7 @@ describe("scheduler: failures and stop", () => {
     const scheduler = createScheduler();
     const model = ollamaModel("qwen");
     const started: string[] = [];
-    const failing = scheduler.job({ job: "title", urgency: "soon" }, () =>
+    const failing = scheduler.job({ job: "titles:title", urgency: "soon" }, () =>
       scheduler.call(model, async () => {
         throw new Error("model down");
       }),
@@ -400,7 +400,7 @@ describe("scheduler: the background.job event", () => {
     const scheduler = createScheduler({ now: () => 0, emit: (event) => events.push(event) });
     const model = ollamaModel("qwen");
     await scheduler
-      .job({ job: "title", urgency: "soon" }, () =>
+      .job({ job: "titles:title", urgency: "soon" }, () =>
         scheduler.call(model, async () => {
           throw new Error("down");
         }),
@@ -413,7 +413,7 @@ describe("scheduler: the background.job event", () => {
     await dropped;
     release();
     expect(events.map((e) => [e.job, e.outcome, e.steps])).toEqual([
-      ["title", "failed", 1],
+      ["titles:title", "failed", 1],
       ["capture", "dropped", 0],
     ]);
   });
@@ -472,7 +472,7 @@ describe("scheduler: wrapped models", () => {
     });
     const wrapped = scheduler.languageModel(handle, raw) as unknown as Callable;
     const release = scheduler.holdTurn(handle);
-    const job = scheduler.job({ job: "title", urgency: "soon" }, () => wrapped.doGenerate({ prompt: [] }));
+    const job = scheduler.job({ job: "titles:title", urgency: "soon" }, () => wrapped.doGenerate({ prompt: [] }));
     await flush();
     expect(calls).toEqual([]);
     release();
