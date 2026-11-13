@@ -18,6 +18,7 @@ import { httpChannel } from "@mercury-fw/channel-http";
 import { staticAuth } from "@mercury-fw/auth-static";
 import { jsonlTraces } from "@mercury-fw/trace-jsonl";
 import { qdrantConversations, qdrantIndex } from "@mercury-fw/store-qdrant";
+import { conversationWindow } from "@mercury-fw/conversation-window";
 
 /** The assistant's name: what the persona calls it, and every text the model reads. */
 const name = "Mercury";
@@ -37,6 +38,13 @@ const main = ollamaModel(process.env.OLLAMA_MODEL, {
   backgroundSlots: envNumber("OLLAMA_BACKGROUND_SLOTS"),
 });
 
+/**
+ * The conversation each session keeps for the model: its recent messages,
+ * summarized on the model once they pass 60000 characters, and the end of a
+ * conversation the person reopens, from the conversation store.
+ */
+const conversation = conversationWindow();
+
 export default defineMercuryConfig({
   persona: {
     name,
@@ -55,6 +63,7 @@ export default defineMercuryConfig({
     ].join("\n"),
   },
   plugins: [
+    conversation,
     webSearchPlugin({
       backend: searxngBackend({ url: process.env.SEARXNG_URL || "http://searxng:8080" }),
       // Hosts whose pages anyone may read without being asked; each covers its subdomains.
@@ -78,6 +87,10 @@ export default defineMercuryConfig({
     turn: main,
     embedding: ollamaEmbedding(process.env.OLLAMA_EMBEDDING_MODEL ?? "nomic-embed-text"),
   },
+  // What the model reads besides each message: the conversation `conversation`
+  // keeps (remove it here and from plugins to keep none, and each message is
+  // read alone), and the context layers of the plugins listed in `layers`.
+  context: { profiles: { default: { conversation, layers: [], budget: { maxChars: 8000 } } } },
   i18n: { locales: { en } },
   // What the agent does, as events in traces/ in Mercury's data folder:
   // a file per day, the last 7 days with activity kept. "meta" records names,
