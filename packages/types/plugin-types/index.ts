@@ -410,7 +410,7 @@ export type Embed = (text: string) => Promise<number[]>;
 /**
  * Runs `fn` every day at `at` (`"HH:MM"`, 24 hours) in `timeZone` (an IANA
  * name; the instance's `i18n.timeZone` when left out). `name` says what the
- * work is, for the log and the traces (`<plugin>:<name>`).
+ * work is, for the log (`<plugin>:<name>`).
  *
  * - Only the long-running service runs it, from its start: never the dev REPL.
  * - If the instance isn't running at that minute, that day's run is skipped,
