@@ -61,6 +61,12 @@ A profile can only narrow what a person gets, never widen it: a layer whose plug
 skipped in their context. When a profile lists a layer that none of the roles it's given to can ever use, the
 agent says so in the log at startup.
 
+A profile can also name the plugin that keeps its conversations (`conversation`, see
+[What a plugin can use](../primitives/#keeping-the-conversation)): how much of the conversation the model reads,
+and what happens when it grows too long. A conversation is kept by the profile of whoever started it, for as long
+as it stays open. A layer learns whether the conversation is one its chat interface reopened (`reopened`), rather
+than one just started: a layer recalling the person's last conversation leaves it out then.
+
 ## Changing it while the agent runs
 
 A profile's budget, the order of its layers and the layers' **knobs** can change without restarting the agent. A knob

@@ -83,6 +83,10 @@ Field by field:
 - **`sessionTools`** returns the tools by name. `description` is what the model reads to decide whether to call
   it, `inputSchema` the input it must send (none here), and `execute` what runs.
 
+`build` may also be `async`, for a plugin with something to set up before the agent takes messages. What else it
+can reach besides `ctx.env` (the models, the vector index, work at a set time) is in
+[What a plugin can use](../../concepts/primitives/), with a plugin that learns from what was said.
+
 What `execute` returns goes back to the model, which writes the answer from it. A plugin that also shows the person
 words of its own, such as a status line while its tool runs, writes them in its `messages`: see
 [Texts the person reads](../../concepts/plugins/#texts-the-person-reads).
