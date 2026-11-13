@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { TOOL_CORRECTIONS_SPACE, ensureToolCorrectionsSpace, searchToolCorrectionsByTopic, storeToolCorrection } from "./tool-corrections-store.ts";
+import { TOOL_CORRECTIONS_SPACE, ensureToolCorrectionsSpace, searchToolCorrectionsByTopic, storeToolCorrection } from "./store.ts";
 import { fakeVectorIndex } from "./__fixtures__/fake-vector-index.ts";
 
 const correction = (tool: string, topic: string, value: string) => ({ tool, topic, value, timestamp: "2026-07-20T10:00:00.000Z" });
