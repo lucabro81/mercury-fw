@@ -652,6 +652,106 @@ export type FinishedTurn = {
   multiUser: boolean;
 };
 
+/**
+ * What a turn left, as `onTurnRecord` hears it, whatever its outcome: a
+ * plugin keeping what was said (an archive, an index) writes from this.
+ *
+ * - `outcome`: `"done"` (the person got an answer), `"cancelled"` (their
+ *   channel stopped it), `"failed"`;
+ * - `origin`: `"person"` when the person wrote it, `"opening"` when the agent
+ *   spoke first, `"resumed"` when it went on after a confirmation; `input`,
+ *   what they wrote, only for `"person"`;
+ * - `startedAt` (when the person's message arrived) and `endedAt`, ISO 8601;
+ * - `answer`: what the turn answered, absent on a failed turn and on a
+ *   cancelled one stopped before the conversation kept anything for it.
+ *   `content` is the model's own text (on a cancelled turn, the placeholder
+ *   the conversation kept, with `interrupted`), `displays` the lists shown
+ *   after it, `calls` the tool calls it was written from, `trace` what the
+ *   person saw of the turn besides its text, `pendingNote` the core's
+ *   sentence `content` begins with when the turn only staged an action;
+ * - `turnId`: the id the turn's trace events carry.
+ */
+export type TurnRecordOfTurn = {
+  kind: "turn";
+  turnId: string;
+  /** Whether the turn came from a space shared by several people. */
+  multiUser: boolean;
+  outcome: "done" | "cancelled" | "failed";
+  origin: "person" | "opening" | "resumed";
+  input?: string;
+  startedAt: string;
+  endedAt: string;
+  answer?: {
+    content: string;
+    displays?: string[];
+    calls?: CallRecord[];
+    trace?: TraceEntry[];
+    pendingNote?: string;
+    interrupted?: true;
+  };
+};
+
+/**
+ * How a staged action was resolved, as `onTurnRecord` hears it, outside any
+ * turn: `content` is the reply the person got (empty when the turn resumed
+ * instead), `confirmation` how it went, `at` when (ISO 8601).
+ */
+export type TurnRecordOfConfirmation = {
+  kind: "confirmation";
+  content: string;
+  confirmation: ArchivedConfirmation;
+  at: string;
+};
+
+/**
+ * What `onTurnRecord` hears: a turn (`kind: "turn"`) or a resolved
+ * confirmation (`kind: "confirmation"`), with the session, whose it is
+ * (`person`; in a shared space, the sender), `operator` (true on the
+ * terminal, whose turns today's memory keeps nothing of), how the plugin was
+ * offered to them (`as`).
+ */
+export type TurnRecord = {
+  sessionKey: string;
+  person: { key: string };
+  operator: boolean;
+  as: "person" | "mercury" | "anyone";
+} & (TurnRecordOfTurn | TurnRecordOfConfirmation);
+
+/**
+ * The messages `record` leaves in an archive, in the shape the conversation
+ * store keeps (`StoredMessage`, without the `id` the writer gives each):
+ *
+ * - a turn the person wrote leaves their message, timestamped when it
+ *   arrived, then the answer, timestamped when the turn ended; an opening or
+ *   a resumed turn leaves only the answer;
+ * - a cancelled turn leaves them only when the conversation kept an answer
+ *   for it (`answer` present), and an opening nothing, since nobody asked
+ *   anything; a failed turn leaves nothing;
+ * - a message with no words and no displays is left out;
+ * - a resolved confirmation leaves the reply with how it went, even an empty
+ *   one.
+ *
+ * Who is kept (the operator's turns, for one) is the caller's choice.
+ */
+export function archivedMessages(record: TurnRecord): Array<Omit<StoredMessage, "id">> {
+  const whose = { userId: record.person.key, sessionKey: record.sessionKey };
+  if (record.kind === "confirmation") {
+    return [{ ...whose, role: "assistant", content: record.content, confirmation: record.confirmation, timestamp: record.at }];
+  }
+  const answer = record.answer;
+  if (record.outcome === "failed" || answer === undefined) return [];
+  if (record.outcome === "cancelled" && record.origin === "opening") return [];
+  const shown = (content: string, displays?: string[]) => [content, ...(displays ?? [])].some((part) => part.trim() !== "");
+  const messages: Array<Omit<StoredMessage, "id">> = [];
+  if (record.origin === "person" && record.input !== undefined && shown(record.input)) {
+    messages.push({ ...whose, role: "user", content: record.input, turnId: record.turnId, timestamp: record.startedAt });
+  }
+  if (shown(answer.content, answer.displays)) {
+    messages.push({ ...whose, role: "assistant", ...answer, turnId: record.turnId, timestamp: record.endedAt });
+  }
+  return messages;
+}
+
 /** A session that was just closed for being quiet, as `onSessionClose` sees it: whose it was and its messages. */
 export type ClosedSession = {
   sessionKey: string;
@@ -807,6 +907,10 @@ export type PersonLogin = {
  *   offered in that turn (see `FinishedTurn`). The core doesn't wait for it:
  *   the person already has the answer, and their next turn doesn't wait
  *   either. A model call belongs in `ctx.job`. Ignored by an older core.
+ * - `onTurnRecord`: called for every turn, whatever its outcome, and every
+ *   resolved confirmation, for every plugin offered in it (see `TurnRecord`);
+ *   not awaited, and two records of one session may be handled at once: order
+ *   them by their times. Ignored by an older core.
  * - `onSessionClose`: called once a quiet session was closed, for every
  *   plugin offered in its last turn (see `ClosedSession`); not awaited
  *   either. Ignored by an older core.
@@ -826,6 +930,7 @@ export type PluginRuntimeContributions = {
   toolStatusDescribers?: Record<string, (input: unknown, t: Translate) => string>;
   postTurnGuards?: PostTurnGuard[];
   afterTurn?: (turn: FinishedTurn) => void | Promise<void>;
+  onTurnRecord?: (record: TurnRecord) => void | Promise<void>;
   onSessionClose?: (session: ClosedSession) => void | Promise<void>;
   context?: ContextLayer;
   conversation?: ConversationOwner;

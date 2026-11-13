@@ -34,6 +34,7 @@ import type {
   Daily,
   Embed,
   FinishedTurn,
+  TurnRecord,
   JobUrgency,
   MercuryModelHandle,
   Messages,
@@ -82,6 +83,8 @@ export interface LoadedPlugin {
   source: Plugin;
   /** Its hook for a turn that ended with an answer (see `PluginRuntimeContributions.afterTurn`). */
   afterTurn?: (turn: FinishedTurn) => void | Promise<void>;
+  /** Its hook for what each turn and resolved confirmation left (see `PluginRuntimeContributions.onTurnRecord`). */
+  onTurnRecord?: (record: TurnRecord) => void | Promise<void>;
   /** Its hook for a session closed for being quiet (see `PluginRuntimeContributions.onSessionClose`). */
   onSessionClose?: (session: ClosedSession) => void | Promise<void>;
   /** What it adds to what the model reads, when a context profile lists it (see `ContextLayer`). */
@@ -380,6 +383,7 @@ export async function loadPlugins(plugins: Plugin[], ctx: PluginLoadContext): Pr
         ...(bundle === undefined ? {} : { bundle }),
         source: plugin,
         ...(contributions.afterTurn === undefined ? {} : { afterTurn: contributions.afterTurn }),
+        ...(contributions.onTurnRecord === undefined ? {} : { onTurnRecord: contributions.onTurnRecord }),
         ...(contributions.onSessionClose === undefined ? {} : { onSessionClose: contributions.onSessionClose }),
         ...(contributions.context === undefined ? {} : { context: contributions.context }),
         ...(contributions.conversation === undefined ? {} : { conversation: contributions.conversation }),
