@@ -6,9 +6,12 @@
  * Fail-soft: a store written for another contract, or a `build()` that
  * throws, leaves the instance without a store, logged, and the instance
  * starts anyway. Without a store nothing is archived: no conversations to
- * reopen or list, no titles, no `recall_verbatim`.
+ * reopen or list, no titles, no `recall_verbatim`. What goes in it is the
+ * plugins' (`@mercury-fw/archive`, `@mercury-fw/titles`): a store none of
+ * them asks for gets a line at startup (`unusedStoreWarning`).
  */
 import { CONVERSATION_STORE_API_VERSION, type ConversationStore, type ConversationStorePlugin } from "@mercury-fw/channel-types";
+import type { PluginNeed } from "@mercury-fw/plugin-types";
 
 /** The store `plugin` builds, or `undefined` when there's none or it can't be used (see the module comment). */
 export function loadConversationStore(
@@ -29,4 +32,17 @@ export function loadConversationStore(
     ctx.log(`conversation store "${plugin.name}" failed to load: ${err instanceof Error ? err.message : String(err)}; no archive, no resumed conversations, no titles`);
     return undefined;
   }
+}
+
+/**
+ * The startup line for a store declared as `name` that no plugin among
+ * `plugins` needs (`needs: ["conversationStore"]`), whose writing is theirs:
+ * it would stay empty. `undefined` when no store is declared, or one needs it.
+ */
+export function unusedStoreWarning(name: string | undefined, plugins: Array<{ name: string; needs?: PluginNeed[] }>): string | undefined {
+  if (name === undefined || plugins.some((p) => p.needs?.includes("conversationStore"))) return undefined;
+  return (
+    `conversation store "${name}" declared, but no plugin uses it (needs: ["conversationStore"]): ` +
+    "nothing is archived, no conversation is reopened or titled; declare archive() to keep what is said"
+  );
 }

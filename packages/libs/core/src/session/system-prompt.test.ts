@@ -108,12 +108,10 @@ describe("buildSystemPrompt turn time", () => {
   });
 });
 
-// #216: the name a person wants to be called by is a setting the model saves.
+// #393: saving the person's name is the profile plugin's, described in its own fragment.
 describe("buildSystemPrompt preferred name", () => {
-  it("says when to save how the person wants to be called", () => {
-    expect(buildSystemPrompt({ pluginFragments: [], plugins: [], skills: [], multiUserChannel: false })).toContain(
-      "You have access to the set_preferred_name tool.\nDO:\n- When the person tells you how they want to be called, now or in any later conversation, save it with set_preferred_name.",
-    );
+  it("names no profile tool of its own", () => {
+    expect(buildSystemPrompt({ pluginFragments: [], plugins: [], skills: [], multiUserChannel: false })).not.toContain("set_preferred_name");
   });
 });
 
@@ -129,8 +127,8 @@ describe("buildSystemPrompt recall_verbatim", () => {
   it("leaves recall_verbatim out entirely when the instance has no recall", () => {
     const prompt = buildSystemPrompt({ ...base, recallVerbatim: false });
     expect(prompt).not.toContain("recall_verbatim");
-    // Only that block goes: the one on the person's name stays.
-    expect(prompt).toContain("You have access to the set_preferred_name tool.");
+    // Only that block goes: the one on resolve_reference stays.
+    expect(prompt).toContain("You have access to the resolve_reference tool.");
     const withRecall = buildSystemPrompt(base);
     const start = withRecall.indexOf("\nYou have access to the recall_verbatim tool.");
     const last = "never for what you ran in the CURRENT one.";

@@ -16,10 +16,9 @@ import { createResolveReferenceTool } from "../tools/resolve-reference-tool.ts";
 import { createReadSkillTool } from "./read-skill-tool.ts";
 import { createPresentTool } from "../tools/present-tool.ts";
 import { createDisplayStore } from "../tools/display-store.ts";
-import { createVerbatimArchiveProvider } from "../memory/memory-provider.ts";
+import { createVerbatimRecall } from "../memory/memory-provider.ts";
 import { actingAsSelf } from "../plugins/act-as-self.ts";
 import { toolsWithAssistantName } from "./assistant-name.ts";
-import { createProfileTools } from "../identity/profile-tools.ts";
 
 /** Every tool the core builds for a turn, before the core substitutes the name. */
 function coreTools(): Record<string, Tool> {
@@ -27,10 +26,9 @@ function coreTools(): Record<string, Tool> {
   const pluginTool = tool({ description: "Runs a jira command.", inputSchema: z.object({}), execute: async () => "ran" });
   return {
     ...createResolveReferenceTool({ notesRoot, key: "static:alice" }),
-    ...createProfileTools({ store: { nameOf: () => undefined, setName: (_k, n) => n, languageOf: () => undefined, setLanguage: (_k, l) => l, timeZoneOf: () => undefined, setTimeZone: (_k, z) => z }, key: "static:alice" }),
     ...createReadSkillTool([{ name: "jira", description: "Jira.", body: "body" }]),
     ...createPresentTool({ sessionKey: "s", store: createDisplayStore() }),
-    ...createVerbatimArchiveProvider({ store: {} as never, index: {} as never, embed: async () => [] }).sessionTools!({
+    ...createVerbatimRecall({ index: {} as never, embed: async () => [] }).sessionTools({
       sessionKey: "s",
       userId: "static:alice",
     }),

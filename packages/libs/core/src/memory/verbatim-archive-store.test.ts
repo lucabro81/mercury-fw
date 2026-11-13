@@ -1,6 +1,6 @@
 import { describe, it, expect } from "bun:test";
 import {
-  appendVerbatimMessage,
+  indexVerbatimMessage,
   searchVerbatim,
   listVerbatimBySession,
   listVerbatimSessions,
@@ -30,17 +30,17 @@ function storeWith(payloads: Array<Record<string, unknown>>, received: { query?:
   };
 }
 
-/** Appends `entry` to a store and an index: what the store kept, what the index got and what was embedded. */
-async function appended(entry: Parameters<typeof appendVerbatimMessage>[1], withIndex = true) {
-  const store = fakeConversationStore();
+/** Indexes `entry`: what the index got, its payloads with their ids (`stored`), and what was embedded. */
+async function appended(entry: Parameters<typeof indexVerbatimMessage>[2]) {
   const index = fakeVectorIndex();
   const embedded: string[] = [];
   const embed = async (text: string) => (embedded.push(text), [1]);
-  await appendVerbatimMessage(store, entry, withIndex ? { index, embed } : undefined);
-  return { stored: store.stored, indexed: index.spaces.get("verbatim_archive") ?? [], embedded };
+  await indexVerbatimMessage(index, embed, entry);
+  const indexed = index.spaces.get("verbatim_archive") ?? [];
+  return { stored: indexed.map((p) => ({ id: p.id, ...p.payload })), indexed, embedded };
 }
 
-describe("appendVerbatimMessage", () => {
+describe("indexVerbatimMessage", () => {
   const message = {
     userId: "users/42",
     sessionKey: "spaces/X:users/42",
@@ -49,46 +49,18 @@ describe("appendVerbatimMessage", () => {
     timestamp: "2026-09-22T12:00:00.000Z",
   };
 
-  it("keeps the message in the store under a new id, and indexes it under the same id with its content embedded", async () => {
-    const { stored, indexed, embedded } = await appended(message);
-
-    expect(stored).toHaveLength(1);
-    const { id, ...kept } = stored[0]!;
-    expect(id).toMatch(/^[0-9a-f-]{36}$/);
-    expect(kept).toEqual(message);
-    expect(indexed).toEqual([{ id, vector: [1], payload: message }]);
+  it("indexes the message under a new id, its content embedded, the whole message for payload", async () => {
+    const { indexed, embedded } = await appended(message);
+    expect(indexed).toHaveLength(1);
+    expect(indexed[0]!.id).toMatch(/^[0-9a-f-]{36}$/);
+    expect(indexed[0]).toEqual({ id: indexed[0]!.id, vector: [1], payload: message });
     expect(embedded).toEqual(["come sta KAN-1?"]);
   });
 
-  // #379: the store is the record, the index derived from it: an index that
-  // fails keeps the message out of the search, never out of the archive.
-  it("keeps the message in the store when the index fails, and says the index failed", async () => {
-    const store = fakeConversationStore();
+  it("says when the index fails", async () => {
     const index = fakeVectorIndex();
     index.fail = new Error("index down");
-    await expect(appendVerbatimMessage(store, message, { index, embed: async () => [1] })).rejects.toThrow("index down");
-    expect(store.stored.map(({ id: _id, ...m }) => m)).toEqual([message]);
-  });
-
-  // #383: indexing embeds the message, a model call: it's background work,
-  // handed to `defer`, while the message is in the store before append returns.
-  it("with defer, keeps the message at once and hands the indexing to defer, which indexes it under the same id", async () => {
-    const store = fakeConversationStore();
-    const index = fakeVectorIndex();
-    const deferred: Array<() => Promise<void>> = [];
-    await appendVerbatimMessage(store, message, { index, embed: async () => [1], defer: (work) => void deferred.push(work) });
-    expect(store.stored).toHaveLength(1);
-    expect(index.spaces.get("verbatim_archive") ?? []).toEqual([]);
-    expect(deferred).toHaveLength(1);
-    await deferred[0]!();
-    expect(index.spaces.get("verbatim_archive")).toEqual([{ id: store.stored[0]!.id, vector: [1], payload: message }]);
-  });
-
-  // #379: without a vector index the archive still keeps what was said; nothing is embedded.
-  it("without a search, keeps the message and embeds nothing", async () => {
-    const { stored, embedded } = await appended({ ...message, role: "assistant", content: "KAN-1 è In Progress." }, false);
-    expect(stored.map(({ id: _id, ...m }) => m)).toEqual([{ ...message, role: "assistant", content: "KAN-1 è In Progress." }]);
-    expect(embedded).toEqual([]);
+    await expect(indexVerbatimMessage(index, async () => [1], message)).rejects.toThrow("index down");
   });
 });
 
@@ -336,7 +308,7 @@ describe("the displays a turn showed", () => {
     });
   });
 
-  describe("appendVerbatimMessage", () => {
+  describe("indexVerbatimMessage", () => {
     it("keeps the displays in the payload and embeds the answer", async () => {
       const { stored, indexed, embedded } = await appended(answer);
       const { id: _id, ...payload } = stored[0]!;
@@ -644,8 +616,8 @@ describe("what the person saw of the turn besides its text (#370)", () => {
   };
 
 
-  /** Appends `entry`: the payload the store kept (its id aside) and what was embedded. */
-  async function appendedOne(entry: Parameters<typeof appendVerbatimMessage>[1]) {
+  /** Indexes `entry`: the payload the index kept and what was embedded. */
+  async function appendedOne(entry: Parameters<typeof indexVerbatimMessage>[2]) {
     const { stored, embedded } = await appended(entry);
     const { id: _id, ...payload } = stored[0]!;
     return { payload, embedded: embedded[0] };

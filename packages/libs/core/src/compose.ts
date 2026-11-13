@@ -21,7 +21,7 @@ import { createConfirmationStore, createStageChoices, createStageConfirmation, t
 import { createDisplayStore } from "./tools/display-store.ts";
 import { createPresentTool } from "./tools/present-tool.ts";
 import { loadPlugins } from "./plugins/plugin-loader.ts";
-import { createPluginHooks } from "./plugins/plugin-hooks.ts";
+import { createPluginHooks, type TurnRecordInfo } from "./plugins/plugin-hooks.ts";
 import { createContextAssembler, profileFor, resolveContext } from "./context/context.ts";
 import { createChannelContextAdmin } from "./context/context-admin.ts";
 import { createContextSettings } from "./context/context-settings.ts";
@@ -30,7 +30,6 @@ import type { MercuryConfig } from "./config/define-config.ts";
 import { createResumeSlots } from "./session/resume-slots.ts";
 import type { Message } from "./session/history.ts";
 import { createConversations } from "./session/conversations.ts";
-import { createConversationTitler } from "./session/conversation-titler.ts";
 import { createEpisodicSummarizer } from "./session/episodic-summarizer.ts";
 import { createSemanticFactExtractor } from "./session/semantic-fact-extractor.ts";
 import { buildContextPrimer, primerOptions } from "./session/context-primer.ts";
@@ -61,13 +60,13 @@ import {
   getLastSessionEpisodicSummaries,
 } from "./memory/episodic-store.ts";
 import { listVerbatimBySession } from "./memory/verbatim-archive-store.ts";
-import { setTitle, titleOf, titlesOf } from "./memory/conversation-titles-store.ts";
-import { createVerbatimArchiveProvider } from "./memory/memory-provider.ts";
+import { setTitle, titlesOf } from "./memory/conversation-titles-store.ts";
+import { createVerbatimRecall } from "./memory/memory-provider.ts";
 import { storeSemanticFact } from "./memory/semantic-facts-store.ts";
 import { TOOL_CORRECTIONS_SPACE, storeToolCorrection } from "./memory/tool-corrections-store.ts";
 import { MIGRATED_SPACES, setUpMemory, setUpWhenReachable } from "./memory/collection-setup.ts";
 import { loadVectorIndex } from "./data/vector-index-loader.ts";
-import { loadConversationStore } from "./data/conversation-store-loader.ts";
+import { loadConversationStore, unusedStoreWarning } from "./data/conversation-store-loader.ts";
 import { createToolCorrectionExtractor } from "./session/tool-correction-extractor.ts";
 import { createEmbedder } from "./memory/embedder.ts";
 import { createHostReads } from "./identity/host-reads.ts";
@@ -79,7 +78,6 @@ import { createPersonLogins } from "./identity/person-logins.ts";
 import { createProfileStore, profilesPath } from "./identity/profiles.ts";
 import { createTexts, instanceI18n, requestTexts, type Texts, type Translate } from "./i18n/i18n.ts";
 import { channelMessages } from "./router/channel-loader.ts";
-import { createProfileTools } from "./identity/profile-tools.ts";
 import { createPeople, type TurnWho } from "./identity/people.ts";
 import { createLinkStore, linksPath } from "./identity/links.ts";
 import { createLinking } from "./identity/linking.ts";
@@ -310,6 +308,13 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
     profiles: pluginProfiles(profiles, () => shippedLanguages),
   });
 
+  // A store nobody writes stays empty: said at startup (#393).
+  const unusedStore = unusedStoreWarning(
+    conversationStore === undefined ? undefined : config.conversationStore?.name,
+    loadedPlugins.plugins.map((p) => ({ name: p.name, ...(p.source.needs === undefined ? {} : { needs: p.source.needs }) })),
+  );
+  if (unusedStore !== undefined) console.error(`[archive] ${unusedStore}`);
+
   // Status labels for the tool-start hook, keyed by tool name: each plugin's
   // describer for its own tool (jiraCommand, …), the same for its variant
   // acting as Mercury.
@@ -430,38 +435,30 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   const idleScanner = createIdleSessionScanner();
   const episodicSummarize = createEpisodicSummarizer(backgroundModel);
 
-  // Verbatim conversation archive (#4): the raw user<->model exchange,
-  // lossless and durable — separate from the lossy conversation window and the
-  // derived episodic summaries above — in the store, searched in the index.
-  const verbatimProvider =
-    conversationStore === undefined
+  // The search of what was said (#4): every message a turn leaves, indexed
+  // from the turn's record (the store is the archive plugin's), for
+  // recall_verbatim, which reads what the archive keeps: it needs both.
+  const verbatimRecall =
+    conversationStore === undefined || vectorIndex === undefined
       ? undefined
-      : createVerbatimArchiveProvider({
-          store: conversationStore,
+      : createVerbatimRecall({
+          index: vectorIndex,
           embed,
-          ...(vectorIndex === undefined ? {} : { index: vectorIndex }),
-          // Embedding a message for the search is background work: the turn
-          // has it in the store already.
+          // Embedding a message for the search is background work.
           indexInBackground: (work) =>
             void backgroundJob("archive-index", "soon", work).catch((err: unknown) =>
-              console.error(`[verbatim-archive] indexing failed, the message is kept: ${String(err instanceof Error ? err.message : err)}`),
+              console.error(`[verbatim-archive] indexing failed: ${String(err instanceof Error ? err.message : err)}`),
             ),
         });
-  // Conversation titles (#214), next to the archive whose conversations they
-  // name: generated once from a conversation's first exchange, or the person's.
-  const titleConversation = (() => {
-    const store = conversationStore;
-    if (store === undefined) return undefined;
-    const title = createConversationTitler({
-      model: backgroundModel,
-      readOpening: async (userId, sessionKey) => (await listVerbatimBySession(store, { userId, sessionKey, limit: 10 })).messages,
-      titleOf: (userId, sessionKey) => titleOf(store, { userId, sessionKey }),
-      setTitle: (userId, sessionKey, title) => setTitle(store, { userId, sessionKey, title, source: "generated" }),
-      log: (msg) => console.error(msg),
-      emit: (event) => tracer.emit(event),
-    });
-    return (sessionKey: string, userId: string) => backgroundJob("title", "soon", () => title(sessionKey, userId));
-  })();
+
+  /** What a turn or a resolved confirmation left: to the plugins' `onTurnRecord`, and to the search of what was said. */
+  const turnRecord = (who: TurnWho, record: TurnRecordInfo): void => {
+    pluginHooks.turnRecord(who, record);
+    if (verbatimRecall === undefined) return;
+    void verbatimRecall
+      .indexRecord({ ...record, person: { key: who.person.key }, operator: who.operator, as: "anyone" })
+      .catch((err: unknown) => console.error(`[verbatim-archive] indexing failed: ${String(err instanceof Error ? err.message : err)}`));
+  };
 
   // Semantic consolidation (D-22/D-34): a separate space from the episodic
   // memory above — one point per extracted {topic, value} candidate, vector
@@ -664,10 +661,9 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
     }
 
     Object.assign(sessionTools, createResolveReferenceTool({ notesRoot, key }));
-    Object.assign(sessionTools, createProfileTools({ store: profiles, key, languages: i18n.supported }));
     // Verbatim archive recall, scoped to this person — lets the model resurface
     // what was actually said in earlier conversations, beyond the live window.
-    if (verbatimProvider !== undefined) Object.assign(sessionTools, verbatimProvider.sessionTools!({ sessionKey, userId: key }));
+    if (verbatimRecall !== undefined) Object.assign(sessionTools, verbatimRecall.sessionTools({ sessionKey, userId: key }));
     // read_skill only exists when a plugin offered contributed at least one skill.
     if (offering.skills.length > 0) {
       Object.assign(sessionTools, createReadSkillTool(skillsWithAssistantName(offering.skills, assistantName)));
@@ -755,8 +751,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
     maybeCapture: async (key, history) => {
       if (vectorIndex !== undefined) await sessionCapture.maybeCapture(key, history.getCapturable());
     },
-    ...(verbatimProvider?.captureExchange === undefined ? {} : { captureVerbatim: verbatimProvider.captureExchange }),
-    ...(titleConversation === undefined ? {} : { titleConversation }),
+    turnRecord,
     processToolCorrections,
     logStep,
     // Appends what the model surfaced via `present` this turn — nothing if it
@@ -780,8 +775,8 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   const channelRuntime: ChannelRuntimeContext = {
     env: process.env,
     log: (msg) => console.error(msg),
-    // How a confirmation was resolved goes to the archive with the conversation (#370).
-    ...bindConfirm(confirmDeps, people.identify, linking.redeem, texts, verbatimProvider?.captureExchange, (event) => tracer.emit(event)),
+    // How a confirmation was resolved goes to the plugins keeping the conversation (#370, #393).
+    ...bindConfirm(confirmDeps, people.identify, linking.redeem, texts, turnRecord, (event) => tracer.emit(event)),
     admit: people.admit,
     // The channel's own texts: the person's language when the core knows who
     // it is, else the hint's, else the default.

@@ -10,6 +10,24 @@ import { ABORTED_MARKER } from "../session/agent-turn.ts";
 import type { StepInfo } from "../session/step-info.ts";
 import { confirmationId } from "../session/turn-trace.ts";
 import { createDisplayStore } from "../tools/display-store.ts";
+import { archivedMessages, type StoredMessage } from "@mercury-fw/plugin-types";
+
+/** The archived message as `onTurnRecord`'s archive would write it, without its timestamp. */
+type Archived = Omit<StoredMessage, "id" | "timestamp">;
+
+/**
+ * A `turnRecord` that hands `capture` each message an archive keeps of the
+ * record (`archivedMessages`), for whoever the archive keeps (never the
+ * operator), in order.
+ */
+function archiveVia(capture: (msg: Archived) => unknown): NonNullable<TurnRunnerDeps["turnRecord"]> {
+  return (who, record) => {
+    if (who.operator) return;
+    for (const { timestamp: _t, ...msg } of archivedMessages({ ...record, person: { key: who.person.key }, operator: who.operator, as: "anyone" })) {
+      void capture(msg);
+    }
+  };
+}
 
 /** An archived message without its turn id, for the tests about everything else it carries (the id has its own test). */
 function archivedFields<T extends { turnId?: string }>({ turnId: _turnId, ...rest }: T): Omit<T, "turnId"> {
@@ -292,9 +310,9 @@ describe("createTurnRunner", () => {
       trackSession: (_sk, key) => keys.track!.push(key),
       registerCaptureCallback: () => {},
       maybeCapture: async () => {},
-      captureVerbatim: async (msg) => {
+      turnRecord: archiveVia(async (msg) => {
         keys.verbatim!.push(msg.userId);
-      },
+      }),
       processToolCorrections: async () => {},
       logStep: () => {},
       recordStepFn: (_channel, _sk, owner) => keys.record!.push(owner),
@@ -329,7 +347,7 @@ describe("createTurnRunner", () => {
         trackSession: () => ran.push("track"),
         registerCaptureCallback: () => ran.push("register"),
         maybeCapture: async () => void ran.push("capture"),
-        captureVerbatim: async () => void ran.push("verbatim"),
+        turnRecord: archiveVia(async () => void ran.push("verbatim")),
         processToolCorrections: async () => void ran.push("corrections"),
         logStep: () => {},
         runTurnFn: async () => (ran.push("model"), "reply"),
@@ -1350,9 +1368,9 @@ describe("createTurnRunner", () => {
         maybeCapture: async () => {},
         processToolCorrections: async () => {},
         logStep: () => {},
-        captureVerbatim: async (msg) => {
+        turnRecord: archiveVia(async (msg) => {
           captured.push(archivedFields(msg));
-        },
+        }),
         runTurnFn: async () => "the answer",
       });
 
@@ -1377,9 +1395,9 @@ describe("createTurnRunner", () => {
         maybeCapture: async () => {},
         processToolCorrections: async () => {},
         logStep: () => {},
-        captureVerbatim: async () => {
+        turnRecord: archiveVia(async () => {
           called = true;
-        },
+        }),
         runTurnFn: async () => "reply",
       });
 
@@ -1400,9 +1418,9 @@ describe("createTurnRunner", () => {
         maybeCapture: async () => {},
         processToolCorrections: async () => {},
         logStep: () => {},
-        captureVerbatim: async (msg) => {
+        turnRecord: archiveVia(async (msg) => {
           captured.push({ role: msg.role, content: msg.content });
-        },
+        }),
         postTurnGuards: [
           {
             statusLabel: () => "…",
@@ -1436,9 +1454,9 @@ describe("createTurnRunner", () => {
         processToolCorrections: async () => {},
         logStep: () => {},
         takeSurfacedDisplays: () => ["MER-1\nhttps://x"],
-        captureVerbatim: async (msg) => {
+        turnRecord: archiveVia(async (msg) => {
           captured.push(archivedFields(msg));
-        },
+        }),
         runTurnFn: async () => "Here you go.",
       });
 
@@ -1476,9 +1494,9 @@ describe("createTurnRunner", () => {
         maybeCapture: async () => {},
         processToolCorrections: async () => {},
         logStep: () => {},
-        captureVerbatim: async (msg) => {
+        turnRecord: archiveVia(async (msg) => {
           captured.push(archivedFields(msg));
-        },
+        }),
         runTurnFn: async () => "Two comments.",
       });
 
@@ -1508,9 +1526,9 @@ describe("createTurnRunner", () => {
         processToolCorrections: async () => {},
         logStep: () => {},
         takeSurfacedDisplays: () => ["MER-1\nhttps://x"],
-        captureVerbatim: async (msg) => {
+        turnRecord: archiveVia(async (msg) => {
           captured.push({ role: msg.role, content: msg.content, displays: msg.displays });
-        },
+        }),
         runTurnFn: async () => "",
       });
 
@@ -1520,11 +1538,11 @@ describe("createTurnRunner", () => {
       expect(captured.find((m) => m.role === "assistant")).toEqual({ role: "assistant", content: "", displays: ["MER-1\nhttps://x"] });
     });
 
-    // Fail-soft: the archive is pure enrichment (principle #3). A failure
-    // capturing it must never take down the turn — the answer is already
-    // delivered, and an unhandled rejection here would otherwise propagate out
-    // of the awaited handler.
-    test("a failing captureVerbatim never breaks the turn: it still finalizes and runs corrections", async () => {
+    // Fail-soft: what keeps the turn is enrichment (principle #3). A record
+    // that throws must never take down the turn: the answer is already
+    // delivered, and a throw here would otherwise propagate out of the
+    // awaited handler.
+    test("a turnRecord that throws never breaks the turn: it still finalizes and runs corrections", async () => {
       let correctionsRan = false;
       const sink = baseSink();
       const runner = createTurnRunner({
@@ -1539,8 +1557,8 @@ describe("createTurnRunner", () => {
           correctionsRan = true;
         },
         logStep: () => {},
-        captureVerbatim: async () => {
-          throw new Error("qdrant down");
+        turnRecord: () => {
+          throw new Error("hook broke");
         },
         runTurnFn: async () => "delivered anyway",
       });
@@ -1550,7 +1568,7 @@ describe("createTurnRunner", () => {
       expect(correctionsRan).toBe(true);
     });
 
-    test("does nothing when no captureVerbatim is wired (verbatim archive disabled)", async () => {
+    test("does nothing when no turnRecord is wired", async () => {
       const sink = baseSink();
       const runner = createTurnRunner({
         model: {} as any,
@@ -1733,23 +1751,23 @@ describe("createTurnRunner", () => {
 // turn, and the first time Mercury knows nothing about them it speaks first,
 // asking. An opening for someone it already knows says nothing at all.
 describe("createTurnRunner: preferred name and opening turn", () => {
-  function setup(opts: { names?: Record<string, string>; languages?: Record<string, string> } = {}) {
+  function setup(opts: { names?: Record<string, string>; languages?: Record<string, string>; tools?: Record<string, never> } = {}) {
     const calls: Array<{ text: string; system: string }> = [];
     const histories: string[] = [];
     const captured: Array<{ role: string; content: string }> = [];
     const runner = createTurnRunner({
       model: {} as any,
       systemPrompts: { singleUser: "single", multiUser: "multi" },
-      buildTools: () => ({}),
+      buildTools: () => opts.tools ?? {},
       getOrCreateHistory: (sessionKey: string) => (histories.push(sessionKey), fakeHistory()),
       trackSession: () => {},
       registerCaptureCallback: () => {},
       maybeCapture: async () => {},
       processToolCorrections: async () => {},
       logStep: () => {},
-      captureVerbatim: async (msg) => {
+      turnRecord: archiveVia(async (msg) => {
         captured.push({ role: msg.role, content: msg.content });
-      },
+      }),
       preferredName: (key) => opts.names?.[key],
       preferredLanguage: (key) => opts.languages?.[key],
       runTurnFn: async (_history, text, deps) => {
@@ -1781,7 +1799,7 @@ describe("createTurnRunner: preferred name and opening turn", () => {
     await runner(baseTurn({ principal: verified("u1"), opening: true, text: "" }), baseSink());
     await runner(baseTurn({ principal: verified("u1"), multiUser: true }), baseSink());
     expect(calls).toEqual([
-      { text: OPENING_CUE, system: `single\n\n${OPENING_NOTE}\n\n${PREFERRED_LANGUAGE_NOTE("it")}` },
+      { text: OPENING_CUE, system: `single\n\n${OPENING_NOTE(false)}\n\n${PREFERRED_LANGUAGE_NOTE("it")}` },
       { text: "hello", system: "multi" },
     ]);
   });
@@ -1809,7 +1827,7 @@ describe("createTurnRunner: preferred name and opening turn", () => {
     const { runner, calls, captured } = setup();
     const sink = baseSink();
     await runner(baseTurn({ principal: verified("u1"), opening: true, text: "" }), sink);
-    expect(calls).toEqual([{ text: OPENING_CUE, system: `single\n\n${OPENING_NOTE}` }]);
+    expect(calls).toEqual([{ text: OPENING_CUE, system: `single\n\n${OPENING_NOTE(false)}` }]);
     expect(sink.finalized).toEqual(["Ciao! Come vuoi che ti chiami?"]);
     expect(captured).toEqual([{ role: "assistant", content: "Ciao! Come vuoi che ti chiami?" }]);
   });
@@ -1846,9 +1864,9 @@ describe("createTurnRunner: preferred name and opening turn", () => {
       maybeCapture: async () => {},
       processToolCorrections: async () => {},
       logStep: () => {},
-      captureVerbatim: async (msg) => {
+      turnRecord: archiveVia(async (msg) => {
         captured.push(archivedFields(msg));
-      },
+      }),
       preferredName: () => undefined,
       runTurnFn: async () => {
         throw new Error("model down");
@@ -1864,15 +1882,27 @@ describe("createTurnRunner: preferred name and opening turn", () => {
   // #225: "ask how they'd like to be called" came back from a small model as
   // "Come vorrei che mi chiamassi?": the question asked the wrong way round.
   test("the opening note asks for the person's name, with nothing to turn around", () => {
-    expect(OPENING_NOTE).toContain("ask the person what name you should use for them");
-    expect(OPENING_NOTE).toContain("their name, not yours");
-    expect(OPENING_NOTE).not.toContain("how they'd like to be called");
+    for (const saves of [true, false]) {
+      expect(OPENING_NOTE(saves)).toContain("ask the person what name you should use for them");
+      expect(OPENING_NOTE(saves)).toContain("their name, not yours");
+      expect(OPENING_NOTE(saves)).not.toContain("how they'd like to be called");
+    }
   });
 
   test("the opening note overrides the tone's rules against introducing itself and asking", () => {
-    expect(OPENING_NOTE).toContain("set_preferred_name");
-    expect(OPENING_NOTE).toContain("overrides");
+    expect(OPENING_NOTE(true)).toContain("overrides");
+    expect(OPENING_NOTE(false)).toContain("overrides");
     expect(PREFERRED_NAME_NOTE("Luca")).toContain("Luca");
+  });
+
+  // #393: set_preferred_name is the profile plugin's: a note naming a tool the
+  // turn doesn't have sends the model after it.
+  test("the opening note says to save the name only when the turn has set_preferred_name", async () => {
+    expect(OPENING_NOTE(true)).toContain("When they answer, save it with set_preferred_name.");
+    expect(OPENING_NOTE(false)).not.toContain("set_preferred_name");
+    const { runner, calls } = setup({ tools: { set_preferred_name: {} as never } });
+    await runner(baseTurn({ principal: verified("u1"), opening: true, text: "" }), baseSink());
+    expect(calls).toEqual([{ text: OPENING_CUE, system: `single\n\n${OPENING_NOTE(true)}` }]);
   });
 });
 
@@ -2402,9 +2432,9 @@ describe("createTurnRunner: a turn resumed after a confirmation", () => {
       maybeCapture: async () => {},
       processToolCorrections: async () => {},
       logStep: () => {},
-      captureVerbatim: async (msg) => {
+      turnRecord: archiveVia(async (msg) => {
         captured.push({ role: msg.role, content: msg.content });
-      },
+      }),
       takeResumed: (sessionKey) => {
         const action = slot.get(sessionKey);
         slot.delete(sessionKey);
@@ -2707,9 +2737,9 @@ describe("createTurnRunner: the turn's time", () => {
       logStep: () => {},
       logTurnFn: () => {},
       now: () => NOON,
-      captureVerbatim: async (msg) => {
+      turnRecord: archiveVia(async (msg) => {
         captured.push({ role: msg.role, content: msg.content });
-      },
+      }),
       takeResumed: () => ({ describe: "fetch a page", toolName: "web_fetch", input: {}, output: {} }),
       ...(opts.stamp === false
         ? {}
@@ -2797,7 +2827,7 @@ describe("createTurnRunner: a turn the person cancels", () => {
       logStep: () => {},
       logTurnFn: (line) => lines.push(line),
       heartbeat: () => () => {},
-      captureVerbatim: async () => void ran.push("verbatim"),
+      turnRecord: archiveVia(async () => void ran.push("verbatim")),
       postTurnGuards: [
         {
           statusLabel: () => "Checking…",
@@ -2889,10 +2919,11 @@ describe("createTurnRunner: what a cancelled turn leaves in the archive", () => 
       logStep: () => {},
       logTurnFn: (line) => lines.push(line),
       heartbeat: () => () => {},
-      captureVerbatim: async (msg) => {
-        if (opts.failingCapture) throw new Error("qdrant down");
-        captured.push(archivedFields(msg));
-      },
+      turnRecord: opts.failingCapture
+        ? () => {
+            throw new Error("hook broke");
+          }
+        : archiveVia(async (msg) => void captured.push(archivedFields(msg))),
       takeResumed: () => resumed,
       runTurnFn: async (h, text) => {
         if (opts.recordsMessage !== false) await h.addUserMessage(text);
@@ -3016,7 +3047,7 @@ describe("createTurnRunner: what the person saw of the turn, in the archive (#37
       heartbeat: () => () => {},
       translatorFor: () => (key) => key,
       ...(opts.guard ? { postTurnGuards: [opts.guard] } : {}),
-      captureVerbatim: async (msg) => void captured.push(archivedFields(msg)),
+      turnRecord: archiveVia(async (msg) => void captured.push(archivedFields(msg))),
       runTurnFn: async (h, text, deps) => {
         await h.addUserMessage(text);
         deps.onReasoningChunk?.("Look it ", "r1");
@@ -3128,7 +3159,7 @@ describe("createTurnRunner: what the person saw of the turn, in the archive (#37
       logStep: () => {},
       logTurnFn: () => {},
       heartbeat: () => () => {},
-      captureVerbatim: async (msg) => void captured.push(archivedFields(msg)),
+      turnRecord: archiveVia(async (msg) => void captured.push(archivedFields(msg))),
       runTurnFn: async (h, text, deps) => {
         await h.addUserMessage(text);
         deps.onReasoningChunk?.("halfway", "r1");
@@ -3157,99 +3188,6 @@ describe("createTurnRunner: what the person saw of the turn, in the archive (#37
 
 // #214: a conversation is titled after a turn the person wrote, from what the
 // archive kept, without the turn waiting for the model to name it.
-describe("createTurnRunner: titling the conversation", () => {
-  function setup(opts: {
-    run?: (signal: AbortSignal | undefined) => Promise<string>;
-    capture?: () => Promise<void>;
-    title?: () => Promise<void>;
-    resumed?: boolean;
-  } = {}) {
-    const ran: string[] = [];
-    const titled: Array<{ sessionKey: string; userId: string }> = [];
-    const runner = createTurnRunner({
-      model: {} as any,
-      systemPrompts: { singleUser: "s", multiUser: "m" },
-      buildTools: () => ({}),
-      getOrCreateHistory: () => fakeHistory(),
-      trackSession: () => {},
-      registerCaptureCallback: () => {},
-      maybeCapture: async () => {},
-      processToolCorrections: async () => {},
-      logStep: () => {},
-      heartbeat: () => () => {},
-      captureVerbatim: async (msg) => {
-        ran.push(`verbatim:${msg.role}`);
-        await opts.capture?.();
-      },
-      titleConversation: async (sessionKey, userId) => {
-        ran.push("title");
-        titled.push({ sessionKey, userId });
-        await opts.title?.();
-      },
-      ...(opts.resumed ? { takeResumed: () => ({ describe: "fetch a page", toolName: "web_fetch", input: {}, output: {} }) } : {}),
-      runTurnFn: async (_h, _t, deps) => (opts.run ? opts.run(deps.abortSignal) : "the answer"),
-    });
-    return { runner, ran, titled };
-  }
-
-  test("titles the conversation after the person's message and the answer are archived, with the person's key", async () => {
-    const { runner, ran, titled } = setup();
-    await runner(baseTurn({ sessionKey: "sk", principal: verified("users/42"), text: "the question" }), baseSink());
-    expect(ran).toEqual(["verbatim:user", "verbatim:assistant", "title"]);
-    expect(titled).toEqual([{ sessionKey: "sk", userId: "google-chat:users/42" }]);
-  });
-
-  test("doesn't wait for the title: the turn ends while the model is still naming the conversation", async () => {
-    const { runner, ran } = setup({ title: () => new Promise<void>(() => {}) });
-    await runner(baseTurn({ principal: verified("u1") }), baseSink());
-    expect(ran).toEqual(["verbatim:user", "verbatim:assistant", "title"]);
-  });
-
-  test("a title that fails doesn't fail the turn", async () => {
-    const { runner } = setup({ title: async () => Promise.reject(new Error("boom")) });
-    const sink = baseSink();
-    await runner(baseTurn({ principal: verified("u1") }), sink);
-    expect(sink.finalized).toEqual(["the answer"]);
-  });
-
-  test("doesn't title after an opening, where the person wrote nothing", async () => {
-    const { runner, titled } = setup();
-    await runner(baseTurn({ principal: verified("u1"), opening: true, text: "" }), baseSink());
-    expect(titled).toEqual([]);
-  });
-
-  test("doesn't title after a turn resumed by a confirmation", async () => {
-    const { runner, titled } = setup({ resumed: true });
-    await runner(baseTurn({ principal: verified("u1"), text: "", resumeAfterConfirm: true }), baseSink());
-    expect(titled).toEqual([]);
-  });
-
-  test("doesn't title after a turn the person cancelled", async () => {
-    const controller = new AbortController();
-    const { runner, titled } = setup({
-      run: async () => {
-        controller.abort();
-        return "";
-      },
-    });
-    await runner(baseTurn({ principal: verified("u1"), abortSignal: controller.signal }), baseSink());
-    expect(titled).toEqual([]);
-  });
-
-  test("doesn't title when nobody vouched for the person", async () => {
-    const { runner, titled } = setup();
-    await runner(baseTurn({ principal: anonymous("conv-1") }), baseSink());
-    expect(titled).toEqual([]);
-  });
-
-  test("doesn't title when the archive failed: the title is read from it", async () => {
-    const { runner, titled } = setup({ capture: async () => Promise.reject(new Error("qdrant down")) });
-    await runner(baseTurn({ principal: verified("u1") }), baseSink());
-    expect(titled).toEqual([]);
-  });
-});
-
-// #23: every turn leaves its events in the traces, tied together by one turn id.
 describe("traces of a turn", () => {
   type Emitted = Record<string, unknown> & { kind: string };
 
@@ -3392,7 +3330,7 @@ describe("the turn id in the archive", () => {
       heartbeat: () => () => {},
       tracer: { emit: (e) => void events.push(e), flush: async () => {} },
       newTurnId: () => "turn-7",
-      captureVerbatim: async (msg) => void archived.push(msg),
+      turnRecord: archiveVia(async (msg) => void archived.push(msg)),
       runTurnFn: async () => "reply",
     });
     await runner(baseTurn({ principal: verified("u1") }), baseSink());
@@ -3401,41 +3339,6 @@ describe("the turn id in the archive", () => {
       ["assistant", "turn-7"],
     ]);
     expect(events[0]!.turn).toBe("turn-7");
-  });
-});
-
-// #23: an archive that failed to keep a turn reaches the traces, not only the log.
-describe("an archive failure in the traces", () => {
-  test("is a system.error under the turn's id, with the error for args", async () => {
-    const events: Array<Record<string, unknown>> = [];
-    const runner = createTurnRunner({
-      model: {} as any,
-      systemPrompts: { singleUser: "s", multiUser: "m" },
-      buildTools: () => ({}),
-      getOrCreateHistory: () => fakeHistory(),
-      trackSession: () => {},
-      registerCaptureCallback: () => {},
-      maybeCapture: async () => {},
-      processToolCorrections: async () => {},
-      logStep: () => {},
-      logTurnFn: () => {},
-      heartbeat: () => () => {},
-      tracer: { emit: (e) => void events.push(e), flush: async () => {} },
-      newTurnId: () => "turn-9",
-      captureVerbatim: async () => {
-        throw new Error("qdrant down");
-      },
-      runTurnFn: async () => "reply",
-    });
-    await runner(baseTurn({ principal: verified("u1") }), baseSink());
-    expect(events.find((e) => e.kind === "system.error")).toEqual({
-      kind: "system.error",
-      area: "archive",
-      turn: "turn-9",
-      session: "session-1",
-      person: "google-chat:u1",
-      args: { error: "qdrant down" },
-    });
   });
 });
 
@@ -3701,5 +3604,86 @@ describe("createTurnRunner: the context (#387)", () => {
     await runnerWith({}, seen)(baseTurn(), baseSink());
     await runnerWith({ contextFor: async () => { throw new Error("broke"); } }, seen)(baseTurn(), baseSink());
     expect(seen).toEqual([{ system: "BASE\n\nPRIMER" }, { system: "BASE\n\nPRIMER" }]);
+  });
+});
+
+describe("createTurnRunner: the turn's record (#393)", () => {
+  /** A runner recording what `turnRecord` hears, on a clock moving 1s per read. */
+  function setup(overrides: Partial<TurnRunnerDeps> = {}) {
+    const records: Array<{ operator: boolean; key: string; record: Record<string, unknown> }> = [];
+    let clock = Date.parse("2026-11-13T10:00:00.000Z");
+    const runner = createTurnRunner({
+      model: {} as any,
+      systemPrompts: { singleUser: "s", multiUser: "m" },
+      buildTools: () => ({}),
+      getOrCreateHistory: () => fakeHistory(),
+      trackSession: () => {},
+      registerCaptureCallback: () => {},
+      maybeCapture: async () => {},
+      processToolCorrections: async () => {},
+      logStep: () => {},
+      logTurnFn: () => {},
+      heartbeat: () => () => {},
+      newTurnId: () => "turn-1",
+      now: () => (clock += 1000),
+      turnRecord: (who, record) => void records.push({ operator: who.operator, key: who.person.key, record }),
+      runTurnFn: async () => "reply",
+      ...overrides,
+    });
+    return { runner, records };
+  }
+
+  test("a done turn: what the person wrote, when it arrived and ended, and the answer", async () => {
+    const { runner, records } = setup();
+    await runner(baseTurn({ principal: verified("u1"), text: "hello" }), baseSink());
+    expect(records).toHaveLength(1);
+    const { record } = records[0]!;
+    expect(record).toEqual({
+      sessionKey: "session-1",
+      kind: "turn",
+      turnId: "turn-1",
+      multiUser: false,
+      outcome: "done",
+      origin: "person",
+      input: "hello",
+      startedAt: expect.any(String),
+      endedAt: expect.any(String),
+      answer: { content: "reply" },
+    });
+    expect(Date.parse(record.endedAt as string)).toBeGreaterThan(Date.parse(record.startedAt as string));
+  });
+
+  test("the operator's turns are recorded too, saying so", async () => {
+    const { runner, records } = setup();
+    await runner(baseTurn({ principal: anonymous("x") }), baseSink());
+    expect(records.map((r) => [r.operator, r.record.outcome])).toEqual([[true, "done"]]);
+  });
+
+  test("a failed turn is recorded with no answer, and still fails", async () => {
+    const { runner, records } = setup({
+      runTurnFn: async () => {
+        throw new Error("model down");
+      },
+    });
+    await expect(runner(baseTurn({ principal: verified("u1"), text: "hello" }), baseSink())).rejects.toThrow("model down");
+    expect(records.map((r) => r.record)).toEqual([
+      expect.objectContaining({ outcome: "failed", origin: "person", input: "hello" }),
+    ]);
+    expect(records[0]!.record.answer).toBeUndefined();
+  });
+
+  test("an opening carries no input", async () => {
+    const { runner, records } = setup();
+    await runner(baseTurn({ principal: verified("u1"), opening: true, text: "" }), baseSink());
+    expect(records.map((r) => r.record)).toEqual([expect.objectContaining({ outcome: "done", origin: "opening" })]);
+    expect("input" in records[0]!.record).toBe(false);
+  });
+
+  test("a turn refused before the model ran leaves no record", async () => {
+    const { runner, records } = setup({
+      identify: async () => ({ ok: false, reason: "unknown", message: "Who are you?" }),
+    });
+    await runner(baseTurn({ principal: verified("u1") }), baseSink());
+    expect(records).toEqual([]);
   });
 });

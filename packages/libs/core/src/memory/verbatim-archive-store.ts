@@ -9,14 +9,13 @@
  * - The episodic store (`./episodic-store.ts`) captures a *summary* of a
  *   closed session — derived, not raw.
  * This archive instead keeps what was actually said, verbatim, so a later
- * session can resurface it and re-read it in light of new facts. It only
- * ever appends and reads; nothing here evicts (retention bounding is a
- * separate, later concern).
+ * session can resurface it and re-read it in light of new facts.
  *
- * The messages are kept in the declared conversation store, read back by
- * person and conversation in time order; the search by meaning
+ * The messages are kept in the declared conversation store by the plugin
+ * that archives them (`@mercury-fw/archive`), and read back here by person
+ * and conversation in time order for the channels; the search by meaning
  * (`searchVerbatim`) goes through the vector index's `verbatim_archive`
- * space, where each message is indexed under its own id when there's one.
+ * space, where each message is indexed on its own (`indexVerbatimMessage`).
  */
 import type { ConversationStore, StoredMessage, VectorIndex } from "@mercury-fw/channel-types";
 import type { CallRecord } from "../session/call-record.ts";
@@ -174,32 +173,20 @@ function storedMessages(messages: StoredMessage[]): VerbatimMessage[] {
 }
 
 /**
- * Keeps `entry` in the store under a new id and, when `search` is given,
- * indexes it under the same id in the archive's search space, its vector
+ * Indexes `entry` in the archive's search space under a new id, its vector
  * embedded from `entry.content` (what was shown, when the model said nothing;
  * for a resolved confirmation with no reply, its choice or how it went, since
  * nothing searches it: recall leaves it out), its payload the full message.
+ * The store is written by whoever keeps the archive, not here.
  */
-export async function appendVerbatimMessage(
-  store: ConversationStore,
+export async function indexVerbatimMessage(
+  index: VectorIndex,
+  embed: (text: string) => Promise<number[]>,
   entry: VerbatimMessage,
-  search?: {
-    index: VectorIndex;
-    embed: (text: string) => Promise<number[]>;
-    /** Runs the indexing later, as background work; awaited here when absent. */
-    defer?: (work: () => Promise<void>) => void;
-  },
 ): Promise<void> {
-  const id = crypto.randomUUID();
-  await store.append({ id, ...entry });
-  if (search === undefined) return;
-  const index = async () => {
-    const shown = entry.content.trim() !== "" ? entry.content : shownText(entry.content, entry.displays);
-    const vector = await search.embed(shown !== "" ? shown : (entry.confirmation?.choice ?? entry.confirmation?.status ?? ""));
-    await search.index.upsert(VERBATIM_SPACE, [{ id, vector, payload: { ...entry } }]);
-  };
-  if (search.defer === undefined) await index();
-  else search.defer(index);
+  const shown = entry.content.trim() !== "" ? entry.content : shownText(entry.content, entry.displays);
+  const vector = await embed(shown !== "" ? shown : (entry.confirmation?.choice ?? entry.confirmation?.status ?? ""));
+  await index.upsert(VERBATIM_SPACE, [{ id: crypto.randomUUID(), vector, payload: { ...entry } }]);
 }
 
 const DEFAULT_SEARCH_LIMIT = 5;

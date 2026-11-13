@@ -300,9 +300,10 @@ describe("composeMercury", () => {
     expect(seen?.again).toBe(seen?.first);
   });
 
-  // #383: the turn runs on `turn`, the conversation's title on `background`,
-  // as a background job the traces report.
-  it("runs the turn on the turn model and the conversation's title on the background model, as a job", async () => {
+  // #383: the turn runs on `turn`, a plugin's work on `background` (as the
+  // titles do), as a background job the traces report; #393: the plugin
+  // hears the turn's record.
+  it("runs the turn on the turn model and a plugin's job on the background model, and hands the plugin the turn's record", async () => {
     // Waited on as promises the fakes resolve, never on the clock.
     const events: Array<Record<string, unknown>> = [];
     let titleJobReported!: () => void;
@@ -337,9 +338,22 @@ describe("composeMercury", () => {
         eval_count: 1,
       });
     }) as typeof fetch;
+    const records: Array<Record<string, unknown>> = [];
+    const titles = {
+      apiVersion: PLUGIN_API_VERSION,
+      name: "titles",
+      description: "Names conversations.",
+      actsAs: "anyone" as const,
+      build: (ctx: PluginRuntimeContext) => ({
+        onTurnRecord: (record: Record<string, unknown>) => {
+          records.push(record);
+          void ctx.job?.("title", "soon", () => generateText({ model: ctx.backgroundModel!, prompt: "name it" }));
+        },
+      }),
+    };
     try {
       const app = await composeMercury({
-        plugins: [],
+        plugins: [titles],
         models: { turn: ollamaModel("big"), background: ollamaModel("small") },
         conversationStore: { apiVersion: 1, name: "fake", build: () => fakeConversationStore() },
         access: { unknown: "allow" },
@@ -353,7 +367,10 @@ describe("composeMercury", () => {
       expect(asked).toEqual(["big", "small"]);
       await app.tracer.flush();
       expect(events.filter((e) => e.kind === "background.job")).toEqual([
-        expect.objectContaining({ kind: "background.job", job: "title", urgency: "soon", models: ["small"], steps: 1, outcome: "done" }),
+        expect.objectContaining({ kind: "background.job", job: "titles:title", urgency: "soon", models: ["small"], steps: 1, outcome: "done" }),
+      ]);
+      expect(records).toEqual([
+        expect.objectContaining({ kind: "turn", outcome: "done", origin: "person", input: "hello", sessionKey: "http:alice:c1", person: { key: "static:alice" }, operator: false, answer: { content: "A short title" } }),
       ]);
     } finally {
       globalThis.fetch = realFetch;

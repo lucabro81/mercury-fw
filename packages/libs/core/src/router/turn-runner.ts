@@ -23,7 +23,7 @@ import { createTurnTrace, type TraceEntry } from "../session/turn-trace.ts";
 // generic for future use. A guard that throws is caught by the core and never
 // blocks delivery — a guard failure is a quality miss, not a reason to
 // withhold an already-generated answer.
-import type { HookCall, PostTurnGuard } from "@mercury-fw/plugin-types";
+import type { HookCall, PostTurnGuard, TurnRecordOfTurn } from "@mercury-fw/plugin-types";
 import type { ResumedAction } from "@mercury-fw/confirm-engine";
 export type { PostTurnGuard };
 import type { Message, SessionHistory } from "../session/history.ts";
@@ -31,6 +31,7 @@ import { recordStep } from "../session/tool-log-buffer.ts";
 import { shownText } from "../memory/verbatim-archive-store.ts";
 import type { HandleTurn, InboundTurn, TurnSink } from "./provider.ts";
 import { createPeople, type Identified, type TurnWho } from "../identity/people.ts";
+import type { TurnRecordInfo } from "../plugins/plugin-hooks.ts";
 export type { TurnWho };
 
 /** What `afterTurn` is told about a finished turn: the session, what the person wrote (empty for a turn the agent opened, or resumed after a confirmation), the answer after the guards, its calls, whether the space is shared. */
@@ -58,11 +59,12 @@ function languageName(language: string): string {
   }
 }
 
-/** Appended to an opening turn's prompt: the person signed in and wrote nothing, and the assistant doesn't know them. */
-export const OPENING_NOTE =
+/** Appended to an opening turn's prompt: the person signed in and wrote nothing, and the assistant doesn't know them; `savesName` when the turn has `set_preferred_name` to keep their answer. */
+export const OPENING_NOTE = (savesName: boolean): string =>
   "The person just signed in and opened this conversation: they haven't written anything yet, and you don't know their name. " +
   "Introduce yourself briefly, in your own words, then ask the person what name you should use for them, in their language: " +
-  "it's their name, not yours, that you're asking for. When they answer, save it with set_preferred_name. " +
+  "it's their name, not yours, that you're asking for. " +
+  (savesName ? "When they answer, save it with set_preferred_name. " : "") +
   "This overrides any instruction not to introduce yourself or not to ask questions.";
 
 /**
@@ -234,37 +236,14 @@ export type TurnRunnerDeps = {
   /** Mid-conversation Layer-3 capture threshold check. Only for turns whose person a provider vouched for. */
   maybeCapture: (sessionKey: string, history: SessionHistory) => Promise<void>;
   /**
-   * Archives one message of the verbatim user↔model exchange (issue #4).
-   * Wired by the composition root to the verbatim-archive provider; absent
-   * on an instance with no such provider. Only called for turns whose person
-   * a provider vouched for (the archive is per-person, like Layer-3 capture),
-   * with `userId` set to the space-independent user key. `content` is only
-   * ever the model's own answer text; the `present` displays the turn showed
-   * after it come as `displays`, never inside it. A cancelled turn's answer
-   * comes as `interrupted`, its `content` the text the history kept for it.
-   * An answer carries `trace`, what the person saw of the turn besides its
-   * text (up to the stop, for a cancelled one), when there was any, and
-   * `pendingNote` when the turn stood in with the core's note.
+   * Told what every turn that ran left (#393), whatever its outcome, once the
+   * turn is over: the composition root hands it to the plugins'
+   * `onTurnRecord` hooks. `answer` is set on a done turn, and on a cancelled
+   * one only when this turn's model call left the history its placeholder,
+   * so what's kept matches the history. Called, never awaited; a throw is
+   * logged.
    */
-  captureVerbatim?: (msg: {
-    sessionKey: string;
-    userId: string;
-    role: "user" | "assistant";
-    content: string;
-    displays?: string[];
-    calls?: CallRecord[];
-    interrupted?: true;
-    trace?: TraceEntry[];
-    pendingNote?: string;
-    /** The turn's id, as its trace events carry it (#23). */
-    turnId?: string;
-  }) => Promise<void>;
-  /**
-   * Gives the conversation a title if it has none (#214), from what the
-   * archive kept: called, not awaited, once a turn the person wrote (not an
-   * opening, not a resumed one) is archived, with the person's user key.
-   */
-  titleConversation?: (sessionKey: string, userId: string) => Promise<void>;
+  turnRecord?: (who: TurnWho, record: TurnRecordInfo) => void;
   /**
    * Counts the turn on the turn model from the moment it arrives (before it
    * waits for its session) until its answer is out, so the work nobody waits
@@ -470,7 +449,7 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
     }
     const shown = deps.shownLists?.(turn.sessionKey) ?? [];
     /** The turn's prompt; the primer comes with the history: its current state as is, its recap framed as background. */
-    const systemFor = (primer: { current: string; recap: string } | undefined, context?: string) =>
+    const systemFor = (primer: { current: string; recap: string } | undefined, context: string | undefined, savesName: boolean) =>
       [
         // A resumed turn answers the person who confirmed, even in a shared
         // space: the multi-user prompt would let the model stay silent on it.
@@ -478,7 +457,7 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
         ...(primer?.current ? [primer.current] : []),
         ...(primer?.recap ? [RECAP_NOTE(primer.recap)] : []),
         ...(context ? [context] : []),
-        ...(turn.opening ? [OPENING_NOTE] : name === undefined ? [] : [PREFERRED_NAME_NOTE(name)]),
+        ...(turn.opening ? [OPENING_NOTE(savesName)] : name === undefined ? [] : [PREFERRED_NAME_NOTE(name)]),
         ...(language === undefined ? [] : [PREFERRED_LANGUAGE_NOTE(language)]),
         // Last, where a small model pays the most attention.
         ...(shown.length > 0 ? [SHOWN_LISTS_NOTE(shown)] : []),
@@ -558,39 +537,42 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
     let lastBefore: Message | undefined;
     // Set when the turn's channel cancelled it: archived once the sink is released.
     let cancelled = false;
+    // Set when the turn failed (a stall included): recorded once the sink is released.
+    let failed = false;
 
-    /**
-     * What a cancelled turn leaves in the archive (#366): the person's message
-     * and an answer marked as interrupted, with the text the history kept in
-     * its place; nothing half done. Only when this turn's model call recorded
-     * that text, so the archive matches the history, and never for an
-     * opening, where nobody asked anything. Fail-soft, like the archive of a
-     * turn that ended.
-     */
-    async function archiveInterrupted(): Promise<void> {
-      if (!tracked) return;
-      deps.trackSession(turn.sessionKey, key, (deps.now ?? Date.now)());
-      if (!deps.captureVerbatim || turn.opening) return;
-      const last = history?.getMessages().at(-1);
-      if (last === lastBefore || last?.content !== ABORTED_MARKER) return;
+    /** The turn's record (see `TurnRunnerDeps.turnRecord`): how it ended and, when it left one, its answer. */
+    function recordTurn(outcome: TurnRecordOfTurn["outcome"], answer?: TurnRecordOfTurn["answer"]): void {
+      if (!deps.turnRecord) return;
+      const origin = turn.opening ? "opening" : resumed ? "resumed" : "person";
       try {
-        if (!resumed) {
-          await deps.captureVerbatim({ sessionKey: turn.sessionKey, userId: key, role: "user", content: turn.text, turnId });
-        }
-        const seen = trace.entries();
-        await deps.captureVerbatim({
+        deps.turnRecord(who, {
           sessionKey: turn.sessionKey,
-          userId: key,
-          role: "assistant",
-          content: ABORTED_MARKER,
-          interrupted: true,
+          kind: "turn",
           turnId,
-          ...(seen.length > 0 ? { trace: seen } : {}),
+          multiUser: turn.multiUser,
+          outcome,
+          origin,
+          ...(origin === "person" ? { input: turn.text } : {}),
+          startedAt: new Date(startedAt).toISOString(),
+          endedAt: new Date(now()).toISOString(),
+          ...(answer === undefined ? {} : { answer }),
         });
       } catch (err) {
-        console.log(`[verbatim-archive] capture failed, turn unaffected: ${String(err instanceof Error ? err.message : err)}`);
-        emit({ kind: "system.error", area: "archive", args: { error: String(err instanceof Error ? err.message : err) } }, key);
+        console.log(`[hooks] turn record failed, turn unaffected: ${String(err instanceof Error ? err.message : err)}`);
       }
+    }
+
+    /**
+     * What a cancelled turn leaves (#366): an answer marked as interrupted,
+     * with the text the history kept in its place and what the person saw
+     * up to the stop; nothing when this turn's model call didn't record that
+     * text, so what's kept matches the history.
+     */
+    function interruptedAnswer(): TurnRecordOfTurn["answer"] {
+      const last = history?.getMessages().at(-1);
+      if (last === lastBefore || last?.content !== ABORTED_MARKER) return undefined;
+      const seen = trace.entries();
+      return { content: ABORTED_MARKER, interrupted: true, ...(seen.length > 0 ? { trace: seen } : {}) };
     }
 
     try {
@@ -637,31 +619,32 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
           logTurn(`${turn.logPrefix}[context] failed, the turn goes without: ${err instanceof Error ? err.message : String(err)}`);
         }
       }
+      const tools = watching
+        ? deps.buildTools(
+            turn.sessionKey,
+            key,
+            who,
+            (...args) => {
+              watchdog.pause();
+              sink.onToolStart(...args);
+            },
+            (toolCallId, outcome) => {
+              watchdog.resume();
+              sink.onToolFinish?.(toolCallId, outcome);
+            },
+            turn.languageHint,
+          )
+        : deps.buildTools(turn.sessionKey, key, who, sink.onToolStart, sink.onToolFinish, turn.languageHint);
       const text = await (deps.runTurnFn ?? runTurn)(history, input, {
         model: deps.model,
-        tools: watching
-          ? deps.buildTools(
-              turn.sessionKey,
-              key,
-              who,
-              (...args) => {
-                watchdog.pause();
-                sink.onToolStart(...args);
-              },
-              (toolCallId, outcome) => {
-                watchdog.resume();
-                sink.onToolFinish?.(toolCallId, outcome);
-              },
-              turn.languageHint,
-            )
-          : deps.buildTools(turn.sessionKey, key, who, sink.onToolStart, sink.onToolFinish, turn.languageHint),
+        tools,
         pendingNote,
         loginNote: (services) =>
           services.length === 0 ? t("core.login.note-any") : t("core.login.note", { services: services.join(", ") }),
         onPendingNote: () => {
           noteUsed = true;
         },
-        system: systemFor(history.primer(), context?.system),
+        system: systemFor(history.primer(), context?.system, "set_preferred_name" in tools),
         ...(context?.turn === undefined ? {} : { turnContext: context.turn }),
         // Counted on the way through, and only where the channel streams: an
         // absent callback keeps the turn on the non-streaming path.
@@ -783,6 +766,7 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
         const message = stallMessage(stallMs);
         logTurn(`${turn.logPrefix}[turn] stalled after ${seconds()}s: ${message}`);
         endTurn("stalled");
+        failed = true;
         throw err instanceof Error && err.message === message ? err : new Error(message);
       }
       // A cancel isn't a failure: the channel that asked for it knows.
@@ -793,6 +777,7 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
         return;
       }
       endTurn("failed", { error: err instanceof Error ? err.message : String(err) });
+      failed = true;
       logTurn(`${turn.logPrefix}[turn] failed after ${seconds()}s: ${err instanceof Error ? err.message : String(err)}`);
       throw err;
     } finally {
@@ -800,7 +785,10 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
       stopHeartbeat();
       deps.discardSurfacedDisplays?.(turn.sessionKey);
       sink.dispose();
-      if (cancelled) await archiveInterrupted();
+      if (cancelled) {
+        if (tracked) deps.trackSession(turn.sessionKey, key, (deps.now ?? Date.now)());
+        recordTurn("cancelled", interruptedAnswer());
+      } else if (failed) recordTurn("failed");
     }
 
     // The person has the answer: the plugins hear the turn now, whatever the capture below does.
@@ -824,48 +812,19 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
       // look idle the moment it ends.
       deps.trackSession(turn.sessionKey, key, (deps.now ?? Date.now)());
       await deps.maybeCapture(turn.sessionKey, history);
-      // Fail-soft: the verbatim archive is pure enrichment (principle #3).
-      // The answer is already delivered; a capture failure must never
-      // propagate out of this awaited handler and take the process down.
-      if (deps.captureVerbatim) {
-        // The archive is per-person and space-independent, so it keys on the
-        // user key (the same identity the wiki and the rest of memory use),
-        // not the space-scoped session.
-        try {
-          // An opening's cue and a resumed turn's line aren't something the person said.
-          if (!turn.opening && !resumed) {
-            await deps.captureVerbatim({ sessionKey: turn.sessionKey, userId: key, role: "user", content: turn.text, turnId });
-          }
-          // The calls the answer was written from, as the history recorded them.
-          const answer = history.getMessages().at(-1);
-          const calls = answer?.role === "assistant" ? answer.calls : undefined;
-          const seen = trace.entries();
-          await deps.captureVerbatim({
-            sessionKey: turn.sessionKey,
-            userId: key,
-            role: "assistant",
-            content: assistantText,
-            turnId,
-            ...(surfacedDisplays.length > 0 ? { displays: surfacedDisplays } : {}),
-            ...(calls !== undefined ? { calls } : {}),
-            ...(seen.length > 0 ? { trace: seen } : {}),
-            ...(stoodIn ? { pendingNote } : {}),
-          });
-          if (deps.titleConversation && !turn.opening && !resumed) {
-            // Not awaited: neither the answer nor the next turn waits for the title.
-            void deps.titleConversation(turn.sessionKey, key).catch((err) =>
-              console.log(`[titles] failed, turn unaffected: ${String(err instanceof Error ? err.message : err)}`),
-            );
-          }
-        } catch (err) {
-          console.log(
-            `[verbatim-archive] capture failed, turn unaffected: ${String(err instanceof Error ? err.message : err)}`,
-          );
-          emit({ kind: "system.error", area: "archive", args: { error: String(err instanceof Error ? err.message : err) } }, key);
-        }
-      }
     }
-    // After the archive: nothing of it belongs to the turn's trace. Background
+    // What the turn left, for the plugins keeping it: the calls the answer was written from, as the history recorded them.
+    const answered = history.getMessages().at(-1);
+    const answeredCalls = answered?.role === "assistant" ? answered.calls : undefined;
+    const seen = trace.entries();
+    recordTurn("done", {
+      content: assistantText,
+      ...(surfacedDisplays.length > 0 ? { displays: surfacedDisplays } : {}),
+      ...(answeredCalls !== undefined ? { calls: answeredCalls } : {}),
+      ...(seen.length > 0 ? { trace: seen } : {}),
+      ...(stoodIn ? { pendingNote } : {}),
+    });
+    // After the record: nothing of it belongs to the turn's trace. Background
     // work, queued for the model (#383): neither this turn nor the next one of
     // the session waits for it.
     void deps.processToolCorrections(steps, channelSink.onToolStart, channelSink.onToolFinish, key).catch((err) =>
