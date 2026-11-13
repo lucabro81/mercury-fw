@@ -188,14 +188,14 @@ function ctx(env: Record<string, string>, logs: string[] = []): PluginRuntimeCon
 }
 
 describe("guest-wifi", () => {
-  test("without its settings it contributes no tool, and logs why", () => {
+  test("without its settings it contributes no tool, and logs why", async () => {
     const logs: string[] = [];
-    expect(guestWifiPlugin.build!(ctx({}, logs))).toEqual({});
+    expect(await guestWifiPlugin.build!(ctx({}, logs))).toEqual({});
     expect(logs).toEqual(["guest-wifi: GUEST_WIFI_NAME or GUEST_WIFI_PASSWORD is not set: no tools"]);
   });
 
   test("guest_wifi returns the network and the password from its settings", async () => {
-    const built = guestWifiPlugin.build!(ctx({ GUEST_WIFI_NAME: "Office-Guest", GUEST_WIFI_PASSWORD: "secret" }));
+    const built = await guestWifiPlugin.build!(ctx({ GUEST_WIFI_NAME: "Office-Guest", GUEST_WIFI_PASSWORD: "secret" }));
     const tools = built.sessionTools!({} as SessionToolContext);
     expect(await tools.guest_wifi!.execute!({}, {} as never)).toEqual({ ok: true, network: "Office-Guest", password: "secret" });
   });

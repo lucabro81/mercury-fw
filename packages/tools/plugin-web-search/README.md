@@ -26,7 +26,7 @@ The model gets two tools. `web_search` returns title, URL and snippet of each re
 
 The model is told to search when the question shows it needs to, not when it feels unsure: something that changes over time (news, versions, prices, who holds a role), something recent compared with the date on the message (the core stamps every turn with it, framework 0.56 or later), a precise detail it would otherwise guess, a name it doesn't recognize, or a request to look something up; lasting facts, reasoning and writing need no search.
 
-The plugin acts as no one (`actsAs: "anyone"`): there's no login, everyone gets it, and `access.plugins` in the config restricts it to some roles like any other plugin. This version is written for version 6 of the plugin contract, the one that asks every plugin for a description of what it does, and needs the framework at 0.55 or later: an older core skips it, and the log says why.
+The plugin acts as no one (`actsAs: "anyone"`): there's no login, everyone gets it, and `access.plugins` in the config restricts it to some roles like any other plugin. This version is written for version 7 of the plugin contract and needs the framework at 0.75 or later: an older core skips it, and the log says why.
 
 What the person reads in the plugin's own words comes out in their language: the two choices ("Only this time", "Always for \<host\>"), the `Sources:` heading and the status lines while a tool runs ("Searching the web", "Reading \<host\>"). They're English in the plugin, under `web-search.` keys an app translates in its language files (see the core's [languages](https://github.com/lucabro81/mercury-fw/blob/main/apps/docs/src/content/docs/concepts/languages.md)):
 
