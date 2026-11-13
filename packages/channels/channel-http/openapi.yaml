@@ -29,9 +29,7 @@ info:
     ## What a caller sees
 
     Every read is scoped to the caller: their own conversations, pending
-    confirmations, tool calls and memory, and the wiki as they see it, the
-    team's common area (`curated/`) plus their own notes (`personal/`).
-    Someone else's data doesn't exist as far as a caller can tell.
+    confirmations, tool calls and memory. Someone else's data doesn't exist as far as a caller can tell.
     `/manifest` lists what the caller is offered, and only `/health` is the
     same for everyone.
 
@@ -520,86 +518,6 @@ paths:
             application/json:
               schema:
                 type: object
-  /wiki/list:
-    get:
-      summary: List the wiki files the caller can see (`curated/` and `personal/`)
-      responses:
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "403":
-          $ref: "#/components/responses/NotAdmitted"
-        "503":
-          $ref: "#/components/responses/NotAdmitted"
-        "200":
-          description: File list.
-          content:
-            application/json:
-              schema:
-                type: object
-  /wiki/read:
-    get:
-      summary: Read one wiki file the caller can see
-      parameters:
-        - name: path
-          in: query
-          required: true
-          description: A path as `/wiki/list` gives it, e.g. `curated/team.md` or `personal/notes/plan.md`.
-          schema:
-            type: string
-      responses:
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "403":
-          $ref: "#/components/responses/NotAdmitted"
-        "503":
-          $ref: "#/components/responses/NotAdmitted"
-        "200":
-          description: File content.
-          content:
-            application/json:
-              schema:
-                type: object
-        "400":
-          description: Missing `?path`.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-        "404":
-          description: No such file among those the caller can see.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-  /wiki/grep:
-    get:
-      summary: Grep the wiki files the caller can see
-      parameters:
-        - name: pattern
-          in: query
-          required: true
-          description: A regular expression, matched line by line, case ignored.
-          schema:
-            type: string
-      responses:
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "403":
-          $ref: "#/components/responses/NotAdmitted"
-        "503":
-          $ref: "#/components/responses/NotAdmitted"
-        "200":
-          description: Matches.
-          content:
-            application/json:
-              schema:
-                type: object
-        "400":
-          description: Missing `?pattern`.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
   /memory/scroll:
     get:
       summary: Scroll the caller's points in a memory collection

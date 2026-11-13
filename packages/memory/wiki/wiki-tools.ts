@@ -25,12 +25,12 @@ import {
   listVisible,
   readPersonalNote,
   readVisible,
-} from "../identity/vault-access.ts";
+} from "./vault-access.ts";
 import { writeCuratedNote, writePersonalNote } from "./wiki-note.ts";
 
 export type WikiToolsDeps = {
   vaultPath: string;
-  /** The person's user key (see `identity/user-key.ts`). */
+  /** The person's user key (`<provider>:<id>`). */
   key: string;
   /** Stages a promotion behind a confirmation token, bound to this person and session. */
   stageConfirmation: StageConfirmation;

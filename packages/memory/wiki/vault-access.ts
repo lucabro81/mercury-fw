@@ -11,8 +11,8 @@
  */
 import { readFile } from "node:fs/promises";
 import { resolve, sep } from "node:path";
-import { grepWikiInRoots, listWikiFilesInRoots, type WikiGrepMatch } from "../wiki/wiki-read.ts";
-import { userArea } from "./user-key.ts";
+import { grepWikiInRoots, listWikiFilesInRoots, type WikiGrepMatch } from "./wiki-read.ts";
+import { userArea } from "./user-area.ts";
 
 /** Whose view of which vault. */
 export type VaultScope = { vaultPath: string; key: string };

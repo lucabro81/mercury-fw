@@ -1,50 +1,22 @@
 /**
- * Builds the synthetic primer text seeded into a brand-new Google Chat
- * session's history (see `history.ts`'s `primer` param): the wiki's own
- * index (same for every user, not tied to any prior session), the wiki
- * facts the user's last closed session actually reinforced, plus that same
- * session's own episodic entries. Empty string when there's nothing —
- * enrichment, a caller must work fine without it. Deliberately not
- * similarity retrieval: there's no query yet to compare against at session
- * start, only "what happened last time" (see `getLastSessionEpisodicSummaries`)
- * plus "what's in the wiki right now".
+ * Builds the primer seeded into a brand-new session's conversation (see
+ * `conversations.ts`): the person's confirmations still pending, as opaque
+ * references, plus their last closed session's own episodic entries. Empty
+ * when there's nothing: enrichment, a caller works fine without it.
+ * Deliberately not similarity retrieval: there's no query yet to compare
+ * against at session start, only "what happened last time" (see
+ * `getLastSessionEpisodicSummaries`) and "what is still open".
  */
-import { resolve } from "node:path";
-import { parse as parseYaml } from "yaml";
 import type { EpisodicSummary } from "../memory/episodic-store.ts";
-import type { listWikiFilesInRoots, readWikiFileInRoots, readIndexFile } from "../wiki/wiki-read.ts";
-import { userArea } from "../identity/user-key.ts";
 
 export type ContextPrimerDeps = {
-  vaultPath: string;
   /** Already scoped to the last closed session's own sessionKey — see `getLastSessionEpisodicSummaries`. */
   getLastSessionEntries: (key: string) => Promise<EpisodicSummary[]>;
-  listWikiFilesInRootsFn: typeof listWikiFilesInRoots;
-  readWikiFileInRootsFn: typeof readWikiFileInRoots;
-  readIndexFileFn: typeof readIndexFile;
   /** The tokens of the person's confirmations still pending (see `data/confirmation-notes.ts`). */
   pendingTokens: (key: string) => Promise<string[]>;
-  /** Where a skipped section says why (the recap, when Qdrant doesn't answer). */
+  /** Where a skipped section says why (the recap, when the index doesn't answer). */
   log: (msg: string) => void;
 };
-
-const FRONTMATTER_RE = /^---\n([\s\S]*?)\n---\n/;
-
-/** Same frontmatter shape `semantic-consolidation.ts` already parses (`derived_from: string[]`) — only `inferred` notes carry it, a `resolved`/`curated` note yields none. */
-function derivedFromTimestamps(text: string): string[] {
-  const match = FRONTMATTER_RE.exec(text);
-  if (!match) {
-    return [];
-  }
-  const frontmatter = parseYaml(match[1] as string) as { derived_from?: unknown };
-  return Array.isArray(frontmatter.derived_from) ? frontmatter.derived_from : [];
-}
-
-/** The note's content after its frontmatter block — matches `writeNoteFile`'s `---\n<yaml>---\n\n<body>\n` layout. */
-function noteBody(text: string): string {
-  const match = FRONTMATTER_RE.exec(text);
-  return (match ? text.slice(match[0].length) : text).trim();
-}
 
 /**
  * How the primer is built for a turn: no last session on a conversation its
@@ -57,19 +29,17 @@ export function primerOptions(resume: { maxChars?: number } | undefined): { last
 
 /**
  * A primer in its two parts, each empty when there's nothing: `current` is the
- * state the model uses as is (the wiki index, the confirmations still pending),
- * `recap` the last session and the facts it reinforced, background that may be
- * out of date.
+ * state the model uses as is (the confirmations still pending), `recap` the
+ * last session, background that may be out of date.
  */
 export type ContextPrimer = { current: string; recap: string };
 
 /**
  * Text of the primer for the person `key`, built from injected deps only — never
- * touches Qdrant or the filesystem directly, so tests supply fakes and
- * `index.ts` supplies the real Qdrant-backed episodic query and wiki reads.
+ * touches the index or the filesystem directly, so tests supply fakes and
+ * `compose.ts` supplies the real episodic query and the notes.
  *
- * `lastSession: false` leaves out the last session's recap and the facts it
- * reinforced: on a channel where the person opens and reopens conversations at
+ * `lastSession: false` leaves out the last session's recap: on a channel where the person opens and reopens conversations at
  * will, a new one is a fresh start, and nothing from another conversation comes
  * in unless they ask for it.
  */
@@ -90,47 +60,16 @@ export async function buildContextPrimer(
   // Checked regardless of `entries` — a pending confirmation isn't tied to
   // "was there a prior episodic session", it's simply still open right now.
   const pendingTokens = await deps.pendingTokens(key);
-  // Same for every user (curated/ has no per-user scoping) — checked
-  // regardless of prior session too, so even a first-ever session gets
-  // pointed at what's in the wiki right now.
-  const indexContent = (await deps.readIndexFileFn(deps.vaultPath)).trim();
-
   const current: string[] = [];
   const recap: string[] = [];
 
-  if (indexContent.length > 0) {
-    current.push(`Wiki index:\n${indexContent}`);
-  }
-
   if (entries.length > 0) {
-    const entryTimestamps = new Set(entries.map((e) => e.timestamp));
-    const inferredRoot = resolve(deps.vaultPath, userArea(key), "inferred");
-    const files = await deps.listWikiFilesInRootsFn(deps.vaultPath, [inferredRoot]);
-
-    const facts: string[] = [];
-    for (const file of files) {
-      const text = await deps.readWikiFileInRootsFn(deps.vaultPath, [inferredRoot], file);
-      const timestamps = derivedFromTimestamps(text);
-      if (!timestamps.some((ts) => entryTimestamps.has(ts))) {
-        continue;
-      }
-      const topic = file.split("/").pop()!.replace(/\.md$/, "");
-      const body = noteBody(text);
-      if (body) {
-        facts.push(`${topic}: ${body}`);
-      }
-    }
-
-    if (facts.length > 0) {
-      recap.push(`Known facts:\n${facts.map((f) => `- ${f}`).join("\n")}`);
-    }
     recap.push(`Last session:\n${entries.map((e) => `- ${e.summary}`).join("\n")}`);
   }
 
   // Deliberately opaque: just the token, no command, no "still pending"
-  // narrative.
-  // Resolving it into something meaningful requires the model to
-  // deliberately call resolve_reference (tools/resolve-reference-tool.ts) with the token.
+  // narrative. Resolving it into something meaningful requires the model to
+  // deliberately call resolve_reference (tools/resolve-reference-tool.ts).
   if (pendingTokens.length > 0) {
     current.push(`Open references:\n${pendingTokens.map((t) => `- [REQ:${t}]`).join("\n")}`);
   }

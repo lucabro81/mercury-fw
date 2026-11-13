@@ -422,9 +422,8 @@ export type ChannelI18n = { forRequest: (principal: Principal | null, hint?: str
  * domain types. Tokens are never exposed.
  *
  * Every getter but `health` takes the caller's `Principal` and returns only
- * what belongs to that person (the common wiki area included) and what they're
- * offered (the manifest); the channel authenticates, the core decides what the
- * person can see. For someone the core doesn't admit, a getter answers `null`.
+ * what belongs to that person and what they're offered (the manifest); the
+ * channel authenticates, the core decides what the person can see. For someone the core doesn't admit, a getter answers `null`.
  */
 export type ChannelHostReads = {
   manifest: (principal: Principal) => Promise<unknown>;
@@ -433,10 +432,6 @@ export type ChannelHostReads = {
   conversation?: (principal: Principal, sessionKey: string, limit: number, offset?: string) => Promise<unknown>;
   /** The person's conversations, most-recently-active first. Absent when the instance keeps no conversations. */
   conversations?: (principal: Principal, limit: number) => Promise<unknown>;
-  wikiList: (principal: Principal) => Promise<unknown>;
-  /** The file at `path` as the person names it (`curated/...`, `personal/...`), or `null` when it isn't among what they can see. */
-  wikiRead: (principal: Principal, path: string) => Promise<unknown>;
-  wikiGrep: (principal: Principal, pattern: string) => Promise<unknown>;
   /** A page of the person's points in the vector index's space `collection`, or `null` when it isn't a space kept per person. Absent when the instance has no vector index. */
   memoryScroll?: (principal: Principal, collection: string, limit: number, offset?: string) => Promise<unknown>;
   toolLog: (principal: Principal) => Promise<unknown>;

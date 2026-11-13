@@ -15,12 +15,10 @@ import { modelSettingsFromEnv } from "./model-settings.ts";
 import type { Conversation } from "./harness.ts";
 
 /** Opens a conversation with Mercury running only `plugin`; throws when the
- * plugin didn't load. The core reads the vault's path and its data folder's
- * from the environment when it's composed, so this sets them first (the data
- * folder inside the vault, gone with it): conversations are opened one at a
- * time. */
+ * plugin didn't load. The core reads its data folder's path from the
+ * environment when it's composed, so this sets it first (a folder inside
+ * `vaultPath`, gone with it): conversations are opened one at a time. */
 export async function openMercuryConversation(plugin: Plugin, vaultPath: string): Promise<Conversation> {
-  process.env.WIKI_VAULT_PATH = vaultPath;
   process.env.MERCURY_DATA_PATH = join(vaultPath, ".mercury");
   const watched = watchBuild(plugin);
   const app = await composeMercury(defineMercuryConfig({

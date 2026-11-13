@@ -76,7 +76,7 @@ describe("scheduler: one slot (a model served one request at a time)", () => {
     const model = ollamaModel("qwen");
     const order: string[] = [];
     const first = deferred();
-    const job = scheduler.job({ job: "review", urgency: "idle" }, async () => {
+    const job = scheduler.job({ job: "capture", urgency: "idle" }, async () => {
       await scheduler.call(model, async () => {
         order.push("step 1");
         await first.promise;
@@ -407,14 +407,14 @@ describe("scheduler: the background.job event", () => {
       )
       .catch(() => {});
     const release = scheduler.holdTurn(model);
-    const dropped = scheduler.job({ job: "review", urgency: "idle" }, () => scheduler.call(model, async () => {})).catch(() => {});
+    const dropped = scheduler.job({ job: "capture", urgency: "idle" }, () => scheduler.call(model, async () => {})).catch(() => {});
     await flush();
     scheduler.stop();
     await dropped;
     release();
     expect(events.map((e) => [e.job, e.outcome, e.steps])).toEqual([
       ["title", "failed", 1],
-      ["review", "dropped", 0],
+      ["capture", "dropped", 0],
     ]);
   });
 
@@ -423,12 +423,12 @@ describe("scheduler: the background.job event", () => {
     const scheduler = createScheduler({ log: (line) => lines.push(line) });
     const model = ollamaModel("qwen");
     const release = scheduler.holdTurn(model);
-    const job = scheduler.job({ job: "review", urgency: "idle" }, () => scheduler.call(model, async () => {})).catch(() => {});
+    const job = scheduler.job({ job: "capture", urgency: "idle" }, () => scheduler.call(model, async () => {})).catch(() => {});
     await flush();
     scheduler.stop();
     await job;
     release();
-    expect(lines).toEqual(["[queue] review dropped: the agent stopped before it could run"]);
+    expect(lines).toEqual(["[queue] capture dropped: the agent stopped before it could run"]);
   });
 
   test("a job that swallowed a dropped step is still dropped", async () => {
@@ -488,7 +488,7 @@ describe("scheduler: wrapped models", () => {
       doStream: async () => ({ stream: convertArrayToReadableStream(["a", "b"]) }) as never,
     });
     const wrapped = scheduler.languageModel(handle, raw) as unknown as Callable;
-    const streamed = await scheduler.job({ job: "review", urgency: "idle" }, () => wrapped.doStream({ prompt: [] }));
+    const streamed = await scheduler.job({ job: "capture", urgency: "idle" }, () => wrapped.doStream({ prompt: [] }));
     const next = backgroundStep(scheduler, handle, "next", started);
     await flush();
     expect(started).toEqual([]);
@@ -507,7 +507,7 @@ describe("scheduler: wrapped models", () => {
       doStream: async () => ({ stream: convertArrayToReadableStream(["a", "b"]) }) as never,
     });
     const wrapped = scheduler.languageModel(handle, raw) as unknown as Callable;
-    const streamed = await scheduler.job({ job: "review", urgency: "idle" }, () => wrapped.doStream({ prompt: [] }));
+    const streamed = await scheduler.job({ job: "capture", urgency: "idle" }, () => wrapped.doStream({ prompt: [] }));
     const next = backgroundStep(scheduler, handle, "next", started);
     await streamed.stream.cancel();
     await flush();

@@ -14,7 +14,7 @@
  */
 import { isStepCount, type LanguageModel, type Tool } from "ai";
 import { generateText } from "ai-sdk-ollama";
-import type { Message } from "../session/history.ts";
+import type { ConversationMessage as Message } from "@mercury-fw/plugin-types";
 import { createSelfReviewTools } from "./self-review-tools.ts";
 
 /** A guard against a model that loops, not what decides how far a pass gets:

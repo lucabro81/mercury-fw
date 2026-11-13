@@ -1,6 +1,6 @@
 import { describe, it, expect } from "bun:test";
 import { runRawTriagePass, runIndexAndOrphanPass, runContradictionCheckPass, SELF_REVIEW_STEP_COUNT } from "./self-review-runner.ts";
-import type { Message } from "../session/history.ts";
+import type { ConversationMessage as Message } from "@mercury-fw/plugin-types";
 import type { Tool } from "ai";
 
 type ReceivedParams = { messages: Message[]; tools: Record<string, Tool>; instructions: string };

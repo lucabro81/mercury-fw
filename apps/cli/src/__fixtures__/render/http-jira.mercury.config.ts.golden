@@ -19,6 +19,7 @@ import { staticAuth } from "@mercury-fw/auth-static";
 import { jsonlTraces } from "@mercury-fw/trace-jsonl";
 import { qdrantConversations, qdrantIndex } from "@mercury-fw/store-qdrant";
 import { conversationWindow } from "@mercury-fw/conversation-window";
+import { wiki } from "@mercury-fw/wiki";
 
 /** The assistant's name: what the persona calls it, and every text the model reads. */
 const name = "Mercury";
@@ -45,6 +46,13 @@ const main = ollamaModel(process.env.OLLAMA_MODEL, {
  */
 const conversation = conversationWindow();
 
+/**
+ * The team's wiki: notes everyone shares (`curated/`) and each person's own,
+ * in the vault at WIKI_VAULT_PATH, its index read at the start of each
+ * session and the vault reviewed every night at 03:00.
+ */
+const teamWiki = wiki();
+
 /** One Jira issue in a search result: key, status in brackets when there is
  * one, summary, and the browse link on its own line. A starting point: change
  * it to change how Jira lists read. */
@@ -70,6 +78,7 @@ export default defineMercuryConfig({
   },
   plugins: [
     conversation,
+    teamWiki,
     formatterPlugin(
       jiraPlugin,
       formatter<JiraDisplays>({
@@ -97,7 +106,7 @@ export default defineMercuryConfig({
   // What the model reads besides each message: the conversation `conversation`
   // keeps (remove it here and from plugins to keep none, and each message is
   // read alone), and the context layers of the plugins listed in `layers`.
-  context: { profiles: { default: { conversation, layers: [], budget: { maxChars: 8000 } } } },
+  context: { profiles: { default: { conversation, layers: [teamWiki], budget: { maxChars: 8000 } } } },
   i18n: { locales: { en } },
   // What the agent does, as events in traces/ in Mercury's data folder:
   // a file per day, the last 7 days with activity kept. "meta" records names,

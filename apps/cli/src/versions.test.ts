@@ -44,6 +44,7 @@ describe("appVersions", () => {
       "@mercury-fw/formatter": pkg.version,
       "@mercury-fw/store-qdrant": pkg.version,
       "@mercury-fw/trace-jsonl": pkg.version,
+      "@mercury-fw/wiki": pkg.version,
       "@mercury-fw/plugin-jira": "0.3.2",
       "@mercury-fw/channel-http": "0.1.4",
     });
@@ -69,6 +70,7 @@ describe("appVersions", () => {
       "@mercury-fw/formatter": pkg.version,
       "@mercury-fw/store-qdrant": pkg.version,
       "@mercury-fw/trace-jsonl": pkg.version,
+      "@mercury-fw/wiki": pkg.version,
       "@mercury-fw/plugin-jira": "0.3.2",
       "@mercury-fw/auth-static": "0.0.0",
     });

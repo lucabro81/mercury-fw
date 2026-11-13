@@ -31,7 +31,7 @@ import type { TraceInput } from "../traces/tracer.ts";
 export type Urgency = "soon" | "idle";
 
 /** The background jobs, as the traces name them: the core's own, and a plugin's as `<plugin>:<name>` (see `PluginRuntimeContext.job`). */
-export type BackgroundJobName = "title" | "capture" | "correction" | "archive-index" | "review" | `${string}:${string}`;
+export type BackgroundJobName = "title" | "capture" | "correction" | "archive-index" | `${string}:${string}`;
 
 /** A model the scheduler queues for: a declared handle. */
 export type QueuedHandle = MercuryModelHandle | MercuryEmbeddingHandle;

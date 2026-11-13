@@ -50,13 +50,8 @@ import {
 } from "./router/tool-log.ts";
 import type { StepInfo } from "./session/step-info.ts";
 import { withToolStartHook } from "./session/tool-start-hook.ts";
-import {
-  writeInferredNote,
-  writeToolCorrectionNote,
-} from "./wiki/wiki-note.ts";
 import { confirmationNotesRoot, copyVaultConfirmations, pendingConfirmationTokens, writeConfirmationNote } from "./data/confirmation-notes.ts";
 import { createResolveReferenceTool } from "./tools/resolve-reference-tool.ts";
-import { createWikiTools } from "./wiki/wiki-tools.ts";
 import { createReadSkillTool } from "./session/read-skill-tool.ts";
 import { createIdleSessionScanner } from "./cron/idle-session-scanner.ts";
 import { startIdleSessionCron, captureSessionToMemory, type CaptureDeps } from "./cron/idle-session-cron.ts";
@@ -68,17 +63,13 @@ import {
 import { listVerbatimBySession } from "./memory/verbatim-archive-store.ts";
 import { setTitle, titleOf, titlesOf } from "./memory/conversation-titles-store.ts";
 import { createVerbatimArchiveProvider } from "./memory/memory-provider.ts";
-import { storeSemanticFact, searchSemanticFactsByTopic } from "./memory/semantic-facts-store.ts";
-import { TOOL_CORRECTIONS_SPACE, storeToolCorrection, searchToolCorrectionsByTopic } from "./memory/tool-corrections-store.ts";
+import { storeSemanticFact } from "./memory/semantic-facts-store.ts";
+import { TOOL_CORRECTIONS_SPACE, storeToolCorrection } from "./memory/tool-corrections-store.ts";
 import { MIGRATED_SPACES, setUpMemory, setUpWhenReachable } from "./memory/collection-setup.ts";
 import { loadVectorIndex } from "./data/vector-index-loader.ts";
 import { loadConversationStore } from "./data/conversation-store-loader.ts";
-import { consolidateSemanticFact, consolidateToolCorrection, type ToolCorrectionConsolidationDeps } from "./cron/semantic-consolidation.ts";
 import { createToolCorrectionExtractor } from "./session/tool-correction-extractor.ts";
 import { createEmbedder } from "./memory/embedder.ts";
-import { initVault } from "./wiki/vault-init.ts";
-import { findOrphanCuratedDocs } from "./wiki/orphan-detector.ts";
-import { listWikiFilesInRoots, readWikiFileInRoots, readIndexFile } from "./wiki/wiki-read.ts";
 import { createHostReads } from "./identity/host-reads.ts";
 import { createChannelSettings } from "./identity/channel-settings.ts";
 import { createChannelConversations } from "./identity/channel-conversations.ts";
@@ -95,9 +86,7 @@ import { createLinking } from "./identity/linking.ts";
 import { offeringFor, type Offering } from "./plugins/offering.ts";
 import { AS_SELF_SUFFIX } from "./plugins/act-as-self.ts";
 import { buildOfferedTools } from "./plugins/offered-tools.ts";
-import { migrateMemoryToUserKeys, migrateVaultToUserAreas } from "./identity/migrate-layout.ts";
-import { runRawTriagePass, runIndexAndOrphanPass, runContradictionCheckPass } from "./wiki/self-review-runner.ts";
-import { startSelfReviewCron } from "./cron/self-review-cron.ts";
+import { migrateMemoryToUserKeys } from "./identity/migrate-layout.ts";
 import { createDaily } from "./cron/daily.ts";
 import { pluginToolLog } from "./session/tool-log-buffer.ts";
 import { pluginProfiles } from "./identity/plugin-profiles.ts";
@@ -105,7 +94,6 @@ import { loadTracer } from "./traces/trace-loader.ts";
 import { migrateLegacyState, pluginDataRoot, requireDataPath } from "./data/data-dir.ts";
 import type { Tracer } from "./traces/tracer.ts";
 import { compressionEvent } from "./traces/compression-events.ts";
-import { resolve as resolvePath } from "node:path";
 import { homedir } from "node:os";
 import type { LanguageModel, Tool } from "ai";
 import { getSelfHealth } from "./health.ts";
@@ -420,12 +408,8 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   /** What the person's earlier conversations left for a new one (see session/context-primer.ts); none for one its client reopens at will (#233). */
   const primerFor = (userId: string, resume: { maxChars?: number } | undefined) =>
     buildContextPrimer(userId, {
-      vaultPath: wikiVaultPath,
       getLastSessionEntries: async (uid) =>
         vectorIndex === undefined ? [] : getLastSessionEpisodicSummaries(vectorIndex, { userId: uid }),
-      listWikiFilesInRootsFn: listWikiFilesInRoots,
-      readWikiFileInRootsFn: readWikiFileInRoots,
-      readIndexFileFn: readIndexFile,
       pendingTokens: (key) => pendingConfirmationTokens(notesRoot, key),
       log: (msg) => console.error(`[memory] ${msg}`),
     }, primerOptions(resume));
@@ -484,16 +468,6 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   // embedded on the topic alone (see semantic-facts-store.ts for why).
   const extractFacts = createSemanticFactExtractor(backgroundModel);
 
-  // Idempotent self-heal: the vault lives on a named Docker volume, empty on
-  // first boot and not pre-populatable at build time — re-running this every
-  // startup is cheap and means a wiped/fresh volume never needs a separate
-  // manual provisioning step.
-  const wikiVaultPath = requireEnv("WIKI_VAULT_PATH");
-  await initVault(wikiVaultPath);
-  // A vault from before per-person areas gets its notes moved into them.
-  await migrateVaultToUserAreas(wikiVaultPath, (msg) => console.error(`[wiki-vault] ${msg}`)).catch((err: unknown) =>
-    console.error(`[wiki-vault] layout migration failed, Mercury starts anyway: ${String(err)}`),
-  );
   // Where the events of what this instance does go (#23): nowhere unless the config declares a sink.
   const tracer = await loadTracer(config.traces, {
     env: process.env,
@@ -517,12 +491,8 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
     store: (entry) => storeEpisodicSummary(requireIndex(), embed, entry),
     extractFacts,
     storeFact: (entry) => storeSemanticFact(requireIndex(), embed, entry),
-    consolidateFact: (userId, topic) =>
-      consolidateSemanticFact(userId, topic, {
-        vaultPath: wikiVaultPath,
-        clusterFn: (u, t, limit) => searchSemanticFactsByTopic(requireIndex(), embed, { userId: u, topic: t, limit }),
-        writeInferredNoteFn: writeInferredNote,
-      }),
+    // The facts are kept; turning them into notes is the memory plugin's (#393).
+    consolidateFact: async () => {},
     log: (msg) => console.error(`[cron] ${msg}`),
     emit: (event) => tracer.emit(event),
   };
@@ -581,19 +551,9 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   const extractToolCorrections = createToolCorrectionExtractor(backgroundModel, undefined, {
     log: (msg) => console.error(`[cron] ${msg}`),
   });
-  const toolCorrectionConsolidationDeps: ToolCorrectionConsolidationDeps = {
-    vaultPath: wikiVaultPath,
-    clusterFn: (tool, topic, limit) => searchToolCorrectionsByTopic(requireIndex(), embed, { tool, topic, limit }),
-    writeNoteFn: writeToolCorrectionNote,
-    // A single confirmed correction is already a strong signal — unlike
-    // identity/preference facts (DEFAULT_CONSOLIDATION_K = 3). k: 1 fires
-    // defaultConfidenceForCount's dominantCount >= k branch on the first
-    // candidate ("high" confidence immediately).
-    k: 1,
-  };
 
   /**
-   * Extracts and consolidates any procedural corrections found in one turn's
+   * Extracts and keeps any procedural corrections found in one turn's
    * `steps` — a no-op if none are found. Drives `onToolStart`/`onToolFinish`
    * once per correction like a real tool call.
    */
@@ -633,9 +593,8 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
       try {
         const timestamp = new Date().toISOString();
         await storeToolCorrection(vectorIndex, embed, { ...correction, timestamp });
-        const decision = await consolidateToolCorrection(correction.tool, correction.topic, toolCorrectionConsolidationDeps);
         onToolFinish?.(correctionId, "success");
-        tracer.emit({ kind: "memory.correction", person: key, binary: correction.tool, topic: correction.topic, decision, outcome: "done" });
+        tracer.emit({ kind: "memory.correction", person: key, binary: correction.tool, topic: correction.topic, outcome: "done" });
       } catch (err) {
         console.error(`[capture] procedural correction failed for ${correction.tool}/${correction.topic}: ${String(err)}`);
         onToolFinish?.(correctionId, "failed");
@@ -704,10 +663,6 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
       Object.assign(sessionTools, createPresentTool({ sessionKey, store: displayStore }));
     }
 
-    Object.assign(
-      sessionTools,
-      createWikiTools({ vaultPath: wikiVaultPath, key, stageConfirmation: sessionToolContext.stageConfirmation }),
-    );
     Object.assign(sessionTools, createResolveReferenceTool({ notesRoot, key }));
     Object.assign(sessionTools, createProfileTools({ store: profiles, key, languages: i18n.supported }));
     // Verbatim archive recall, scoped to this person — lets the model resurface
@@ -835,7 +790,6 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
     // Every read but health is scoped to the caller (see identity/host-reads.ts).
     reads: createHostReads({
       identify: people.identify,
-      vaultPath: wikiVaultPath,
       ...(conversationStore === undefined ? {} : { store: conversationStore }),
       ...(vectorIndex === undefined ? {} : { index: vectorIndex }),
       confirmationStore,
@@ -916,23 +870,10 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
         checkIntervalMs: Number(process.env.SESSION_IDLE_CHECK_INTERVAL_MS ?? String(60_000)),
       },
     );
-    const selfReviewCron = startSelfReviewCron({
-      listRawEntries: () => listWikiFilesInRoots(wikiVaultPath, [resolvePath(wikiVaultPath, "raw")]),
-      findOrphans: () => findOrphanCuratedDocs(wikiVaultPath),
-      runRawTriage: (rawEntries) =>
-        backgroundJob("review", "idle", () => runRawTriagePass({ vaultPath: wikiVaultPath, model: backgroundModel, rawEntries })),
-      runIndexAndOrphan: (orphans) =>
-        backgroundJob("review", "idle", () => runIndexAndOrphanPass({ vaultPath: wikiVaultPath, model: backgroundModel, orphans })),
-      runContradictionCheck: () =>
-        backgroundJob("review", "idle", () => runContradictionCheckPass({ vaultPath: wikiVaultPath, model: backgroundModel })),
-      log: (msg) => console.error(`[cron] ${msg}`),
-      emit: (event) => tracer.emit(event),
-    });
     const daily = dailyWork.start();
     return {
       stop: () => {
         idleCron.stop();
-        selfReviewCron.stop();
         daily.stop();
         // Model work still waiting is dropped; what's running finishes.
         scheduler.stop();

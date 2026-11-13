@@ -1190,11 +1190,11 @@ describe("createTurnRunner", () => {
       const runner = createTurnRunner(
         baseDeps({
           runTurnFn: async () => "answer",
-          postTurnGuards: [makeGuard({ statusLabel: (t) => t("core.status.searching"), statusId: "g" })],
+          postTurnGuards: [makeGuard({ statusLabel: (t) => t("core.status.instructions"), statusId: "g" })],
         }),
       );
       await runner(baseTurn(), sink);
-      expect(started).toEqual(["Searching…"]);
+      expect(started).toEqual(["Checking the instructions…"]);
     });
 
     test("forwards a guard's failed outcome to onToolFinish, and still delivers its text", async () => {

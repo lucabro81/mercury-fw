@@ -20,22 +20,13 @@ import { englishTexts, type Translate } from "../i18n/i18n.ts";
 /** The core's texts in English, for a caller that passes no turn's `t`. */
 const english: Translate = englishTexts().forPerson(undefined).t;
 
-// A short, stable list, updated by hand when a named wiki tool is added; a
-// name not here falls to the generic label, which isn't an error. `grep`
-// isn't here: it has its own label (`core.status.searching`).
-const WIKI_TOOL_CATEGORY: Record<string, "read" | "write"> = {
-  list_files: "read",
-  read_file: "read",
-  write_file: "write",
-};
-
 /**
  * Describes, in one short user-facing sentence, what a tool call is about to do
  * — no arguments/queries shown. A tool a plugin contributed carries its own
  * label via `toolStatusDescribers` (keyed by tool name), so the core never
  * decides how a plugin's tool reads — it just looks the describer up. The other
- * tools are core functionality (wiki, grep, memory): their labels are the
- * core's texts, in the turn's language (`t`).
+ * tools are the core's own: their labels are the core's texts, in the turn's
+ * language (`t`).
  */
 export function describeToolStart(
   toolName: string,
@@ -46,10 +37,6 @@ export function describeToolStart(
   const describe = toolStatusDescribers[toolName];
   if (describe) return describe(input, t);
   if (toolName === "read_skill") return t("core.status.instructions");
-  if (toolName === "grep") return t("core.status.searching");
-  const wikiCategory = WIKI_TOOL_CATEGORY[toolName];
-  if (wikiCategory === "read") return t("core.status.wiki-read");
-  if (wikiCategory === "write") return t("core.status.wiki-write");
   return t("core.status.tool", { tool: toolName });
 }
 

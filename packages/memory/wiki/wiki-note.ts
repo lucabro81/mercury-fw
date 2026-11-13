@@ -32,8 +32,8 @@ import {
   type PersonalFrontmatter,
   type InferredFrontmatter,
 } from "./frontmatter-schema.ts";
-import { userArea } from "../identity/user-key.ts";
-import { personalNotePath } from "../identity/vault-access.ts";
+import { userArea } from "./user-area.ts";
+import { personalNotePath } from "./vault-access.ts";
 
 /**
  * Resolves `segments` against `root` and checks the result stays inside

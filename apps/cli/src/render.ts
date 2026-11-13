@@ -124,9 +124,9 @@ export const TRACE_SINK_PACKAGE = "@mercury-fw/trace-jsonl";
 export const VECTOR_INDEX_PACKAGE = "@mercury-fw/store-qdrant";
 
 /** The packages keeping memory every new app declares: framework packages, at the CLI's version. */
-export const MEMORY_PACKAGES = ["@mercury-fw/conversation-window"];
+export const MEMORY_PACKAGES = ["@mercury-fw/conversation-window", "@mercury-fw/wiki"];
 
-/** Above the config: the conversation every new app keeps. */
+/** Above the config: the conversation and the wiki every new app keeps. */
 const CONVERSATION = [
   "/**",
   " * The conversation each session keeps for the model: its recent messages,",
@@ -134,14 +134,21 @@ const CONVERSATION = [
   " * conversation the person reopens, from the conversation store.",
   " */",
   "const conversation = conversationWindow();",
+  "",
+  "/**",
+  " * The team's wiki: notes everyone shares (`curated/`) and each person's own,",
+  " * in the vault at WIKI_VAULT_PATH, its index read at the start of each",
+  " * session and the vault reviewed every night at 03:00.",
+  " */",
+  "const teamWiki = wiki();",
 ].join("\n");
 
-/** The config's `context`: the default profile, keeping the conversation and no layers yet. */
+/** The config's `context`: the default profile, keeping the conversation and the wiki's index. */
 const CONTEXT_SECTION = [
   "  // What the model reads besides each message: the conversation `conversation`",
   "  // keeps (remove it here and from plugins to keep none, and each message is",
   "  // read alone), and the context layers of the plugins listed in `layers`.",
-  "  context: { profiles: { default: { conversation, layers: [], budget: { maxChars: 8000 } } } },",
+  "  context: { profiles: { default: { conversation, layers: [teamWiki], budget: { maxChars: 8000 } } } },",
 ].join("\n");
 
 /** The config's `vectorIndex` and `conversationStore` entries, with what each holds. */
@@ -332,13 +339,14 @@ function renderConfig(
   imports.push(`import { jsonlTraces } from "${TRACE_SINK_PACKAGE}";`);
   imports.push(`import { qdrantConversations, qdrantIndex } from "${VECTOR_INDEX_PACKAGE}";`);
   imports.push('import { conversationWindow } from "@mercury-fw/conversation-window";');
+  imports.push('import { wiki } from "@mercury-fw/wiki";');
 
   const helpers = withRules.map((t) => `${t.formatter?.helpers}\n\n`).join("");
 
   const plugins =
     tools.length === 0
-      ? "  plugins: [conversation],"
-      : ["  plugins: [", "    conversation,", ...tools.map(renderPluginEntry), "  ],"].join("\n");
+      ? "  plugins: [conversation, teamWiki],"
+      : ["  plugins: [", "    conversation,", "    teamWiki,", ...tools.map(renderPluginEntry), "  ],"].join("\n");
   const channelList = `  channels: [${channels.map((c) => c.exportName).join(", ")}],`;
 
   return [

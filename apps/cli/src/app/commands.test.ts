@@ -117,7 +117,7 @@ describe("vault and memory", () => {
     const f = fake();
     await appCommands(APP, f.deps).vault(["write-curated", "curated/x.md", "--author", "luca"]);
     expect(f.runs()).toEqual([
-      ["docker", "compose", "run", "--rm", "-T", "mercury", "bun", "node_modules/@mercury-fw/core/src/wiki/vault-cli.ts", "write-curated", "curated/x.md", "--author", "luca"],
+      ["docker", "compose", "run", "--rm", "-T", "mercury", "bun", "node_modules/@mercury-fw/wiki/vault-cli.ts", "write-curated", "curated/x.md", "--author", "luca"],
     ]);
   });
 
