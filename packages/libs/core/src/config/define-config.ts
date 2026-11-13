@@ -57,10 +57,17 @@ export type MercuryI18n = {
  */
 export type MercuryModel = ModelSettings;
 
-/** One context profile: the plugins whose layers the model reads, in order (each must be in `plugins` and contribute a `context` layer), and how many characters of them it reads at most. */
+/**
+ * One context profile: the plugins whose layers the model reads, in order
+ * (each must be in `plugins` and contribute a `context` layer), how many
+ * characters of them it reads at most, and the plugin that keeps the
+ * conversation (`conversation`: in `plugins`, contributing a `conversation`).
+ * A shared space keeps the conversation of the profile of whoever wrote first.
+ */
 export type ContextProfile = {
   layers: Plugin[];
   budget: { maxChars: number };
+  conversation?: Plugin;
 };
 
 /**

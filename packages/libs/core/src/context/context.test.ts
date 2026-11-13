@@ -435,3 +435,62 @@ describe("knobs and changes while running (#387, part 3)", () => {
     expect(wikiSeen.map((r) => r.knobs)).toEqual([{ depth: 1 }, { depth: 3 }]);
   });
 });
+
+describe("resolveContext: the conversation a profile keeps (#393)", () => {
+  const owner = { open: async () => ({}) as never };
+  /** A plugin keeping conversations, declared and loaded. */
+  function windowPlugin(name = "window") {
+    const p = plugin(name);
+    return { declared: p.declared, loaded: { ...p.loaded, conversation: owner } };
+  }
+
+  it("keeps the plugin a profile names as its conversation", () => {
+    const w = windowPlugin();
+    const resolved = resolveContext(
+      { profiles: { default: { layers: [], budget: { maxChars: 0 }, conversation: w.declared } } },
+      { declared: [w.declared], loaded: [w.loaded], log: () => {} },
+    );
+    expect(resolved?.profiles.get("default")?.conversation).toBe(w.loaded);
+  });
+
+  it("stops the start for a conversation plugin not in plugins", () => {
+    const w = windowPlugin();
+    expect(() =>
+      resolveContext({ profiles: { default: { layers: [], budget: { maxChars: 0 }, conversation: w.declared } } }, { declared: [], loaded: [], log: () => {} }),
+    ).toThrow('context profile "default" keeps its conversation with the plugin "window", which isn\'t in plugins: declare it there, the same object');
+  });
+
+  it("stops the start for a conversation plugin that keeps no conversation", () => {
+    const jira = plugin("jira");
+    expect(() =>
+      resolveContext(
+        { profiles: { default: { layers: [], budget: { maxChars: 0 }, conversation: jira.declared } } },
+        { declared: [jira.declared], loaded: [jira.loaded], log: () => {} },
+      ),
+    ).toThrow('context profile "default" keeps its conversation with the plugin "jira", which keeps none');
+  });
+
+  it("goes without a conversation plugin that didn't load, saying so", () => {
+    const w = windowPlugin();
+    const logs: string[] = [];
+    const resolved = resolveContext(
+      { profiles: { default: { layers: [], budget: { maxChars: 0 }, conversation: w.declared } } },
+      { declared: [w.declared], loaded: [], log: (m) => void logs.push(m) },
+    );
+    expect(resolved?.profiles.get("default")?.conversation).toBeUndefined();
+    expect(logs).toEqual(['[context] the plugin "window" isn\'t loaded: profile "default" goes without its conversation']);
+  });
+
+  it("stops the start for a plugin keeping conversations that no profile names, with or without a context", () => {
+    const w = windowPlugin();
+    const wiki = plugin("wiki", layer("session", []));
+    const message = 'the plugin "window" keeps conversations, but no context profile names it as its conversation: name it in context.profiles.<profile>.conversation, or remove it';
+    expect(() =>
+      resolveContext(
+        { profiles: { default: { layers: [wiki.declared], budget: { maxChars: 10 } } } },
+        { declared: [w.declared, wiki.declared], loaded: [w.loaded, wiki.loaded], log: () => {} },
+      ),
+    ).toThrow(message);
+    expect(() => resolveContext(undefined, { declared: [w.declared], loaded: [w.loaded], log: () => {} })).toThrow(message);
+  });
+});

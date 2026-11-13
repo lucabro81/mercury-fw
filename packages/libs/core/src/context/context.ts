@@ -8,7 +8,11 @@
  *   profile, a budget that isn't a whole number. A plugin that didn't load
  *   (a condition outside the config) only loses its layer, with a line. A
  *   layer a profile can never use, its plugin kept by `access` from every
- *   role the profile goes to, gets a warning.
+ *   role the profile goes to, gets a warning. The same for the plugin a
+ *   profile keeps its conversation with (`conversation`, #393): one not
+ *   declared, or keeping none, stops the start, one that didn't load leaves
+ *   the profile without; and a plugin keeping conversations that no profile
+ *   names stops the start.
  * - `profileFor` picks a person's profile: the first in `assign`, as
  *   written, naming one of their roles; `default` otherwise, and always on
  *   the terminal.
@@ -46,7 +50,14 @@ import type { LoadedPlugin } from "../plugins/plugin-loader.ts";
  * set has its default). The order, the budget and the knobs change while the
  * instance runs (`context-settings.ts`): the assembler reads them at every turn.
  */
-export type ResolvedProfile = { name: string; layers: LoadedPlugin[]; maxChars: number; knobs: Map<string, Record<string, KnobValue>> };
+export type ResolvedProfile = {
+  name: string;
+  layers: LoadedPlugin[];
+  maxChars: number;
+  knobs: Map<string, Record<string, KnobValue>>;
+  /** The plugin keeping the profile's conversations, when it names one that loaded. */
+  conversation?: LoadedPlugin;
+};
 
 /** The instance's context, checked: its profiles by name, and who gets which, in the order written. */
 export type ResolvedContext = { profiles: Map<string, ResolvedProfile>; assign: Array<[profile: string, roles: string[]]> };
@@ -56,6 +67,17 @@ export function resolveContext(
   context: MercuryContext | undefined,
   deps: { declared: Plugin[]; loaded: LoadedPlugin[]; access?: PluginAccess; log: (message: string) => void },
 ): ResolvedContext | undefined {
+  // A plugin keeping conversations that no profile names would never be
+  // used: the config contradicts itself.
+  const owners = deps.loaded.filter((p) => p.conversation !== undefined);
+  const named = new Set(Object.values(context?.profiles ?? {}).flatMap((p) => (p.conversation === undefined ? [] : [p.conversation])));
+  for (const owner of owners) {
+    if (!named.has(owner.source)) {
+      throw new Error(
+        `the plugin "${owner.name}" keeps conversations, but no context profile names it as its conversation: name it in context.profiles.<profile>.conversation, or remove it`,
+      );
+    }
+  }
   if (context === undefined) return undefined;
   const declared = new Set(deps.declared);
   const loadedBySource = new Map(deps.loaded.map((p) => [p.source, p]));
@@ -86,7 +108,20 @@ export function resolveContext(
       }
       layers.push(loaded);
     }
-    profiles.set(name, { name, layers, maxChars, knobs: new Map() });
+    let conversation: LoadedPlugin | undefined;
+    if (profile.conversation !== undefined) {
+      const plugin = profile.conversation;
+      if (!declared.has(plugin)) {
+        throw new Error(`context profile "${name}" keeps its conversation with the plugin "${plugin.name}", which isn't in plugins: declare it there, the same object`);
+      }
+      conversation = loadedBySource.get(plugin);
+      if (conversation === undefined) {
+        deps.log(`[context] the plugin "${plugin.name}" isn't loaded: profile "${name}" goes without its conversation`);
+      } else if (conversation.conversation === undefined) {
+        throw new Error(`context profile "${name}" keeps its conversation with the plugin "${plugin.name}", which keeps none`);
+      }
+    }
+    profiles.set(name, { name, layers, maxChars, knobs: new Map(), ...(conversation === undefined ? {} : { conversation }) });
   }
   for (const [name, roles] of assign) {
     for (const plugin of profiles.get(name)?.layers ?? []) {
