@@ -124,9 +124,15 @@ export const TRACE_SINK_PACKAGE = "@mercury-fw/trace-jsonl";
 export const VECTOR_INDEX_PACKAGE = "@mercury-fw/store-qdrant";
 
 /** The packages keeping memory every new app declares: framework packages, at the CLI's version. */
-export const MEMORY_PACKAGES = ["@mercury-fw/conversation-window", "@mercury-fw/wiki"];
+export const MEMORY_PACKAGES = [
+  "@mercury-fw/conversation-window",
+  "@mercury-fw/wiki",
+  "@mercury-fw/archive",
+  "@mercury-fw/titles",
+  "@mercury-fw/profile",
+];
 
-/** Above the config: the conversation and the wiki every new app keeps. */
+/** Above the config: the conversation and the wiki every new app keeps, and what the other memory plugins do. */
 const CONVERSATION = [
   "/**",
   " * The conversation each session keeps for the model: its recent messages,",
@@ -141,6 +147,14 @@ const CONVERSATION = [
   " * session and the vault reviewed every night at 03:00.",
   " */",
   "const teamWiki = wiki();",
+  "",
+  "/*",
+  " * Also declared in `plugins`: `archive()` keeps every conversation as it was",
+  " * said, in the conversation store, so a person reopens and lists it;",
+  " * `titles()` names each one after its first turn; `profile()` lets the",
+  " * assistant save how each person wants to be called, their time zone and",
+  " * their language. Remove one to do without what it does.",
+  " */",
 ].join("\n");
 
 /** The config's `context`: the default profile, keeping the conversation and the wiki's index. */
@@ -340,13 +354,16 @@ function renderConfig(
   imports.push(`import { qdrantConversations, qdrantIndex } from "${VECTOR_INDEX_PACKAGE}";`);
   imports.push('import { conversationWindow } from "@mercury-fw/conversation-window";');
   imports.push('import { wiki } from "@mercury-fw/wiki";');
+  imports.push('import { archive } from "@mercury-fw/archive";');
+  imports.push('import { titles } from "@mercury-fw/titles";');
+  imports.push('import { profile } from "@mercury-fw/profile";');
 
   const helpers = withRules.map((t) => `${t.formatter?.helpers}\n\n`).join("");
 
   const plugins =
     tools.length === 0
-      ? "  plugins: [conversation, teamWiki],"
-      : ["  plugins: [", "    conversation,", "    teamWiki,", ...tools.map(renderPluginEntry), "  ],"].join("\n");
+      ? "  plugins: [conversation, teamWiki, archive(), titles(), profile()],"
+      : ["  plugins: [", "    conversation,", "    teamWiki,", "    archive(),", "    titles(),", "    profile(),", ...tools.map(renderPluginEntry), "  ],"].join("\n");
   const channelList = `  channels: [${channels.map((c) => c.exportName).join(", ")}],`;
 
   return [

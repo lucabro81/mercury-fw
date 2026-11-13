@@ -13,13 +13,16 @@
     "test": "bun test"
   },
   "dependencies": {
+    "@mercury-fw/archive": "^0.1.0",
     "@mercury-fw/auth-static": "^0.1.0",
     "@mercury-fw/channel-http": "^0.1.0",
     "@mercury-fw/conversation-window": "^0.1.0",
     "@mercury-fw/core": "^0.1.0",
     "@mercury-fw/formatter": "^0.1.0",
     "@mercury-fw/plugin-jira": "^0.1.0",
+    "@mercury-fw/profile": "^0.1.0",
     "@mercury-fw/store-qdrant": "^0.1.0",
+    "@mercury-fw/titles": "^0.1.0",
     "@mercury-fw/trace-jsonl": "^0.1.0",
     "@mercury-fw/wiki": "^0.1.0"
   },

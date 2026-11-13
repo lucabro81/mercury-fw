@@ -23,6 +23,7 @@
         "commander": "^15.0.0",
       },
       "devDependencies": {
+        "@mercury-fw/archive": "workspace:*",
         "@mercury-fw/auth-oidc": "workspace:*",
         "@mercury-fw/auth-static": "workspace:*",
         "@mercury-fw/channel-google-chat": "workspace:*",
@@ -35,7 +36,9 @@
         "@mercury-fw/plugin-jira": "workspace:*",
         "@mercury-fw/plugin-web-search": "workspace:*",
         "@mercury-fw/plugin-zitadel": "workspace:*",
+        "@mercury-fw/profile": "workspace:*",
         "@mercury-fw/store-qdrant": "workspace:*",
+        "@mercury-fw/titles": "workspace:*",
         "@mercury-fw/typescript-config": "*",
         "@mercury-fw/web-search-searxng": "workspace:*",
         "@mercury-fw/wiki": "workspace:*",
