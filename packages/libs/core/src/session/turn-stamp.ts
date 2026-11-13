@@ -10,9 +10,6 @@
  * which would be wrong for half the year.
  */
 
-/** Matches a stamp at the start of a message, line break included. */
-const STAMP_RE = /^\[[A-Z][a-z]+day \d{4}-\d{2}-\d{2} \d{2}:\d{2} [^\]\s]+\]\n/;
-
 /**
  * `name` as the IANA list writes it (`europe/rome` is `Europe/Rome`), or
  * undefined when it isn't a zone's name. `Intl` also takes a fixed offset

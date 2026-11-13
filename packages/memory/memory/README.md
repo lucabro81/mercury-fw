@@ -36,7 +36,7 @@ After each turn a person wrote (`afterTurn`), their message, stamped with when a
 - writes a short summary of what was said, asked and decided, never the data a tool returned (`episodic_memory`);
 - finds the facts about the person likely to stay true, among `team`, `role` and `tools-used` (`semantic_facts`), and with a wiki promotes each through its `notes` to the person's `inferred/` note.
 
-A capture is work nobody waits on (`memory:capture` in the traces). One that fails keeps its messages for the next one, with a line in the log; a fact that can't be kept never undoes the summary. Every message a turn leaves (`onTurnRecord`, the same ones the archive writes) is indexed too (`verbatim_archive`, `memory:archive-index`). Nothing of the operator's (the terminal) is kept.
+A capture is work nobody waits on (`memory:capture` in the traces). One that fails keeps its messages for the next one, with a line in the log; when the conversation closes, a capture already running finishes first, then what came after it is captured once and, if that fails, dropped, with a line in the log; a fact that can't be kept never undoes the summary. Every message a turn leaves (`onTurnRecord`, the same ones the archive writes) is indexed too (`verbatim_archive`, `memory:archive-index`). Nothing of the operator's (the terminal) is kept.
 
 The spaces are made at their first use, as long as the embedding model's vectors; an index from an older Mercury, whose points carry a bare channel id instead of the person's key, gets them moved onto it then (a Google Chat id and the terminal; any other id stays where it is, with a line in the log).
 

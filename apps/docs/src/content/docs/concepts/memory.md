@@ -149,7 +149,9 @@ support than the note already there.
 
 `@mercury-fw/corrections` (`corrections({ wiki })`) learns how to use a tool: when a command fails and a later one
 for the same tool works in the same turn, the model describes the rule, and the wiki writes the one with most support
-to `curated/standards/<tool>-<topic>.md`, which everyone reads.
+to `curated/standards/<tool>-<topic>.md`, which everyone reads. A summary or a correction that can't be kept is
+written in the log and doesn't stop the others; the messages of a summary that failed wait for the next one, except
+when the conversation has closed, where they're tried once more and then dropped.
 
 All this work (the summaries, the facts, the corrections, the title, the index of the messages) waits for the model to
 be free: it never makes someone who's waiting for an answer wait longer (see
