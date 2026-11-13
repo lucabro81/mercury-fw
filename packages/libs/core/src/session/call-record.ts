@@ -13,22 +13,12 @@
  * and guessed its commands instead of reading it again (#356).
  */
 import type { ModelMessage } from "ai";
-import type { HookCall } from "@mercury-fw/plugin-types";
+import type { CallRecord, CallResult, HookCall } from "@mercury-fw/plugin-types";
 import type { StepInfo } from "./step-info.ts";
 import { READ_SKILL_TOOL } from "./read-skill-tool.ts";
 
-/** A call's result as the history keeps it. `results`/`found` only when the count can be told; `error` only for a failed call. */
-export type CallResult = {
-  ok: boolean;
-  ran: string;
-  results?: number;
-  found?: false;
-  displayRef?: string;
-  error?: string;
-};
-
-/** One tool call of a past turn: its tool, its input (long strings cut), its reduced result. */
-export type CallRecord = { toolName: string; input: unknown; result: CallResult };
+/** A call as the history keeps it: the contract's shape, the one the archive keeps too. */
+export type { CallRecord, CallResult } from "@mercury-fw/plugin-types";
 
 /** A reduced call as the plugins' hooks see it: what was called, with what, whether it worked, its error when it didn't (no `ran`, no counts). */
 export function hookCall(call: CallRecord): HookCall {

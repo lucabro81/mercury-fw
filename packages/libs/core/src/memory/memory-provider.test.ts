@@ -25,7 +25,7 @@ describe("createVerbatimArchiveProvider — captureExchange", () => {
 
     await provider.captureExchange!({ userId: "users/42", sessionKey: "spaces/X:users/42", role: "user", content: "come sta KAN-1?" });
 
-    const message = { userId: "users/42", sessionKey: "spaces/X:users/42", role: "user", content: "come sta KAN-1?", timestamp: "2026-09-22T12:00:00.000Z" };
+    const message = { userId: "users/42", sessionKey: "spaces/X:users/42", role: "user" as const, content: "come sta KAN-1?", timestamp: "2026-09-22T12:00:00.000Z" };
     expect(kept()).toEqual([message]);
     expect(index.spaces.get("verbatim_archive")).toEqual([{ id: store.stored[0]!.id, vector: [1, 2, 3], payload: message }]);
   });

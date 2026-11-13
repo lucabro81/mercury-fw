@@ -214,6 +214,179 @@ export type MercuryEmbeddingHandle = {
   readonly capacity: number;
 };
 
+// ---- The storage primitives: what an instance declares (`vectorIndex`,
+// `conversationStore` in its config) and a plugin reaches through `needs`. ----
+
+/** Equality filters on a space's keyword fields: every field must hold exactly that value. */
+export type VectorWhere = Record<string, string>;
+
+/** A point of a space: its id (a UUID), its vector and what it carries. */
+export type VectorPoint = { id: string; vector: number[]; payload: Record<string, unknown> };
+
+/**
+ * What a space needs: the length of its vectors, the payload fields it's
+ * filtered on (`keys`) and those it's ordered by (`ordered`, ISO 8601 times).
+ */
+export type VectorSpaceSpec = { dimensions: number; keys?: string[]; ordered?: string[] };
+
+/**
+ * The instance's vector index (`vectorIndex` in its config): named spaces of
+ * points, each a vector and a payload, for what is found by meaning. Whoever
+ * writes computes the vectors (`PluginRuntimeContext.embed`); the index keeps
+ * them, finds the nearest ones (`query`), lists points in an order (`scroll`)
+ * and rewrites payload fields (`setPayload`), always within the points `where`
+ * selects. A scroll is paged by the opaque `cursor` the previous page gave as
+ * `next`. Every method may reject when the index can't be reached: treat that
+ * as the index being away for now, never as a reason to fail a turn.
+ *
+ * A plugin gets it as `ctx.vectorIndex` by declaring `needs: ["vectorIndex"]`.
+ * Its spaces are its own: name them after the plugin, and `ensure` them before
+ * writing (it is idempotent). The index is shared by the whole instance and
+ * knows no person: a space holding people's data filters every read on the
+ * person's key, as the core's own spaces do.
+ */
+export type VectorIndex = {
+  /** Creates `space` when it's missing, and the indexes its fields need; idempotent. */
+  ensure: (space: string, spec: VectorSpaceSpec) => Promise<void>;
+  upsert: (space: string, points: VectorPoint[]) => Promise<void>;
+  /** The `limit` points nearest to `vector`, nearest first. */
+  query: (
+    space: string,
+    q: { vector: number[]; where?: VectorWhere; limit: number },
+  ) => Promise<Array<{ id: string; score: number; payload: Record<string, unknown> }>>;
+  scroll: (
+    space: string,
+    q: { where?: VectorWhere; orderBy?: { key: string; direction: "asc" | "desc" }; limit: number; cursor?: string },
+  ) => Promise<{ points: Array<{ id: string; payload: Record<string, unknown> }>; next?: string }>;
+  /** Sets `payload`'s fields on every point `where` selects, keeping the rest. */
+  setPayload: (space: string, q: { where: VectorWhere; payload: Record<string, unknown> }) => Promise<void>;
+  /** Whether the index answers now, and why not when it doesn't. */
+  health: () => Promise<{ ok: boolean; detail?: string }>;
+};
+
+/** Settled outcome of a tool call (or a guard, or any status line) reported via `onToolFinish`. `pending` = the action was staged behind a confirmation, not run. */
+export type ToolOutcome = "success" | "failed" | "pending";
+
+/**
+ * What a tool call's result is reduced to when it's kept: how it went, what it
+ * ran, how many items it found (`found: false` when it found none), the ref of
+ * the list it produced, its error. Never the data.
+ */
+export type CallResult = {
+  ok: boolean;
+  ran: string;
+  results?: number;
+  found?: false;
+  displayRef?: string;
+  error?: string;
+};
+
+/** A tool call as a conversation keeps it: the tool, its input, its reduced result. */
+export type CallRecord = { toolName: string; input: unknown; result: CallResult };
+
+/**
+ * One thing the person saw during a turn besides its text, in the order it
+ * happened: a block of reasoning, a tool's (or a guard's) status line with its
+ * outcome, a confirmation staged (named by a hash of its token, never the
+ * token), a login asked for (by its service, never the link). For the person
+ * only: nothing of it goes back to the model.
+ */
+export type TraceEntry =
+  | { type: "reasoning"; text: string; failed?: true }
+  | { type: "tool"; label: string; detail?: string; name?: string; outcome?: ToolOutcome }
+  | { type: "confirmation"; id: string; command: string; choices: string[] }
+  | { type: "login"; service: string };
+
+/**
+ * How a staged action was resolved: `id` is the staging's (the one its trace
+ * entry carries), `status` what came of it, `choice` the label of the choice
+ * taken when it was one of several.
+ */
+export type ArchivedConfirmation = {
+  id: string;
+  status: "ok" | "failed" | "resume";
+  choice?: string;
+};
+
+/**
+ * A message as the conversation store keeps it, and the standard of what is
+ * archived: whoever writes the archive writes this shape, whoever reads it
+ * (the channels reopening a conversation, a plugin resuming or searching it)
+ * reads this shape. A writer may leave out the optional parts; adding a part
+ * is a change of this contract.
+ *
+ * - `id` (a UUID), `userId` (whose it is, the person's key), `sessionKey` (which
+ *   conversation), `timestamp` (ISO 8601, the order the store reads them in);
+ * - `role` and `content`: who spoke, and the text. For an answer, the model's
+ *   own text only;
+ * - `displays`: the lists the person was shown after the text;
+ * - `calls`: the tool calls the answer was written from;
+ * - `interrupted`: the turn was stopped before its answer (`content` is then
+ *   the placeholder the conversation kept for it);
+ * - `trace`: what the person saw of the turn besides its text;
+ * - `pendingNote`: the core's sentence `content` begins with when the turn
+ *   only staged an action;
+ * - `confirmation`: the message says how a staged action was resolved, outside
+ *   any turn;
+ * - `turnId`: the id the turn's trace events carry.
+ *
+ * `displays`, `trace`, `pendingNote` and `confirmation` are for the person,
+ * never for the model.
+ */
+export type StoredMessage = {
+  id: string;
+  userId: string;
+  sessionKey: string;
+  timestamp: string;
+  role: "user" | "assistant";
+  content: string;
+  displays?: string[];
+  calls?: CallRecord[];
+  interrupted?: true;
+  trace?: TraceEntry[];
+  pendingNote?: string;
+  confirmation?: ArchivedConfirmation;
+  turnId?: string;
+};
+
+/** A conversation's title as the store keeps it: one per person and conversation, the newest replacing the one before. */
+export type StoredTitle = { userId: string; sessionKey: string; title: string; source: string; updatedAt: string };
+
+/**
+ * The instance's conversation store (`conversationStore` in its config): every
+ * message of every conversation (`StoredMessage`), read back by key and in
+ * time order, never searched by meaning (that's the vector index's), and each
+ * conversation's title. Every read is scoped to one person (`userId`).
+ * `messages` pages one conversation by the opaque `cursor` the previous page
+ * gave as `next`. Every method may reject when the store can't be reached:
+ * treat that as the store being away for now.
+ *
+ * A plugin gets it as `ctx.conversations` by declaring
+ * `needs: ["conversationStore"]`. It is shared data: the channels read it to
+ * reopen and list a person's conversations, so what a plugin writes there is
+ * what those people will see again.
+ */
+export type ConversationStore = {
+  /** Gets the store ready to be written and read (creating what it needs); idempotent, retried while it rejects. */
+  ready: () => Promise<void>;
+  append: (message: StoredMessage) => Promise<void>;
+  /** One conversation's messages, oldest first (`asc`) or newest first (`desc`). */
+  messages: (q: {
+    userId: string;
+    sessionKey: string;
+    order: "asc" | "desc";
+    limit: number;
+    cursor?: string;
+  }) => Promise<{ messages: StoredMessage[]; next?: string }>;
+  /** The person's newest `limit` messages across their conversations, newest first. */
+  recent: (q: { userId: string; limit: number }) => Promise<StoredMessage[]>;
+  setTitle: (title: StoredTitle) => Promise<void>;
+  /** The titles of the person's conversations among `sessionKeys`; a conversation with none is missing. */
+  titles: (q: { userId: string; sessionKeys: string[] }) => Promise<StoredTitle[]>;
+  /** Whether the store answers now, and why not when it doesn't. */
+  health: () => Promise<{ ok: boolean; detail?: string }>;
+};
+
 /**
  * What a plugin's `build()` receives — everything its runtime contributions may
  * need that isn't static data: the instance's turn model (for a model-backed

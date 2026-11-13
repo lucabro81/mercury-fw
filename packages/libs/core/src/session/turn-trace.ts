@@ -13,12 +13,9 @@
 import { createHash } from "node:crypto";
 import { detectLoginRequests, detectPendingConfirmation, type ToolOutcome, type TurnSink } from "@mercury-fw/channel-types";
 
-/** One thing the person saw during a turn, in the order it happened. */
-export type TraceEntry =
-  | { type: "reasoning"; text: string; failed?: true }
-  | { type: "tool"; label: string; detail?: string; name?: string; outcome?: ToolOutcome }
-  | { type: "confirmation"; id: string; command: string; choices: string[] }
-  | { type: "login"; service: string };
+/** One thing the person saw during a turn, as the contract defines it. */
+export type { TraceEntry } from "@mercury-fw/plugin-types";
+import type { TraceEntry } from "@mercury-fw/plugin-types";
 
 /** How the archive names a confirmation: a short hash of its first token, which is no confirm capability. */
 export function confirmationId(token: string): string {
