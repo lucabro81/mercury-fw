@@ -9,7 +9,7 @@ vectorIndex: qdrantIndex(),
 conversationStore: qdrantConversations(),
 ```
 
-Without a `vectorIndex` the agent keeps no memory: it doesn't summarize conversations, doesn't learn corrections, and doesn't offer the model `recall_verbatim`. Without a `conversationStore` it archives nothing: no conversation to reopen or list, no titles, no `recall_verbatim`.
+Without a `vectorIndex` the agent keeps no long-term memory: `@mercury-fw/memory` and `@mercury-fw/corrections`, which need it, can't be declared. Without a `conversationStore` it archives nothing: no conversation to reopen or list, no titles.
 
 ## Where it connects
 
