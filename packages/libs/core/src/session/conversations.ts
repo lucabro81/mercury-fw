@@ -33,6 +33,8 @@ export type ConversationsDeps = {
   internal: (req: OpenRequest) => Promise<SessionHistory>;
   /** What the person's earlier conversations left for this one (see `context-primer.ts`). */
   primerFor: (userId: string, reopen: OpenRequest["resume"]) => Promise<ContextPrimer | undefined>;
+  /** Where a primer that failed is told; the console when absent. */
+  log?: (message: string) => void;
 };
 
 export type Conversations = {
@@ -70,7 +72,14 @@ export function createConversations(deps: ConversationsDeps): Conversations {
         return history;
       }
       const conversation = await owner.open(openRequest(req));
-      const primer = req.tracked && req.userId !== undefined ? await deps.primerFor(req.userId, req.resume) : undefined;
+      // The plugin's conversation is open: a primer that fails never leaves it open and unknown.
+      const primer =
+        req.tracked && req.userId !== undefined
+          ? await deps.primerFor(req.userId, req.resume).catch((err: unknown) => {
+              (deps.log ?? console.error)(`[memory] the primer failed, the conversation starts without: ${err instanceof Error ? err.message : String(err)}`);
+              return undefined;
+            })
+          : undefined;
       const history: SessionHistory = {
         getMessages: () => conversation.getMessages(),
         addUserMessage: (content, context) => conversation.addUserMessage(content, context),

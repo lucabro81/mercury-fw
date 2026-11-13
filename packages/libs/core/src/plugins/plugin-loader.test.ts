@@ -693,7 +693,7 @@ describe("loadPlugins: what a plugin can use (#393)", () => {
     const fn = () => {};
     await loadPlugins(
       [plug({ name: "wiki", build: (ctx) => (ctx.daily!("review", { at: "03:00" }, fn), {}) })],
-      baseCtx({ daily: (name, when) => void registered.push([name, when]) }),
+      baseCtx({ daily: (name, when) => (registered.push([name, when]), () => {}) }),
     );
     expect(registered).toEqual([["wiki:review", { at: "03:00" }]]);
   });
@@ -727,5 +727,29 @@ describe("loadPlugins: what a plugin can use (#393)", () => {
     const conversation = { open: async () => ({}) as never };
     const loaded = await loadPlugins([plug({ name: "window", build: () => ({ conversation }) })], baseCtx());
     expect(loaded.plugins[0]!.conversation).toBe(conversation);
+  });
+});
+
+describe("loadPlugins: a plugin that fails leaves no daily work behind (#393, review)", () => {
+  it("cancels the daily work a plugin registered before its build failed, and keeps a loaded plugin's", async () => {
+    const live: string[] = [];
+    const daily = (name: string) => {
+      live.push(name);
+      return () => void live.splice(live.indexOf(name), 1);
+    };
+    await loadPlugins(
+      [
+        plug({
+          name: "wiki",
+          build: async (ctx) => {
+            ctx.daily!("review", { at: "03:00" }, () => {});
+            throw new Error("vault away");
+          },
+        }),
+        plug({ name: "notes", build: (ctx) => (ctx.daily!("tidy", { at: "04:00" }, () => {}), {}) }),
+      ],
+      baseCtx({ daily }),
+    );
+    expect(live).toEqual(["notes:tidy"]);
   });
 });

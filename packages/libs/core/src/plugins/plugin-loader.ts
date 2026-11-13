@@ -131,8 +131,8 @@ export interface PluginLoadContext {
   declared?: PluginNeed[];
   /** What of it started, handed to the plugins that need it: a need declared but missing here leaves its plugin out. */
   provided?: { vectorIndex?: VectorIndex; conversations?: ConversationStore; embed?: Embed };
-  /** Runs work every day at a set time, named as the traces show it (`<plugin>:<name>`); throws on a time that can't be (see `PluginRuntimeContext.daily`). */
-  daily?: Daily;
+  /** Runs work every day at a set time, named as the log shows it (`<plugin>:<name>`), returning what cancels it; throws on a time that can't be (see `PluginRuntimeContext.daily`). */
+  daily?: (...args: Parameters<Daily>) => () => void;
   /** The tool log, for every plugin (see `PluginRuntimeContext.toolLog`). */
   toolLog?: ToolLog;
   /** People's profiles, for every plugin (see `PluginRuntimeContext.profiles`). */
@@ -160,11 +160,11 @@ function pluginJob(
   return (name, urgency, fn) => job(`${plugin}:${name}`, urgency, fn);
 }
 
-/** `plugin`'s `daily`: the core's, with the work named after the plugin; a time that can't be is kept in `errors` (it stops the start) and thrown to the plugin too. */
-function pluginDaily(plugin: string, daily: Daily, errors: string[]): Daily {
+/** `plugin`'s `daily`: the core's, with the work named after the plugin and its cancel kept in `cancels` (a plugin that doesn't load leaves no work behind); a time that can't be is kept in `errors` (it stops the start) and thrown to the plugin too. */
+function pluginDaily(plugin: string, daily: NonNullable<PluginLoadContext["daily"]>, errors: string[], cancels: Array<() => void>): Daily {
   return (name, when, fn) => {
     try {
-      daily(`${plugin}:${name}`, when, fn);
+      cancels.push(daily(`${plugin}:${name}`, when, fn));
     } catch (err) {
       errors.push(`plugin "${plugin}": its daily "${name}" can't be set: ${err instanceof Error ? err.message : String(err)}`);
       throw err;
@@ -333,6 +333,8 @@ export async function loadPlugins(plugins: Plugin[], ctx: PluginLoadContext): Pr
       leaveOut(plugin.name, `the instance's ${notStarted} didn't start`);
       continue;
     }
+    // The daily work it registers while building, cancelled if it doesn't load.
+    const cancels: Array<() => void> = [];
     try {
       // Stage into locals first: build() can throw, and a plugin must degrade
       // as a unit — nothing of it lands unless all of it succeeds.
@@ -348,7 +350,7 @@ export async function loadPlugins(plugins: Plugin[], ctx: PluginLoadContext): Pr
             ...(ctx.job === undefined ? {} : { job: pluginJob(plugin.name, ctx.job) }),
             ...(ctx.backgroundModel === undefined ? {} : { backgroundModel: ctx.backgroundModel }),
             ...neededFields(plugin.needs ?? [], ctx.provided ?? {}),
-            ...(ctx.daily === undefined ? {} : { daily: pluginDaily(plugin.name, ctx.daily, configErrors) }),
+            ...(ctx.daily === undefined ? {} : { daily: pluginDaily(plugin.name, ctx.daily, configErrors, cancels) }),
             ...(ctx.toolLog === undefined ? {} : { toolLog: ctx.toolLog }),
             ...(ctx.profiles === undefined ? {} : { profiles: ctx.profiles }),
           })
@@ -398,6 +400,7 @@ export async function loadPlugins(plugins: Plugin[], ctx: PluginLoadContext): Pr
       // anything that declared `dependsOn` on it.
       activated.add(plugin.name);
     } catch (err) {
+      for (const cancel of cancels) cancel();
       const message = err instanceof Error ? err.message : String(err);
       leaveOut(plugin.name, `failed to load: ${message}`, `plugin "${plugin.name}" failed to load, skipped: ${message}`);
     }

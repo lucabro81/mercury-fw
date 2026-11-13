@@ -88,6 +88,22 @@ describe("createConversations", () => {
     expect((await conversations.open(alice, { sessionKey: "s2", tracked: false })).primer()).toBeUndefined();
   });
 
+  it("opens the conversation without a primer when the primer fails: the plugin's conversation is kept, never left open and unknown", async () => {
+    const { owner, opened } = recordingOwner();
+    const logs: string[] = [];
+    const conversations = createConversations({
+      ownerFor: () => owner,
+      internal: internalWindow().internal,
+      primerFor: async () => Promise.reject(new Error("index away")),
+      log: (m) => logs.push(m),
+    });
+    const history = await conversations.open(alice, { sessionKey: "s1", tracked: true, userId: "static:alice" });
+    expect(history.primer()).toBeUndefined();
+    expect(conversations.get("s1")).toBe(history);
+    expect(opened.length).toBe(1);
+    expect(logs).toEqual(["[memory] the primer failed, the conversation starts without: index away"]);
+  });
+
   it("uses the internal window when the profile names no plugin, as before", async () => {
     const { internal, built } = internalWindow();
     const conversations = createConversations({ ownerFor: () => undefined, internal, primerFor: async () => undefined });

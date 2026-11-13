@@ -3669,7 +3669,8 @@ describe("createTurnRunner: the context (#387)", () => {
     const contextFor = async (...args: unknown[]) => (asked.push(args), { event: { profile: "default", budget: 10, used: 0, layers: [] } });
     await runnerWith({ contextFor }, [])(baseTurn({ principal: verified("u1"), text: "hello", resume: {} }), baseSink());
     await runnerWith({ contextFor }, [])(baseTurn({ text: "hello", resume: {} }), baseSink());
-    expect(asked.map((a) => (a[1] as { reopened: boolean }).reopened)).toEqual([true, false]);
+    await runnerWith({ contextFor }, [])(baseTurn({ principal: verified("u1"), text: "hello" }), baseSink());
+    expect(asked.map((a) => (a[1] as { reopened: boolean }).reopened)).toEqual([true, false, false]);
   });
 
   test("reports what the context held as a context.assembled event of the turn", async () => {

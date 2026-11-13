@@ -27,8 +27,8 @@ const TIME_OF_DAY = /^([01]\d|2[0-3]):[0-5]\d$/;
 type Entry = { name: string; at: string; timeZone: string; fn: () => void | Promise<void>; lastRun?: string };
 
 export type DailyScheduler = {
-  /** Registers work (see `Daily`); throws on a time or a time zone that can't be. */
-  daily: Daily;
+  /** Registers work (see `Daily`) and returns what cancels it; throws on a time or a time zone that can't be. */
+  daily: (...args: Parameters<Daily>) => () => void;
   /** Starts checking the clocks; returns the stopper. */
   start: () => { stop: () => void };
 };
@@ -107,7 +107,12 @@ export function createDaily(deps: {
       if (!TIME_OF_DAY.test(when.at)) throw new Error(`"${when.at}" isn't a time of day (HH:MM)`);
       const timeZone = when.timeZone ?? deps.defaultTimeZone;
       if (!isTimeZone(timeZone)) throw new Error(`"${timeZone}" isn't a time zone`);
-      entries.push({ name, at: when.at, timeZone, fn });
+      const entry: Entry = { name, at: when.at, timeZone, fn };
+      entries.push(entry);
+      return () => {
+        const at = entries.indexOf(entry);
+        if (at >= 0) entries.splice(at, 1);
+      };
     },
     start() {
       const stop = every(check, CHECK_MS);

@@ -78,6 +78,30 @@ describe("createDaily", () => {
     expect(runs).toEqual([1]);
   });
 
+  it("has no run on the night the clocks skip its minute", () => {
+    // Rome goes forward from 02:00 CET to 03:00 CEST on 2026-03-29: 02:30 never comes.
+    const time = fakeTime("2026-03-28T22:00:00Z");
+    const runs: number[] = [];
+    const d = createDaily({ defaultTimeZone: "Europe/Rome", log: () => {}, now: time.now, every: time.every });
+    d.daily("x", { at: "02:30" }, () => void runs.push(1));
+    d.start();
+    for (let m = 0; m <= 120; m += 1) time.at(new Date(Date.parse("2026-03-29T00:00:00Z") + m * 60_000).toISOString());
+    expect(runs).toEqual([]);
+    time.at("2026-03-30T00:30:00Z"); // 02:30 CEST the next night
+    expect(runs).toEqual([1]);
+  });
+
+  it("forgets work cancelled before it ran", () => {
+    const time = fakeTime("2026-11-13T02:59:00Z");
+    const runs: number[] = [];
+    const d = createDaily({ defaultTimeZone: "UTC", log: () => {}, now: time.now, every: time.every });
+    const cancel = d.daily("x", { at: "03:00" }, () => void runs.push(1));
+    cancel();
+    d.start();
+    time.at("2026-11-13T03:00:10Z");
+    expect(runs).toEqual([]);
+  });
+
   it("does nothing until it's started, and stops when told", () => {
     const time = fakeTime("2026-11-13T02:59:00Z");
     const runs: number[] = [];

@@ -55,7 +55,7 @@ person already has their answer (a summary, a title). `"soon"` work goes before 
 **`daily(name, { at, timeZone }, fn)`** runs `fn` every day at `at` (`"03:00"`), in `timeZone` or in the app's
 (`i18n.timeZone`). Only the running service runs it (never the dev REPL), and a day the agent wasn't up at that minute
 has no run, never one made up later. A night whose clocks go back still has one run. `fn` isn't held for the model:
-work that calls one goes in a `job` inside it. An `at` that isn't a time of day, or a time zone that doesn't exist,
+work that calls one goes in a `job` inside it. Work that fails is written in the log (`<plugin>:<name>`), and the next day's run goes on. An `at` that isn't a time of day, or a time zone that doesn't exist,
 stops the agent at startup.
 
 ## What a plugin asks for
@@ -63,7 +63,7 @@ stops the agent at startup.
 | `needs` | In `ctx` | What it is |
 |---|---|---|
 | `"vectorIndex"` | `vectorIndex` | The app's [vector index](../../reference/config/#vectorindex): spaces of points, found by meaning. |
-| `"embedding"` | `embed` | Turns a text into its vector, with the app's embedding model. |
+| `"embedding"` | `embed` | Turns a text into its vector, with the app's embedding model ([`models.embedding`](../../reference/config/#models)). It waits in the model's queue like any model call, so call it from a `job` when nobody is waiting for it. |
 | `"conversationStore"` | `conversations` | The app's [conversation store](../../reference/config/#conversationstore): every message of every conversation, word for word. |
 
 The **vector index** is shared by the whole agent and knows nothing about people. A plugin creates its own spaces
