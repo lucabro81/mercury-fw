@@ -98,7 +98,7 @@ import { migrateMemoryToUserKeys, migrateVaultToUserAreas } from "./identity/mig
 import { runRawTriagePass, runIndexAndOrphanPass, runContradictionCheckPass } from "./wiki/self-review-runner.ts";
 import { startSelfReviewCron } from "./cron/self-review-cron.ts";
 import { createDaily } from "./cron/daily.ts";
-import { getToolLog } from "./session/tool-log-buffer.ts";
+import { pluginToolLog } from "./session/tool-log-buffer.ts";
 import { pluginProfiles } from "./identity/plugin-profiles.ts";
 import { loadTracer } from "./traces/trace-loader.ts";
 import { migrateLegacyState, pluginDataRoot, requireDataPath } from "./data/data-dir.ts";
@@ -307,7 +307,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
       ...(embeddingModel === undefined ? {} : { embed }),
     },
     daily: dailyWork.daily,
-    toolLog: { read: ({ person, sessionKey }) => getToolLog({ owner: person, ...(sessionKey === undefined ? {} : { sessionKey }) }) },
+    toolLog: pluginToolLog,
     profiles: pluginProfiles(profiles, () => shippedLanguages),
   });
 
