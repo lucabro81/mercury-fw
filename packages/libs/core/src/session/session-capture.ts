@@ -105,9 +105,9 @@ export function createSessionCapture(deps: SessionCaptureDeps): SessionCapture {
     async maybeCapture(sessionKey, messages) {
       const userId = users.get(sessionKey);
       if (userId === undefined) return;
-      const kept = markers.get(sessionKey) ?? 0;
       // Shorter than what was captured: the conversation compressed, its view starts over.
-      const marker = messages.length < kept ? 0 : kept;
+      if (messages.length < (markers.get(sessionKey) ?? 0)) markers.set(sessionKey, 0);
+      const marker = markers.get(sessionKey) ?? 0;
       if (messages.length - marker < deps.threshold) return;
       const upTo = messages.length;
       markers.set(sessionKey, upTo);

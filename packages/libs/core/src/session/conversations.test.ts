@@ -159,4 +159,19 @@ describe("createConversations", () => {
     fail = false;
     expect(await conversations.open(alice, { sessionKey: "s1", tracked: false })).toBeDefined();
   });
+
+  it("a compression the trace can't record is only logged: the turn goes on", async () => {
+    const logs: string[] = [];
+    const conversations = createConversations({
+      ownerFor: () => ({ open: async () => ({ ...memoryConversation(), addUserMessage: async () => ({ messages: 1, charsBefore: 1, durationMs: 0, outcome: "done" as const }) }) }),
+      primerFor: async () => undefined,
+      onCompressed: () => {
+        throw new Error("sink away");
+      },
+      log: (m) => logs.push(m),
+    });
+    const history = await conversations.open(alice, { sessionKey: "s1", tracked: false });
+    await history.addUserMessage("a");
+    expect(logs).toEqual(["[conversation] the compression of s1 wasn't recorded: sink away"]);
+  });
 });

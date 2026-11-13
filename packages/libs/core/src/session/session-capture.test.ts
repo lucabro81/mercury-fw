@@ -184,6 +184,29 @@ describe("createSessionCapture", () => {
     expect(r.captured).toHaveLength(2);
   });
 
+  // Review of #393: the shorter view only lowered the marker for that one
+  // call, so a compressed view still under the threshold left the old marker
+  // in place, and once the view grew past it again its first messages were
+  // skipped for good.
+  test("a shorter view still under the threshold restarts the count too: its messages are captured once it grows", async () => {
+    const r = recorder();
+    const c = createSessionCapture({ capture: r.capture, threshold: 3 });
+    c.track("s", "u1");
+    await c.maybeCapture("s", msgs(0, 4));
+    await c.settled();
+
+    await c.maybeCapture("s", [msg(100), msg(101)]);
+    await c.maybeCapture("s", msgs(100, 105));
+    await c.settled();
+    await c.maybeCapture("s", msgs(100, 108));
+    await c.settled();
+    expect(r.captured).toEqual([
+      ["m0", "m1", "m2", "m3"],
+      ["m100", "m101", "m102", "m103", "m104"],
+      ["m105", "m106", "m107"],
+    ]);
+  });
+
 });
 
 // #23: the traces say which trigger started each capture.

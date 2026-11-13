@@ -80,7 +80,13 @@ export function createConversations(deps: ConversationsDeps): Conversations {
       /** Passes on what the conversation reports of a compression, and resolves when the add is done. */
       const told = async (added: Promise<CompressionReport | void>): Promise<void> => {
         const report = await added;
-        if (report) deps.onCompressed?.(req.sessionKey, report);
+        if (!report) return;
+        // What the trace makes of it never fails the turn: the message is already in.
+        try {
+          deps.onCompressed?.(req.sessionKey, report);
+        } catch (err) {
+          (deps.log ?? console.error)(`[conversation] the compression of ${req.sessionKey} wasn't recorded: ${err instanceof Error ? err.message : String(err)}`);
+        }
       };
       const history: SessionHistory = {
         getMessages: () => conversation.getMessages(),
