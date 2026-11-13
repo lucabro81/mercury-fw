@@ -19,6 +19,8 @@
       "@mercury-fw/archive",
       "@mercury-fw/titles",
       "@mercury-fw/profile",
+      "@mercury-fw/memory",
+      "@mercury-fw/corrections",
       "@mercury-fw/cli",
       "create-mercury-agent"
     ]

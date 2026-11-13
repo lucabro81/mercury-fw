@@ -98,6 +98,8 @@ const versions: Record<string, string> = {
   "@mercury-fw/archive": cliVersion(),
   "@mercury-fw/titles": cliVersion(),
   "@mercury-fw/profile": cliVersion(),
+  "@mercury-fw/memory": cliVersion(),
+  "@mercury-fw/corrections": cliVersion(),
   "@mercury-fw/channel-http": PLUGIN_VERSION,
   "@mercury-fw/auth-static": PLUGIN_VERSION,
   "@mercury-fw/plugin-jira": PLUGIN_VERSION,
@@ -242,6 +244,8 @@ describe("mfw create --local-packages", () => {
         // No tarball of it: the CLI's version, as any framework package.
         "@mercury-fw/conversation-window": `^${cliVersion()}`,
         "@mercury-fw/core": "^0.35.0",
+        "@mercury-fw/corrections": `^${cliVersion()}`,
+        "@mercury-fw/memory": `^${cliVersion()}`,
         "@mercury-fw/profile": `^${cliVersion()}`,
         "@mercury-fw/store-qdrant": "^0.35.0",
         "@mercury-fw/titles": `^${cliVersion()}`,

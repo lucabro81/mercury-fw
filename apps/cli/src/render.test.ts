@@ -23,6 +23,8 @@ const versions: Record<string, string> = {
   "@mercury-fw/archive": "0.1.0",
   "@mercury-fw/titles": "0.1.0",
   "@mercury-fw/profile": "0.1.0",
+  "@mercury-fw/memory": "0.1.0",
+  "@mercury-fw/corrections": "0.1.0",
   "@mercury-fw/channel-google-chat": "0.1.0",
   "@mercury-fw/channel-http": "0.1.0",
   "@mercury-fw/auth-oidc": "0.1.0",
@@ -271,7 +273,7 @@ describe("renderApp: mercury.config.ts", () => {
     const twice = input({ plugins: ["bitbucket", "bitbucket"] });
     const config = renderApp(twice).get("mercury.config.ts") ?? "";
     expect(config.split('from "@mercury-fw/plugin-bitbucket"').length - 1).toBe(1);
-    expect(config).toContain("  plugins: [\n    conversation,\n    teamWiki,\n    archive(),\n    titles(),\n    profile(),\n    bitbucketPlugin,\n  ],\n");
+    expect(config).toContain("  plugins: [\n    conversation,\n    teamWiki,\n    longTermMemory,\n    archive(),\n    titles(),\n    profile(),\n    corrections({ wiki: teamWiki }),\n    bitbucketPlugin,\n  ],\n");
   });
 
   // #348: Confluence hands over two lists, so its plugin is wrapped with a
@@ -352,6 +354,8 @@ describe("renderApp: package.json", () => {
       "@mercury-fw/archive": "^0.1.0",
       "@mercury-fw/conversation-window": "^0.1.0",
       "@mercury-fw/core": "^0.1.0",
+      "@mercury-fw/corrections": "^0.1.0",
+      "@mercury-fw/memory": "^0.1.0",
       "@mercury-fw/profile": "^0.1.0",
       "@mercury-fw/store-qdrant": "^0.1.0",
       "@mercury-fw/titles": "^0.1.0",
@@ -476,7 +480,7 @@ function evaluatedConfig(config: string): { persona: { name: string; identity: s
   // The imports are dropped: the language file's stands in as the empty file it
   // is, the package.json's as a manifest with a version, the core's env helpers
   // as an empty environment.
-  const body = `const en = {};\nconst pkg = { version: "0.1.0" };\nconst envBoolean = (_, fallback) => fallback;\nconst envNumber = (_, fallback) => fallback;\nconst ollamaModel = (name) => ({ name });\nconst ollamaEmbedding = (name) => ({ name });\nconst jsonlTraces = () => ({});\nconst qdrantIndex = () => ({});\nconst qdrantConversations = () => ({});\nconst conversationWindow = () => ({});\nconst wiki = () => ({});\nconst archive = () => ({});\nconst titles = () => ({});\nconst profile = () => ({});\n${config.replace(/^import .*$/gm, "").replace("export default defineMercuryConfig(", "return (")}`;
+  const body = `const en = {};\nconst pkg = { version: "0.1.0" };\nconst envBoolean = (_, fallback) => fallback;\nconst envNumber = (_, fallback) => fallback;\nconst ollamaModel = (name) => ({ name });\nconst ollamaEmbedding = (name) => ({ name });\nconst jsonlTraces = () => ({});\nconst qdrantIndex = () => ({});\nconst qdrantConversations = () => ({});\nconst conversationWindow = () => ({});\nconst wiki = () => ({});\nconst archive = () => ({});\nconst titles = () => ({});\nconst profile = () => ({});\nconst memory = () => ({});\nconst corrections = () => ({});\n${config.replace(/^import .*$/gm, "").replace("export default defineMercuryConfig(", "return (")}`;
   return new Function(body)();
 }
 

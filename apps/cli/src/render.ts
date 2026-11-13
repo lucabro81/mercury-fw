@@ -130,17 +130,12 @@ export const MEMORY_PACKAGES = [
   "@mercury-fw/archive",
   "@mercury-fw/titles",
   "@mercury-fw/profile",
+  "@mercury-fw/memory",
+  "@mercury-fw/corrections",
 ];
 
-/** Above the config: the conversation and the wiki every new app keeps, and what the other memory plugins do. */
+/** Above the config: the wiki, the memory and the conversation every new app keeps, and what the other memory plugins do. */
 const CONVERSATION = [
-  "/**",
-  " * The conversation each session keeps for the model: its recent messages,",
-  " * summarized on the model once they pass 60000 characters, and the end of a",
-  " * conversation the person reopens, from the conversation store.",
-  " */",
-  "const conversation = conversationWindow();",
-  "",
   "/**",
   " * The team's wiki: notes everyone shares (`curated/`) and each person's own,",
   " * in the vault at WIKI_VAULT_PATH, its index read at the start of each",
@@ -148,21 +143,39 @@ const CONVERSATION = [
   " */",
   "const teamWiki = wiki();",
   "",
+  "/**",
+  " * What the assistant remembers of its conversations with each person: a",
+  " * summary every few messages and when a conversation closes, the facts",
+  " * about them it finds (promoted to their notes in the wiki), the last",
+  " * conversation's summary at the start of a new one, and recall_verbatim.",
+  " */",
+  "const longTermMemory = memory({ wiki: teamWiki });",
+  "",
+  "/**",
+  " * The conversation each session keeps for the model: its recent messages,",
+  " * summarized on the model once they pass 60000 characters, and the end of a",
+  " * conversation the person reopens, from the conversation store, with the",
+  " * memory's summaries of what came before it.",
+  " */",
+  "const conversation = conversationWindow({ earlier: longTermMemory });",
+  "",
   "/*",
   " * Also declared in `plugins`: `archive()` keeps every conversation as it was",
   " * said, in the conversation store, so a person reopens and lists it;",
   " * `titles()` names each one after its first turn; `profile()` lets the",
   " * assistant save how each person wants to be called, their time zone and",
-  " * their language. Remove one to do without what it does.",
+  " * their language; `corrections()` learns from a command that failed and the",
+  " * one that worked, and writes the rule in the wiki. Remove one to do",
+  " * without what it does.",
   " */",
 ].join("\n");
 
-/** The config's `context`: the default profile, keeping the conversation and the wiki's index. */
+/** The config's `context`: the default profile, keeping the conversation, the wiki's index and the memory's recap. */
 const CONTEXT_SECTION = [
   "  // What the model reads besides each message: the conversation `conversation`",
   "  // keeps (remove it here and from plugins to keep none, and each message is",
   "  // read alone), and the context layers of the plugins listed in `layers`.",
-  "  context: { profiles: { default: { conversation, layers: [teamWiki], budget: { maxChars: 8000 } } } },",
+  "  context: { profiles: { default: { conversation, layers: [teamWiki, longTermMemory], budget: { maxChars: 8000 } } } },",
 ].join("\n");
 
 /** The config's `vectorIndex` and `conversationStore` entries, with what each holds. */
@@ -357,13 +370,26 @@ function renderConfig(
   imports.push('import { archive } from "@mercury-fw/archive";');
   imports.push('import { titles } from "@mercury-fw/titles";');
   imports.push('import { profile } from "@mercury-fw/profile";');
+  imports.push('import { memory } from "@mercury-fw/memory";');
+  imports.push('import { corrections } from "@mercury-fw/corrections";');
 
   const helpers = withRules.map((t) => `${t.formatter?.helpers}\n\n`).join("");
 
   const plugins =
     tools.length === 0
-      ? "  plugins: [conversation, teamWiki, archive(), titles(), profile()],"
-      : ["  plugins: [", "    conversation,", "    teamWiki,", "    archive(),", "    titles(),", "    profile(),", ...tools.map(renderPluginEntry), "  ],"].join("\n");
+      ? "  plugins: [conversation, teamWiki, longTermMemory, archive(), titles(), profile(), corrections({ wiki: teamWiki })],"
+      : [
+          "  plugins: [",
+          "    conversation,",
+          "    teamWiki,",
+          "    longTermMemory,",
+          "    archive(),",
+          "    titles(),",
+          "    profile(),",
+          "    corrections({ wiki: teamWiki }),",
+          ...tools.map(renderPluginEntry),
+          "  ],",
+        ].join("\n");
   const channelList = `  channels: [${channels.map((c) => c.exportName).join(", ")}],`;
 
   return [

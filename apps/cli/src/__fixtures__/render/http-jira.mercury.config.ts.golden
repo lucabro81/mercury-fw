@@ -23,6 +23,8 @@ import { wiki } from "@mercury-fw/wiki";
 import { archive } from "@mercury-fw/archive";
 import { titles } from "@mercury-fw/titles";
 import { profile } from "@mercury-fw/profile";
+import { memory } from "@mercury-fw/memory";
+import { corrections } from "@mercury-fw/corrections";
 
 /** The assistant's name: what the persona calls it, and every text the model reads. */
 const name = "Mercury";
@@ -43,25 +45,36 @@ const main = ollamaModel(process.env.OLLAMA_MODEL, {
 });
 
 /**
- * The conversation each session keeps for the model: its recent messages,
- * summarized on the model once they pass 60000 characters, and the end of a
- * conversation the person reopens, from the conversation store.
- */
-const conversation = conversationWindow();
-
-/**
  * The team's wiki: notes everyone shares (`curated/`) and each person's own,
  * in the vault at WIKI_VAULT_PATH, its index read at the start of each
  * session and the vault reviewed every night at 03:00.
  */
 const teamWiki = wiki();
 
+/**
+ * What the assistant remembers of its conversations with each person: a
+ * summary every few messages and when a conversation closes, the facts
+ * about them it finds (promoted to their notes in the wiki), the last
+ * conversation's summary at the start of a new one, and recall_verbatim.
+ */
+const longTermMemory = memory({ wiki: teamWiki });
+
+/**
+ * The conversation each session keeps for the model: its recent messages,
+ * summarized on the model once they pass 60000 characters, and the end of a
+ * conversation the person reopens, from the conversation store, with the
+ * memory's summaries of what came before it.
+ */
+const conversation = conversationWindow({ earlier: longTermMemory });
+
 /*
  * Also declared in `plugins`: `archive()` keeps every conversation as it was
  * said, in the conversation store, so a person reopens and lists it;
  * `titles()` names each one after its first turn; `profile()` lets the
  * assistant save how each person wants to be called, their time zone and
- * their language. Remove one to do without what it does.
+ * their language; `corrections()` learns from a command that failed and the
+ * one that worked, and writes the rule in the wiki. Remove one to do
+ * without what it does.
  */
 
 /** One Jira issue in a search result: key, status in brackets when there is
@@ -90,9 +103,11 @@ export default defineMercuryConfig({
   plugins: [
     conversation,
     teamWiki,
+    longTermMemory,
     archive(),
     titles(),
     profile(),
+    corrections({ wiki: teamWiki }),
     formatterPlugin(
       jiraPlugin,
       formatter<JiraDisplays>({
@@ -120,7 +135,7 @@ export default defineMercuryConfig({
   // What the model reads besides each message: the conversation `conversation`
   // keeps (remove it here and from plugins to keep none, and each message is
   // read alone), and the context layers of the plugins listed in `layers`.
-  context: { profiles: { default: { conversation, layers: [teamWiki], budget: { maxChars: 8000 } } } },
+  context: { profiles: { default: { conversation, layers: [teamWiki, longTermMemory], budget: { maxChars: 8000 } } } },
   i18n: { locales: { en } },
   // What the agent does, as events in traces/ in Mercury's data folder:
   // a file per day, the last 7 days with activity kept. "meta" records names,
