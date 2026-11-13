@@ -17,7 +17,6 @@ async function git(cwd: string, ...args: string[]): Promise<string> {
   return out.trim();
 }
 
-const pending = "---\ntype: confirmation\nstatus: pending\n---\n";
 const confirmed = "---\ntype: confirmation\nstatus: confirmed\n---\n";
 
 /** A vault in the layout before per-person areas, committed. */
@@ -42,20 +41,20 @@ async function exists(path: string): Promise<boolean> {
 }
 
 describe("migrateVaultToUserAreas", () => {
-  it("moves a Google Chat person's inferred notes and confirmations into their area, in one commit", async () => {
+  it("moves Google Chat and terminal people's inferred notes into their areas, in one commit", async () => {
     const vault = await legacyVault({
       "curated/team.md": "team",
       "inferred/users/users%2F42/team.md": "platform",
-      "inferred/confirmations/users%2F42/aaaa-1111.md": confirmed,
-      "inferred/confirmations/terminal/bbbb-2222.md": pending,
+      "inferred/users/users%252F42/role.md": "developer",
+      "inferred/users/terminal/team.md": "ops",
     });
     const logs: string[] = [];
 
     await migrateVaultToUserAreas(vault, (m) => logs.push(m));
 
     expect(await readFile(join(vault, "users/google-chat%3Ausers%2F42/inferred/team.md"), "utf-8")).toBe("platform");
-    expect(await readFile(join(vault, "users/google-chat%3Ausers%2F42/confirmations/aaaa-1111.md"), "utf-8")).toBe(confirmed);
-    expect(await readFile(join(vault, "users/none%3Aterminal/confirmations/bbbb-2222.md"), "utf-8")).toBe(pending);
+    expect(await readFile(join(vault, "users/google-chat%3Ausers%2F42/inferred/role.md"), "utf-8")).toBe("developer");
+    expect(await readFile(join(vault, "users/none%3Aterminal/inferred/team.md"), "utf-8")).toBe("ops");
     expect(await exists(join(vault, "inferred"))).toBe(false);
     expect(await readFile(join(vault, "curated/team.md"), "utf-8")).toBe("team");
     expect(await git(vault, "log", "--format=%s")).toBe("migrate: per-person notes into users/<key>/\nlegacy");
@@ -63,32 +62,24 @@ describe("migrateVaultToUserAreas", () => {
     expect(logs).toEqual(["moved 3 notes of 2 people into users/<key>/"]);
   });
 
-  // The double encoding left a staged note "pending" in one folder and its
-  // resolution in another: merged, the resolved one is the truth.
-  it("merges the twice-encoded confirmations folder into the same area, keeping the resolved note over a stale pending one", async () => {
-    const vault = await legacyVault({
-      "inferred/confirmations/users%252F42/aaaa-1111.md": pending,
-      "inferred/confirmations/users%2F42/aaaa-1111.md": confirmed,
-      "inferred/confirmations/users%252F42/cccc-3333.md": pending,
-    });
+  // The confirmation notes live in Mercury's data folder now: the old layout's
+  // stay where they are, read by nothing.
+  it("leaves the old layout's confirmation notes where they are", async () => {
+    const vault = await legacyVault({ "inferred/confirmations/users%2F42/aaaa-1111.md": confirmed });
     const logs: string[] = [];
 
     await migrateVaultToUserAreas(vault, (m) => logs.push(m));
 
-    const area = join(vault, "users/google-chat%3Ausers%2F42/confirmations");
-    expect(await readFile(join(area, "aaaa-1111.md"), "utf-8")).toBe(confirmed);
-    expect(await readFile(join(area, "cccc-3333.md"), "utf-8")).toBe(pending);
-    expect(await exists(join(vault, "inferred"))).toBe(false);
-    // Two notes end up in the area, whichever copy of the first one won.
-    expect(logs).toEqual(["moved 2 notes of 1 person into users/<key>/"]);
+    expect(await readFile(join(vault, "inferred/confirmations/users%2F42/aaaa-1111.md"), "utf-8")).toBe(confirmed);
+    expect(await exists(join(vault, "users/google-chat%3Ausers%2F42/confirmations"))).toBe(false);
+    expect(logs).toEqual([]);
+    expect(await git(vault, "log", "--format=%s")).toBe("legacy");
   });
 
-  it("says which legacy note it dropped because the area already had one, other than a stale pending confirmation", async () => {
+  it("says which legacy note it dropped because the area already had one", async () => {
     const vault = await legacyVault({
       "users/google-chat%3Ausers%2F42/inferred/team.md": "current",
       "inferred/users/users%2F42/team.md": "older",
-      "inferred/confirmations/users%252F42/aaaa-1111.md": pending,
-      "inferred/confirmations/users%2F42/aaaa-1111.md": confirmed,
     });
     const logs: string[] = [];
 
@@ -97,24 +88,20 @@ describe("migrateVaultToUserAreas", () => {
     expect(await readFile(join(vault, "users/google-chat%3Ausers%2F42/inferred/team.md"), "utf-8")).toBe("current");
     expect(logs).toEqual([
       "dropped inferred/users/users%2F42/team.md: users/google-chat%3Ausers%2F42/inferred/team.md already exists (the vault's git history keeps it)",
-      "moved 1 note of 1 person into users/<key>/",
     ]);
   });
 
   it("leaves what it can't attribute where it is, and says so", async () => {
     const vault = await legacyVault({
       "inferred/users/alice/team.md": "x",
-      "inferred/confirmations/conv-1/dddd-4444.md": pending,
     });
     const logs: string[] = [];
 
     await migrateVaultToUserAreas(vault, (m) => logs.push(m));
 
     expect(await readFile(join(vault, "inferred/users/alice/team.md"), "utf-8")).toBe("x");
-    expect(await exists(join(vault, "inferred/confirmations/conv-1/dddd-4444.md"))).toBe(true);
     expect(logs).toEqual([
       'left inferred/users/alice in place: can\'t tell whose it is (an id without its provider)',
-      'left inferred/confirmations/conv-1 in place: can\'t tell whose it is (an id without its provider)',
     ]);
     expect(await git(vault, "log", "--format=%s")).toBe("legacy");
   });

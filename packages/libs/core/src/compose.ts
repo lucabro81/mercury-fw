@@ -129,7 +129,7 @@ export type ComposedApp = {
   ollamaHost: string;
   /** The turn model's name, for the terminal's context-size line. */
   ollamaModel: string;
-  /** Starts the Layer-3 idle-capture and self-review crons and the plugins' daily work; returns a single stopper for shutdown. */
+  /** Starts the Layer-3 idle-capture cron and the plugins' daily work; returns a single stopper for shutdown. */
   startCrons: () => Stoppable;
   /** Where this instance's trace events go (#23): for the entrypoint's channel report (`loadChannels`) and to flush on shutdown. Records nothing without `traces` in the config. */
   tracer: Tracer;
@@ -765,7 +765,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
     discardSurfacedDisplays: (sessionKey) => displayStore.discardSurfaced(sessionKey),
   });
 
-  // The confirm capability, bound to this instance's store/vault/note-writer.
+  // The confirm capability, bound to this instance's store and note writer.
   const confirmDeps: ConfirmDeps = {
     store: confirmationStore,
     writeConfirmationNoteFn: writeNote,
@@ -838,7 +838,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
     ...(appVersion === undefined ? {} : { appVersion }),
   };
 
-  /** Starts the Layer-3 idle-capture and self-review crons and the plugins' daily work; returns one stopper. */
+  /** Starts the Layer-3 idle-capture cron and the plugins' daily work; returns one stopper. */
   function startCrons(): Stoppable {
     const idleCron = startIdleSessionCron(
       idleScanner,

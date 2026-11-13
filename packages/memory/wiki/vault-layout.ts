@@ -1,7 +1,9 @@
 /**
  * Moves the vault's per-person notes from the layout before the user key
- * existed (`inferred/users/<id>/`, `inferred/confirmations/<id>/`) into each
- * person's area, `users/<key>/`, at startup, as one commit. Only what can be
+ * existed (`inferred/users/<id>/`) into each person's area, `users/<key>/`, at
+ * startup, as one commit. The confirmation notes of that layout
+ * (`inferred/confirmations/`) are left where they are: Mercury keeps its
+ * confirmation notes in its data folder now, and reads none from the vault. Only what can be
  * attributed moves: a Google Chat id (`users/<n>`) and the terminal. Any other
  * bare id could belong to more than one provider, so it's left where it is and
  * logged. Idempotent (a user key is never touched again).
@@ -32,20 +34,12 @@ export function legacyUserKey(id: string): string | undefined {
 const UNATTRIBUTABLE = "can't tell whose it is (an id without its provider)";
 
 /** The legacy per-person folders, and where their files go inside a person's area. */
-const LEGACY_FOLDERS = [
-  { from: "inferred/users", to: "inferred" },
-  { from: "inferred/confirmations", to: "confirmations" },
-];
+const LEGACY_FOLDERS = [{ from: "inferred/users", to: "inferred" }];
 
 /** Every file below `dir`, relative to it. */
 async function filesBelow(dir: string): Promise<string[]> {
   const entries = await readdir(dir, { recursive: true, withFileTypes: true });
   return entries.filter((e) => e.isFile()).map((e) => relative(dir, join(e.parentPath, e.name)));
-}
-
-/** True when `path` is a confirmation note still marked pending. */
-async function isPending(path: string): Promise<boolean> {
-  return /^status: pending$/m.test(await readFile(path, "utf-8"));
 }
 
 /** Removes `dir` if it's an empty folder; anything else is left alone. */
@@ -75,17 +69,12 @@ export async function migrateVaultToUserAreas(vaultPath: string, log: (msg: stri
         for (const file of await filesBelow(source)) {
           const src = join(source, file);
           const dst = join(target, file);
-          // The double encoding left a pending note in one folder and its
-          // resolution in another: the resolved one wins, either way round.
           const taken = await readFile(dst, "utf-8").then(
             () => true,
             () => false,
           );
-          if (taken && !((await isPending(dst)) && !(await isPending(src)))) {
-            // A stale pending copy goes quietly; anything else is worth a line.
-            if (!(await isPending(src))) {
-              dropped.push(`dropped ${relative(vaultPath, src)}: ${relative(vaultPath, dst)} already exists (the vault's git history keeps it)`);
-            }
+          if (taken) {
+            dropped.push(`dropped ${relative(vaultPath, src)}: ${relative(vaultPath, dst)} already exists (the vault's git history keeps it)`);
             await rm(src);
             continue;
           }

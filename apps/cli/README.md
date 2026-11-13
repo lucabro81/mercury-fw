@@ -134,7 +134,7 @@ mfw shell
 
 ### `mfw vault <command>`
 
-Maintains the wiki vault, which lives on a Docker volume and not in the app's folder, so every command runs in a one-off container on that volume (`docker compose run --rm -T mercury bun …`). Paths are vault-relative, the way `list` prints them, `curated/` or `raw/` included.
+Maintains the wiki vault, which lives on a Docker volume and not in the app's folder, so every command runs in a one-off container on that volume (`docker compose run --rm -T mercury bun …`). Paths are vault-relative, the way `list` prints them, `curated/` or `raw/` included. It runs the CLI of `@mercury-fw/wiki`, so the app has to depend on it (an app made with `mfw create` does), and it finds the vault through `WIKI_VAULT_PATH` only: an app that sets `wiki({ vaultPath })` instead has to set the variable to the same folder for `mfw vault`.
 
 | Command | |
 |---|---|
@@ -191,7 +191,7 @@ mfw identity unlink google-chat:users/123
 
 ### `mfw reset <memory|wiki|data>`
 
-Deletes for good what the assistant remembers: `memory` is every collection on Qdrant, `wiki` the whole vault, `data` Mercury's own state (the linked accounts, the profiles, the plugins' data, the traces), each on a volume of its own. An app whose compose file has no `mercury-data` volume yet has nothing for `data` to delete: the command says so before asking anything. It reads the volume's real name from the compose file, tells you which one is about to go, and asks you to type the app's name (the `name` in `package.json`); anything else, an empty answer, a `y` or closing the input included, deletes nothing and exits 1. Once confirmed it stops the service using the volume, removes its container and the volume, and starts the service again on an empty one (`docker compose stop`, `rm -f`, `docker volume rm`, `up -d`). After `memory`, a running app is restarted too (`docker compose restart mercury`), since it sets up its collections only when it starts.
+Deletes for good what the assistant remembers: `memory` is every collection on Qdrant, `wiki` the whole vault, `data` Mercury's own state (the linked accounts, the profiles, the confirmation notes, the plugins' data, the traces), each on a volume of its own. An app whose compose file has no `mercury-data` volume yet has nothing for `data` to delete: the command says so before asking anything. It reads the volume's real name from the compose file, tells you which one is about to go, and asks you to type the app's name (the `name` in `package.json`); anything else, an empty answer, a `y` or closing the input included, deletes nothing and exits 1. Once confirmed it stops the service using the volume, removes its container and the volume, and starts the service again on an empty one (`docker compose stop`, `rm -f`, `docker volume rm`, `up -d`). After `memory`, a running app is restarted too (`docker compose restart mercury`), since it sets up its collections only when it starts.
 
 If a step fails once the service is stopped (the volume still in use by a one-off container, say), it stops there and says the service is down: `mfw start` brings it back.
 

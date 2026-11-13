@@ -174,6 +174,54 @@ describe("wiki", () => {
       expect(daily.map((d) => [d.name, d.when])).toEqual([["review", { at: "22:30", timeZone: "Europe/Rome" }]]);
     });
 
+    // Review: the passes are wired here, in wiki(); a wrong root or the turn's
+    // model in place of the background one passed every other test.
+    it("runs each pass with something to do as a job, on the background model", async () => {
+      const vault = await tempVault();
+      const used: string[] = [];
+      /** A model that records who called it and fails, ending the pass there. */
+      const fakeModel = (id: string) => ({
+        specificationVersion: "v3",
+        provider: "fake",
+        modelId: id,
+        supportedUrls: {},
+        doGenerate: async () => {
+          used.push(id);
+          throw new Error("stop here");
+        },
+        doStream: async () => {
+          used.push(id);
+          throw new Error("stop here");
+        },
+      });
+      const { ctx, daily, logs } = ctxWith();
+      const jobs: string[] = [];
+      Object.assign(ctx, {
+        model: fakeModel("turn"),
+        backgroundModel: fakeModel("background"),
+        job: async <T,>(name: string, urgency: string, fn: () => Promise<T>) => (jobs.push(`${name}:${urgency}`), fn()),
+      });
+      await wiki({ vaultPath: vault }).build!(ctx);
+      await writeFile(join(vault, "raw", "pasted.md"), "a pasted note");
+      await writeFile(join(vault, "curated", "standards", "orphan.md"), "---\nlast_updated: 2026-11-13\n---\n\nnot in the index\n");
+
+      await daily[0]!.fn();
+
+      expect(jobs).toEqual(["review-raw:idle", "review-index:idle", "review-contradictions:idle"]);
+      expect(used).toEqual(["background", "background", "background"]);
+      expect(logs.filter((l) => l.includes("pass failed"))).toHaveLength(3);
+    });
+
+    it("stops the start when the core refuses the review's time", async () => {
+      const { ctx } = ctxWith();
+      Object.assign(ctx, {
+        daily: () => {
+          throw new Error("daily: at must be HH:MM");
+        },
+      });
+      await expect(wiki({ vaultPath: await tempVault(), review: { at: "25:99" } }).build!(ctx)).rejects.toThrow("HH:MM");
+    });
+
     it("isn't scheduled with review: false", async () => {
       const { ctx, daily } = ctxWith();
       await wiki({ vaultPath: await tempVault(), review: false }).build!(ctx);
