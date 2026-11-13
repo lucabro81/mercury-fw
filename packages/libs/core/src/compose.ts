@@ -28,20 +28,16 @@ import { createContextSettings } from "./context/context-settings.ts";
 import { materializeCliCredentials } from "./credentials/materialize.ts";
 import type { MercuryConfig } from "./config/define-config.ts";
 import { createResumeSlots } from "./session/resume-slots.ts";
-import type { Message } from "./session/history.ts";
 import { createConversations } from "./session/conversations.ts";
-import { createEpisodicSummarizer } from "./session/episodic-summarizer.ts";
-import { createSemanticFactExtractor } from "./session/semantic-fact-extractor.ts";
-import { buildContextPrimer, primerOptions } from "./session/context-primer.ts";
+import { buildContextPrimer } from "./session/context-primer.ts";
 import { buildSystemPrompts } from "./session/system-prompt.ts";
 import { assistantNameOf, skillsWithAssistantName, toolsWithAssistantName } from "./session/assistant-name.ts";
 import { createSessionLock } from "./router/session-lock.ts";
-import { createSessionCapture } from "./session/session-capture.ts";
 import { createTurnRunner, parseStallTimeoutMs } from "./router/turn-runner.ts";
 import { loadAuth } from "./router/auth-loader.ts";
 import { loadDirectory } from "./router/directory-loader.ts";
 import type { TurnSink } from "./router/provider.ts";
-import type { HandleTurn, ChannelRuntimeContext, ChannelPlugin, VectorIndex } from "@mercury-fw/channel-types";
+import type { HandleTurn, ChannelRuntimeContext, ChannelPlugin } from "@mercury-fw/channel-types";
 import type { MercuryModelHandle, PluginNeed } from "@mercury-fw/plugin-types";
 import {
   truncateForDisplay,
@@ -53,26 +49,17 @@ import { confirmationNotesRoot, copyVaultConfirmations, pendingConfirmationToken
 import { createResolveReferenceTool } from "./tools/resolve-reference-tool.ts";
 import { createReadSkillTool } from "./session/read-skill-tool.ts";
 import { createIdleSessionScanner } from "./cron/idle-session-scanner.ts";
-import { startIdleSessionCron, captureSessionToMemory, type CaptureDeps } from "./cron/idle-session-cron.ts";
-import {
-  EPISODIC_SPACE,
-  storeEpisodicSummary,
-  getLastSessionEpisodicSummaries,
-} from "./memory/episodic-store.ts";
+import { startIdleSessionCron } from "./cron/idle-session-cron.ts";
 import { listVerbatimBySession } from "./memory/verbatim-archive-store.ts";
 import { setTitle, titlesOf } from "./memory/conversation-titles-store.ts";
-import { createVerbatimRecall } from "./memory/memory-provider.ts";
-import { storeSemanticFact } from "./memory/semantic-facts-store.ts";
-import { TOOL_CORRECTIONS_SPACE, storeToolCorrection } from "./memory/tool-corrections-store.ts";
-import { MIGRATED_SPACES, setUpMemory, setUpWhenReachable } from "./memory/collection-setup.ts";
 import { loadVectorIndex } from "./data/vector-index-loader.ts";
+import { setUpWhenReachable } from "./data/when-reachable.ts";
 import { loadConversationStore, unusedStoreWarning } from "./data/conversation-store-loader.ts";
-import { createToolCorrectionExtractor } from "./session/tool-correction-extractor.ts";
 import { createEmbedder } from "./memory/embedder.ts";
 import { createHostReads } from "./identity/host-reads.ts";
 import { createChannelSettings } from "./identity/channel-settings.ts";
 import { createChannelConversations } from "./identity/channel-conversations.ts";
-import { resolveTimeZone, stripTurnStamp, timeZoneName } from "./session/turn-stamp.ts";
+import { resolveTimeZone, timeZoneName } from "./session/turn-stamp.ts";
 import { bindConfirm } from "./identity/confirm-binding.ts";
 import { createPersonLogins } from "./identity/person-logins.ts";
 import { createProfileStore, profilesPath } from "./identity/profiles.ts";
@@ -84,7 +71,6 @@ import { createLinking } from "./identity/linking.ts";
 import { offeringFor, type Offering } from "./plugins/offering.ts";
 import { AS_SELF_SUFFIX } from "./plugins/act-as-self.ts";
 import { buildOfferedTools } from "./plugins/offered-tools.ts";
-import { migrateMemoryToUserKeys } from "./identity/migrate-layout.ts";
 import { createDaily } from "./cron/daily.ts";
 import { pluginToolLog } from "./session/tool-log-buffer.ts";
 import { pluginProfiles } from "./identity/plugin-profiles.ts";
@@ -397,8 +383,6 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
         plugins: offering.plugins,
         skills: offering.skills,
         persona: config.persona,
-        // recall_verbatim searches the archive: it needs both.
-        recallVerbatim: vectorIndex !== undefined && conversationStore !== undefined,
       });
       prompts = { singleUser: built.system, multiUser: built.chatSystem };
       promptsByOffering.set(offering.signature, prompts);
@@ -410,14 +394,8 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   // that receives the provider's redirect.
   const personLogins = createPersonLogins({ log: (msg) => console.error(msg), emit: (event) => tracer.emit(event), assistantName, texts });
 
-  /** What the person's earlier conversations left for a new one (see session/context-primer.ts); none for one its client reopens at will (#233). */
-  const primerFor = (userId: string, resume: { maxChars?: number } | undefined) =>
-    buildContextPrimer(userId, {
-      getLastSessionEntries: async (uid) =>
-        vectorIndex === undefined ? [] : getLastSessionEpisodicSummaries(vectorIndex, { userId: uid }),
-      pendingTokens: (key) => pendingConfirmationTokens(notesRoot, key),
-      log: (msg) => console.error(`[memory] ${msg}`),
-    }, primerOptions(resume));
+  /** What a new conversation starts with (see session/context-primer.ts): the person's confirmations still pending. */
+  const primerFor = (userId: string) => buildContextPrimer(userId, { pendingTokens: (key) => pendingConfirmationTokens(notesRoot, key) });
 
   // The open conversations, one per session (see session/conversations.ts):
   // kept by the plugin the first person's profile names, else none.
@@ -428,42 +406,15 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
     onCompressed: (sessionKey, report) => tracer.emit({ ...compressionEvent(report), session: sessionKey }),
   });
 
-  // Session persistence, Layer 3: a tracked session idle past
-  // SESSION_IDLE_TIMEOUT_MS is summarized and written to Qdrant as a dated
-  // episodic record, then discarded. Identity-less sessions (the terminal) are
-  // never tracked here — per-user isolation needs a real sender identity.
+  // A session someone vouched for, idle past SESSION_IDLE_TIMEOUT_MS, is
+  // closed, and the plugins hear it (`onSessionClose`). The terminal's
+  // sessions are never tracked: nobody vouched for who types.
   const idleScanner = createIdleSessionScanner();
-  const episodicSummarize = createEpisodicSummarizer(backgroundModel);
+  /** Whom each tracked session's last turn was for. */
+  const sessionUsers = new Map<string, string>();
 
-  // The search of what was said (#4): every message a turn leaves, indexed
-  // from the turn's record (the store is the archive plugin's), for
-  // recall_verbatim, which reads what the archive keeps: it needs both.
-  const verbatimRecall =
-    conversationStore === undefined || vectorIndex === undefined
-      ? undefined
-      : createVerbatimRecall({
-          index: vectorIndex,
-          embed,
-          // Embedding a message for the search is background work.
-          indexInBackground: (work) =>
-            void backgroundJob("archive-index", "soon", work).catch((err: unknown) =>
-              console.error(`[verbatim-archive] indexing failed: ${String(err instanceof Error ? err.message : err)}`),
-            ),
-        });
-
-  /** What a turn or a resolved confirmation left: to the plugins' `onTurnRecord`, and to the search of what was said. */
-  const turnRecord = (who: TurnWho, record: TurnRecordInfo): void => {
-    pluginHooks.turnRecord(who, record);
-    if (verbatimRecall === undefined) return;
-    void verbatimRecall
-      .indexRecord({ ...record, person: { key: who.person.key }, operator: who.operator, as: "anyone" })
-      .catch((err: unknown) => console.error(`[verbatim-archive] indexing failed: ${String(err instanceof Error ? err.message : err)}`));
-  };
-
-  // Semantic consolidation (D-22/D-34): a separate space from the episodic
-  // memory above — one point per extracted {topic, value} candidate, vector
-  // embedded on the topic alone (see semantic-facts-store.ts for why).
-  const extractFacts = createSemanticFactExtractor(backgroundModel);
+  /** What a turn or a resolved confirmation left: to the plugins' `onTurnRecord`. */
+  const turnRecord = (who: TurnWho, record: TurnRecordInfo): void => pluginHooks.turnRecord(who, record);
 
   // Where the events of what this instance does go (#23): nowhere unless the config declares a sink.
   const tracer = await loadTracer(config.traces, {
@@ -474,137 +425,11 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   });
   if (migratedState.length > 0) tracer.emit({ kind: "system.migrated", area: "data-folder", entries: migratedState });
 
-  /** The index, for what runs only when there's one (capture, corrections). */
-  const requireIndex = () => {
-    if (vectorIndex === undefined) throw new Error("no vector index");
-    return vectorIndex;
-  };
-
-  // Shared by the idle sweep (final capture + close) and by sessionCapture
-  // (the mid-conversation threshold, which doesn't close the session) —
-  // one definition of "how to capture", reused everywhere.
-  const captureDeps: CaptureDeps = {
-    summarize: episodicSummarize,
-    store: (entry) => storeEpisodicSummary(requireIndex(), embed, entry),
-    extractFacts,
-    storeFact: (entry) => storeSemanticFact(requireIndex(), embed, entry),
-    // The facts are kept; turning them into notes is the memory plugin's (#393).
-    consolidateFact: async () => {},
-    log: (msg) => console.error(`[cron] ${msg}`),
-    emit: (event) => tracer.emit(event),
-  };
-
-  // How many new messages (since the last capture) a live tracked session needs
-  // before it's mirrored to Qdrant, instead of only ever capturing on
-  // idle-timeout.
-  const MESSAGE_COUNT_CAPTURE_THRESHOLD = Number(process.env.SESSION_CAPTURE_MESSAGE_THRESHOLD ?? "6");
-
-  // How much of the pending messages' actual text shows up in a capture status
-  // card's detail — enough to recognize which exchange is being saved.
-  const MESSAGE_PREVIEW_CHARS = 200;
-
-  /** Joins `messages`' content, without the turns' stamps, and head-truncates to `maxChars`, "…"-suffixed when cut. */
-  function previewMessages(messages: Message[], maxChars: number): string {
-    const joined = messages.map((m) => stripTurnStamp(m.content)).join(" ");
-    return joined.length <= maxChars ? joined : `${joined.slice(0, maxChars)}…`;
-  }
-
-  // Who each tracked session belongs to and how much of it is already in
-  // memory; mirrors the rest every few messages.
-  const sessionCapture = createSessionCapture({
-    capture: (userId, sessionKey, messages, trigger) => captureSessionToMemory(userId, sessionKey, messages, Date.now(), captureDeps, trigger),
-    job: (fn) => backgroundJob("capture", "idle", fn),
-    threshold: MESSAGE_COUNT_CAPTURE_THRESHOLD,
-    texts,
-    describe: (pending, t) =>
-      t("core.status.capture-detail", {
-        count: pending.length,
-        preview: previewMessages(pending, MESSAGE_PREVIEW_CHARS),
-        collection: EPISODIC_SPACE,
-      }),
-  });
-
-  // Procedural corrections (punto 2/Fase D): per-turn, not per-idle-session —
-  // the tool-call trace only exists in memory for the duration of its turn.
-  // Every Layer-3 space and collection, set up in the background: Mercury
-  // starts even while the index or the embedding model isn't answering yet,
-  // and memory switches on once they do (see memory/collection-setup.ts).
-  const memoryReady = setUpWhenReachable(
-    () =>
-      setUpMemory({
-        ...(vectorIndex === undefined ? {} : { index: vectorIndex }),
-        ...(conversationStore === undefined ? {} : { store: conversationStore }),
-        embed,
-      }),
-    { log: (msg) => console.error(`[memory] ${msg}`), emit: (event) => tracer.emit(event) },
-  );
-  // Memory written before the user key gets it, once the index answers.
-  if (vectorIndex !== undefined) {
-    const index = vectorIndex;
-    void memoryReady.done.then(() =>
-      migrateMemoryToUserKeys(index, MIGRATED_SPACES, (msg) => console.error(`[memory] ${msg}`)),
-    );
-  }
-  const extractToolCorrections = createToolCorrectionExtractor(backgroundModel, undefined, {
-    log: (msg) => console.error(`[cron] ${msg}`),
-  });
-
-  /**
-   * Extracts and keeps any procedural corrections found in one turn's
-   * `steps` — a no-op if none are found. Drives `onToolStart`/`onToolFinish`
-   * once per correction like a real tool call.
-   */
-  async function processToolCorrections(
-    steps: StepInfo[],
-    onToolStart: TurnSink["onToolStart"] | undefined,
-    onToolFinish: TurnSink["onToolFinish"] | undefined,
-    key: string,
-  ): Promise<void> {
-    // Without an index there's nowhere to keep a correction: nothing to extract.
-    const index = vectorIndex;
-    if (index === undefined) return;
-    await backgroundJob("correction", "soon", () => correctToolUse(index, steps, onToolStart, onToolFinish, key));
-  }
-
-  /** `processToolCorrections`' work, as one background job. */
-  async function correctToolUse(
-    vectorIndex: VectorIndex,
-    steps: StepInfo[],
-    onToolStart: TurnSink["onToolStart"] | undefined,
-    onToolFinish: TurnSink["onToolFinish"] | undefined,
-    key: string,
-  ): Promise<void> {
-    const corrections = await extractToolCorrections(steps);
-    const { t } = texts.forPerson(key);
-    for (const correction of corrections) {
-      const correctionId = crypto.randomUUID();
-      onToolStart?.(
-        t("core.status.remembering"),
-        t("core.status.correction-detail", {
-          tool: correction.tool,
-          topic: correction.topic,
-          collection: TOOL_CORRECTIONS_SPACE,
-        }),
-        correctionId,
-      );
-      try {
-        const timestamp = new Date().toISOString();
-        await storeToolCorrection(vectorIndex, embed, { ...correction, timestamp });
-        onToolFinish?.(correctionId, "success");
-        tracer.emit({ kind: "memory.correction", person: key, binary: correction.tool, topic: correction.topic, outcome: "done" });
-      } catch (err) {
-        console.error(`[capture] procedural correction failed for ${correction.tool}/${correction.topic}: ${String(err)}`);
-        onToolFinish?.(correctionId, "failed");
-        tracer.emit({
-          kind: "memory.correction",
-          person: key,
-          binary: correction.tool,
-          topic: correction.topic,
-          outcome: "failed",
-          args: { error: err instanceof Error ? err.message : String(err) },
-        });
-      }
-    }
+  // The conversation store gets ready in the background: Mercury starts even
+  // while it isn't answering yet (see data/when-reachable.ts).
+  if (conversationStore !== undefined) {
+    const store = conversationStore;
+    setUpWhenReachable(() => store.ready(), { log: (msg) => console.error(`[archive] ${msg}`), emit: (event) => tracer.emit(event) });
   }
 
   // `key` (the person's key) is separate from `sessionKey`: a person's wiki
@@ -661,9 +486,6 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
     }
 
     Object.assign(sessionTools, createResolveReferenceTool({ notesRoot, key }));
-    // Verbatim archive recall, scoped to this person — lets the model resurface
-    // what was actually said in earlier conversations, beyond the live window.
-    if (verbatimRecall !== undefined) Object.assign(sessionTools, verbatimRecall.sessionTools({ sessionKey, userId: key }));
     // read_skill only exists when a plugin offered contributed at least one skill.
     if (offering.skills.length > 0) {
       Object.assign(sessionTools, createReadSkillTool(skillsWithAssistantName(offering.skills, assistantName)));
@@ -742,17 +564,10 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
         ...(timeZone === undefined ? {} : { timeZone }),
       }),
     trackSession: (key, userId, at) => {
-      sessionCapture.track(key, userId);
+      sessionUsers.set(key, userId);
       idleScanner.touch(key, at);
     },
-    registerCaptureCallback: (key, onToolStart, onToolFinish) => sessionCapture.registerCallbacks(key, { onToolStart, onToolFinish }),
-    // What a resumed conversation brought back is already in memory.
-    // Without an index there's no memory to mirror the conversation to.
-    maybeCapture: async (key, history) => {
-      if (vectorIndex !== undefined) await sessionCapture.maybeCapture(key, history.getCapturable());
-    },
     turnRecord,
-    processToolCorrections,
     logStep,
     // Appends what the model surfaced via `present` this turn — nothing if it
     // presented nothing.
@@ -840,7 +655,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
       {
         getSession: (key) => {
           const history = conversations.get(key);
-          const userId = sessionCapture.userOf(key);
+          const userId = sessionUsers.get(key);
           if (!history || !userId) {
             return undefined;
           }
@@ -849,15 +664,14 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
         closeSession: (key) => {
           conversations.close(key);
           contextAssembler?.forget(key);
-          sessionCapture.close(key);
+          sessionUsers.delete(key);
           displayStore.forget(key);
         },
         withSession: async (key, fn) => {
           await sessionLock.run(key, fn);
         },
-        job: (fn) => backgroundJob("capture", "idle", fn),
-        ...captureDeps,
-        capture: vectorIndex !== undefined,
+        log: (msg) => console.error(`[cron] ${msg}`),
+        emit: (event) => tracer.emit(event),
         onClosed: pluginHooks.sessionClosed,
       },
       {

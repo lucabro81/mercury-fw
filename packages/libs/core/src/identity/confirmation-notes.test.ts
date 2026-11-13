@@ -62,9 +62,6 @@ describe("a confirmation's note, staged in a turn then confirmed from the channe
         },
         getOrCreateHistory: () => ({ replaceLastAssistantMessage: () => {}, getMessages: () => [], primer: () => undefined }) as never,
         trackSession: () => {},
-        registerCaptureCallback: () => {},
-        maybeCapture: async () => {},
-        processToolCorrections: async () => {},
         logStep: () => {},
         recordStepFn: () => {},
         // The model's turn: a tool stages an irreversible action.

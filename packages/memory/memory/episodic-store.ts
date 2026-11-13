@@ -5,7 +5,7 @@
  * into the wiki) is a separate, later concern; this module only writes the
  * summaries and reads them back.
  */
-import type { VectorIndex } from "@mercury-fw/channel-types";
+import type { VectorIndex } from "@mercury-fw/plugin-types";
 
 /** The vector index's space the episodic summaries live in. */
 export const EPISODIC_SPACE = "episodic_memory";

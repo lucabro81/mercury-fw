@@ -1,13 +1,10 @@
 /**
- * Layer 3 procedural-correction staging — separate space
- * from `semantic-facts-store.ts`: that one is keyed by userId (a fact
- * about a specific person), this one is keyed by tool (a fact about a
- * CLI, true for whoever uses it next). Kept as its own space rather
- * than overloading `semantic-facts-store.ts`'s `userId` field with a tool
- * name — a tool name in a field called `userId` would be a standing
- * source of confusion for anyone reading this space later.
+ * The procedural corrections in the vector index's `tool_corrections` space,
+ * keyed by tool (a fact about a CLI, true for whoever uses it next), never by
+ * person: each occurrence is a point, clustered by topic when the wiki
+ * decides what becomes a note.
  */
-import type { VectorIndex } from "@mercury-fw/channel-types";
+import type { VectorIndex } from "@mercury-fw/plugin-types";
 
 /** The vector index's space the corrections live in. */
 export const TOOL_CORRECTIONS_SPACE = "tool_corrections";

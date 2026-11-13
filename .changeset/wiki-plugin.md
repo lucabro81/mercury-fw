@@ -14,7 +14,6 @@
 - the confirmation notes are kept in the data folder, `confirmations/<key>/<token>.md`; the ones in the vault (`users/<key>/confirmations/`) are copied there at the first start, from `WIKI_VAULT_PATH`
 - an old vault layout's `inferred/confirmations/` stays where it is
 - `resolve_reference` is the core's, offered on every turn
-- facts and corrections stay in the vector index without being written as wiki notes, and the primer has no "Known facts"
 - **Breaking:** `ChannelHostReads` has no `wikiList`, `wikiRead`, `wikiGrep`
 - **Breaking:** `channel-http` has no `GET /wiki/list`, `/wiki/read`, `/wiki/grep`
 - **Breaking:** confirm-engine's `WriteConfirmationNote` takes no path, and `ConfirmDeps` and the staging deps have no `vaultPath`

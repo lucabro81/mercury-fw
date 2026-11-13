@@ -22,21 +22,6 @@ import type { CallRecord } from "../session/call-record.ts";
 import type { TraceEntry } from "../session/turn-trace.ts";
 
 /**
- * The vector index's space the archived messages are searched in: the
- * archive's own collection, whose points already carry their vectors.
- */
-export const VERBATIM_SPACE = "verbatim_archive";
-
-/**
- * Makes sure the archive's search space exists with `dimensions`-long vectors
- * and the fields it's filtered (`userId`, `sessionKey`) and ordered
- * (`timestamp`) on. Idempotent, safe on every startup.
- */
-export async function ensureVerbatimSpace(index: VectorIndex, dimensions: number): Promise<void> {
-  await index.ensure(VERBATIM_SPACE, { dimensions, keys: ["userId", "sessionKey"], ordered: ["timestamp"] });
-}
-
-/**
  * A single verbatim message as it was emitted in chat. `timestamp` (ISO 8601,
  * ms precision) is the durable ordering key. `content` is what the model said;
  * `displays` are what the turn showed after it (the lists the model chose to
@@ -101,18 +86,6 @@ function forModel(m: VerbatimMessage): boolean {
   return m.confirmation === undefined;
 }
 
-/** `m` as the model said it, for whatever hands it back to the model: no displays, nothing that was only for the person. */
-function asSaid(m: VerbatimMessage): VerbatimMessage {
-  const { displays: _displays, trace: _trace, pendingNote: _note, ...rest } = m;
-  return rest;
-}
-
-/** `m` without its calls: what `recall_verbatim` quotes is what was said. */
-function withoutCalls(m: VerbatimMessage): VerbatimMessage {
-  const { calls: _calls, ...rest } = m;
-  return rest;
-}
-
 /** How much of a budget `m` takes back to the model: its text and, as JSON, its calls (as the history counts them). */
 function modelChars(m: VerbatimMessage): number {
   return m.content.length + (m.calls === undefined ? 0 : JSON.stringify(m.calls).length);
@@ -162,35 +135,6 @@ function withValidExtras(m: VerbatimMessage): VerbatimMessage {
   };
 }
 
-/** The verbatim messages among `payloads`, skipping malformed ones and dropping malformed extras. */
-function verbatimMessages(payloads: Array<Record<string, unknown> | null>): VerbatimMessage[] {
-  return payloads.filter(isVerbatimMessage).map(withValidExtras);
-}
-
-/** The verbatim messages among what the store gave, without the store's ids. */
-function storedMessages(messages: StoredMessage[]): VerbatimMessage[] {
-  return verbatimMessages(messages.map(({ id: _id, ...m }) => m));
-}
-
-/**
- * Indexes `entry` in the archive's search space under a new id, its vector
- * embedded from `entry.content` (what was shown, when the model said nothing;
- * for a resolved confirmation with no reply, its choice or how it went, since
- * nothing searches it: recall leaves it out), its payload the full message.
- * The store is written by whoever keeps the archive, not here.
- */
-export async function indexVerbatimMessage(
-  index: VectorIndex,
-  embed: (text: string) => Promise<number[]>,
-  entry: VerbatimMessage,
-): Promise<void> {
-  const shown = entry.content.trim() !== "" ? entry.content : shownText(entry.content, entry.displays);
-  const vector = await embed(shown !== "" ? shown : (entry.confirmation?.choice ?? entry.confirmation?.status ?? ""));
-  await index.upsert(VERBATIM_SPACE, [{ id: crypto.randomUUID(), vector, payload: { ...entry } }]);
-}
-
-const DEFAULT_SEARCH_LIMIT = 5;
-
 /** Narrows an arbitrary payload to a `VerbatimMessage`, rejecting null/malformed points (e.g. from an older schema). */
 function isVerbatimMessage(payload: Record<string, unknown> | null): payload is VerbatimMessage {
   return (
@@ -208,26 +152,14 @@ function isVerbatimMessage(payload: Record<string, unknown> | null): payload is 
   );
 }
 
-/**
- * The verbatim messages for a specific user most relevant to `queryText`
- * — e.g. "what did we say about KAN-1 last week". Filtered by `userId` so
- * one user's transcript never leaks into another's. Only reads; returns
- * the messages as the model said them (no displays, and no answer that was
- * only displays: this goes back to the model), ordering left to the caller
- * (each carries its own `timestamp`).
- */
-export async function searchVerbatim(
-  index: VectorIndex,
-  embed: (text: string) => Promise<number[]>,
-  query: { userId: string; queryText: string; limit?: number },
-): Promise<VerbatimMessage[]> {
-  const vector = await embed(query.queryText);
-  const results = await index.query(VERBATIM_SPACE, {
-    vector,
-    where: { userId: query.userId },
-    limit: query.limit ?? DEFAULT_SEARCH_LIMIT,
-  });
-  return verbatimMessages(results.map((r) => r.payload)).filter(forModel).filter(said).map(asSaid).map(withoutCalls);
+/** The verbatim messages among `payloads`, skipping malformed ones and dropping malformed extras. */
+function verbatimMessages(payloads: Array<Record<string, unknown> | null>): VerbatimMessage[] {
+  return payloads.filter(isVerbatimMessage).map(withValidExtras);
+}
+
+/** The verbatim messages among what the store gave, without the store's ids. */
+function storedMessages(messages: StoredMessage[]): VerbatimMessage[] {
+  return verbatimMessages(messages.map(({ id: _id, ...m }) => m));
 }
 
 /**

@@ -28,7 +28,7 @@ Declared in `plugins`, it gives the model its tools; listed among a profile's `l
 At startup the plugin makes the vault a git repository with its folders if it isn't one yet (an empty volume on the first start), and every write is a commit, so the history of every note is the vault's own. The folders:
 
 - `curated/`, the team's common knowledge (conventions, docs, project status), which everyone reads;
-- `users/<key>/`, one area per person (`<key>` is Mercury's identity for them, `<provider>:<id>`, encoded), which the model sees as `personal/`: `personal/notes/` is what it writes for that person, `personal/inferred/` what Mercury learned about them (written by the long-term memory, once it's a plugin of its own: for now nothing writes there);
+- `users/<key>/`, one area per person (`<key>` is Mercury's identity for them, `<provider>:<id>`, encoded), which the model sees as `personal/`: `personal/notes/` is what it writes for that person, `personal/inferred/` what Mercury learned about them (written by the long-term memory, `@mercury-fw/memory`, through the wiki's `notes`);
 - `raw/`, material pasted in as it is, waiting for the nightly review to sort it into `curated/`;
 - `index.md`, kept by the nightly review, a line for each document of `curated/`.
 
@@ -59,6 +59,15 @@ Every day at the time `review` says, the background model goes through the vault
 - it looks for contradictions and missing cross-links between documents, every time.
 
 A pass that fails is logged and the others go on. A day the agent wasn't running isn't made up.
+
+## What the memory writes here
+
+The plugin carries `notes`, on the same vault, which the memory plugins are given: `memory({ wiki: teamWiki })` and `corrections({ wiki: teamWiki })`.
+
+- `promoteFact(key, topic, cluster)` makes a fact about a person their note `personal/inferred/<topic>.md`, `promoteCorrection(tool, topic, cluster)` a rule about a tool `curated/standards/<tool>-<topic>.md`, which everyone reads. `cluster(limit)` hands over the last occurrences of that topic the plugin kept. The value that becomes the note is decided by counting, never by the model: the one most frequent among the last three occurrences, with no tie, and only when it has more occurrences behind it than the note already there (`derived_from`, in its frontmatter). Each says what it did: `written`, `no-dominant`, `kept-incumbent`.
+- `facts(key)` reads a person's `inferred/` notes back: topic, text, and when the occurrences behind each were found.
+
+The memory plugin declared with the wiki is what writes there; the wiki itself never does.
 
 ## Maintenance
 

@@ -10,8 +10,8 @@
  */
 import { generateObject, type LanguageModel } from "ai";
 import { z } from "zod";
-import type { Message } from "./history.ts";
-import { stripTurnStamp } from "./turn-stamp.ts";
+import type { Message } from "./messages.ts";
+import { stripTurnStamp } from "./messages.ts";
 
 /**
  * Closed vocabulary — the model can only ever return one of these exact

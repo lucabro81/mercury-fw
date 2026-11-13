@@ -49,10 +49,6 @@ export const CORE_MESSAGES: Messages = {
   "core.status.command": "Running {binary} {command}",
   "core.status.command-bare": "Running {binary}",
   "core.status.command-unknown": "Running a command",
-  // Saving to memory (`session/session-capture.ts`, `compose.ts`).
-  "core.status.remembering": "Noting down something important…",
-  "core.status.capture-detail": 'Recent conversation ({count} messages: "{preview}"), collection "{collection}"',
-  "core.status.correction-detail": 'Correction for the tool "{tool}" (topic: "{topic}", collection: "{collection}")',
 
   // The terminal REPL (`router/terminal-provider.ts`, `router/terminal.ts`).
   "core.terminal.thinking": "Thinking…",

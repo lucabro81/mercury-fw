@@ -1,5 +1,5 @@
 import { describe, it, expect } from "bun:test";
-import type { VectorPoint } from "@mercury-fw/channel-types";
+import type { VectorPoint } from "@mercury-fw/plugin-types";
 import {
   EPISODIC_SPACE,
   ensureEpisodicSpace,

@@ -17,7 +17,7 @@ An agent built on Mercury can do what its plugins let it do and nothing else: ea
 
 The orchestration sits directly on the AI SDK, with no agent framework in between, and the model is whatever an Ollama-compatible endpoint serves (`OLLAMA_HOST`, `OLLAMA_MODEL`). An action a plugin marks as irreversible never runs on the model's word: Mercury stages it and hands back a one-time token, and it runs only when that token comes back (a button click on Google Chat, the pasted token in the terminal).
 
-Memory, as it stands today, has three layers: the conversation a plugin keeps, a wiki the agent reads and writes (a plugin too, `@mercury-fw/wiki`), and an episodic memory in the vector index the app declares (Qdrant, in a new app). The conversation is what the agent needs to work at all, the other two enrich it and fail soft when they're unreachable. How memory becomes composable like the rest is still open ([#30](https://github.com/lucabro81/mercury-fw/issues/30)). Every person gets their own: the wiki has a common area the whole team reads and an area per person, and memory, conversations and pending confirmations are theirs alone (the [core README](packages/libs/core/README.md) has the details).
+Memory is plugins the app declares, like the rest: the conversation (`@mercury-fw/conversation-window`), the wiki the agent reads and writes (`@mercury-fw/wiki`), the archive of every conversation and its titles (`@mercury-fw/archive`, `@mercury-fw/titles`), what each person says about themselves (`@mercury-fw/profile`), the long-term memory in the vector index the app declares (`@mercury-fw/memory`, Qdrant in a new app) and what the agent learns about using a tool (`@mercury-fw/corrections`). The core runs each turn and hands the plugins what it left (`onTurnRecord`, `afterTurn`, `onSessionClose`), and keeps no memory of its own; `mfw create` declares them all, and each one fails soft when its store is unreachable. Every person gets their own: the wiki has a common area the whole team reads and an area per person, and memory, conversations and pending confirmations are theirs alone (the [core README](packages/libs/core/README.md) has the details).
 
 ## Quick start
 
@@ -55,10 +55,13 @@ import { wiki } from "@mercury-fw/wiki";
 import { archive } from "@mercury-fw/archive";
 import { titles } from "@mercury-fw/titles";
 import { profile } from "@mercury-fw/profile";
+import { memory } from "@mercury-fw/memory";
+import { corrections } from "@mercury-fw/corrections";
 
 const name = "Hermes";
-const conversation = conversationWindow();
 const teamWiki = wiki();
+const longTermMemory = memory({ wiki: teamWiki });
+const conversation = conversationWindow({ earlier: longTermMemory });
 
 const jiraIssueLine = (issue: JiraDisplays["issue-list"]) =>
   `${issue.key} ${issue.status ? `[${issue.status}] ` : ""}${issue.summary}\n${issue.url}`;
@@ -76,9 +79,11 @@ export default defineMercuryConfig({
   plugins: [
     conversation,
     teamWiki,
+    longTermMemory,
     archive(),
     titles(),
     profile(),
+    corrections({ wiki: teamWiki }),
     formatterPlugin(
       jiraPlugin,
       formatter<JiraDisplays>({
@@ -87,11 +92,11 @@ export default defineMercuryConfig({
     ),
   ],
   channels: [httpChannel],
-  context: { profiles: { default: { conversation, layers: [teamWiki], budget: { maxChars: 8000 } } } },
+  context: { profiles: { default: { conversation, layers: [teamWiki, longTermMemory], budget: { maxChars: 8000 } } } },
 });
 ```
 
-`plugins` are the plugins (the conversation the agent keeps, `conversationWindow()`, which the `default` context profile names: without it the model reads each message alone; the wiki, `wiki()`, whose index the profile lists among its `layers`; the archive of every conversation, `archive()`, its titles, `titles()`, and what each person says about themselves, `profile()`; and the tool plugins) and `channels` the channels, each active as soon as it's declared: a plugin missing a setting it requires (Jira's `JIRA_SITE_URL`) refuses to load and says why at startup, and a channel left unconfigured stays inert.
+`plugins` are the plugins (the conversation the agent keeps, `conversationWindow()`, which the `default` context profile names: without it the model reads each message alone; the wiki, `wiki()`, whose index the profile lists among its `layers`; the long-term memory, `memory()`, whose recap of the last conversation the profile lists too, and which hands the conversation the summaries of a reopened one's older part; the archive of every conversation, `archive()`, its titles, `titles()`, what each person says about themselves, `profile()`, and what the agent learns about using a tool, `corrections()`; and the tool plugins) and `channels` the channels, each active as soon as it's declared: a plugin missing a setting it requires (Jira's `JIRA_SITE_URL`) refuses to load and says why at startup, and a channel left unconfigured stays inert.
 
 A plugin can hand the user a list (Jira does, for `issue search`), and how that list reads is the app's call: `formatterPlugin` wraps the plugin and `formatter` takes one rule per kind of list, the line for each item plus an optional text for an empty list, and `always: true` for a kind the person always gets (a link they asked for) without the model choosing to show it. The kinds come typed from the plugin (`JiraDisplays`), so a kind it doesn't emit fails the typecheck, and a kind left without a rule isn't shown at all (the model still gets the data, and the log says which rule is missing).
 
@@ -115,6 +120,8 @@ The framework, released together under one version:
 | [`@mercury-fw/wiki`](packages/memory/wiki) | The wiki `mfw create` declares: notes the team shares and each person's own, the tools the model reads and writes them with, the index at the start of each session, a nightly review. |
 | [`@mercury-fw/archive`](packages/memory/archive) | The archive `mfw create` declares: every conversation kept word for word in the conversation store, to reopen and list it. |
 | [`@mercury-fw/titles`](packages/memory/titles) | The titles `mfw create` declares: each conversation named after its first turn. |
+| [`@mercury-fw/memory`](packages/memory/memory) | The long-term memory `mfw create` declares: a summary of each conversation every few messages, the facts about each person promoted to the wiki, the last conversation's recap at the start of a new one, `recall_verbatim`. |
+| [`@mercury-fw/corrections`](packages/memory/corrections) | What `mfw create` declares to learn how a tool is used: a failed command and the one that worked, written to the wiki's standards. |
 | [`@mercury-fw/profile`](packages/memory/profile) | What `mfw create` declares for each person's settings: the tools saving how they want to be called, their time zone and their language. |
 | [`@mercury-fw/kit`](packages/libs/kit) | For plugin authors: the plugin and channel contracts in one import. |
 | [`@mercury-fw/plugin-types`](packages/types/plugin-types), [`@mercury-fw/channel-types`](packages/types/channel-types) | The contracts a tool plugin and a channel implement. |

@@ -1,23 +1,14 @@
 /**
- * Detects, within a single turn's steps, a CLI command call that failed
- * followed later by one for the same binary that succeeded — a candidate
- * procedural correction, distinct from `semantic-fact-extractor.ts` (which
- * is about the user, from `session.messages`) — this is about a *tool*,
- * from the tool-call trace (`StepInfo`), true for whoever uses that
- * command next, not just this user. Pairing is deterministic (pure
- * string/status matching); describing *what* the correction actually was
- * is delegated to the model, same `generateObject`-with-fixed-schema style
- * as `semantic-fact-extractor.ts`.
- *
- * Wired per-turn (`onStepFinish`, see `index.ts`), not from
- * `idle-session-cron.ts`'s idle sweep: the tool-call trace for a turn only
- * exists in memory for the duration of that turn (`tool-log-buffer.ts` is a
- * 200-entry ring buffer shared across every session — not a reliable place
- * to reconstruct one turn's trace minutes or hours later).
+ * Detects, within a single turn's tool calls (`FinishedTurn.calls`), a CLI
+ * command call that failed followed later by one for the same binary that
+ * succeeded: a candidate procedural correction, about a *tool*, true for
+ * whoever uses that command next, not just this person. Pairing is
+ * deterministic (pure string/status matching); describing *what* the
+ * correction actually was is delegated to the model, with a fixed schema.
  */
 import { generateObject, type LanguageModel } from "ai";
 import { z } from "zod";
-import type { StepInfo } from "./step-info.ts";
+import type { HookCall } from "@mercury-fw/plugin-types";
 
 export const ProceduralCorrectionCandidateSchema = z.object({ topic: z.string(), value: z.string() });
 export type ProceduralCorrection = { tool: string; topic: string; value: string };
@@ -42,7 +33,7 @@ const SYSTEM_PROMPT =
   "later, not only to whoever found it now. If the second attempt isn't really a correction of the " +
   "first one's error (e.g. the user simply asked for something else), return an empty array.";
 
-/** Same normalization `semantic-fact-extractor.ts` used to apply to identity/preference topics — still needed here since this topic is free text, not a closed enum (procedural corrections are open-ended by nature). */
+/** The topic is free text, not a closed enum (procedural corrections are open-ended by nature): normalized so one rule keeps one key. */
 function normalizeTopic(topic: string): string {
   return topic
     .trim()
@@ -52,35 +43,23 @@ function normalizeTopic(topic: string): string {
 
 type Attempt = { command: string; binary: string; ok: boolean; error?: string };
 
-function extractAttempts(steps: StepInfo[]): Attempt[] {
+
+function extractAttempts(calls: HookCall[]): Attempt[] {
   const attempts: Attempt[] = [];
-  for (const stepInfo of steps) {
-    for (const call of stepInfo.toolCalls) {
-      // A CLI attempt is any tool call carrying a `command` string — the
-      // generic shape every CLI tool takes, whatever its name (jiraCommand,
-      // bitbucketCommand, the residual runCommand). Keying on a fixed tool name
-      // would silently miss plugin-owned CLI tools; keying on the input shape
-      // stays correct as new CLI plugins are added.
-      const input = call.input as { command?: unknown };
-      if (typeof input.command !== "string") continue;
-      // Group attempts by the binary they invoked, which is just the command's
-      // first whitespace-delimited token — no need to fully tokenize the argv
-      // (that belongs to whoever executes the command, not to procedural
-      // learning). An empty/whitespace-only command has no binary to group by.
-      const binary = input.command.trim().split(/\s+/)[0] ?? "";
-      if (binary === "") continue;
-
-      const result = stepInfo.toolResults.find((r) => r.toolCallId === call.toolCallId);
-      const output = result?.output as { ok?: unknown; error?: unknown } | undefined;
-      if (!output) continue; // no result to learn from (e.g. malformed-args tool-error, not a CLI failure)
-
-      attempts.push({
-        command: input.command,
-        binary,
-        ok: output.ok === true,
-        error: typeof output.error === "string" ? output.error : undefined,
-      });
-    }
+  for (const call of calls) {
+    // A CLI attempt is any tool call carrying a `command` string — the
+    // generic shape every CLI tool takes, whatever its name (jiraCommand,
+    // bitbucketCommand, the residual runCommand). Keying on a fixed tool name
+    // would silently miss plugin-owned CLI tools; keying on the input shape
+    // stays correct as new CLI plugins are added.
+    const input = call.input as { command?: unknown } | null;
+    if (typeof input?.command !== "string") continue;
+    // Group attempts by the binary they invoked, which is just the command's
+    // first whitespace-delimited token. An empty/whitespace-only command has
+    // no binary to group by.
+    const binary = input.command.trim().split(/\s+/)[0] ?? "";
+    if (binary === "") continue;
+    attempts.push({ command: input.command, binary, ok: call.ok, ...(call.error === undefined ? {} : { error: call.error }) });
   }
   return attempts;
 }
@@ -99,16 +78,21 @@ function findCorrectionPairs(attempts: Attempt[]): Array<{ failed: Attempt; corr
   return pairs;
 }
 
-/** Returns a function that extracts candidate procedural corrections from a single turn's steps. */
+/** Whether `calls` hold a failed command followed by a successful one for the same binary: something for the model to describe. */
+export function hasCorrectionCandidates(calls: HookCall[]): boolean {
+  return findCorrectionPairs(extractAttempts(calls)).length > 0;
+}
+
+/** Returns a function that extracts candidate procedural corrections from a single turn's calls. */
 export function createToolCorrectionExtractor(
   model: LanguageModel,
   generateObjectFn: GenerateObjectFn = generateObject as unknown as GenerateObjectFn,
   deps?: { log?: (msg: string) => void },
-): (steps: StepInfo[]) => Promise<ProceduralCorrection[]> {
+): (calls: HookCall[]) => Promise<ProceduralCorrection[]> {
   const log = deps?.log ?? ((msg: string) => console.error(msg));
 
-  return async (steps) => {
-    const pairs = findCorrectionPairs(extractAttempts(steps));
+  return async (calls) => {
+    const pairs = findCorrectionPairs(extractAttempts(calls));
     const corrections: ProceduralCorrection[] = [];
 
     for (const { failed, corrected } of pairs) {

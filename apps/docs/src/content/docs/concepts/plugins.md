@@ -129,6 +129,10 @@ who may use its tools decide whose turns it sees. Mercury doesn't wait for this 
 and the person's next message doesn't wait either. Code that fails is written in the log and leaves everything else
 as it was.
 
+What Mercury remembers works this way: the conversation, the archive, the titles, the long-term memory and the
+corrections are plugins of this kind, which an app made with `mfw create` declares (see [Memory](../memory/)), and a
+plugin of yours can learn from conversations the same way they do.
+
 When that work needs the model (a summary, say), the plugin hands it to Mercury as a **job**: Mercury runs it only
 when nobody is waiting for an answer, the same way it runs its own work (see
 [Work nobody waits on](../../reference/config/#work-nobody-waits-on)). The [traces](../traces/) show each job

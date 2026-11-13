@@ -96,6 +96,16 @@ describe("wiki", () => {
     expect(() => wiki()).toThrow("WIKI_VAULT_PATH");
   });
 
+  // #393: the memory plugins write what they learned through the wiki they're given.
+  it("hands out its notes on its own vault, for the memory plugins", async () => {
+    const vault = await tempVault();
+    const plugin = wiki({ vaultPath: vault });
+    const { ctx } = ctxWith();
+    await plugin.build!(ctx);
+    await plugin.notes.promoteFact("static:alice", "team", async () => [{ topic: "team", value: "platform", timestamp: "2026-11-13T10:00:00.000Z" }]);
+    expect(await plugin.notes.facts("static:alice")).toEqual([{ topic: "team", body: "platform", derivedFrom: ["2026-11-13T10:00:00.000Z"] }]);
+  });
+
   it("sets the vault up when it's built: a git repository with its folders and index", async () => {
     const vault = await tempVault();
     const { ctx } = ctxWith();

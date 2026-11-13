@@ -7,7 +7,8 @@ sidebar:
 
 A language model remembers nothing between one answer and the next. Every time it answers, it gets the whole
 conversation again as text and reads it from scratch, and that text has a size limit (the model's **context
-window**). So remembering is the framework's job, and Mercury keeps three kinds of memory.
+window**). So remembering is the app's job: each kind of memory is a plugin the app declares, and an app made with
+`mfw create` declares all of them. Leave one out and the agent does without what it does.
 
 ## The conversation
 
@@ -21,13 +22,16 @@ import { wiki } from "@mercury-fw/wiki";
 import { archive } from "@mercury-fw/archive";
 import { titles } from "@mercury-fw/titles";
 import { profile } from "@mercury-fw/profile";
+import { memory } from "@mercury-fw/memory";
+import { corrections } from "@mercury-fw/corrections";
 
-const conversation = conversationWindow();
 const teamWiki = wiki();
+const longTermMemory = memory({ wiki: teamWiki });
+const conversation = conversationWindow({ earlier: longTermMemory });
 
 export default defineMercuryConfig({
-  plugins: [conversation, teamWiki, archive(), titles(), profile()],
-  context: { profiles: { default: { conversation, layers: [teamWiki], budget: { maxChars: 8000 } } } },
+  plugins: [conversation, teamWiki, longTermMemory, archive(), titles(), profile(), corrections({ wiki: teamWiki })],
+  context: { profiles: { default: { conversation, layers: [teamWiki, longTermMemory], budget: { maxChars: 8000 } } } },
   // …
 });
 ```
@@ -45,7 +49,7 @@ the conversation goes on from the summary plus the recent messages. The person's
 it's the question the model is about to answer.
 
 After 30 minutes of silence (`SESSION_IDLE_TIMEOUT_MS`), Mercury frees the history. What happens next depends on
-the channel: on Google Chat the next message starts a new conversation, with a recap of the last one as background;
+the channel: on Google Chat the next message starts a new conversation, with a recap of the last one as background (see [The long-term memory](#the-long-term-memory));
 over HTTP the window rebuilds the conversation from the archive when the person writes again, as if no time had
 passed: its newest messages word for word, and, when it was given something to read them with (`earlier`), the
 summaries of what came before them.
@@ -119,18 +123,45 @@ area, keeps the index in line with it, and looks for documents that contradict e
 
 ## The long-term memory
 
-After a conversation, Mercury writes short summaries of what was said, asked and decided (never the data a tool
-returned, which goes stale) to a vector database, [Qdrant](https://qdrant.tech). In later conversations it finds
-the summaries related to what the person is asking and gives them to the model as background, so the agent
-remembers the person. Finding "related" summaries is what the **embedding model** is for: it turns text into numbers
-that are close when the meaning is close.
+`@mercury-fw/memory` (`memory()`) remembers each person across conversations. Every few messages of theirs in a
+conversation, counting the answers too (`captureEvery`, 6 by default: three exchanges), and when a conversation
+closes, the model writes a short summary of what was said,
+asked and decided (never the data a tool returned, which goes stale), and finds the facts about the person that are
+likely to stay true (their team, their role, the tools they use). Both go to the app's **vector index**, `vectorIndex`
+in its config: Qdrant, in an app made with `mfw create`. Finding things there by meaning is what the **embedding
+model** is for: it turns text into numbers that are close when the meaning is close. Nothing typed in the terminal is
+remembered.
 
-All this work (the summaries, the title, the corrections, the archive's index) waits for the model to be free: it
-never makes someone who's waiting for an answer wait longer (see [Work nobody waits on](../../reference/config/#work-nobody-waits-on)).
+What the memory gives back:
 
-Where the summaries go is the app's **vector index**, `vectorIndex` in its config: Qdrant, in an app made with
-`mfw create`. An app that declares none keeps no long-term memory at all (see
-[the config reference](../../reference/config/#vectorindex)).
+- **the last conversation**, at the start of a new one: its summaries and the facts it reinforced, as background the
+  model doesn't take for current. The app lists the memory among a profile's `layers` for that. A conversation a chat
+  interface reopens gets none of it: a new one there is a fresh start;
+- **`recall_verbatim`**, a tool the model calls to find what was said in earlier conversations and quote it. Every
+  message a turn leaves is indexed for it;
+- **what came before in a reopened conversation**: `conversationWindow({ earlier })` reads the summaries the memory
+  wrote of it, so a conversation brought back from the archive keeps its older part too.
+
+With a wiki (`memory({ wiki })`), a fact found often enough becomes a note in the person's area, `inferred/`, which
+their wiki tools read, and the last conversation's facts come from there. Which value becomes the note is decided by
+counting, never by the model: the one found most often in its last three occurrences, and only when it has more
+support than the note already there.
+
+`@mercury-fw/corrections` (`corrections({ wiki })`) learns how to use a tool: when a command fails and a later one
+for the same tool works in the same turn, the model describes the rule, and the wiki writes the one with most support
+to `curated/standards/<tool>-<topic>.md`, which everyone reads. A summary or a correction that can't be kept is
+written in the log and doesn't stop the others; the messages of a summary that failed wait for the next one, except
+when the conversation has closed, where they're tried once more and then dropped.
+
+All this work (the summaries, the facts, the corrections, the title, the index of the messages) waits for the model to
+be free: it never makes someone who's waiting for an answer wait longer (see
+[Work nobody waits on](../../reference/config/#work-nobody-waits-on)). Both plugins need the vector index and the
+embedding model (`needs: ["vectorIndex", "embedding"]`): an app declaring them without one doesn't start.
+
+| `memory()` option | |
+|---|---|
+| `wiki` | The wiki the facts are promoted to and read back from; without one they stay in the index. |
+| `captureEvery` | How many new messages of a person in a conversation, theirs and the answers, make a summary; `SESSION_CAPTURE_MESSAGE_THRESHOLD`, else 6, when left out. |
 
 `mfw memory` lists and reads what's stored.
 
@@ -141,15 +172,14 @@ Two kinds of storage hold the memory, each declared in the app's config:
 | | Holds | Read by | Left out |
 |---|---|---|---|
 | The **conversation store** (`conversationStore`) | every message word for word (written by `archive()`), and each conversation's title (by `titles()`, or the person) | person and conversation, in time order: to reopen a conversation, to list them | nothing is archived: no conversation to reopen or list, no titles |
-| The **vector index** (`vectorIndex`) | the summaries, what the agent learned, the corrections, and a copy of each message to search | meaning: the entries closest to what's asked | no long-term memory, nothing learned |
+| The **vector index** (`vectorIndex`) | the summaries and facts (written by `memory()`), the corrections (by `corrections()`), and a copy of each message to search (by `memory()`) | meaning: the entries closest to what's asked | no long-term memory, nothing learned |
 
-The store is the record: what's in it is what was said. The index holds a copy of each message, made to find things,
-and its answers are the closest matches, not exact ones. Searching past messages (`recall_verbatim`) needs both
-declared: Mercury indexes every message a turn leaves, the same ones `archive()` writes, whether or not the app
-declares `archive()`. An app made with `mfw create` declares Qdrant for both.
+The store is the record: what's in it is what was said. The index holds what the memory found in it, made to find
+things, and its answers are the closest matches, not exact ones: `memory()` indexes every message a turn leaves, the
+same ones `archive()` writes. An app made with `mfw create` declares Qdrant for both.
 
 ## When something is missing
 
-Without a plugin keeping the conversation the model reads each message alone, without a vector index there's no
-long-term memory at all, without a conversation store or `archive()` no archive; if either can't be reached, or the wiki is empty,
+Without a plugin keeping the conversation the model reads each message alone, without `memory()` or a vector index
+there's no long-term memory at all, without a conversation store or `archive()` no archive; if either can't be reached, or the wiki is empty,
 the agent still answers, it just remembers less.

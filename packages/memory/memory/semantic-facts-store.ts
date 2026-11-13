@@ -7,7 +7,7 @@
  * extraction, clustering, and promotion are separate concerns built on
  * top of it.
  */
-import type { VectorIndex } from "@mercury-fw/channel-types";
+import type { VectorIndex } from "@mercury-fw/plugin-types";
 
 /** The vector index's space the facts live in. */
 export const SEMANTIC_FACTS_SPACE = "semantic_facts";

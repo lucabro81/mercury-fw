@@ -10,9 +10,6 @@
  * which would be wrong for half the year.
  */
 
-/** Matches a stamp at the start of a message, line break included. */
-const STAMP_RE = /^\[[A-Z][a-z]+day \d{4}-\d{2}-\d{2} \d{2}:\d{2} [^\]\s]+\]\n/;
-
 /**
  * `name` as the IANA list writes it (`europe/rome` is `Europe/Rome`), or
  * undefined when it isn't a zone's name. `Intl` also takes a fixed offset
@@ -43,8 +40,3 @@ export function resolveTimeZone(saved: string | undefined, hint: string | undefi
 
 /** The stamp for a message written at a date in a time zone, line break included: the contract's, so a conversation plugin stamps what it brings back the same way. */
 export { formatTurnStamp } from "@mercury-fw/plugin-types";
-
-/** `text` without the stamp at its start, for whatever reads the history but isn't the model's turn. */
-export function stripTurnStamp(text: string): string {
-  return text.replace(STAMP_RE, "");
-}

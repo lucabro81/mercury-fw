@@ -23,10 +23,13 @@ import { wiki } from "@mercury-fw/wiki";
 import { archive } from "@mercury-fw/archive";
 import { titles } from "@mercury-fw/titles";
 import { profile } from "@mercury-fw/profile";
+import { memory } from "@mercury-fw/memory";
+import { corrections } from "@mercury-fw/corrections";
 
 const name = "Hermes";
-const conversation = conversationWindow();
 const teamWiki = wiki();
+const longTermMemory = memory({ wiki: teamWiki });
+const conversation = conversationWindow({ earlier: longTermMemory });
 
 const main = ollamaModel(process.env.OLLAMA_MODEL, {
   think: envBoolean("OLLAMA_THINK", true),
@@ -47,7 +50,7 @@ export default defineMercuryConfig({
       // …
     ].join("\n"),
   },
-  plugins: [conversation, teamWiki, archive(), titles(), profile()],
+  plugins: [conversation, teamWiki, longTermMemory, archive(), titles(), profile(), corrections({ wiki: teamWiki })],
   channels: [httpChannel],
   auth: oidcAuth,
   directory: staticDirectory,
@@ -58,7 +61,7 @@ export default defineMercuryConfig({
     turn: main,
     embedding: ollamaEmbedding(process.env.OLLAMA_EMBEDDING_MODEL ?? "nomic-embed-text"),
   },
-  context: { profiles: { default: { conversation, layers: [teamWiki], budget: { maxChars: 8000 } } } },
+  context: { profiles: { default: { conversation, layers: [teamWiki, longTermMemory], budget: { maxChars: 8000 } } } },
   i18n: { defaultLocale: "it", locales: { en, it } },
   traces: { sink: jsonlTraces(), level: "meta" },
   version: pkg.version,
@@ -117,9 +120,9 @@ agent talks only to the people it knows, and to nobody while the directory can't
 
 ## `vectorIndex`
 
-Where the long-term memory is found by meaning: the summaries of past conversations, what the agent learned about
-each person, the corrections to how a tool is used, and searching past messages. See
-[Memory](../../concepts/memory/).
+Where the long-term memory is found by meaning: the summaries of past conversations and what the agent learned about
+each person (`memory()`), the corrections to how a tool is used (`corrections()`), and searching past messages. See
+[Memory](../../concepts/memory/#the-long-term-memory).
 
 ```ts
 import { qdrantIndex } from "@mercury-fw/store-qdrant";
@@ -127,9 +130,8 @@ import { qdrantIndex } from "@mercury-fw/store-qdrant";
 vectorIndex: qdrantIndex(),
 ```
 
-Left out, the agent keeps no long-term memory: it doesn't summarize conversations, doesn't learn corrections, and
-the model isn't offered the tool that searches past messages. A plugin that needs it (`needs: ["vectorIndex"]`) stops
-the agent at startup when it's left out (see [What a plugin can use](../../concepts/primitives/)). An index that can't start leaves the agent the same
+Left out, the agent keeps no long-term memory, and `memory()` and `corrections()`, which need it, can't be declared:
+a plugin that needs it (`needs: ["vectorIndex"]`) stops the agent at startup when it's left out (see [What a plugin can use](../../concepts/primitives/)). An index that can't start leaves the agent the same
 way, said once in the log; an index that isn't answering yet only delays the memory until it does.
 
 ## `conversationStore`
@@ -262,7 +264,7 @@ A plugin that needs a model of its own takes one in its configuration, `somePlug
 ### Work nobody waits on
 
 Besides answering, the agent uses its models for work nobody is waiting on: a conversation's title, what the memory
-keeps of a conversation, the corrections it learns, the index of the archive, the wiki's nightly review. A model
+keeps of a conversation, the corrections it learns, the index of the messages, the wiki's nightly review. A model
 answers a limited number of requests at the same time (its `capacity`); one answering one at a time, while it writes a
 title, makes the person who just wrote wait.
 
@@ -274,8 +276,8 @@ So that work waits for its turn. Each model has a queue, and:
   `capacity` free, never more than `backgroundSlots` at once. On a model with capacity 1 it runs only while nobody
   is waiting for an answer;
 - between two calls of the same work, an answer that arrived goes first;
-- a title, a correction and the archive's index go before what can wait longer (what the memory keeps, the nightly
-  review).
+- the work a plugin marks `"soon"` (a title, a correction, the index of the messages) goes before what can wait
+  longer (what the memory keeps, the nightly review).
 
 A plugin's own work of this kind (a job, see [Plugins](../../concepts/plugins/#after-a-turn-and-when-a-conversation-closes)) waits the same way.
 

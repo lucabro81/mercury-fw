@@ -1,7 +1,7 @@
 import { describe, it, expect } from "bun:test";
-import { createToolCorrectionExtractor } from "./tool-correction-extractor.ts";
+import { createToolCorrectionExtractor, hasCorrectionCandidates } from "./extractor.ts";
 import type { LanguageModel } from "ai";
-import type { StepInfo } from "./step-info.ts";
+import type { HookCall } from "@mercury-fw/plugin-types";
 
 const MODEL = "fake-model" as unknown as LanguageModel;
 
@@ -13,13 +13,21 @@ function runCommandResult(toolCallId: string, output: { ok: boolean; error?: str
   return { toolCallId, toolName: "runCommand", output };
 }
 
-function step(toolCalls: StepInfo["toolCalls"], toolResults: StepInfo["toolResults"]): StepInfo {
-  return { toolCalls, toolResults, content: [] };
+type Call = { toolCallId: string; toolName: string; input: unknown };
+type Result = { toolCallId: string; toolName: string; output: { ok: boolean; error?: string; data?: unknown } };
+
+/** A model step's calls as a finished turn reports them (`HookCall`): only the ones with a result. */
+function step(toolCalls: Call[], toolResults: Result[]): HookCall[] {
+  return toolCalls.flatMap((call) => {
+    const result = toolResults.find((r) => r.toolCallId === call.toolCallId);
+    if (result === undefined) return [];
+    return [{ toolName: call.toolName, input: call.input, ok: result.output.ok, ...(result.output.error === undefined ? {} : { error: result.output.error }) }];
+  });
 }
 
 describe("createToolCorrectionExtractor", () => {
   it("pairs a failed call with the next successful call for the same binary, and asks the model to describe the correction", async () => {
-    const steps: StepInfo[] = [
+    const steps: HookCall[][] = [
       step(
         [runCommandCall("1", 'jira issue search --jql "x" --fields summary')],
         [runCommandResult("1", { ok: false, error: "refusing to print without --select" })],
@@ -37,7 +45,7 @@ describe("createToolCorrectionExtractor", () => {
     };
 
     const extract = createToolCorrectionExtractor(MODEL, generateObjectFn);
-    const result = await extract(steps);
+    const result = await extract(steps.flat());
 
     expect(result).toEqual([
       { tool: "jira", topic: "select-prefix", value: "ogni --select deve iniziare per issues." },
@@ -51,7 +59,7 @@ describe("createToolCorrectionExtractor", () => {
   // ("jira-select-flag" next to "select-flag"), and the note's file is
   // `<tool>-<topic>.md`: one rule, two files, one of them "jira-jira-…".
   it("asks, in English, for a topic naming the flag or subcommand, without the CLI's name", async () => {
-    const steps: StepInfo[] = [
+    const steps: HookCall[][] = [
       step([runCommandCall("1", "jira issue search --fields x")], [runCommandResult("1", { ok: false, error: "boom" })]),
       step([runCommandCall("2", "jira issue search --select x")], [runCommandResult("2", { ok: true, data: {} })]),
     ];
@@ -61,7 +69,7 @@ describe("createToolCorrectionExtractor", () => {
       return { object: [] };
     };
 
-    await createToolCorrectionExtractor(MODEL, generateObjectFn)(steps);
+    await createToolCorrectionExtractor(MODEL, generateObjectFn)(steps.flat());
 
     expect(received?.instructions).toContain(
       '"topic" is a short, stable key for this correction: the name of the flag or subcommand it is about, in kebab-case, ' +
@@ -73,7 +81,7 @@ describe("createToolCorrectionExtractor", () => {
   });
 
   it("does not pair a failure with a success from a different binary", async () => {
-    const steps: StepInfo[] = [
+    const steps: HookCall[][] = [
       step([runCommandCall("1", "jira issue search --jql x")], [runCommandResult("1", { ok: false, error: "e" })]),
       step([runCommandCall("2", "bitbucket pr list")], [runCommandResult("2", { ok: true, data: {} })]),
     ];
@@ -85,14 +93,14 @@ describe("createToolCorrectionExtractor", () => {
     };
 
     const extract = createToolCorrectionExtractor(MODEL, generateObjectFn);
-    const result = await extract(steps);
+    const result = await extract(steps.flat());
 
     expect(calls).toBe(0);
     expect(result).toEqual([]);
   });
 
   it("returns nothing when a failure is never followed by a success for the same binary", async () => {
-    const steps: StepInfo[] = [
+    const steps: HookCall[][] = [
       step([runCommandCall("1", "jira issue search --jql x")], [runCommandResult("1", { ok: false, error: "e" })]),
     ];
 
@@ -103,59 +111,59 @@ describe("createToolCorrectionExtractor", () => {
     };
 
     const extract = createToolCorrectionExtractor(MODEL, generateObjectFn);
-    const result = await extract(steps);
+    const result = await extract(steps.flat());
 
     expect(calls).toBe(0);
     expect(result).toEqual([]);
   });
 
   it("returns nothing when every call already succeeded (no failure to learn from)", async () => {
-    const steps: StepInfo[] = [
+    const steps: HookCall[][] = [
       step([runCommandCall("1", "jira issue search --jql x --select-all")], [runCommandResult("1", { ok: true, data: {} })]),
     ];
 
     const generateObjectFn = async () => ({ object: [] });
     const extract = createToolCorrectionExtractor(MODEL, generateObjectFn);
-    const result = await extract(steps);
+    const result = await extract(steps.flat());
 
     expect(result).toEqual([]);
   });
 
   it("lets the model decide a candidate pair isn't a real correction, by returning an empty array", async () => {
-    const steps: StepInfo[] = [
+    const steps: HookCall[][] = [
       step([runCommandCall("1", "jira issue search --jql x")], [runCommandResult("1", { ok: false, error: "e" })]),
       step([runCommandCall("2", "jira issue search --jql y")], [runCommandResult("2", { ok: true, data: {} })]),
     ];
 
     const generateObjectFn = async () => ({ object: [] });
     const extract = createToolCorrectionExtractor(MODEL, generateObjectFn);
-    const result = await extract(steps);
+    const result = await extract(steps.flat());
 
     expect(result).toEqual([]);
   });
 
   it("normalizes the topic returned by the model", async () => {
-    const steps: StepInfo[] = [
+    const steps: HookCall[][] = [
       step([runCommandCall("1", "jira issue search --jql x")], [runCommandResult("1", { ok: false, error: "e" })]),
       step([runCommandCall("2", "jira issue search --jql x --select issues.key")], [runCommandResult("2", { ok: true, data: {} })]),
     ];
 
     const generateObjectFn = async () => ({ object: [{ topic: "  Select Prefix  ", value: "v" }] });
     const extract = createToolCorrectionExtractor(MODEL, generateObjectFn);
-    const result = await extract(steps);
+    const result = await extract(steps.flat());
 
     expect(result).toEqual([{ tool: "jira", topic: "select-prefix", value: "v" }]);
   });
 
   it("ignores tool calls that carry no command input (e.g. wiki tools)", async () => {
-    const steps: StepInfo[] = [
+    const steps: HookCall[][] = [
       step(
         [{ toolCallId: "1", toolName: "read_file", input: { path: "x" } }],
         [{ toolCallId: "1", toolName: "read_file", output: { ok: false, error: "nope" } }],
       ),
       step(
         [{ toolCallId: "2", toolName: "read_file", input: { path: "y" } }],
-        [{ toolCallId: "2", toolName: "read_file", output: { ok: true, content: "hi" } }],
+        [{ toolCallId: "2", toolName: "read_file", output: { ok: true, data: "hi" } }],
       ),
     ];
 
@@ -166,7 +174,7 @@ describe("createToolCorrectionExtractor", () => {
     };
 
     const extract = createToolCorrectionExtractor(MODEL, generateObjectFn);
-    const result = await extract(steps);
+    const result = await extract(steps.flat());
 
     expect(calls).toBe(0);
     expect(result).toEqual([]);
@@ -179,7 +187,7 @@ describe("createToolCorrectionExtractor", () => {
   // exists to serve. A CLI attempt is now recognized by its `command` input,
   // whatever the tool is named.
   it("learns corrections from a plugin-owned CLI tool, not just a tool literally named runCommand", async () => {
-    const steps: StepInfo[] = [
+    const steps: HookCall[][] = [
       step(
         [{ toolCallId: "1", toolName: "jiraCommand", input: { command: 'jira issue search --jql "x" --fields summary' } }],
         [{ toolCallId: "1", toolName: "jiraCommand", output: { ok: false, error: "refusing to print without --select" } }],
@@ -192,7 +200,7 @@ describe("createToolCorrectionExtractor", () => {
     const generateObjectFn = async () => ({ object: [{ topic: "select-prefix", value: "v" }] });
 
     const extract = createToolCorrectionExtractor(MODEL, generateObjectFn);
-    const result = await extract(steps);
+    const result = await extract(steps.flat());
 
     expect(result).toEqual([{ tool: "jira", topic: "select-prefix", value: "v" }]);
   });
@@ -201,7 +209,7 @@ describe("createToolCorrectionExtractor", () => {
   // tokenization — a whitespace-only command has no binary to group by and is
   // skipped, so it never pairs with anything.
   it("skips a runCommand call whose command is empty/whitespace-only", async () => {
-    const steps: StepInfo[] = [
+    const steps: HookCall[][] = [
       step([runCommandCall("1", "   ")], [runCommandResult("1", { ok: false, error: "e" })]),
       step([runCommandCall("2", "   ")], [runCommandResult("2", { ok: true, data: {} })]),
     ];
@@ -213,14 +221,14 @@ describe("createToolCorrectionExtractor", () => {
     };
 
     const extract = createToolCorrectionExtractor(MODEL, generateObjectFn);
-    const result = await extract(steps);
+    const result = await extract(steps.flat());
 
     expect(calls).toBe(0);
     expect(result).toEqual([]);
   });
 
   it("a generateObjectFn failure for one pair is caught and logged, doesn't stop other pairs", async () => {
-    const steps: StepInfo[] = [
+    const steps: HookCall[][] = [
       step([runCommandCall("1", "jira issue search --jql x")], [runCommandResult("1", { ok: false, error: "e" })]),
       step([runCommandCall("2", "jira issue search --jql x --select issues.key")], [runCommandResult("2", { ok: true, data: {} })]),
       step([runCommandCall("3", "bitbucket pr list --bad")], [runCommandResult("3", { ok: false, error: "e2" })]),
@@ -236,9 +244,20 @@ describe("createToolCorrectionExtractor", () => {
 
     const loggedMessages: string[] = [];
     const extract = createToolCorrectionExtractor(MODEL, generateObjectFn, { log: (msg) => loggedMessages.push(msg) });
-    const result = await extract(steps);
+    const result = await extract(steps.flat());
 
     expect(result).toEqual([{ tool: "bitbucket", topic: "list-flag", value: "no --bad flag" }]);
     expect(loggedMessages.some((m) => m.includes("model unreachable"))).toBe(true);
+  });
+});
+
+describe("hasCorrectionCandidates", () => {
+  it("is true only for a failed command followed by a successful one of the same binary", () => {
+    const fail = { toolName: "jiraCommand", input: { command: "jira x" }, ok: false, error: "no" };
+    const ok = { toolName: "jiraCommand", input: { command: "jira y" }, ok: true };
+    expect(hasCorrectionCandidates([fail, ok])).toBe(true);
+    expect(hasCorrectionCandidates([ok, fail])).toBe(false);
+    expect(hasCorrectionCandidates([fail, { ...ok, input: { command: "bitbucket y" } }])).toBe(false);
+    expect(hasCorrectionCandidates([])).toBe(false);
   });
 });

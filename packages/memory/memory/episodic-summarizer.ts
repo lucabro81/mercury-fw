@@ -20,7 +20,7 @@
  * `generateText` is injectable, so a test can check what the model is told.
  */
 import { generateText, type LanguageModel } from "ai";
-import type { Message } from "./history.ts";
+import type { Message } from "./messages.ts";
 
 /** What the episodic summarizer is told: an account of what happened, never the data a tool returned (#233). */
 export const EPISODIC_SUMMARY_INSTRUCTIONS =

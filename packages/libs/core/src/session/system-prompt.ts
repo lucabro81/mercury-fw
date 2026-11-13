@@ -53,8 +53,6 @@ export function buildSystemPrompt(opts: {
   skills: Skill[];
   multiUserChannel: boolean;
   persona?: Persona;
-  /** Whether the session has `recall_verbatim` (it needs a vector index); described when left out. */
-  recallVerbatim?: boolean;
 }): string {
   const assistantName = assistantNameOf(opts.persona);
   // Right after the identity: what the line on every message is, whatever the plugins.
@@ -102,14 +100,6 @@ export function buildSystemPrompt(opts: {
       "- If your context contains an opaque `[REQ:<token>]` marker, that's a reference to a past confirm-required request — call resolve_reference with that token to see what it was, don't guess at what it means.",
     ].join("\n"),
   );
-  if (opts.recallVerbatim !== false) lines.push(
-    [
-      "You have access to the recall_verbatim tool.",
-      "DO:",
-      "- If asked about something said in an EARLIER conversation — beyond what you can see in this one — call recall_verbatim to retrieve the actual past messages and quote them, don't reconstruct from memory. This searches a durable archive of what you and this person really said before.",
-      "- Use it only for what was said in past conversations, never for what you ran in the CURRENT one.",
-    ].join("\n"),
-  );
 
   if (opts.multiUserChannel) {
     // Interim, explicitly non-deterministic mitigation for Mercury replying
@@ -143,7 +133,6 @@ export function buildSystemPrompts(opts: {
   skills: Skill[];
   /** Required even when undefined, so a caller can't silently drop the instance's persona. */
   persona: Persona | undefined;
-  recallVerbatim?: boolean;
 }): { system: string; chatSystem: string } {
   return {
     system: buildSystemPrompt({ ...opts, multiUserChannel: false }),

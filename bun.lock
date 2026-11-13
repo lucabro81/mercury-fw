@@ -28,8 +28,10 @@
         "@mercury-fw/auth-static": "workspace:*",
         "@mercury-fw/channel-google-chat": "workspace:*",
         "@mercury-fw/channel-http": "workspace:*",
+        "@mercury-fw/corrections": "workspace:*",
         "@mercury-fw/directory-static": "workspace:*",
         "@mercury-fw/formatter": "workspace:*",
+        "@mercury-fw/memory": "workspace:*",
         "@mercury-fw/plugin-atlassian-admin": "workspace:*",
         "@mercury-fw/plugin-bitbucket": "workspace:*",
         "@mercury-fw/plugin-confluence": "workspace:*",
@@ -298,6 +300,36 @@
       "version": "0.74.0",
       "dependencies": {
         "@mercury-fw/plugin-types": "workspace:*",
+        "ai": "^7.0.126",
+        "zod": "^4.6.5",
+      },
+      "devDependencies": {
+        "@mercury-fw/typescript-config": "*",
+        "@types/bun": "^1.4.2",
+        "typescript": "^6.0.3",
+      },
+    },
+    "packages/memory/corrections": {
+      "name": "@mercury-fw/corrections",
+      "version": "0.74.0",
+      "dependencies": {
+        "@mercury-fw/plugin-types": "workspace:*",
+        "@mercury-fw/wiki": "workspace:*",
+        "ai": "^7.0.126",
+        "zod": "^4.6.5",
+      },
+      "devDependencies": {
+        "@mercury-fw/typescript-config": "*",
+        "@types/bun": "^1.4.2",
+        "typescript": "^6.0.3",
+      },
+    },
+    "packages/memory/memory": {
+      "name": "@mercury-fw/memory",
+      "version": "0.74.0",
+      "dependencies": {
+        "@mercury-fw/plugin-types": "workspace:*",
+        "@mercury-fw/wiki": "workspace:*",
         "ai": "^7.0.126",
         "zod": "^4.6.5",
       },
@@ -788,6 +820,8 @@
 
     "@mercury-fw/core": ["@mercury-fw/core@workspace:packages/libs/core"],
 
+    "@mercury-fw/corrections": ["@mercury-fw/corrections@workspace:packages/memory/corrections"],
+
     "@mercury-fw/directory-static": ["@mercury-fw/directory-static@workspace:packages/directories/directory-static"],
 
     "@mercury-fw/docs": ["@mercury-fw/docs@workspace:apps/docs"],
@@ -795,6 +829,8 @@
     "@mercury-fw/formatter": ["@mercury-fw/formatter@workspace:packages/formatters/formatter"],
 
     "@mercury-fw/kit": ["@mercury-fw/kit@workspace:packages/libs/kit"],
+
+    "@mercury-fw/memory": ["@mercury-fw/memory@workspace:packages/memory/memory"],
 
     "@mercury-fw/plugin-atlassian-admin": ["@mercury-fw/plugin-atlassian-admin@workspace:packages/tools/plugin-atlassian-admin"],
 
