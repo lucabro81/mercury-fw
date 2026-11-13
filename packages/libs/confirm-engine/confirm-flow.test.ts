@@ -11,7 +11,6 @@ function baseDeps(overrides: Partial<Parameters<typeof resolveConfirmation>[2]> 
   return {
     store: createConfirmationStore(),
     owner: OWNER,
-    vaultPath: "/vault",
     writeConfirmationNoteFn: noopWriteConfirmationNoteFn,
     ...overrides,
   };
@@ -91,8 +90,8 @@ describe("resolveConfirmation", () => {
         ),
       );
       const writes: unknown[] = [];
-      const writeConfirmationNoteFn: WriteConfirmationNote = async (vaultPath, owner, tok, fields) => {
-        writes.push({ vaultPath, owner, tok, fields });
+      const writeConfirmationNoteFn: WriteConfirmationNote = async (owner, tok, fields) => {
+        writes.push({ owner, tok, fields });
       };
 
       await resolveConfirmation(
@@ -103,7 +102,6 @@ describe("resolveConfirmation", () => {
 
       expect(writes).toEqual([
         {
-          vaultPath: "/vault",
           owner: OWNER,
           tok: "k9m2-x7q4",
           fields: {
@@ -122,14 +120,14 @@ describe("resolveConfirmation", () => {
         staged("jira issue delete KAN-1 --confirm", async () => ({ ok: false, error: "boom" }), "2026-07-27T12:20:00.000Z"),
       );
       const writes: unknown[] = [];
-      const writeConfirmationNoteFn: WriteConfirmationNote = async (vaultPath, owner, tok, fields) => {
-        writes.push({ vaultPath, owner, tok, fields });
+      const writeConfirmationNoteFn: WriteConfirmationNote = async (owner, tok, fields) => {
+        writes.push({ owner, tok, fields });
       };
 
       await resolveConfirmation(token, "terminal", baseDeps({ store, writeConfirmationNoteFn }));
 
       expect(writes).toEqual([
-        { vaultPath: "/vault", owner: OWNER, tok: "k9m2-x7q4", fields: expect.objectContaining({ status: "failed" }) },
+        { owner: OWNER, tok: "k9m2-x7q4", fields: expect.objectContaining({ status: "failed" }) },
       ]);
     });
 
@@ -137,7 +135,7 @@ describe("resolveConfirmation", () => {
       const store = createConfirmationStore({ tokenFn: () => "k9m2-x7q4" });
       const token = store.stage("terminal", OWNER, staged("jira issue delete KAN-1 --confirm", async () => ({ ok: true, data: {} })));
       const writes: unknown[] = [];
-      const writeConfirmationNoteFn: WriteConfirmationNote = async (_v, _u, _t, fields) => {
+      const writeConfirmationNoteFn: WriteConfirmationNote = async (_u, _t, fields) => {
         writes.push(fields);
       };
 
@@ -174,7 +172,7 @@ describe("a choice of a group", () => {
 
     await resolveConfirmation("abc2-wxyz", "s1", baseDeps({
       store,
-      writeConfirmationNoteFn: async (_v, _o, token, fields) => {
+      writeConfirmationNoteFn: async (_o, token, fields) => {
         writes.push({ token, command: fields.command, status: fields.status });
       },
     }));

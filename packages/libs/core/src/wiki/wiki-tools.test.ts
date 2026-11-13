@@ -3,7 +3,7 @@ import { mkdtemp, rm, readFile, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { StageConfirmation } from "@mercury-fw/plugin-types";
-import { writeCuratedNote, writeInferredNote, writeConfirmationNote, writePersonalNote } from "./wiki-note.ts";
+import { writeCuratedNote, writeInferredNote, writePersonalNote } from "./wiki-note.ts";
 import { createWikiTools } from "./wiki-tools.ts";
 import { initVault } from "./vault-init.ts";
 
@@ -289,47 +289,4 @@ describe("createWikiTools", () => {
     expect(await exists(join(vaultPath, "users/static%3Aalice/notes/x.txt"))).toBe(false);
   });
 
-  describe("resolve_reference", () => {
-    const pending = {
-      status: "pending" as const,
-      requestedAt: "2026-07-27T12:20:00Z",
-      resolvedAt: null,
-      command: "jira issue delete KAN-1 --confirm",
-    };
-
-    it("reads the person's own confirmation note by token", async () => {
-      const vaultPath = await makeTempVault();
-      await writeConfirmationNote(vaultPath, ALICE, "j3h4b5", pending);
-
-      const result = await call(toolsFor(vaultPath, ALICE).tools.resolve_reference, { token: "j3h4b5" });
-
-      expect(result.ok).toBe(true);
-      expect(result.content).toContain("jira issue delete KAN-1 --confirm");
-      expect(result.content).toContain("status: pending");
-    });
-
-    it("returns a self-correctable error for an unknown/expired token", async () => {
-      const vaultPath = await makeTempVault();
-      const result = await call(toolsFor(vaultPath, ALICE).tools.resolve_reference, { token: "nope00" });
-      expect(result.ok).toBe(false);
-    });
-
-    it("cannot resolve another person's token even if the string matches, nor climb out with one", async () => {
-      const vaultPath = await makeTempVault();
-      await writeConfirmationNote(vaultPath, BOB, "j3h4b5", pending);
-      const { resolve_reference } = toolsFor(vaultPath, ALICE).tools;
-
-      expect((await call(resolve_reference, { token: "j3h4b5" })).ok).toBe(false);
-      expect((await call(resolve_reference, { token: "../../static%3Abob/confirmations/j3h4b5" })).ok).toBe(false);
-    });
-
-    it("is not discoverable via list_files or grep — only resolve_reference reaches it", async () => {
-      const vaultPath = await makeTempVault();
-      await writeConfirmationNote(vaultPath, ALICE, "j3h4b5", pending);
-      const { list_files, grep } = toolsFor(vaultPath, ALICE).tools;
-
-      expect(await call(list_files, {})).toEqual({ ok: true, files: [] });
-      expect(await call(grep, { pattern: "jira issue delete" })).toEqual({ ok: true, matches: [] });
-    });
-  });
 });

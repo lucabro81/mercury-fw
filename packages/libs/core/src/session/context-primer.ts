@@ -22,6 +22,8 @@ export type ContextPrimerDeps = {
   listWikiFilesInRootsFn: typeof listWikiFilesInRoots;
   readWikiFileInRootsFn: typeof readWikiFileInRoots;
   readIndexFileFn: typeof readIndexFile;
+  /** The tokens of the person's confirmations still pending (see `data/confirmation-notes.ts`). */
+  pendingTokens: (key: string) => Promise<string[]>;
   /** Where a skipped section says why (the recap, when Qdrant doesn't answer). */
   log: (msg: string) => void;
 };
@@ -42,37 +44,6 @@ function derivedFromTimestamps(text: string): string[] {
 function noteBody(text: string): string {
   const match = FRONTMATTER_RE.exec(text);
   return (match ? text.slice(match[0].length) : text).trim();
-}
-
-/** Extracts a confirmation note's `status` field — `undefined` for anything not shaped like one (missing/unparseable frontmatter). */
-function noteStatus(text: string): string | undefined {
-  const match = FRONTMATTER_RE.exec(text);
-  if (!match) {
-    return undefined;
-  }
-  const frontmatter = parseYaml(match[1] as string) as { status?: unknown };
-  return typeof frontmatter.status === "string" ? frontmatter.status : undefined;
-}
-
-/**
- * Tokens of this person's still-`"pending"` confirmation notes
- * (`users/<key>/confirmations/<token>.md` — see `writeConfirmationNote`
- * in `wiki-note.ts`). Deliberately a separate lookup from the "Known facts"
- * cross-reference below: this subtree isn't correlated to the last
- * session's episodic timestamps, it's simply "whatever is still open right
- * now" for this user, regardless of which session staged it.
- */
-async function pendingConfirmationTokens(key: string, deps: ContextPrimerDeps): Promise<string[]> {
-  const confirmationsRoot = resolve(deps.vaultPath, userArea(key), "confirmations");
-  const files = await deps.listWikiFilesInRootsFn(deps.vaultPath, [confirmationsRoot]);
-  const tokens: string[] = [];
-  for (const file of files) {
-    const text = await deps.readWikiFileInRootsFn(deps.vaultPath, [confirmationsRoot], file);
-    if (noteStatus(text) === "pending") {
-      tokens.push(file.split("/").pop()!.replace(/\.md$/, ""));
-    }
-  }
-  return tokens;
 }
 
 /**
@@ -118,7 +89,7 @@ export async function buildContextPrimer(
         });
   // Checked regardless of `entries` — a pending confirmation isn't tied to
   // "was there a prior episodic session", it's simply still open right now.
-  const pendingTokens = await pendingConfirmationTokens(key, deps);
+  const pendingTokens = await deps.pendingTokens(key);
   // Same for every user (curated/ has no per-user scoping) — checked
   // regardless of prior session too, so even a first-ever session gets
   // pointed at what's in the wiki right now.
@@ -157,9 +128,9 @@ export async function buildContextPrimer(
   }
 
   // Deliberately opaque: just the token, no command, no "still pending"
-  // narrative — see pendingConfirmationTokens's own doc comment for why.
+  // narrative.
   // Resolving it into something meaningful requires the model to
-  // deliberately call resolve_reference (wiki-tools.ts) with the token.
+  // deliberately call resolve_reference (tools/resolve-reference-tool.ts) with the token.
   if (pendingTokens.length > 0) {
     current.push(`Open references:\n${pendingTokens.map((t) => `- [REQ:${t}]`).join("\n")}`);
   }

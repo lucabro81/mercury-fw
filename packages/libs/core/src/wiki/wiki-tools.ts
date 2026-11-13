@@ -1,6 +1,6 @@
 /**
  * Model-invocable wiki tools (`list_files`/`read_file`/`write_file`/`grep`/
- * `promote_note`/`resolve_reference`) for one person, wrapping the plain
+ * `promote_note`) for one person, wrapping the plain
  * functions in `identity/vault-access.ts` and `wiki-note.ts` in `tool()`, same
  * split as cli-executor.ts/cli-tool.ts for the external CLIs.
  *
@@ -23,7 +23,6 @@ import {
   curatedDestination,
   grepVisible,
   listVisible,
-  readConfirmationNote,
   readPersonalNote,
   readVisible,
 } from "../identity/vault-access.ts";
@@ -52,7 +51,7 @@ function today(): string {
 /** Builds the wiki tools scoped to `deps.key`: the common area plus that person's own area, as `personal/`. */
 export function createWikiTools(
   deps: WikiToolsDeps,
-): Record<"list_files" | "read_file" | "write_file" | "grep" | "promote_note" | "resolve_reference", ExecutableTool> {
+): Record<"list_files" | "read_file" | "write_file" | "grep" | "promote_note", ExecutableTool> {
   const { vaultPath, key, stageConfirmation } = deps;
   const scope = { vaultPath, key };
   const curatedExists = (destination: string) => Bun.file(join(vaultPath, "curated", destination)).exists();
@@ -157,26 +156,5 @@ export function createWikiTools(
     },
   });
 
-  // Reaches the person's confirmations/ folder by exact token only: it's
-  // invisible to list_files/read_file/grep (see ConfirmationFrontmatterSchema's
-  // doc comment), and scoped to their own area, so a token string that
-  // happens to match someone else's is still unreachable.
-  const resolve_reference = tool({
-    description:
-      "Resolve an opaque [REQ:<token>] reference (e.g. one you see in your own context) into the confirmation " +
-      "request it points to — a past action that required explicit confirmation, and whether it was confirmed, " +
-      "failed, or is still pending. If it's still pending, ask the user whether they still want it done — never " +
-      "re-run the command yourself without them explicitly saying so.",
-    inputSchema: z.object({ token: z.string().min(1) }),
-    execute: async ({ token }) => {
-      try {
-        const content = await readConfirmationNote(vaultPath, key, token);
-        return { ok: true as const, content };
-      } catch (err) {
-        return { ok: false as const, error: String(err) };
-      }
-    },
-  });
-
-  return { list_files, read_file, write_file, grep, promote_note, resolve_reference };
+  return { list_files, read_file, write_file, grep, promote_note };
 }

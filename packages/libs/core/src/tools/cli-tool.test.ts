@@ -213,7 +213,6 @@ describe("createCliTool", () => {
         store: createConfirmationStore(),
         sessionKey: "test-session",
         owner: "static:user-x",
-        vaultPath: "/vault",
         writeConfirmationNoteFn: async () => {},
       }),
       t: english,
@@ -230,7 +229,6 @@ describe("createCliTool", () => {
         store,
         sessionKey: "terminal",
         owner: "static:user-x",
-        vaultPath: "/vault",
         writeConfirmationNoteFn: async () => {},
       }),
       t: english,
@@ -830,7 +828,6 @@ describe("createCliTool display", () => {
       store: createConfirmationStore(),
       sessionKey: "terminal",
       owner: "static:user-x",
-      vaultPath: "/vault",
       writeConfirmationNoteFn: async () => {},
     });
   }

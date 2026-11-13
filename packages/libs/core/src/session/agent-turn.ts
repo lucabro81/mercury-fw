@@ -108,7 +108,7 @@ function resolveEmptyText(lastStep: StepInfo | undefined, note: string): string 
  * claiming an action is "still pending" goes stale almost immediately;
  * this is the stale-primer bug's actual fix. The marker forces a reader
  * (the model, later, via `context-primer.ts`'s "Open references" +
- * `resolve_reference` in `wiki-tools.ts`) to deliberately look up what it
+ * `resolve_reference` in `tools/resolve-reference-tool.ts`) to deliberately look up what it
  * refers to instead of absorbing a claim that may no longer be true.
  */
 function resolveHistoryText(lastStep: StepInfo | undefined, displayText: string): string {

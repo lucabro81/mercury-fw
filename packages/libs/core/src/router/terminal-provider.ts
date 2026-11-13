@@ -11,7 +11,7 @@
  * that expects a `Notifier` never silently loses a message.
  */
 import { startTerminalRepl } from "./terminal.ts";
-import { resolveConfirmation, type ConfirmationStore } from "@mercury-fw/confirm-engine";
+import { resolveConfirmation, type ConfirmationStore, type WriteConfirmationNote } from "@mercury-fw/confirm-engine";
 import { parseDumpCommand, defaultDumpPath, writeDump, formatContextUsage } from "./tool-log.ts";
 import { getLoadedContextLength } from "../model/context-size.ts";
 import { detectPendingConfirmation } from "../session/pending-confirmation.ts";
@@ -19,7 +19,6 @@ import type { Provider, HandleTurn, TurnSink } from "./provider.ts";
 import { userKey } from "../identity/user-key.ts";
 import { OPERATOR_PRINCIPAL } from "../identity/people.ts";
 import type { StepInfo } from "../session/step-info.ts";
-import type { writeConfirmationNote } from "../wiki/wiki-note.ts";
 import { englishTexts, type Texts } from "../i18n/i18n.ts";
 import { confirmReply } from "../identity/confirm-binding.ts";
 
@@ -30,8 +29,7 @@ const TERMINAL_PRINCIPAL = OPERATOR_PRINCIPAL;
 export type TerminalProviderDeps = {
   confirmDeps: {
     store: ConfirmationStore;
-    vaultPath: string;
-    writeConfirmationNoteFn: typeof writeConfirmationNote;
+    writeConfirmationNoteFn: WriteConfirmationNote;
     now?: () => Date;
   };
   ollamaHost: string;

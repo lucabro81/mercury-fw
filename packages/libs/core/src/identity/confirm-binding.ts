@@ -1,6 +1,6 @@
 /**
  * The confirmation capability a channel gets (`ctx.confirm`,
- * `ctx.resolveConfirmation`), bound to this instance's store, vault and note
+ * `ctx.resolveConfirmation`), bound to this instance's store and note
  * writer. The channel passes the caller's principal and the core identifies
  * the person, the same way the turn runner does before staging: a token
  * resolves only for whoever staged it, and its note is the one they staged.

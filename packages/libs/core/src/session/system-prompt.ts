@@ -93,17 +93,22 @@ export function buildSystemPrompt(opts: {
       ].join("\n"),
     );
   }
-  // Always present (WIKI_VAULT_PATH is a required env var, the vault
-  // always exists once Mercury boots) — unlike jira, this
-  // block doesn't need its own opts flag.
+  // Always present: every confirm-required action leaves a note, and the
+  // primer points at the ones still open (see data/confirmation-notes.ts).
   lines.push(
     [
-      "You have access to wiki tools: list_files, read_file, grep, write_file, promote_note, resolve_reference — your own knowledge base. " +
+      "You have access to the resolve_reference tool.",
+      "DO:",
+      "- If your context contains an opaque `[REQ:<token>]` marker, that's a reference to a past confirm-required request — call resolve_reference with that token to see what it was, don't guess at what it means.",
+    ].join("\n"),
+  );
+  lines.push(
+    [
+      "You have access to wiki tools: list_files, read_file, grep, write_file, promote_note — your own knowledge base. " +
         "curated/ is the team's common knowledge (conventions, docs, project status), shared by everyone: you can read it, not write it. " +
         "personal/ belongs to the person you're talking to and nobody else sees it: personal/notes/ is where you write for them, " +
         "personal/inferred/ is what you learned about them, kept by a separate process.",
       "DO:",
-      "- If your context contains an opaque `[REQ:<token>]` marker, that's a reference to a past confirm-required request — call resolve_reference with that token to see what it was, don't guess at what it means.",
       "- For a CLI's own syntax/flags, rely on --help first. Only check the wiki if --help doesn't cover something specific to how this team uses that tool (a convention, a naming pattern, a policy).",
       "- When a command's --select flag description is generic/shared across multiple subcommands, don't take its inline example at face value — check that command's own \"Examples\" section at the bottom of its --help output for the syntax that actually works with it.",
       "- For anything else — documentation, project status, how some tool or process is used, team conventions — consult the wiki FIRST (grep/read_file/list_files), before trying a CLI or answering from general knowledge.",

@@ -14,10 +14,6 @@ function resolvedNote(body: string): string {
   return `---\ntype: resolved\nsource: api\nresolved_at: "2026-01-01T00:00:00.000Z"\ndisplay_name: "${body}"\nemail: null\n---\n\n${body}\n`;
 }
 
-function confirmationNote(status: "pending" | "confirmed" | "failed"): string {
-  return `---\ntype: confirmation\nstatus: ${status}\nrequested_at: "2026-07-27T12:20:00.000Z"\nresolved_at: null\ncommand: "jira issue delete KAN-1 --confirm"\n---\n\n`;
-}
-
 /** Both parts of a primer as one text, current state first. */
 const all = (p: ContextPrimer): string => [p.current, p.recap].filter(Boolean).join("\n\n");
 
@@ -28,6 +24,7 @@ function fakeDeps(overrides: Partial<ContextPrimerDeps> = {}): ContextPrimerDeps
     listWikiFilesInRootsFn: async () => [],
     readWikiFileInRootsFn: async () => "",
     readIndexFileFn: async () => "",
+    pendingTokens: async () => [],
     log: () => {},
     ...overrides,
   };
@@ -53,10 +50,6 @@ describe("buildContextPrimer", () => {
       getLastSessionEntries: async () => [lastSessionEntry],
       listWikiFilesInRootsFn: async (vaultPath, roots) => {
         listCallArgs = { vaultPath, roots };
-        // A real listWikiFilesInRoots scopes strictly by root — this fake
-        // must too, now that buildContextPrimer also queries a second,
-        // unrelated root (the person's confirmations/) for pending references.
-        if (roots.some((r) => r.includes("confirmations"))) return [];
         return ["users/google-chat%3Ausers%2F42/inferred/role.md", "users/google-chat%3Ausers%2F42/inferred/team.md", "users/google-chat%3Ausers%2F42/inferred/resolved-name.md"];
       },
       readWikiFileInRootsFn: async (_vaultPath, roots, file) => {
@@ -142,68 +135,38 @@ describe("buildContextPrimer", () => {
   // surface only as an opaque, non-narrative [REQ:<token>] marker — never
   // the command or the fact it's "still waiting" as prose the model could
   // react to on its own. Resolving it into something meaningful requires
-  // deliberately calling resolve_reference (wiki-tools.ts) with the token.
+  // deliberately calling resolve_reference (tools/resolve-reference-tool.ts) with the token.
   describe("Open references (pending confirmations)", () => {
-    it("includes an opaque [REQ:<token>] marker for a pending confirmation note", async () => {
+    it("includes an opaque [REQ:<token>] marker for each pending confirmation", async () => {
       const deps = fakeDeps({
         getLastSessionEntries: async () => [lastSessionEntry],
-        listWikiFilesInRootsFn: async (_vaultPath, roots) => {
-          if (roots.some((r) => r.includes("confirmations"))) return ["users/google-chat%3Ausers%2F42/confirmations/j3h4b5.md"];
-          return [];
-        },
-        readWikiFileInRootsFn: async (_vaultPath, roots) => (roots.some((r) => r.includes("confirmations")) ? confirmationNote("pending") : ""),
+        pendingTokens: async () => ["j3h4b5", "k9m2"],
       });
 
       const primer = all(await buildContextPrimer("google-chat:users/42", deps));
 
-      expect(primer).toContain("Open references:\n- [REQ:j3h4b5]");
-      expect(primer).not.toContain("jira issue delete"); // opaque — no command text leaked into the primer
+      expect(primer).toContain("Open references:\n- [REQ:j3h4b5]\n- [REQ:k9m2]");
     });
 
-    it("excludes confirmed/failed confirmation notes — only still-pending ones surface", async () => {
-      const deps = fakeDeps({
-        getLastSessionEntries: async () => [lastSessionEntry],
-        listWikiFilesInRootsFn: async (_vaultPath, roots) =>
-          roots.some((r) => r.includes("confirmations"))
-            ? ["users/google-chat%3Ausers%2F42/confirmations/tok1.md", "users/google-chat%3Ausers%2F42/confirmations/tok2.md"]
-            : [],
-        readWikiFileInRootsFn: async (_vaultPath, roots, file) => {
-          if (!roots.some((r) => r.includes("confirmations"))) return "";
-          return file.endsWith("tok1.md") ? confirmationNote("confirmed") : confirmationNote("failed");
-        },
-      });
+    it("has no section when nothing is pending", async () => {
+      const deps = fakeDeps({ getLastSessionEntries: async () => [lastSessionEntry], pendingTokens: async () => [] });
 
-      const primer = all(await buildContextPrimer("google-chat:users/42", deps));
-
-      expect(primer).not.toContain("Open references");
+      expect(all(await buildContextPrimer("google-chat:users/42", deps))).not.toContain("Open references");
     });
 
     it("surfaces pending references even when there's no last-session episodic recap at all", async () => {
-      const deps = fakeDeps({
-        getLastSessionEntries: async () => [],
-        listWikiFilesInRootsFn: async (_vaultPath, roots) =>
-          roots.some((r) => r.includes("confirmations")) ? ["users/google-chat%3Ausers%2F42/confirmations/j3h4b5.md"] : [],
-        readWikiFileInRootsFn: async () => confirmationNote("pending"),
-      });
+      const deps = fakeDeps({ getLastSessionEntries: async () => [], pendingTokens: async () => ["j3h4b5"] });
 
-      const primer = all(await buildContextPrimer("google-chat:users/42", deps));
-
-      expect(primer).toBe("Open references:\n- [REQ:j3h4b5]");
+      expect(all(await buildContextPrimer("google-chat:users/42", deps))).toBe("Open references:\n- [REQ:j3h4b5]");
     });
 
-    it("scopes the confirmations lookup to the person's own confirmations/ folder", async () => {
-      let confirmationsRoots: string[] | undefined;
-      const deps = fakeDeps({
-        getLastSessionEntries: async () => [],
-        listWikiFilesInRootsFn: async (_vaultPath, roots) => {
-          if (roots.some((r) => r.includes("confirmations"))) confirmationsRoots = roots;
-          return [];
-        },
-      });
+    it("asks for the person's own pending tokens", async () => {
+      const asked: string[] = [];
+      const deps = fakeDeps({ pendingTokens: async (key) => (asked.push(key), []) });
 
-      all(await buildContextPrimer("google-chat:users/42", deps));
+      await buildContextPrimer("google-chat:users/42", deps);
 
-      expect(confirmationsRoots).toEqual(["/vault/users/google-chat%3Ausers%2F42/confirmations"]);
+      expect(asked).toEqual(["google-chat:users/42"]);
     });
   });
 
@@ -252,9 +215,7 @@ describe("buildContextPrimer", () => {
           throw new Error("ConnectionRefused");
         },
         readIndexFileFn: async () => "- [[glossary]] — team glossary\n",
-        listWikiFilesInRootsFn: async (_vaultPath, roots) =>
-          roots.some((r) => r.includes("confirmations")) ? ["users/google-chat%3Ausers%2F42/confirmations/j3h4b5.md"] : [],
-        readWikiFileInRootsFn: async (_vaultPath, roots) => (roots.some((r) => r.includes("confirmations")) ? confirmationNote("pending") : ""),
+        pendingTokens: async () => ["j3h4b5"],
         log: (m) => logs.push(m),
       });
 
@@ -278,12 +239,9 @@ describe("buildContextPrimer without the last session", () => {
     const deps = fakeDeps({
       getLastSessionEntries: async () => ((askedForLastSession = true), [lastSessionEntry]),
       readIndexFileFn: async () => "- curated/team.md",
-      listWikiFilesInRootsFn: async (_v, roots) =>
-        roots.some((r) => r.includes("confirmations")) ? ["users/x/confirmations/tok-1.md"] : ["users/x/inferred/role.md"],
-      readWikiFileInRootsFn: async (_v, _r, file) =>
-        file.includes("confirmations")
-          ? confirmationNote("pending")
-          : inferredNote({ confidence: "high", derived_from: [lastSessionEntry.timestamp] }, "Developer"),
+      pendingTokens: async () => ["tok-1"],
+      listWikiFilesInRootsFn: async () => ["users/x/inferred/role.md"],
+      readWikiFileInRootsFn: async () => inferredNote({ confidence: "high", derived_from: [lastSessionEntry.timestamp] }, "Developer"),
     });
     const primer = all(await buildContextPrimer("google-chat:users/42", deps, { lastSession: false }));
     expect(primer).toBe("Wiki index:\n- curated/team.md\n\nOpen references:\n- [REQ:tok-1]");
@@ -304,12 +262,9 @@ describe("buildContextPrimer: current state and recap apart", () => {
     const deps = fakeDeps({
       getLastSessionEntries: async () => [lastSessionEntry],
       readIndexFileFn: async () => "- curated/team.md",
-      listWikiFilesInRootsFn: async (_v, roots) =>
-        roots.some((r) => r.includes("confirmations")) ? ["users/x/confirmations/tok-1.md"] : ["users/x/inferred/role.md"],
-      readWikiFileInRootsFn: async (_v, _r, file) =>
-        file.includes("confirmations")
-          ? confirmationNote("pending")
-          : inferredNote({ confidence: "high", derived_from: [lastSessionEntry.timestamp] }, "Developer"),
+      pendingTokens: async () => ["tok-1"],
+      listWikiFilesInRootsFn: async () => ["users/x/inferred/role.md"],
+      readWikiFileInRootsFn: async () => inferredNote({ confidence: "high", derived_from: [lastSessionEntry.timestamp] }, "Developer"),
     });
     expect(await buildContextPrimer("google-chat:users/42", deps)).toEqual({
       current: "Wiki index:\n- curated/team.md\n\nOpen references:\n- [REQ:tok-1]",

@@ -30,27 +30,6 @@ export const InferredFrontmatterSchema = z.object({
   last_reviewed: z.string().nullable(),
 });
 
-/**
- * A fourth category: the lifecycle of one confirm-required action, from
- * staging through its eventual resolution — a deterministic instruction
- * the user explicitly approved via the confirmation-token mechanism,
- * never an autonomous LLM judgment call. Tracks a specific CLI action's
- * own token, written once when staged (`status: "pending"`) and
- * overwritten in place once resolved (`"confirmed"`/`"failed"`). Lives
- * in a person's `confirmations/` folder, outside what `identity/vault-access.ts`
- * lets the model browse, so it's structurally invisible to the model's own
- * `list_files`/`grep` — reachable only via the narrow `resolve_reference`
- * tool given the exact token (see `wiki-tools.ts`), never by browsing.
- */
-export const ConfirmationFrontmatterSchema = z.object({
-  type: z.literal("confirmation"),
-  status: z.enum(["pending", "confirmed", "failed"]),
-  requested_at: z.string(),
-  resolved_at: z.string().nullable(),
-  command: z.string(),
-});
-
 export type CuratedFrontmatter = z.infer<typeof CuratedFrontmatterSchema>;
 export type PersonalFrontmatter = z.infer<typeof PersonalFrontmatterSchema>;
 export type InferredFrontmatter = z.infer<typeof InferredFrontmatterSchema>;
-export type ConfirmationFrontmatter = z.infer<typeof ConfirmationFrontmatterSchema>;

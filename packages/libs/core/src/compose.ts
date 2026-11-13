@@ -17,7 +17,7 @@
 import { getOllamaProvider } from "./model/client.ts";
 import { resolveModels } from "./model/models.ts";
 import { createScheduler, type BackgroundJobName, type Urgency } from "./model/scheduler.ts";
-import { createConfirmationStore, createStageChoices, createStageConfirmation, type ConfirmationStore, type ResumedAction } from "@mercury-fw/confirm-engine";
+import { createConfirmationStore, createStageChoices, createStageConfirmation, type ConfirmationStore, type ResumedAction, type WriteConfirmationNote } from "@mercury-fw/confirm-engine";
 import { createDisplayStore } from "./tools/display-store.ts";
 import { createPresentTool } from "./tools/present-tool.ts";
 import { loadPlugins } from "./plugins/plugin-loader.ts";
@@ -53,8 +53,9 @@ import { withToolStartHook } from "./session/tool-start-hook.ts";
 import {
   writeInferredNote,
   writeToolCorrectionNote,
-  writeConfirmationNote,
 } from "./wiki/wiki-note.ts";
+import { confirmationNotesRoot, copyVaultConfirmations, pendingConfirmationTokens, writeConfirmationNote } from "./data/confirmation-notes.ts";
+import { createResolveReferenceTool } from "./tools/resolve-reference-tool.ts";
 import { createWikiTools } from "./wiki/wiki-tools.ts";
 import { createReadSkillTool } from "./session/read-skill-tool.ts";
 import { createIdleSessionScanner } from "./cron/idle-session-scanner.ts";
@@ -114,11 +115,10 @@ import { buildPluginManifest } from "./plugins/manifest.ts";
 /** A stoppable subsystem (cron, server). */
 type Stoppable = { stop: () => void };
 
-/** The confirm capability's binding to this instance's store/vault/note-writer, shared by the terminal and the channel runtime. */
+/** The confirm capability's binding to this instance's store and note writer, shared by the terminal and the channel runtime. */
 export type ConfirmDeps = {
   store: ConfirmationStore;
-  vaultPath: string;
-  writeConfirmationNoteFn: typeof writeConfirmationNote;
+  writeConfirmationNoteFn: WriteConfirmationNote;
   /** Keeps a confirmed action's result for the session's resumed turn. */
   onResume: (sessionKey: string, action: ResumedAction) => void;
 };
@@ -173,11 +173,22 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   // missing MERCURY_DATA_PATH stops the start, and what an older instance kept
   // in the vault's `.mercury/` is copied over on the first start.
   const dataPath = requireDataPath(process.env);
+  // Where an older instance kept its state, read only to copy it over once.
+  const legacyVault = process.env.WIKI_VAULT_PATH || undefined;
   const migratedState = await migrateLegacyState({
     dataPath,
-    vaultPath: requireEnv("WIKI_VAULT_PATH"),
+    ...(legacyVault === undefined ? {} : { vaultPath: legacyVault }),
     log: (msg) => console.error(`[data] ${msg}`),
   });
+  // The confirmation notes live in the data folder too; an older instance kept
+  // them in the vault, copied over once (see data/confirmation-notes.ts).
+  const notesRoot = confirmationNotesRoot(dataPath);
+  await copyVaultConfirmations({
+    ...(legacyVault === undefined ? {} : { vaultPath: legacyVault }),
+    notesRoot,
+    log: (msg) => console.error(`[data] ${msg}`),
+  });
+  const writeNote: WriteConfirmationNote = (owner, token, fields) => writeConfirmationNote(notesRoot, owner, token, fields);
 
   // The models are built up front, before the plugins load and the system
   // prompt is built: a plugin's post-turn guard can be model-backed, and the
@@ -415,6 +426,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
       listWikiFilesInRootsFn: listWikiFilesInRoots,
       readWikiFileInRootsFn: readWikiFileInRoots,
       readIndexFileFn: readIndexFile,
+      pendingTokens: (key) => pendingConfirmationTokens(notesRoot, key),
       log: (msg) => console.error(`[memory] ${msg}`),
     }, primerOptions(resume));
 
@@ -665,8 +677,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
       store: confirmationStore,
       sessionKey,
       owner: key,
-      vaultPath: wikiVaultPath,
-      writeConfirmationNoteFn: writeConfirmationNote,
+      writeConfirmationNoteFn: writeNote,
     };
     const sessionToolContext = {
       sessionKey,
@@ -697,6 +708,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
       sessionTools,
       createWikiTools({ vaultPath: wikiVaultPath, key, stageConfirmation: sessionToolContext.stageConfirmation }),
     );
+    Object.assign(sessionTools, createResolveReferenceTool({ notesRoot, key }));
     Object.assign(sessionTools, createProfileTools({ store: profiles, key, languages: i18n.supported }));
     // Verbatim archive recall, scoped to this person — lets the model resurface
     // what was actually said in earlier conversations, beyond the live window.
@@ -801,8 +813,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   // The confirm capability, bound to this instance's store/vault/note-writer.
   const confirmDeps: ConfirmDeps = {
     store: confirmationStore,
-    vaultPath: wikiVaultPath,
-    writeConfirmationNoteFn: writeConfirmationNote,
+    writeConfirmationNoteFn: writeNote,
     onResume: (sessionKey, action) => resumes.keep(sessionKey, action),
   };
 

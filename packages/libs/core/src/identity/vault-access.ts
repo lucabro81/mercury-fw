@@ -6,8 +6,8 @@
  * refused as if it didn't exist.
  *
  * Inside a person's area only `notes/` (what the model writes for them) and
- * `inferred/` (what consolidation derives) are visible; `confirmations/` is
- * reached by token only (`resolve_reference`), never by browsing.
+ * `inferred/` (what consolidation derives) are visible; the `confirmations/`
+ * an older instance left there stays hidden.
  */
 import { readFile } from "node:fs/promises";
 import { resolve, sep } from "node:path";
@@ -77,14 +77,6 @@ export async function readPersonalNote(scope: VaultScope, path: string): Promise
   if (!within(resolve(scope.vaultPath, userArea(scope.key), "notes"), target)) {
     throw new Error(`only a note under personal/notes/ can be promoted: ${path}`);
   }
-  return readFile(target, "utf-8");
-}
-
-/** The person's own confirmation note for `token`, the only way to reach their `confirmations/` folder; throws when there is none. */
-export async function readConfirmationNote(vaultPath: string, key: string, token: string): Promise<string> {
-  const confirmations = resolve(vaultPath, userArea(key), "confirmations");
-  const target = resolve(confirmations, `${token}.md`);
-  if (!within(confirmations, target) || target === confirmations) throw new Error(`no confirmation ${token}`);
   return readFile(target, "utf-8");
 }
 

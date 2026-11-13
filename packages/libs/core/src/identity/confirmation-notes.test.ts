@@ -7,8 +7,8 @@ import { createTurnRunner } from "../router/turn-runner.ts";
 import { bindConfirm, confirmReply } from "./confirm-binding.ts";
 import { CORE_MESSAGES } from "../i18n/core-messages.ts";
 import { createI18n, createTexts, englishTexts } from "../i18n/i18n.ts";
-import { initVault } from "../wiki/vault-init.ts";
-import { writeConfirmationNote } from "../wiki/wiki-note.ts";
+import { writeConfirmationNote } from "../data/confirmation-notes.ts";
+import type { WriteConfirmationNote } from "@mercury-fw/confirm-engine";
 import { userKey } from "./user-key.ts";
 
 const tempDirs: string[] = [];
@@ -17,11 +17,17 @@ afterEach(async () => {
   while (tempDirs.length > 0) await rm(tempDirs.pop()!, { recursive: true, force: true });
 });
 
-/** Every confirmation note in the vault, by vault-relative path. */
-async function confirmationNotes(vaultPath: string): Promise<Record<string, string>> {
+/** The note writer the core binds to the data folder's notes root, here `root`. */
+const notesWriter =
+  (root: string): WriteConfirmationNote =>
+  (owner, token, fields) =>
+    writeConfirmationNote(root, owner, token, fields);
+
+/** Every confirmation note under `root`, by relative path. */
+async function confirmationNotes(notesRoot: string): Promise<Record<string, string>> {
   const notes: Record<string, string> = {};
-  for await (const rel of new Bun.Glob("**/*.md").scan({ cwd: vaultPath })) {
-    notes[rel] = await Bun.file(join(vaultPath, rel)).text();
+  for await (const rel of new Bun.Glob("**/*.md").scan({ cwd: notesRoot })) {
+    notes[rel] = await Bun.file(join(notesRoot, rel)).text();
   }
   return notes;
 }
@@ -40,11 +46,10 @@ describe("a confirmation's note, staged in a turn then confirmed from the channe
     { id: "alice", provider: "static" as const },
   ]) {
     it(`is one note in the person's area that ends up confirmed, for ${principal.provider} ${principal.id}`, async () => {
-      const vaultPath = await mkdtemp(join(tmpdir(), "mercury-confirm-notes-"));
-      tempDirs.push(vaultPath);
-      await initVault(vaultPath);
+      const notesRoot = await mkdtemp(join(tmpdir(), "mercury-confirm-notes-"));
+      tempDirs.push(notesRoot);
       const store = createConfirmationStore();
-      const confirmDeps = { store, vaultPath, writeConfirmationNoteFn: writeConfirmationNote };
+      const confirmDeps = { store, writeConfirmationNoteFn: notesWriter(notesRoot) };
       let token = "";
       let stage: ReturnType<typeof createStageConfirmation> | undefined;
       const handleTurn = createTurnRunner({
@@ -78,18 +83,17 @@ describe("a confirmation's note, staged in a turn then confirmed from the channe
       await handleTurn({ channel: "test", multiUser: false, text: "delete X-1", sessionKey: "s", principal, logPrefix: "" }, sink);
       expect(await bindConfirm(confirmDeps).confirm(token, "s", principal)).toEqual({ text: "Confirmed and done." });
 
-      const notes = await confirmationNotes(vaultPath);
-      expect(Object.keys(notes)).toEqual([`users/${encodeURIComponent(userKey(principal))}/confirmations/${token}.md`]);
+      const notes = await confirmationNotes(notesRoot);
+      expect(Object.keys(notes)).toEqual([`${encodeURIComponent(userKey(principal))}/${token}.md`]);
       expect(Object.values(notes)[0]).toContain("status: confirmed");
     });
   }
 
   it("refuses the confirmation from someone else in the same session, leaving it pending", async () => {
-    const vaultPath = await mkdtemp(join(tmpdir(), "mercury-confirm-notes-"));
-    tempDirs.push(vaultPath);
-    await initVault(vaultPath);
+    const notesRoot = await mkdtemp(join(tmpdir(), "mercury-confirm-notes-"));
+    tempDirs.push(notesRoot);
     const store = createConfirmationStore();
-    const confirmDeps = { store, vaultPath, writeConfirmationNoteFn: writeConfirmationNote };
+    const confirmDeps = { store, writeConfirmationNoteFn: notesWriter(notesRoot) };
     const alice = { id: "alice", provider: "static" as const };
     const stage = createStageConfirmation({ ...confirmDeps, sessionKey: "s", owner: userKey(alice) });
     const token = await stage({ describe: "x", run: async () => ({ ok: true, data: "done" }) });
@@ -101,11 +105,10 @@ describe("a confirmation's note, staged in a turn then confirmed from the channe
   // #150: a token belongs to the person, as the directory identifies them,
   // and someone the core won't talk to confirms nothing.
   it("resolves a token as the person the caller is identified as, and refuses someone not admitted", async () => {
-    const vaultPath = await mkdtemp(join(tmpdir(), "mercury-confirm-notes-"));
-    tempDirs.push(vaultPath);
-    await initVault(vaultPath);
+    const notesRoot = await mkdtemp(join(tmpdir(), "mercury-confirm-notes-"));
+    tempDirs.push(notesRoot);
     const store = createConfirmationStore();
-    const confirmDeps = { store, vaultPath, writeConfirmationNoteFn: writeConfirmationNote };
+    const confirmDeps = { store, writeConfirmationNoteFn: notesWriter(notesRoot) };
     const stage = createStageConfirmation({ ...confirmDeps, sessionKey: "s", owner: "people:alice" });
     const token = await stage({ describe: "x", run: async () => ({ ok: true, data: "done" }) });
     const chat = { id: "users/1", provider: "google-chat" as const };
@@ -124,7 +127,7 @@ describe("a confirmation's note, staged in a turn then confirmed from the channe
   // reached the core. Text that isn't a token isn't confirm's business.
   it("leaves text that isn't a token to the turn, whoever sends it", async () => {
     const store = createConfirmationStore();
-    const confirmDeps = { store, vaultPath: "/nowhere", writeConfirmationNoteFn: writeConfirmationNote };
+    const confirmDeps = { store, writeConfirmationNoteFn: async () => {} };
     let asked = 0;
     const refused = bindConfirm(confirmDeps, async () => (asked++, { ok: false, reason: "unknown", message: "Ask for access." }));
     const chat = { id: "users/1", provider: "google-chat" as const };
@@ -138,7 +141,7 @@ describe("a confirmation's note, staged in a turn then confirmed from the channe
   // from someone the core may not admit yet; confirm hands it to linking.
   it("hands a link code to linking, with who sent it, whoever they are", async () => {
     const store = createConfirmationStore();
-    const confirmDeps = { store, vaultPath: "/nowhere", writeConfirmationNoteFn: writeConfirmationNote };
+    const confirmDeps = { store, writeConfirmationNoteFn: async () => {} };
     const redeemed: Array<[string, string, string | undefined]> = [];
     const bound = bindConfirm(
       confirmDeps,
@@ -166,7 +169,7 @@ describe("a confirmation's note, staged in a turn then confirmed from the channe
 
     it("come out in the person's language, else the channel's hint's", async () => {
       const store = createConfirmationStore();
-      const confirmDeps = { store, vaultPath: "/nowhere", writeConfirmationNoteFn: async () => {} };
+      const confirmDeps = { store, writeConfirmationNoteFn: async () => {} };
       const texts = createTexts(
         createI18n({ english: CORE_MESSAGES, locales: { it: { "core.confirm.not-found": "Nessuna conferma." } } }),
         (key) => (key === "people:alice" ? "it" : undefined),

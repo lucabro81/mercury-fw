@@ -113,6 +113,13 @@ describe("migrateLegacyState", () => {
     expect(await readdir(data)).toEqual([]);
   });
 
+  it("does nothing without a vault, creating the data folder", async () => {
+    const data = join(await tempDir(), "data");
+
+    expect(await migrateLegacyState({ dataPath: data, log: () => {} })).toEqual([]);
+    expect(await readdir(data)).toEqual([]);
+  });
+
   it("does nothing when the vault's .mercury/ is empty", async () => {
     const vault = await tempDir();
     await mkdir(join(vault, ".mercury"));
