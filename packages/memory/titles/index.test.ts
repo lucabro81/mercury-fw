@@ -85,6 +85,13 @@ describe("titles", () => {
     expect(set).toEqual([]);
   });
 
+  // Review of #393: the core read titles through a check of their shape; a malformed row isn't a title.
+  it("titles a conversation whose stored title is malformed", async () => {
+    const { afterTurn, set } = await setUp([{ userId: "static:alice", sessionKey: "http:alice:c1", title: 42, source: "?" } as unknown as StoredTitle]);
+    await afterTurn(turn);
+    expect(set.map((t) => t.title)).toEqual(["Issue aperte"]);
+  });
+
   // An opening or a resumed turn has no input: nothing the person wrote to name it from.
   it("titles nothing for a turn the person didn't write, or the operator's", async () => {
     const { afterTurn, set, jobs } = await setUp();

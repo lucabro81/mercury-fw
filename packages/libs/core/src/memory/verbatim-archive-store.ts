@@ -118,7 +118,7 @@ function modelChars(m: VerbatimMessage): number {
   return m.content.length + (m.calls === undefined ? 0 : JSON.stringify(m.calls).length);
 }
 
-/** Whether `value` looks like a list of `CallRecord`s, as `appendVerbatimMessage` stored them. */
+/** Whether `value` looks like a list of `CallRecord`s, as the archive keeps them. */
 function isCallList(value: unknown): boolean {
   return (
     Array.isArray(value) &&
@@ -132,7 +132,7 @@ function isCallList(value: unknown): boolean {
   );
 }
 
-/** Whether `value` looks like a trace, as `appendVerbatimMessage` stored it: entries with a known type. */
+/** Whether `value` looks like a trace, as the archive keeps it: entries with a known type. */
 function isTrace(value: unknown): boolean {
   const types = ["reasoning", "tool", "confirmation", "login"];
   return (

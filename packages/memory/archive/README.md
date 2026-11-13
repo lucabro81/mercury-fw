@@ -21,7 +21,7 @@ It needs the conversation store (`needs: ["conversationStore"]`): an app declari
 
 Once each turn is over, the core hands every plugin a record of it (`onTurnRecord`), and the archive writes the messages it leaves (`archivedMessages`, in the plugin contract), one by one, each in the store's shape (`StoredMessage`) under an id of its own:
 
-- a turn the person wrote: their message, timestamped when it arrived, and the answer, timestamped when the turn ended, with the lists they were shown, the tool calls it was written from and what they saw of the turn besides the text (the reasoning, the tools' status lines, the confirmations, the logins);
+- a turn the person wrote: their message, timestamped when the turn started running, and the answer, timestamped when the turn ended, with the lists they were shown, the tool calls it was written from and what they saw of the turn besides the text (the reasoning, the tools' status lines, the confirmations, the logins);
 - a turn the agent opened, or one going on after a confirmation: the answer only;
 - a turn the person stopped: their message and the answer marked `interrupted`, only when the conversation kept one; a turn that failed: nothing;
 - a resolved confirmation: the reply the person got and how it went.

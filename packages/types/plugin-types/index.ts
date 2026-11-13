@@ -661,7 +661,8 @@ export type FinishedTurn = {
  * - `origin`: `"person"` when the person wrote it, `"opening"` when the agent
  *   spoke first, `"resumed"` when it went on after a confirmation; `input`,
  *   what they wrote, only for `"person"`;
- * - `startedAt` (when the person's message arrived) and `endedAt`, ISO 8601;
+ * - `startedAt` (when the turn started running, after any turn of the same
+ *   session before it) and `endedAt`, ISO 8601;
  * - `answer`: what the turn answered, absent on a failed turn and on a
  *   cancelled one stopped before the conversation kept anything for it.
  *   `content` is the model's own text (on a cancelled turn, the placeholder
@@ -722,7 +723,7 @@ export type TurnRecord = {
  * store keeps (`StoredMessage`, without the `id` the writer gives each):
  *
  * - a turn the person wrote leaves their message, timestamped when it
- *   arrived, then the answer, timestamped when the turn ended; an opening or
+ *   started running, then the answer, timestamped when the turn ended; an opening or
  *   a resumed turn leaves only the answer;
  * - a cancelled turn leaves them only when the conversation kept an answer
  *   for it (`answer` present), and an opening nothing, since nobody asked

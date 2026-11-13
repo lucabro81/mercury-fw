@@ -3679,6 +3679,65 @@ describe("createTurnRunner: the turn's record (#393)", () => {
     expect("input" in records[0]!.record).toBe(false);
   });
 
+  // Review of #393: every outcome is the record's own, not only what an archive keeps of it.
+  test("a cancelled turn is recorded as cancelled: with the interrupted answer when the history kept its placeholder, without one otherwise", async () => {
+    for (const keepsMarker of [true, false]) {
+      const controller = new AbortController();
+      const messages: Array<{ role: "user" | "assistant"; content: string }> = [];
+      const history = fakeHistory({
+        addUserMessage: async (content) => void messages.push({ role: "user", content }),
+        addAssistantMessage: async (content) => void messages.push({ role: "assistant", content }),
+        getMessages: () => messages,
+      });
+      const { runner, records } = setup({
+        getOrCreateHistory: () => history,
+        runTurnFn: async (h, text) => {
+          await h.addUserMessage(text);
+          controller.abort();
+          if (keepsMarker) await h.addAssistantMessage(ABORTED_MARKER);
+          return "half";
+        },
+      });
+      await runner(baseTurn({ principal: verified("u1"), text: "hello", abortSignal: controller.signal }), baseSink());
+      expect(records.map((r) => r.record)).toEqual([
+        {
+          sessionKey: "session-1",
+          kind: "turn",
+          turnId: "turn-1",
+          multiUser: false,
+          outcome: "cancelled",
+          origin: "person",
+          input: "hello",
+          startedAt: expect.any(String),
+          endedAt: expect.any(String),
+          ...(keepsMarker ? { answer: { content: ABORTED_MARKER, interrupted: true } } : {}),
+        },
+      ]);
+    }
+  });
+
+  test("a stalled turn is recorded as failed", async () => {
+    const { runner, records } = setup({
+      stallTimeoutMs: 1000,
+      stallTimer: (fn) => (queueMicrotask(fn), () => {}),
+      runTurnFn: async (_h, _t, deps) =>
+        new Promise<string>((_, reject) => deps.abortSignal?.addEventListener("abort", () => reject(new Error("aborted")))),
+    });
+    await expect(
+      runner(baseTurn({ principal: verified("u1"), text: "hello" }), baseSink({ onTextChunk: () => {}, onReasoningChunk: () => {} })),
+    ).rejects.toThrow();
+    expect(records.map((r) => [r.record.outcome, r.record.answer])).toEqual([["failed", undefined]]);
+  });
+
+  test("a turn resumed after a confirmation carries no input", async () => {
+    const { runner, records } = setup({
+      takeResumed: () => ({ describe: "x", toolName: "web_fetch", input: {}, output: {} }),
+    });
+    await runner(baseTurn({ principal: verified("u1"), text: "", resumeAfterConfirm: true }), baseSink());
+    expect(records.map((r) => r.record)).toEqual([expect.objectContaining({ outcome: "done", origin: "resumed", answer: { content: "reply" } })]);
+    expect("input" in records[0]!.record).toBe(false);
+  });
+
   test("a turn refused before the model ran leaves no record", async () => {
     const { runner, records } = setup({
       identify: async () => ({ ok: false, reason: "unknown", message: "Who are you?" }),

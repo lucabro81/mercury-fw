@@ -17,7 +17,7 @@
 - `plugin.hook` events for `onTurnRecord`
 - a conversation store declared with no plugin needing it is a line in the log at startup
 - an opening turn tells the model to save the person's name only when it has `set_preferred_name`
-- the person's archived message is timestamped when it arrived, the answer when the turn ended
+- the person's archived message is timestamped when its turn started running, the answer when the turn ended
 - **Breaking:** the core no longer writes the archive, titles conversations or offers `set_preferred_name`, `set_time_zone`, `set_preferred_language`: declare `archive()`, `titles()`, `profile()`
 - **Breaking:** no `title` event in the traces: a title is the `titles:title` `background.job`; an archive write that fails is a failed `plugin.hook`, no `system.error` with area `archive`
 - `mfw create` declares `archive()`, `titles()`, `profile()` in `plugins`

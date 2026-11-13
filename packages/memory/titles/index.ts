@@ -22,7 +22,11 @@ export function titles(): Plugin {
       if (store === undefined) throw new Error("titles: no conversation store (needs: conversationStore)");
       const title = createConversationTitler({
         model: ctx.backgroundModel ?? ctx.model,
-        hasTitle: async (userId, sessionKey) => (await store.titles({ userId, sessionKeys: [sessionKey] })).some((t) => t.sessionKey === sessionKey),
+        // Only a well-formed title counts: a malformed row doesn't keep the conversation from getting one.
+        hasTitle: async (userId, sessionKey) =>
+          (await store.titles({ userId, sessionKeys: [sessionKey] })).some(
+            (t) => t.sessionKey === sessionKey && typeof t.title === "string" && (t.source === "generated" || t.source === "person"),
+          ),
         setTitle: (userId, sessionKey, text) => store.setTitle({ userId, sessionKey, title: text, source: "generated", updatedAt: new Date().toISOString() }),
         log: ctx.log,
       });
