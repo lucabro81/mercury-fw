@@ -21,16 +21,9 @@ import type { StepInfo } from "./step-info.ts";
  */
 export type ToolLogChannel = string;
 
-export type ToolLogEntry = {
-  timestamp: string;
-  channel: ToolLogChannel;
-  sessionKey: string;
-  /** The user key of the person whose turn made the call. */
-  owner: string;
-  toolName: string;
-  input: string;
-  output: string;
-};
+/** One call as the log keeps it: the contract's shape, the one plugins read (`PluginRuntimeContext.toolLog`). */
+export type { ToolLogEntry } from "@mercury-fw/plugin-types";
+import type { ToolLogEntry } from "@mercury-fw/plugin-types";
 
 /** Per person. */
 const MAX_ENTRIES = 200;
