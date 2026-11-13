@@ -121,7 +121,7 @@ I'm Mercury, an internal assistant for your team. I can search and read the shar
 ```
 
 The `[turn]` lines are for you, not for the person chatting: how long the answer took, and how many tools the model
-called. It called none: the wiki it mentions is its own memory, which every app has, and no tool of yours is there
+called. It called none: the wiki it mentions is the one every new app declares (`wiki()`), and no tool of yours is there
 yet. The prompt shows how much of the model's context the conversation fills. Press `Ctrl+D` to leave the REPL. The agent keeps running until
 `bunx mfw stop`.
 

@@ -17,7 +17,7 @@ An agent built on Mercury can do what its plugins let it do and nothing else: ea
 
 The orchestration sits directly on the AI SDK, with no agent framework in between, and the model is whatever an Ollama-compatible endpoint serves (`OLLAMA_HOST`, `OLLAMA_MODEL`). An action a plugin marks as irreversible never runs on the model's word: Mercury stages it and hands back a one-time token, and it runs only when that token comes back (a button click on Google Chat, the pasted token in the terminal).
 
-Memory, as it stands today, has three layers: the conversation history, a wiki the agent reads and writes, and an episodic memory in the vector index the app declares (Qdrant, in a new app). The history is what the agent needs to work at all, the other two enrich it and fail soft when they're unreachable. How memory becomes composable like the rest is still open ([#30](https://github.com/lucabro81/mercury-fw/issues/30)). Every person gets their own: the wiki has a common area the whole team reads and an area per person, and memory, conversations and pending confirmations are theirs alone (the [core README](packages/libs/core/README.md) has the details).
+Memory, as it stands today, has three layers: the conversation a plugin keeps, a wiki the agent reads and writes (a plugin too, `@mercury-fw/wiki`), and an episodic memory in the vector index the app declares (Qdrant, in a new app). The conversation is what the agent needs to work at all, the other two enrich it and fail soft when they're unreachable. How memory becomes composable like the rest is still open ([#30](https://github.com/lucabro81/mercury-fw/issues/30)). Every person gets their own: the wiki has a common area the whole team reads and an area per person, and memory, conversations and pending confirmations are theirs alone (the [core README](packages/libs/core/README.md) has the details).
 
 ## Quick start
 
@@ -51,9 +51,11 @@ import { formatterPlugin, formatter } from "@mercury-fw/formatter";
 import { jiraPlugin, type JiraDisplays } from "@mercury-fw/plugin-jira";
 import { httpChannel } from "@mercury-fw/channel-http";
 import { conversationWindow } from "@mercury-fw/conversation-window";
+import { wiki } from "@mercury-fw/wiki";
 
 const name = "Hermes";
 const conversation = conversationWindow();
+const teamWiki = wiki();
 
 const jiraIssueLine = (issue: JiraDisplays["issue-list"]) =>
   `${issue.key} ${issue.status ? `[${issue.status}] ` : ""}${issue.summary}\n${issue.url}`;
@@ -70,6 +72,7 @@ export default defineMercuryConfig({
   },
   plugins: [
     conversation,
+    teamWiki,
     formatterPlugin(
       jiraPlugin,
       formatter<JiraDisplays>({
@@ -78,11 +81,11 @@ export default defineMercuryConfig({
     ),
   ],
   channels: [httpChannel],
-  context: { profiles: { default: { conversation, layers: [], budget: { maxChars: 8000 } } } },
+  context: { profiles: { default: { conversation, layers: [teamWiki], budget: { maxChars: 8000 } } } },
 });
 ```
 
-`plugins` are the plugins (the conversation the agent keeps, `conversationWindow()`, which the `default` context profile names: without it the model reads each message alone, and the tool plugins) and `channels` the channels, each active as soon as it's declared: a plugin missing a setting it requires (Jira's `JIRA_SITE_URL`) refuses to load and says why at startup, and a channel left unconfigured stays inert.
+`plugins` are the plugins (the conversation the agent keeps, `conversationWindow()`, which the `default` context profile names: without it the model reads each message alone; the wiki, `wiki()`, whose index the profile lists among its `layers`; and the tool plugins) and `channels` the channels, each active as soon as it's declared: a plugin missing a setting it requires (Jira's `JIRA_SITE_URL`) refuses to load and says why at startup, and a channel left unconfigured stays inert.
 
 A plugin can hand the user a list (Jira does, for `issue search`), and how that list reads is the app's call: `formatterPlugin` wraps the plugin and `formatter` takes one rule per kind of list, the line for each item plus an optional text for an empty list, and `always: true` for a kind the person always gets (a link they asked for) without the model choosing to show it. The kinds come typed from the plugin (`JiraDisplays`), so a kind it doesn't emit fails the typecheck, and a kind left without a rule isn't shown at all (the model still gets the data, and the log says which rule is missing).
 
@@ -103,6 +106,7 @@ The framework, released together under one version:
 | [`@mercury-fw/trace-jsonl`](packages/traces/trace-jsonl) | The trace sink `mfw create` declares: the events of what the agent does, a JSONL file per day, the last days with activity kept. |
 | [`@mercury-fw/store-qdrant`](packages/stores/store-qdrant) | Qdrant as the vector index and the conversation store `mfw create` declares: where the agent's memory is found by meaning, and where every conversation is kept. |
 | [`@mercury-fw/conversation-window`](packages/memory/conversation-window) | The conversation `mfw create` declares: the recent messages the model reads, a summary once they grow long, a reopened conversation brought back from the archive. |
+| [`@mercury-fw/wiki`](packages/memory/wiki) | The wiki `mfw create` declares: notes the team shares and each person's own, the tools the model reads and writes them with, the index at the start of each session, a nightly review. |
 | [`@mercury-fw/kit`](packages/libs/kit) | For plugin authors: the plugin and channel contracts in one import. |
 | [`@mercury-fw/plugin-types`](packages/types/plugin-types), [`@mercury-fw/channel-types`](packages/types/channel-types) | The contracts a tool plugin and a channel implement. |
 | [`@mercury-fw/cli-engine`](packages/libs/cli-engine) | For plugins that work through a CLI: parsing, allowlist, execution, confirmation staging. |

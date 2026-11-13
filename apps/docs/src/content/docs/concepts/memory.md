@@ -17,12 +17,14 @@ declares and names in its `default` [context profile](../context/):
 
 ```ts title="mercury.config.ts"
 import { conversationWindow } from "@mercury-fw/conversation-window";
+import { wiki } from "@mercury-fw/wiki";
 
 const conversation = conversationWindow();
+const teamWiki = wiki();
 
 export default defineMercuryConfig({
-  plugins: [conversation],
-  context: { profiles: { default: { conversation, layers: [], budget: { maxChars: 8000 } } } },
+  plugins: [conversation, teamWiki],
+  context: { profiles: { default: { conversation, layers: [teamWiki], budget: { maxChars: 8000 } } } },
   // …
 });
 ```
@@ -74,6 +76,18 @@ The **wiki** is a folder of Markdown notes the agent reads and writes, kept as a
 It has a common area (`curated/`) everyone reads, where only people put things, and an area for each person, where
 the agent writes the notes it takes for them. A note moves from a person's area to the common one only when they
 confirm it, with a token like any [irreversible action](../confirmations/).
+
+A plugin keeps it too: `@mercury-fw/wiki`, which an app made with `mfw create` declares, in `plugins` for its tools
+and in the `default` profile's `layers` for its index, which the model reads at the start of each conversation (the
+example above). The vault is where `WIKI_VAULT_PATH` says, unless `wiki({ vaultPath })` says otherwise.
+
+| Option | |
+|---|---|
+| `vaultPath` | Where the vault lives; `WIKI_VAULT_PATH` when left out. With neither, the app doesn't start. |
+| `review` | When the nightly review runs, `{ at: "HH:MM", timeZone }` (the instance's time zone when left out); every day at `"03:00"` by default, `false` for none. |
+
+Every night the review goes through the vault on the model: it sorts what was pasted into `raw/` into the common
+area, keeps the index in line with it, and looks for documents that contradict each other.
 
 `mfw vault` reads and writes the wiki from your terminal.
 

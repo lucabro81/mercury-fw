@@ -1,7 +1,7 @@
 /**
  * Model-invocable wiki tools (`list_files`/`read_file`/`write_file`/`grep`/
  * `promote_note`) for one person, wrapping the plain
- * functions in `identity/vault-access.ts` and `wiki-note.ts` in `tool()`, same
+ * functions in `vault-access.ts` and `wiki-note.ts` in `tool()`, same
  * split as cli-executor.ts/cli-tool.ts for the external CLIs.
  *
  * The person sees the common area (`curated/`) and their own area as

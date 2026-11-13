@@ -282,14 +282,14 @@ What the model reads besides the conversation, by profile. See [Context](../../c
 
 ```ts
 const conversation = conversationWindow();
-const wiki = myWiki({ ... });
+const teamWiki = wiki();
 const rag = myRag({ ... });
 
-plugins: [conversation, wiki, rag],
+plugins: [conversation, teamWiki, rag],
 context: {
   profiles: {
-    default: { conversation, layers: [wiki], budget: { maxChars: 4000 } },
-    premium: { conversation, layers: [wiki, rag], budget: { maxChars: 12000 } },
+    default: { conversation, layers: [teamWiki], budget: { maxChars: 4000 } },
+    premium: { conversation, layers: [teamWiki, rag], budget: { maxChars: 12000 } },
   },
   assign: { premium: ["paid"] },
 },

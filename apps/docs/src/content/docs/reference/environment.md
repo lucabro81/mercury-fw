@@ -37,8 +37,8 @@ empty, a setting is the model's own.
 
 | Variable | |
 |---|---|
-| `WIKI_VAULT_PATH` | **Required.** Where the wiki lives: in a scaffolded app, the Docker volume mounted at `/app/wiki-vault`. |
-| `MERCURY_DATA_PATH` | **Required.** Where the agent keeps its own state: the linked accounts, how each person wants to be called, the plugins' data, the traces, the context's settings and change log. In a scaffolded app, the Docker volume mounted at `/app/data`. An agent that used to keep them in the wiki's `.mercury/` folder copies them here on its first start, and leaves the old folder where it is. |
+| `WIKI_VAULT_PATH` | Where the wiki lives (`@mercury-fw/wiki`, unless `wiki({ vaultPath })` names another folder): in a scaffolded app, the Docker volume mounted at `/app/wiki-vault`. Required by an app that declares the wiki that way. Mercury itself reads it only to copy over, once, what an older version kept in the vault. |
+| `MERCURY_DATA_PATH` | **Required.** Where the agent keeps its own state: the linked accounts, how each person wants to be called, the notes of the actions waiting for confirmation, the plugins' data, the traces, the context's settings and change log. In a scaffolded app, the Docker volume mounted at `/app/data`. An agent that used to keep them in the wiki's `.mercury/` folder copies them here on its first start, and leaves the old folder where it is. |
 | `QDRANT_URL` | Qdrant, the vector index and the conversation store of an app made with `mfw create` (default `http://qdrant:6333`, the service the app's compose file starts). |
 | `SESSION_IDLE_TIMEOUT_MS` | How long a quiet conversation keeps its history in memory (default 30 minutes). |
 
