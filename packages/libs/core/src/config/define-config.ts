@@ -103,7 +103,7 @@ export type MercuryConfig<P extends string = string> = {
   directory?: DirectoryPlugin;
   /** Where what's found by meaning is kept: the episodic memory, the semantic facts, the procedural corrections and `recall_verbatim`'s search. Left out, none of them runs. */
   vectorIndex?: VectorIndexPlugin;
-  /** Where what was said is kept: every conversation's messages, read back to reopen and list them, and their titles. Left out, nothing is archived (and `recall_verbatim` has nothing to search). */
+  /** Where what was said is kept: every conversation's messages, read back to reopen and list them, and their titles, written by the plugins that need it (`@mercury-fw/archive`, `@mercury-fw/titles`). Left out, nothing is archived (and `recall_verbatim` has nothing to search). */
   conversationStore?: ConversationStorePlugin;
   access?: MercuryAccess;
   i18n?: MercuryI18n;

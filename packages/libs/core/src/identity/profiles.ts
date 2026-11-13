@@ -2,7 +2,7 @@
  * What Mercury keeps about each person as a setting, not a note: the name to
  * call them by, the language to talk to them in and the time zone they're in,
  * which they tell the assistant in conversation (see `set_preferred_name`,
- * `set_preferred_language` and `set_time_zone` in `profile-tools.ts`) or, for
+ * `set_preferred_language` and `set_time_zone`, `@mercury-fw/profile`) or, for
  * the time zone, set from a channel's settings. Keyed by the person's key, so
  * it follows the person across their conversations, and the owner when
  * accounts are linked.

@@ -95,6 +95,24 @@ archived messages stamps the person's ones with `formatTurnStamp`, the same line
 so the model reads them as it read them live. `@mercury-fw/conversation-window` is the one Mercury ships (see
 [Memory](../memory/#the-conversation)).
 
+## What every turn leaves
+
+`afterTurn` hears a turn that ended with an answer. A plugin that keeps what was said needs more than that: the turns
+the person stopped, the ones that failed, and how each confirmation was resolved. `onTurnRecord` hears all of them,
+once each is over, as a `TurnRecord`:
+
+- a turn (`kind: "turn"`): how it ended (`outcome`: `"done"`, `"cancelled"`, `"failed"`), who started it (`origin`:
+  the person, the agent speaking first, or a turn going on after a confirmation), what the person wrote (`input`),
+  when it started and ended, and its `answer` with everything the archive keeps of it: the lists shown, the tool
+  calls, what the person saw besides the text;
+- a confirmation (`kind: "confirmation"`): the reply the person got and how it went.
+
+Each says whose it is and whether it was typed in the terminal (`operator`). Mercury doesn't wait for this code
+either, and two records of one conversation may be handled at once, so order them by their times, never by when
+they arrive. `archivedMessages(record)` turns a record into the messages an archive keeps, in the store's shape:
+`@mercury-fw/archive` is that and one `append` per message, nothing more (see
+[Memory](../memory/#the-archive-and-the-titles)).
+
 ## A plugin that learns from what was said
 
 The pieces fit together. This plugin keeps a line for every turn in which a person asked to note something, and

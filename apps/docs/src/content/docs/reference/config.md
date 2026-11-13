@@ -20,6 +20,9 @@ import { jsonlTraces } from "@mercury-fw/trace-jsonl";
 import { qdrantConversations, qdrantIndex } from "@mercury-fw/store-qdrant";
 import { conversationWindow } from "@mercury-fw/conversation-window";
 import { wiki } from "@mercury-fw/wiki";
+import { archive } from "@mercury-fw/archive";
+import { titles } from "@mercury-fw/titles";
+import { profile } from "@mercury-fw/profile";
 
 const name = "Hermes";
 const conversation = conversationWindow();
@@ -44,7 +47,7 @@ export default defineMercuryConfig({
       // …
     ].join("\n"),
   },
-  plugins: [conversation, teamWiki],
+  plugins: [conversation, teamWiki, archive(), titles(), profile()],
   channels: [httpChannel],
   auth: oidcAuth,
   directory: staticDirectory,
@@ -132,7 +135,9 @@ way, said once in the log; an index that isn't answering yet only delays the mem
 ## `conversationStore`
 
 Where every conversation is kept word for word, with its title: what a chat interface shows when it reopens a
-conversation and lists them. See [Memory](../../concepts/memory/#where-its-kept).
+conversation and lists them. The store only holds them: `archive()` writes the messages and `titles()` the titles
+(see [Memory](../../concepts/memory/#the-archive-and-the-titles)), and a store none of the plugins uses gets a line
+in the log at startup, since it stays empty. See [Memory](../../concepts/memory/#where-its-kept).
 
 ```ts
 import { qdrantConversations } from "@mercury-fw/store-qdrant";

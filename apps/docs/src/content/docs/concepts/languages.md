@@ -36,7 +36,8 @@ translates them like the packages' keys. A new app with the Jira plugin already 
 ## Which language a person gets
 
 1. **The language they asked for.** Someone who tells the agent "talk to me in Italian" gets Italian from then on, in
-   every conversation: the agent saves it as one of their settings, like the name they want to be called by, and its
+   every conversation: the agent saves it as one of their settings (with `profile()`, see
+   [Memory](../memory/#what-each-person-said-about-themselves)), like the name they want to be called by, and its
    own answers follow it too. Only the languages the app has can be picked; an app with English alone offers no choice.
 2. **Otherwise, the one their app asks for**, when the channel says: a web UI sends its browser's languages over the
    HTTP channel (the `Accept-Language` header browsers send), Google Chat the language of the person's Chat
@@ -94,7 +95,7 @@ The time is the person's, in their **time zone**, named as the official list of 
 zone is picked like the language:
 
 1. **The one the person saved.** Someone who tells the agent "I'm in Tokyo" gets Tokyo's time from then on, in every
-   conversation: the agent saves it as one of their settings. A web UI can offer it in its own settings too.
+   conversation: the agent saves it as one of their settings (with `profile()`). A web UI can offer it in its own settings too.
 2. **Otherwise, the one their app says**, when the channel passes it on: a web UI sends its browser's over the HTTP
    channel (the `X-Time-Zone` header), Google Chat the one of the person's Chat client, when Google includes it.
 3. **Otherwise, the app's own**, `timeZone` next to the languages in the config:

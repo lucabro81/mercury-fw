@@ -52,6 +52,9 @@ import { jiraPlugin, type JiraDisplays } from "@mercury-fw/plugin-jira";
 import { httpChannel } from "@mercury-fw/channel-http";
 import { conversationWindow } from "@mercury-fw/conversation-window";
 import { wiki } from "@mercury-fw/wiki";
+import { archive } from "@mercury-fw/archive";
+import { titles } from "@mercury-fw/titles";
+import { profile } from "@mercury-fw/profile";
 
 const name = "Hermes";
 const conversation = conversationWindow();
@@ -73,6 +76,9 @@ export default defineMercuryConfig({
   plugins: [
     conversation,
     teamWiki,
+    archive(),
+    titles(),
+    profile(),
     formatterPlugin(
       jiraPlugin,
       formatter<JiraDisplays>({
@@ -85,7 +91,7 @@ export default defineMercuryConfig({
 });
 ```
 
-`plugins` are the plugins (the conversation the agent keeps, `conversationWindow()`, which the `default` context profile names: without it the model reads each message alone; the wiki, `wiki()`, whose index the profile lists among its `layers`; and the tool plugins) and `channels` the channels, each active as soon as it's declared: a plugin missing a setting it requires (Jira's `JIRA_SITE_URL`) refuses to load and says why at startup, and a channel left unconfigured stays inert.
+`plugins` are the plugins (the conversation the agent keeps, `conversationWindow()`, which the `default` context profile names: without it the model reads each message alone; the wiki, `wiki()`, whose index the profile lists among its `layers`; the archive of every conversation, `archive()`, its titles, `titles()`, and what each person says about themselves, `profile()`; and the tool plugins) and `channels` the channels, each active as soon as it's declared: a plugin missing a setting it requires (Jira's `JIRA_SITE_URL`) refuses to load and says why at startup, and a channel left unconfigured stays inert.
 
 A plugin can hand the user a list (Jira does, for `issue search`), and how that list reads is the app's call: `formatterPlugin` wraps the plugin and `formatter` takes one rule per kind of list, the line for each item plus an optional text for an empty list, and `always: true` for a kind the person always gets (a link they asked for) without the model choosing to show it. The kinds come typed from the plugin (`JiraDisplays`), so a kind it doesn't emit fails the typecheck, and a kind left without a rule isn't shown at all (the model still gets the data, and the log says which rule is missing).
 
@@ -107,6 +113,9 @@ The framework, released together under one version:
 | [`@mercury-fw/store-qdrant`](packages/stores/store-qdrant) | Qdrant as the vector index and the conversation store `mfw create` declares: where the agent's memory is found by meaning, and where every conversation is kept. |
 | [`@mercury-fw/conversation-window`](packages/memory/conversation-window) | The conversation `mfw create` declares: the recent messages the model reads, a summary once they grow long, a reopened conversation brought back from the archive. |
 | [`@mercury-fw/wiki`](packages/memory/wiki) | The wiki `mfw create` declares: notes the team shares and each person's own, the tools the model reads and writes them with, the index at the start of each session, a nightly review. |
+| [`@mercury-fw/archive`](packages/memory/archive) | The archive `mfw create` declares: every conversation kept word for word in the conversation store, to reopen and list it. |
+| [`@mercury-fw/titles`](packages/memory/titles) | The titles `mfw create` declares: each conversation named after its first turn. |
+| [`@mercury-fw/profile`](packages/memory/profile) | What `mfw create` declares for each person's settings: the tools saving how they want to be called, their time zone and their language. |
 | [`@mercury-fw/kit`](packages/libs/kit) | For plugin authors: the plugin and channel contracts in one import. |
 | [`@mercury-fw/plugin-types`](packages/types/plugin-types), [`@mercury-fw/channel-types`](packages/types/channel-types) | The contracts a tool plugin and a channel implement. |
 | [`@mercury-fw/cli-engine`](packages/libs/cli-engine) | For plugins that work through a CLI: parsing, allowlist, execution, confirmation staging. |

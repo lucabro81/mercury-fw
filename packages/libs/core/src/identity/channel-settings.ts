@@ -1,7 +1,7 @@
 /**
  * The person's own settings, for a channel that shows a settings area (the
  * HTTP surface): the same profile writes the model makes when the person
- * tells it (`profile-tools.ts`), without the model in between. Each one is
+ * tells it (`@mercury-fw/profile`), without the model in between. Each one is
  * for the person the core identifies the caller as (the owner, when accounts
  * are linked), and refused for anyone it doesn't admit.
  */
