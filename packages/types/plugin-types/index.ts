@@ -491,18 +491,57 @@ export type ConversationOpen = {
 };
 
 /**
+ * The line the core puts before a person's message for the model
+ * (`[Wednesday 2026-10-21 14:32 Europe/Rome]` and a line break): when it was
+ * written at `date`, in `timeZone` (an IANA name). A conversation bringing
+ * back archived messages stamps the person's with it, so the model reads them
+ * as it read them live.
+ */
+export function formatTurnStamp(date: Date, timeZone: string): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    weekday: "long",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date);
+  const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((p) => p.type === type)?.value ?? "";
+  return `[${part("weekday")} ${part("year")}-${part("month")}-${part("day")} ${part("hour")}:${part("minute")} ${timeZone}]\n`;
+}
+
+/**
+ * What a conversation tells the core when adding a message made it shorten
+ * what came before (see `Conversation`): how many messages it folded, how
+ * long they were and what they became (`charsAfter`, absent when it failed),
+ * how long it took, and how it went (`error` when it failed). The core
+ * records it as the `history.compressed` event of the instance's traces.
+ */
+export type CompressionReport = {
+  messages: number;
+  charsBefore: number;
+  charsAfter?: number;
+  durationMs: number;
+  outcome: "done" | "failed";
+  error?: string;
+};
+
+/**
  * One open conversation, as the turn uses it: what the model reads
  * (`getMessages`), the messages a turn adds (the person's with its context,
  * then the answer with its calls; either may make the owner shorten what
- * came before), the answer replaced after a post-turn guard rewrote it, and
- * how long it is (`getCharCount`, for a channel showing how full it is).
- * `getCapturable` is what the conversation added since it was opened, without
- * what a reopening brought back: what a memory may still have to learn.
+ * came before, and then resolves to a `CompressionReport` saying how), the
+ * answer replaced after a post-turn guard rewrote it, and how long it is
+ * (`getCharCount`, for a channel showing how full it is). `getCapturable` is
+ * what the conversation added since it was opened, without what a reopening
+ * brought back: what a memory may still have to learn.
  */
 export type Conversation = {
   getMessages: () => ConversationMessage[];
-  addUserMessage: (content: string, context?: string) => Promise<void>;
-  addAssistantMessage: (content: string, calls?: CallRecord[]) => Promise<void>;
+  addUserMessage: (content: string, context?: string) => Promise<CompressionReport | void>;
+  addAssistantMessage: (content: string, calls?: CallRecord[]) => Promise<CompressionReport | void>;
   replaceLastAssistantMessage: (content: string) => void;
   getCharCount: () => number;
   getCapturable?: () => ConversationMessage[];

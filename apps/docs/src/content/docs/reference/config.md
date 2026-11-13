@@ -18,8 +18,10 @@ import it from "./locales/it.json";
 import pkg from "./package.json";
 import { jsonlTraces } from "@mercury-fw/trace-jsonl";
 import { qdrantConversations, qdrantIndex } from "@mercury-fw/store-qdrant";
+import { conversationWindow } from "@mercury-fw/conversation-window";
 
 const name = "Hermes";
+const conversation = conversationWindow();
 
 const main = ollamaModel(process.env.OLLAMA_MODEL, {
   think: envBoolean("OLLAMA_THINK", true),
@@ -40,7 +42,7 @@ export default defineMercuryConfig({
       // …
     ].join("\n"),
   },
-  plugins: [],
+  plugins: [conversation],
   channels: [httpChannel],
   auth: oidcAuth,
   directory: staticDirectory,
@@ -51,6 +53,7 @@ export default defineMercuryConfig({
     turn: main,
     embedding: ollamaEmbedding(process.env.OLLAMA_EMBEDDING_MODEL ?? "nomic-embed-text"),
   },
+  context: { profiles: { default: { conversation, layers: [], budget: { maxChars: 8000 } } } },
   i18n: { defaultLocale: "it", locales: { en, it } },
   traces: { sink: jsonlTraces(), level: "meta" },
   version: pkg.version,
@@ -278,14 +281,15 @@ record each of these jobs (`background.job`): how long it waited, how long it to
 What the model reads besides the conversation, by profile. See [Context](../../concepts/context/) for what a layer is.
 
 ```ts
+const conversation = conversationWindow();
 const wiki = myWiki({ ... });
 const rag = myRag({ ... });
 
-plugins: [wiki, rag],
+plugins: [conversation, wiki, rag],
 context: {
   profiles: {
-    default: { layers: [wiki], budget: { maxChars: 4000 } },
-    premium: { layers: [wiki, rag], budget: { maxChars: 12000 } },
+    default: { conversation, layers: [wiki], budget: { maxChars: 4000 } },
+    premium: { conversation, layers: [wiki, rag], budget: { maxChars: 12000 } },
   },
   assign: { premium: ["paid"] },
 },
@@ -293,7 +297,7 @@ context: {
 
 | Field | |
 |---|---|
-| `profiles` | The profiles by name; `default` is required. Each has `layers`, the plugins whose layers the model reads, in order, and `budget.maxChars`, how many characters of them at most (a whole number from 0 up). It may also name `conversation`, the plugin that keeps its conversations (see [What a plugin can use](../../concepts/primitives/#keeping-the-conversation)); left out, the agent keeps them itself, as it always has. |
+| `profiles` | The profiles by name; `default` is required. Each has `layers`, the plugins whose layers the model reads, in order, and `budget.maxChars`, how many characters of them at most (a whole number from 0 up). It may also name `conversation`, the plugin that keeps its conversations (`conversationWindow()` in an app made with `mfw create`, see [Memory](../../concepts/memory/#the-conversation)); left out, no conversation is kept, and the model reads each message alone. |
 | `assign` | Which roles get which profile: `{ premium: ["paid"] }`. Someone holding roles for more than one gets the first profile listed here. Everyone else, and the terminal, gets `default`. |
 
 A layer names the plugin itself, the same object as in `plugins`: declare the plugin once, in a constant, and use it in
@@ -309,7 +313,7 @@ layers' order and its layers' knobs while the agent runs; those changes are kept
 these until the configuration no longer allows them. See
 [Changing it while the agent runs](../../concepts/context/#changing-it-while-the-agent-runs).
 
-Left out, nothing is added to what the model reads.
+Left out, nothing is added to what the model reads, and no conversation is kept: the model reads each message alone.
 
 ## `traces`
 

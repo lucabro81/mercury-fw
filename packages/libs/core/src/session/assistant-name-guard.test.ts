@@ -13,7 +13,6 @@ import type { Tool } from "ai";
 import { tool } from "ai";
 import { z } from "zod";
 import { createWikiTools } from "../wiki/wiki-tools.ts";
-import { createToolLogRecallTool } from "./tool-log-recall-tool.ts";
 import { createReadSkillTool } from "./read-skill-tool.ts";
 import { createPresentTool } from "../tools/present-tool.ts";
 import { createDisplayStore } from "../tools/display-store.ts";
@@ -28,7 +27,6 @@ function coreTools(): Record<string, Tool> {
   const pluginTool = tool({ description: "Runs a jira command.", inputSchema: z.object({}), execute: async () => "ran" });
   return {
     ...createWikiTools({ vaultPath, key: "static:alice", stageConfirmation: async () => ({ token: "t", summary: "s" }) as never }),
-    ...createToolLogRecallTool({ sessionKey: "s", owner: "static:alice" }),
     ...createProfileTools({ store: { nameOf: () => undefined, setName: (_k, n) => n, languageOf: () => undefined, setLanguage: (_k, l) => l, timeZoneOf: () => undefined, setTimeZone: (_k, z) => z }, key: "static:alice" }),
     ...createReadSkillTool([{ name: "jira", description: "Jira.", body: "body" }]),
     ...createPresentTool({ sessionKey: "s", store: createDisplayStore() }),

@@ -1,15 +1,10 @@
 /**
- * Thin glue that turns `createSessionHistory`'s injected `summarize`
- * dependency into a real LLM call.
+ * The window's `summarize` as a model call: the instructions, and the
+ * messages it folds as one prompt. `history.ts` holds the logic and is
+ * tested with a fake summarizer; this is only the glue to `generateText`.
  *
- * Kept separate from `history.ts` on purpose: `history.ts`'s threshold/
- * merge/replace logic is the substantial part and is fully unit-tested
- * with a fake summarizer; this file's only job is producing the prompt
- * and calling `generateText`, which isn't worth mocking deeply for one
- * line of glue.
- *
- * Used by: `src/index.ts` (wiring), which passes the result into
- * `createSessionHistory` (see `src/session/history.ts`).
+ * Used by: `index.ts`, on the plugin's model (`ctx.model`, the turn's: the
+ * person is waiting for this).
  */
 import { generateText, type LanguageModel } from "ai";
 import type { Message } from "./history.ts";
@@ -20,7 +15,7 @@ export const SUMMARY_INSTRUCTIONS =
   "Each message from the user starts with when it was written, in brackets: keep when things were said or decided, as written there.";
 
 /**
- * Returns a function matching `createSessionHistory`'s `summarize`
+ * Returns a function matching `createWindow`'s `summarize`
  * signature, backed by `model`. The returned function asks the model to
  * condense the given messages into a short summary that preserves
  * names, ticket keys, decisions and when they happened — the things a

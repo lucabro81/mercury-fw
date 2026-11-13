@@ -41,21 +41,8 @@ export function resolveTimeZone(saved: string | undefined, hint: string | undefi
   return Intl.DateTimeFormat().resolvedOptions().timeZone;
 }
 
-/** The stamp for a message written at `date` in `timeZone`, line break included. */
-export function formatTurnStamp(date: Date, timeZone: string): string {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone,
-    weekday: "long",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hourCycle: "h23",
-  }).formatToParts(date);
-  const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((p) => p.type === type)?.value ?? "";
-  return `[${part("weekday")} ${part("year")}-${part("month")}-${part("day")} ${part("hour")}:${part("minute")} ${timeZone}]\n`;
-}
+/** The stamp for a message written at a date in a time zone, line break included: the contract's, so a conversation plugin stamps what it brings back the same way. */
+export { formatTurnStamp } from "@mercury-fw/plugin-types";
 
 /** `text` without the stamp at its start, for whatever reads the history but isn't the model's turn. */
 export function stripTurnStamp(text: string): string {

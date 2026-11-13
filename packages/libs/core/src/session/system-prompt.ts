@@ -126,19 +126,12 @@ export function buildSystemPrompt(opts: {
       "- When the person tells you how they want to be called, now or in any later conversation, save it with set_preferred_name.",
     ].join("\n"),
   );
-  lines.push(
-    [
-      "You have access to the recall_tool_calls tool.",
-      "DO:",
-      "- If asked what you actually ran/queried/did earlier in this same conversation, call recall_tool_calls and quote it verbatim — your earlier turns show which tools you called and how they went, but not what they returned, so reconstructing from memory instead of calling this tool risks getting it wrong.",
-    ].join("\n"),
-  );
   if (opts.recallVerbatim !== false) lines.push(
     [
       "You have access to the recall_verbatim tool.",
       "DO:",
       "- If asked about something said in an EARLIER conversation — beyond what you can see in this one — call recall_verbatim to retrieve the actual past messages and quote them, don't reconstruct from memory. This searches a durable archive of what you and this person really said before.",
-      "- Use recall_tool_calls, not this, for what you ran in the CURRENT conversation; use recall_verbatim for what was said in past ones.",
+      "- Use it only for what was said in past conversations, never for what you ran in the CURRENT one.",
     ].join("\n"),
   );
 

@@ -2,7 +2,7 @@
  * Thin glue turning a closed session's messages into the episodic
  * summary written to Qdrant (see `src/memory/episodic-store.ts`) — a
  * factual account of what happened, not an interpretation. Distinct from
- * `summarizer.ts` (Layer 1): that one condenses history to keep the
+ * a conversation window's summary: that one condenses history to keep the
  * *next* turn's prompt small, preserving whatever helps continue the
  * same conversation; this one produces a standalone record of a
  * *finished* conversation, and must not infer patterns or preferences

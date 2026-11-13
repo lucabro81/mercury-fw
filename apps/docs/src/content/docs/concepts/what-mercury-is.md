@@ -54,7 +54,8 @@ export default defineMercuryConfig({
 ```
 
 This agent is called Hermes, can tell people the guest Wi-Fi, and answers over HTTP to callers that
-`staticAuth` recognizes. The [configuration reference](../../reference/config/) has every field.
+`staticAuth` recognizes. It keeps no conversation: each message is read alone, until the app declares a plugin
+that keeps it (see [Memory](../memory/#the-conversation)), as an app made with `mfw create` does. The [configuration reference](../../reference/config/) has every field.
 
 ## Failing soft
 

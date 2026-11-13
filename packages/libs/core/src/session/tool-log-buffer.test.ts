@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "bun:test";
-import { recordStep, getToolLog, resetToolLogForTest } from "./tool-log-buffer.ts";
+import { recordStep, getToolLog, pluginToolLog, resetToolLogForTest } from "./tool-log-buffer.ts";
 import type { StepInfo } from "./step-info.ts";
 
 function stepWithOneCall(toolName: string, output: unknown): StepInfo {
@@ -79,5 +79,23 @@ describe("recordStep / getToolLog", () => {
     }
 
     expect(getToolLog({ owner: "static:bob" }).map((e) => e.toolName)).toEqual(["bob_tool"]);
+  });
+});
+
+// #393: the plugins' tool log (`ctx.toolLog`) promised the calls oldest first
+// and handed them newest first, as the HTTP route reads them.
+describe("pluginToolLog", () => {
+  beforeEach(() => {
+    resetToolLogForTest();
+  });
+
+  it("reads the person's calls oldest first, of one session when given", () => {
+    recordStep("http", "alice:c1", "static:alice", stepWithOneCall("first", { ok: true }));
+    recordStep("http", "alice:c2", "static:alice", stepWithOneCall("elsewhere", { ok: true }));
+    recordStep("http", "alice:c1", "static:alice", stepWithOneCall("second", { ok: true }));
+    recordStep("http", "alice:c1", "static:bob", stepWithOneCall("bob's", { ok: true }));
+
+    expect(pluginToolLog.read({ person: "static:alice", sessionKey: "alice:c1" }).map((e) => e.toolName)).toEqual(["first", "second"]);
+    expect(pluginToolLog.read({ person: "static:alice" }).map((e) => e.toolName)).toEqual(["first", "elsewhere", "second"]);
   });
 });

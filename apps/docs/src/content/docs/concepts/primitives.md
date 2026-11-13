@@ -87,6 +87,14 @@ names it in a [context profile](../../reference/config/#context): Mercury opens 
 it, at the session's first message, and hands it every message the turn adds. When the session closes Mercury tells
 the plugin, so it can let go of what it kept.
 
+Adding a message may make the conversation shorten what came before it (a summary, or dropping the oldest messages).
+When it does, the add resolves to a `CompressionReport`: how many messages it folded, how long they were and what
+they became, how long it took, and whether it worked. Mercury records it in the [traces](../traces/) as
+`history.compressed`, so a plugin's compression shows there like Mercury's own did. A conversation that brings back
+archived messages stamps the person's ones with `formatTurnStamp`, the same line Mercury puts before every message,
+so the model reads them as it read them live. `@mercury-fw/conversation-window` is the one Mercury ships (see
+[Memory](../memory/#the-conversation)).
+
 ## A plugin that learns from what was said
 
 The pieces fit together. This plugin keeps a line for every turn in which a person asked to note something, and

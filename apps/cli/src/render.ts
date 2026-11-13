@@ -123,6 +123,27 @@ export const TRACE_SINK_PACKAGE = "@mercury-fw/trace-jsonl";
 /** The vector index and the conversation store every new app declares: Qdrant, the compose service. */
 export const VECTOR_INDEX_PACKAGE = "@mercury-fw/store-qdrant";
 
+/** The packages keeping memory every new app declares: framework packages, at the CLI's version. */
+export const MEMORY_PACKAGES = ["@mercury-fw/conversation-window"];
+
+/** Above the config: the conversation every new app keeps. */
+const CONVERSATION = [
+  "/**",
+  " * The conversation each session keeps for the model: its recent messages,",
+  " * summarized on the model once they pass 60000 characters, and the end of a",
+  " * conversation the person reopens, from the conversation store.",
+  " */",
+  "const conversation = conversationWindow();",
+].join("\n");
+
+/** The config's `context`: the default profile, keeping the conversation and no layers yet. */
+const CONTEXT_SECTION = [
+  "  // What the model reads besides each message: the conversation `conversation`",
+  "  // keeps (remove it here and from plugins to keep none, and each message is",
+  "  // read alone), and the context layers of the plugins listed in `layers`.",
+  "  context: { profiles: { default: { conversation, layers: [], budget: { maxChars: 8000 } } } },",
+].join("\n");
+
 /** The config's `vectorIndex` and `conversationStore` entries, with what each holds. */
 const VECTOR_INDEX_SECTION = [
   "  // Where the memory is found by meaning (what past conversations were about,",
@@ -310,13 +331,14 @@ function renderConfig(
   }
   imports.push(`import { jsonlTraces } from "${TRACE_SINK_PACKAGE}";`);
   imports.push(`import { qdrantConversations, qdrantIndex } from "${VECTOR_INDEX_PACKAGE}";`);
+  imports.push('import { conversationWindow } from "@mercury-fw/conversation-window";');
 
   const helpers = withRules.map((t) => `${t.formatter?.helpers}\n\n`).join("");
 
   const plugins =
     tools.length === 0
-      ? "  plugins: [],"
-      : ["  plugins: [", ...tools.map(renderPluginEntry), "  ],"].join("\n");
+      ? "  plugins: [conversation],"
+      : ["  plugins: [", "    conversation,", ...tools.map(renderPluginEntry), "  ],"].join("\n");
   const channelList = `  channels: [${channels.map((c) => c.exportName).join(", ")}],`;
 
   return [
@@ -328,6 +350,8 @@ function renderConfig(
     "",
     MAIN_MODEL,
     "",
+    CONVERSATION,
+    "",
     `${helpers}export default defineMercuryConfig({`,
     ...renderPersona(role),
     plugins,
@@ -336,6 +360,7 @@ function renderConfig(
     ...(directory ? [`  directory: ${directory.exportName},`] : []),
     VECTOR_INDEX_SECTION,
     MODELS_SECTION,
+    CONTEXT_SECTION,
     "  i18n: { locales: { en } },",
     TRACES_SECTION,
     VERSION_COMMENT,
@@ -378,7 +403,7 @@ function renderPackageJson(
   directory: CatalogEntry | undefined,
 ): string {
   const chosen = [...channels, ...(auth ? [auth] : []), ...tools, ...(directory ? [directory] : [])];
-  const packages = [...new Set(["@mercury-fw/core", TRACE_SINK_PACKAGE, VECTOR_INDEX_PACKAGE, ...chosen.flatMap(entryPackages)])];
+  const packages = [...new Set(["@mercury-fw/core", TRACE_SINK_PACKAGE, VECTOR_INDEX_PACKAGE, ...MEMORY_PACKAGES, ...chosen.flatMap(entryPackages)])];
   if (tools.some((t) => t.formatter)) {
     packages.push("@mercury-fw/formatter");
   }

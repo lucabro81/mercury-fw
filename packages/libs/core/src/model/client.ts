@@ -1,6 +1,6 @@
 /**
  * Constructs the Ollama provider Mercury uses for every LLM call (main
- * agent turns and Layer 1 summarization alike).
+ * agent turns and the core's background work alike).
  *
  * Why it exists: the Ollama endpoint Mercury talks to varies by
  * deployment (a local GPU box in development, a different host in

@@ -25,7 +25,7 @@ It needs an auth provider next to it, or several (`auth: [a, b]`, tried in order
 | `HTTP_SURFACE_PORT` | The port (default `4100`). |
 | `HTTP_SURFACE_CORS_ORIGIN` | The origin a browser UI calls from (default `*`). |
 | `HTTP_SURFACE_PUBLIC_URL` | The address people's browsers reach the surface at (e.g. `https://mercury.example.com`). With it, people log in here to the services plugins act on as them (see [`GET /login/callback`](#get-logincallback)); without it, nobody can. |
-| `HTTP_SURFACE_RESUME_MAX_CHARS` | How many characters of a reopened conversation come back to the model once Mercury has freed its history (default: the core's `SESSION_RESUME_MAX_CHARS`; `0` turns resuming off on this surface). See [how Mercury remembers a conversation](../../libs/core/README.md#how-mercury-remembers-a-conversation). |
+| `HTTP_SURFACE_RESUME_MAX_CHARS` | How many characters of a reopened conversation come back to the model once Mercury has freed its history (default: what the plugin keeping the conversation brings back, `conversationWindow({ reopen: { maxChars } })`; `0` turns resuming off on this surface). See [how Mercury remembers a conversation](../../libs/core/README.md#how-mercury-remembers-a-conversation). |
 
 ## API
 

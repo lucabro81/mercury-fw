@@ -14,8 +14,8 @@ import type { SemanticFactEntry } from "../memory/semantic-facts-store.ts";
 import type { ConsolidationDecision } from "./semantic-consolidation.ts";
 import type { TraceInput } from "../traces/tracer.ts";
 
-/** What made a capture happen: the idle sweep, the message-count threshold, a Layer-1 compression. */
-export type CaptureTrigger = "idle" | "threshold" | "compress";
+/** What made a capture happen: the idle sweep, or the message-count threshold. */
+export type CaptureTrigger = "idle" | "threshold";
 
 export type IdleSession = { key: string; userId: string; messages: Message[] };
 
@@ -25,9 +25,8 @@ export type IdleSession = { key: string; userId: string; messages: Message[] };
  * function never decides *whether* a session should be captured or
  * whether it should be closed afterwards, only *how* to capture a given
  * slice of messages. Reused by the idle sweep below (final capture +
- * close) and, without touching this file's own tests, by the two
- * mid-conversation triggers wired in `index.ts` (message-count threshold,
- * Layer 1 compression) — neither of which closes the session.
+ * close) and by the mid-conversation message-count threshold wired in
+ * `compose.ts`, which doesn't close the session.
  */
 export type CaptureDeps = {
   summarize: (messages: Message[]) => Promise<string>;

@@ -95,13 +95,15 @@ words of its own, such as a status line while its tool runs, writes them in its 
 
 A plugin does nothing until the app declares it. In `mercury.config.ts`, import it and put it in `plugins`:
 
-```ts title="mercury.config.ts" ins={4,16}
+```ts title="mercury.config.ts" ins={5,18}
 import { defineMercuryConfig } from "@mercury-fw/core";
+import { conversationWindow } from "@mercury-fw/conversation-window";
 import en from "./locales/en.json";
 import pkg from "./package.json";
 import { guestWifiPlugin } from "./src/plugins/guest-wifi.ts";
 
 const name = "Mercury";
+const conversation = conversationWindow();
 
 export default defineMercuryConfig({
   persona: {
@@ -111,14 +113,14 @@ export default defineMercuryConfig({
       // …
     ].join("\n"),
   },
-  plugins: [guestWifiPlugin],
+  plugins: [conversation, guestWifiPlugin],
   channels: [],
   i18n: { locales: { en } },
   version: pkg.version,
 });
 ```
 
-The rest of the file is what `mfw create` wrote, shortened here: the model and the `models` section, `i18n`, the `traces` that record what the agent does (see [Traces](../../concepts/traces/)) and `version`, the app's own (see [`version`](../../reference/config/#version)).
+The rest of the file is what `mfw create` wrote, shortened here: the model and the `models` section, the conversation (`conversation`, see [Memory](../../concepts/memory/#the-conversation)) and the `context` that keeps it, `i18n`, the `traces` that record what the agent does (see [Traces](../../concepts/traces/)) and `version`, the app's own (see [`version`](../../reference/config/#version)).
 
 ## Its settings
 

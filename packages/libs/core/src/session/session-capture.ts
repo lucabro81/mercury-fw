@@ -1,19 +1,19 @@
 /**
  * Layer-3 capture of live sessions: who each tracked session belongs to, how
  * much of its history is already mirrored to memory, and the two
- * mid-conversation triggers that mirror the rest, the message-count threshold
- * (`maybeCapture`, after a turn) and a Layer-1 compression (`onCompress`).
- * The idle sweep does the final capture itself and calls `close`.
+ * mid-conversation trigger that mirrors the rest, the message-count threshold
+ * (`maybeCapture`, after a turn). The idle sweep does the final capture itself
+ * and calls `close`.
  *
  * Every capture runs on its own, as background work (`deps.job`, the core's
  * queue for the model, #383): nothing waits for it, not even the session's
  * next turn.
  *
- * The marker counts messages of the history's current view (`getMessages()`),
- * which a compression restarts. Each trigger fixes the slice it captures and
- * moves the marker on the spot, before anything else can read it. A threshold
- * capture that fails puts it back, unless something moved it again meanwhile;
- * a compression's capture never touches it again.
+ * The marker counts messages of the conversation's current view
+ * (`getCapturable()`), which a compression restarts: a view shorter than the
+ * marker restarts the count from it. Each trigger fixes the slice it captures
+ * and moves the marker on the spot, before anything else can read it. A
+ * capture that fails puts it back, unless something moved it again meanwhile.
  */
 import type { TurnSink } from "../router/provider.ts";
 import type { Message } from "./history.ts";
@@ -22,9 +22,8 @@ import { englishTexts, type Texts, type Translate } from "../i18n/i18n.ts";
 type CaptureCallbacks = { onToolStart: TurnSink["onToolStart"]; onToolFinish: TurnSink["onToolFinish"] };
 
 export type SessionCaptureDeps = {
-  /** Mirrors `messages` of the session `sessionKey`, owned by `userId`, to memory; rejects on failure. */
-  /** `trigger` says which of the two mid-conversation triggers it was, for the traces. */
-  capture: (userId: string, sessionKey: string, messages: Message[], trigger: "threshold" | "compress") => Promise<void>;
+  /** Mirrors `messages` of the session `sessionKey`, owned by `userId`, to memory; rejects on failure. `trigger` is for the traces. */
+  capture: (userId: string, sessionKey: string, messages: Message[], trigger: "threshold") => Promise<void>;
   /** How many new messages a session needs before `maybeCapture` mirrors them. */
   threshold: number;
   /** The detail line a capture's status shows, from the messages it captures, in the session's person's language (`t`). */
@@ -45,8 +44,6 @@ export type SessionCapture = {
   userOf(sessionKey: string): string | undefined;
   /** Starts capturing what's new in `messages` once there are `threshold` new ones, without waiting for it; a failed capture leaves those messages for the next trigger. */
   maybeCapture(sessionKey: string, messages: Message[]): Promise<void>;
-  /** For `createSessionHistory`'s `onBeforeCompress`: captures what wasn't captured yet of `messages`, in the background. */
-  onCompress(sessionKey: string, messages: Message[]): void;
   /** Forgets the session, once the idle sweep closed it. */
   close(sessionKey: string): void;
   /** Resolves once every background capture started so far has settled (tests, shutdown). */
@@ -71,7 +68,7 @@ export function createSessionCapture(deps: SessionCaptureDeps): SessionCapture {
   };
 
   /** Captures `pending`, reporting to the session's current callbacks; resolves whether it succeeded. */
-  function capturePending(sessionKey: string, userId: string, pending: Message[], trigger: "threshold" | "compress"): Promise<boolean> {
+  function capturePending(sessionKey: string, userId: string, pending: Message[], trigger: "threshold"): Promise<boolean> {
     const status = callbacks.get(sessionKey);
     return job(async () => {
       const captureId = crypto.randomUUID();
@@ -108,6 +105,8 @@ export function createSessionCapture(deps: SessionCaptureDeps): SessionCapture {
     async maybeCapture(sessionKey, messages) {
       const userId = users.get(sessionKey);
       if (userId === undefined) return;
+      // Shorter than what was captured: the conversation compressed, its view starts over.
+      if (messages.length < (markers.get(sessionKey) ?? 0)) markers.set(sessionKey, 0);
       const marker = markers.get(sessionKey) ?? 0;
       if (messages.length - marker < deps.threshold) return;
       const upTo = messages.length;
@@ -117,15 +116,6 @@ export function createSessionCapture(deps: SessionCaptureDeps): SessionCapture {
           if (!ok && markers.get(sessionKey) === upTo) markers.set(sessionKey, marker);
         }),
       );
-    },
-    onCompress(sessionKey, messages) {
-      const userId = users.get(sessionKey);
-      if (userId === undefined) return;
-      const pending = messages.slice(markers.get(sessionKey) ?? 0);
-      // The view after compression starts fresh, whatever happens to this capture.
-      markers.set(sessionKey, 0);
-      if (pending.length === 0) return;
-      track(capturePending(sessionKey, userId, pending, "compress"));
     },
     close(sessionKey) {
       users.delete(sessionKey);

@@ -2,7 +2,7 @@
  * Bounded history of tool calls, one log per person (the user key) so a busy
  * person never evicts anyone else's calls, each entry tagged with its session
  * so a recall of "what did you do" only surfaces that conversation. It backs
- * the `recall_tool_calls` model tool (`tool-log-recall-tool.ts`) and the HTTP
+ * what plugins read as `ctx.toolLog` (the conversation window's `recall_tool_calls`) and the HTTP
  * `/tool-log` route: the record of what happened in a session. Nothing else keeps
  * this beyond the current turn (`src/index.ts`'s terminal-only `lastSteps`
  * resets every turn, Google Chat's `onStepFinish` only logs to stderr) —
@@ -23,7 +23,7 @@ export type ToolLogChannel = string;
 
 /** One call as the log keeps it: the contract's shape, the one plugins read (`PluginRuntimeContext.toolLog`). */
 export type { ToolLogEntry } from "@mercury-fw/plugin-types";
-import type { ToolLogEntry } from "@mercury-fw/plugin-types";
+import type { ToolLog, ToolLogEntry } from "@mercury-fw/plugin-types";
 
 /** Per person. */
 const MAX_ENTRIES = 200;
@@ -73,6 +73,11 @@ export function getToolLog(filter: { owner: string; sessionKey?: string }): Tool
   const matching = filter.sessionKey === undefined ? log : log.filter((e) => e.sessionKey === filter.sessionKey);
   return [...matching].reverse();
 }
+
+/** The tool log as plugins read it (`ctx.toolLog`): a person's calls, oldest first, of one session when given. */
+export const pluginToolLog: ToolLog = {
+  read: ({ person, sessionKey }) => getToolLog({ owner: person, ...(sessionKey === undefined ? {} : { sessionKey }) }).reverse(),
+};
 
 /** Test-only: clears the module-level logs so tests don't leak into each other. */
 export function resetToolLogForTest(): void {

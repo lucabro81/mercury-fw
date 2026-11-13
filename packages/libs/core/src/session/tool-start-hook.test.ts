@@ -75,10 +75,6 @@ describe("describeToolStart", () => {
     expect(describeToolStart("runCommand", {}, statusMap)).toBe("Running a command");
   });
 
-  it("labels recall_tool_calls as consulting memory", () => {
-    expect(describeToolStart("recall_tool_calls", {}, statusMap)).toBe("Checking my memory…");
-  });
-
   it("labels the wiki read tools as reading the wiki", () => {
     expect(describeToolStart("read_file", { path: "x" }, statusMap)).toBe("Reading the wiki…");
     expect(describeToolStart("list_files", {}, statusMap)).toBe("Reading the wiki…");
@@ -151,9 +147,8 @@ describe("describeToolDetail", () => {
     expect(describeToolDetail("resolve_reference", { token: "REQ-123" })).toBe("REQ-123");
   });
 
-  it("returns a static description for list_files and recall_tool_calls (no path/pattern to show)", () => {
+  it("returns a static description for list_files (no path/pattern to show)", () => {
     expect(describeToolDetail("list_files", {})).toBe("Every document in the wiki");
-    expect(describeToolDetail("recall_tool_calls", { limit: 5 })).toBe("The calls made in this conversation");
   });
 
   it("falls back to a bounded JSON dump of the input for an unmapped/future tool", () => {
@@ -226,15 +221,15 @@ describe("withToolStartHook", () => {
     const tools: Record<string, Tool> = {
       read_file: fakeTool(async () => "a"),
       write_file: fakeTool(async () => "b"),
-      recall_tool_calls: fakeTool(async () => "c"),
+      grep: fakeTool(async () => "c"),
     };
 
     const wrapped = withToolStartHook(tools, (label) => calls.push(label), statusMap);
-    for (const name of ["read_file", "write_file", "recall_tool_calls"] as const) {
+    for (const name of ["read_file", "write_file", "grep"] as const) {
       await execOf(wrapped, name)({}, { toolCallId: `tc-${name}` });
     }
 
-    expect(calls).toEqual(["Reading the wiki…", "Writing to the wiki…", "Checking my memory…"]);
+    expect(calls).toEqual(["Reading the wiki…", "Writing to the wiki…", "Searching…"]);
   });
 
   it("calls onToolStart with the label, detail, toolCallId and tool name for a real tool call", async () => {
@@ -328,7 +323,7 @@ describe("withToolStartHook", () => {
         });
         return { ok: true, data: {} };
       }),
-      recall_tool_calls: fakeTool(async () => {
+      grep: fakeTool(async () => {
         events.push("execute-2");
         return { ok: true, entries: [] };
       }),
@@ -342,7 +337,7 @@ describe("withToolStartHook", () => {
     );
 
     const exec1 = execOf(wrapped, "runCommand")({ command: "jira issue search --jql X" }, { toolCallId: "tc-1" });
-    const exec2 = execOf(wrapped, "recall_tool_calls")({}, { toolCallId: "tc-2" });
+    const exec2 = execOf(wrapped, "grep")({}, { toolCallId: "tc-2" });
 
     // Give both calls a few microtask turns to (mis)fire if serialization were broken.
     await Promise.resolve();
@@ -358,7 +353,7 @@ describe("withToolStartHook", () => {
       "start:Running jira issue search",
       "execute-1",
       "finish:tc-1",
-      "start:Checking my memory…",
+      "start:Searching…",
       "execute-2",
       "finish:tc-2",
     ]);

@@ -1,12 +1,12 @@
 import { describe, expect, test } from "bun:test";
-import { resumeConversation, resumeBudget, parseResumeMaxChars, DEFAULT_RESUME_MAX_CHARS, type ResumeDeps } from "./resume.ts";
-import { MAX_HISTORY_CHARS } from "./history.ts";
-import type { VerbatimTail } from "../memory/verbatim-archive-store.ts";
+import { resumeConversation, resumeBudget, DEFAULT_RESUME_MAX_CHARS, type ResumeDeps } from "./resume.ts";
+import { DEFAULT_MAX_CHARS } from "./history.ts";
+import type { Tail } from "./tail.ts";
 
 const query = { userId: "zitadel:1", sessionKey: "1:conv-a", maxChars: 400 };
 
 /** Deps over a fixed tail and summaries, recording what was asked. */
-function deps(tail: VerbatimTail, summaries: Array<{ summary: string; timestamp: string }> = []) {
+function deps(tail: Tail, summaries: Array<{ summary: string; timestamp: string }> = []) {
   const calls: { tail: unknown[]; summaries: unknown[] } = { tail: [], summaries: [] };
   const logs: string[] = [];
   const d: ResumeDeps = {
@@ -65,7 +65,7 @@ describe("resumeConversation", () => {
     expect(await resumeConversation(query, d)).toEqual({ messages: [plain(user("verde")), plain(assistant("ok"))] });
     expect(calls.tail).toEqual([query]);
     expect(calls.summaries).toEqual([]);
-    expect(logs).toEqual(["[memory] resumed 1:conv-a: 2 messages, no summary"]);
+    expect(logs).toEqual(["[conversation-window] resumed 1:conv-a: 2 messages, no summary"]);
   });
 
   test("a partial tail keeps three quarters of the budget, and the summaries of what came before it the rest", async () => {
@@ -84,7 +84,7 @@ describe("resumeConversation", () => {
     // The tail starts at 10:12 and left out what ran up to 10:11: the summary
     // written at 10:11 covers it, and the two before it fit what's left (220).
     expect(resumed?.summary).toBe(`${"m".repeat(100)}\n\n${"n".repeat(100)}`);
-    expect(logs).toEqual(["[memory] resumed 1:conv-a: 2 messages, summary"]);
+    expect(logs).toEqual(["[conversation-window] resumed 1:conv-a: 2 messages, summary"]);
   });
 
   // Regression (live test of #163): the newest summary was of the very
@@ -142,7 +142,7 @@ describe("resumeConversation", () => {
       log: (m) => logs.push(m),
     };
     expect(await resumeConversation(query, failing)).toBeUndefined();
-    expect(logs).toEqual(["[memory] couldn't resume 1:conv-a, it starts without its earlier messages: Error: qdrant down"]);
+    expect(logs).toEqual(["[conversation-window] couldn't resume 1:conv-a, it starts without its earlier messages: Error: qdrant down"]);
   });
 
   test("summaries that fail leave the tail on its own", async () => {
@@ -155,31 +155,31 @@ describe("resumeConversation", () => {
       log: (m) => logs.push(m),
     };
     expect(await resumeConversation(query, d)).toEqual({ messages: [plain(user("x"))] });
-    expect(logs[0]).toBe("[memory] couldn't read the summaries of 1:conv-a, it resumes without them: Error: qdrant down");
+    expect(logs[0]).toBe("[conversation-window] couldn't read the summaries of 1:conv-a, it resumes without them: Error: qdrant down");
   });
 });
 
 describe("the resume budget", () => {
-  test("defaults to half of what the history holds before compressing, and reads SESSION_RESUME_MAX_CHARS", () => {
-    expect(DEFAULT_RESUME_MAX_CHARS).toBe(MAX_HISTORY_CHARS / 2);
-    expect(parseResumeMaxChars(undefined)).toBe(DEFAULT_RESUME_MAX_CHARS);
-    expect(parseResumeMaxChars("")).toBe(DEFAULT_RESUME_MAX_CHARS);
-    expect(parseResumeMaxChars(" 12000 ")).toBe(12000);
-    expect(parseResumeMaxChars("0")).toBe(0);
+  test("defaults to half of what the window holds before compressing", () => {
+    expect(DEFAULT_RESUME_MAX_CHARS).toBe(DEFAULT_MAX_CHARS / 2);
   });
 
-  test("anything but a whole number from 0 up is refused, naming the variable", () => {
-    for (const bad of ["-1", "1.5", "abc", "1e3"]) {
-      expect(() => parseResumeMaxChars(bad)).toThrow(`SESSION_RESUME_MAX_CHARS must be a whole number from 0 up, got "${bad}"`);
-    }
-  });
-
-  test("a turn without resume gets none; the channel's budget wins over the instance's", () => {
-    expect(resumeBudget(undefined, 30_000)).toBe(0);
+  test("the channel's budget wins over the window's own", () => {
     expect(resumeBudget({}, 30_000)).toBe(30_000);
     expect(resumeBudget({ maxChars: 500 }, 30_000)).toBe(500);
     expect(resumeBudget({ maxChars: 0 }, 30_000)).toBe(0);
     expect(resumeBudget({ maxChars: 500 }, 0)).toBe(500);
+  });
+});
+
+// #393: the summaries are the memory's; a window given none to read lets the
+// tail take the whole budget instead of keeping a quarter for nothing.
+describe("resumeConversation without summaries to read", () => {
+  test("a partial tail keeps the whole budget, and nothing asks for summaries", async () => {
+    const tail = { messages: [user("a".repeat(100), 1), assistant("b".repeat(100), 2), user("c".repeat(100), 3), assistant("d".repeat(90), 4)], complete: false };
+    const { readSummaries: _none, ...d } = deps(tail).d;
+    const resumed = await resumeConversation({ ...query, maxChars: 400 }, d);
+    expect(resumed).toEqual({ messages: tail.messages.map(plain) });
   });
 });
 

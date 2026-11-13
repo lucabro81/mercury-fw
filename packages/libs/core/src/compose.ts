@@ -28,14 +28,12 @@ import { createContextSettings } from "./context/context-settings.ts";
 import { materializeCliCredentials } from "./credentials/materialize.ts";
 import type { MercuryConfig } from "./config/define-config.ts";
 import { createResumeSlots } from "./session/resume-slots.ts";
-import { createSessionHistory, type SessionHistory, type Message, type ResumedConversation } from "./session/history.ts";
-import { createSummarizer } from "./session/summarizer.ts";
+import type { Message } from "./session/history.ts";
 import { createConversations } from "./session/conversations.ts";
 import { createConversationTitler } from "./session/conversation-titler.ts";
 import { createEpisodicSummarizer } from "./session/episodic-summarizer.ts";
 import { createSemanticFactExtractor } from "./session/semantic-fact-extractor.ts";
-import { buildContextPrimer, primerOptions, type ContextPrimer } from "./session/context-primer.ts";
-import { resumeConversation, resumeBudget, parseResumeMaxChars } from "./session/resume.ts";
+import { buildContextPrimer, primerOptions } from "./session/context-primer.ts";
 import { buildSystemPrompts } from "./session/system-prompt.ts";
 import { assistantNameOf, skillsWithAssistantName, toolsWithAssistantName } from "./session/assistant-name.ts";
 import { createSessionLock } from "./router/session-lock.ts";
@@ -58,7 +56,6 @@ import {
   writeConfirmationNote,
 } from "./wiki/wiki-note.ts";
 import { createWikiTools } from "./wiki/wiki-tools.ts";
-import { createToolLogRecallTool } from "./session/tool-log-recall-tool.ts";
 import { createReadSkillTool } from "./session/read-skill-tool.ts";
 import { createIdleSessionScanner } from "./cron/idle-session-scanner.ts";
 import { startIdleSessionCron, captureSessionToMemory, type CaptureDeps } from "./cron/idle-session-cron.ts";
@@ -66,9 +63,8 @@ import {
   EPISODIC_SPACE,
   storeEpisodicSummary,
   getLastSessionEpisodicSummaries,
-  getEpisodicSummariesBySession,
 } from "./memory/episodic-store.ts";
-import { listVerbatimBySession, listVerbatimTail } from "./memory/verbatim-archive-store.ts";
+import { listVerbatimBySession } from "./memory/verbatim-archive-store.ts";
 import { setTitle, titleOf, titlesOf } from "./memory/conversation-titles-store.ts";
 import { createVerbatimArchiveProvider } from "./memory/memory-provider.ts";
 import { storeSemanticFact, searchSemanticFactsByTopic } from "./memory/semantic-facts-store.ts";
@@ -102,12 +98,12 @@ import { migrateMemoryToUserKeys, migrateVaultToUserAreas } from "./identity/mig
 import { runRawTriagePass, runIndexAndOrphanPass, runContradictionCheckPass } from "./wiki/self-review-runner.ts";
 import { startSelfReviewCron } from "./cron/self-review-cron.ts";
 import { createDaily } from "./cron/daily.ts";
-import { getToolLog } from "./session/tool-log-buffer.ts";
+import { pluginToolLog } from "./session/tool-log-buffer.ts";
 import { pluginProfiles } from "./identity/plugin-profiles.ts";
 import { loadTracer } from "./traces/trace-loader.ts";
 import { migrateLegacyState, pluginDataRoot, requireDataPath } from "./data/data-dir.ts";
 import type { Tracer } from "./traces/tracer.ts";
-import { withCompressionEvents } from "./traces/compression-events.ts";
+import { compressionEvent } from "./traces/compression-events.ts";
 import { resolve as resolvePath } from "node:path";
 import { homedir } from "node:os";
 import type { LanguageModel, Tool } from "ai";
@@ -236,7 +232,6 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
     }
     return queued;
   };
-  const summarize = createSummarizer(model);
 
   // Plugins are declared in the instance's config (its `mercury.config.ts`) and
   // handed in — this file no longer names them. The loader processes an opaque
@@ -312,7 +307,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
       ...(embeddingModel === undefined ? {} : { embed }),
     },
     daily: dailyWork.daily,
-    toolLog: { read: ({ person, sessionKey }) => getToolLog({ owner: person, ...(sessionKey === undefined ? {} : { sessionKey }) }) },
+    toolLog: pluginToolLog,
     profiles: pluginProfiles(profiles, () => shippedLanguages),
   });
 
@@ -411,24 +406,6 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   // that receives the provider's redirect.
   const personLogins = createPersonLogins({ log: (msg) => console.error(msg), emit: (event) => tracer.emit(event), assistantName, texts });
 
-  /**
-   * Today's window, inside the core, for a profile that names no plugin to
-   * keep its conversation. `trackForCapture` wires `onBeforeCompress` so a
-   * Layer 1 compression also mirrors the compressed batch to memory (see
-   * `session-capture.ts`) — only meaningful for sessions it tracks (a real
-   * per-user identity); an identity-less channel omits it.
-   */
-  function createInternalHistory(key: string, trackForCapture = false, primer?: ContextPrimer, resumed?: ResumedConversation): SessionHistory {
-    return createSessionHistory(
-      withCompressionEvents(summarize, { emit: (event) => tracer.emit({ ...event, session: key }), now: () => Date.now() }),
-      trackForCapture && vectorIndex !== undefined
-        ? (messages) => sessionCapture.onCompress(key, messages)
-        : undefined,
-      primer,
-      resumed,
-    );
-  }
-
   /** What the person's earlier conversations left for a new one (see session/context-primer.ts); none for one its client reopens at will (#233). */
   const primerFor = (userId: string, resume: { maxChars?: number } | undefined) =>
     buildContextPrimer(userId, {
@@ -442,24 +419,12 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
     }, primerOptions(resume));
 
   // The open conversations, one per session (see session/conversations.ts):
-  // kept by the plugin the first person's profile names, else by the window above.
+  // kept by the plugin the first person's profile names, else none.
   const conversations = createConversations({
     ownerFor: (who) => (resolvedContext === undefined ? undefined : profileFor(resolvedContext, who).conversation?.conversation),
-    internal: async ({ sessionKey, tracked, userId, resume, timeZone }) => {
-      if (!tracked || userId === undefined) return createInternalHistory(sessionKey);
-      // A conversation its client reopens comes back from the archive (#163).
-      const resumed = await resumeConversation(
-        { userId, sessionKey, maxChars: resumeBudget(resume, resumeMaxChars) },
-        {
-          readTail: async (q) => (conversationStore === undefined ? { messages: [], complete: true } : listVerbatimTail(conversationStore, q)),
-          readSummaries: async (q) => (vectorIndex === undefined ? [] : getEpisodicSummariesBySession(vectorIndex, q)),
-          log: (msg) => console.error(msg),
-        },
-        timeZone,
-      );
-      return createInternalHistory(sessionKey, true, await primerFor(userId, resume), resumed);
-    },
     primerFor,
+    // What the conversation's compression did, an event of the session's (#393).
+    onCompressed: (sessionKey, report) => tracer.emit({ ...compressionEvent(report), session: sessionKey }),
   });
 
   // Session persistence, Layer 3: a tracked session idle past
@@ -470,7 +435,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   const episodicSummarize = createEpisodicSummarizer(backgroundModel);
 
   // Verbatim conversation archive (#4): the raw user<->model exchange,
-  // lossless and durable — separate from the lossy Layer-1 window and the
+  // lossless and durable — separate from the lossy conversation window and the
   // derived episodic summaries above — in the store, searched in the index.
   const verbatimProvider =
     conversationStore === undefined
@@ -486,9 +451,6 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
               console.error(`[verbatim-archive] indexing failed, the message is kept: ${String(err instanceof Error ? err.message : err)}`),
             ),
         });
-  // How much of a resumed conversation comes back, when its channel sets no
-  // budget of its own (see session/resume.ts).
-  const resumeMaxChars = parseResumeMaxChars(process.env.SESSION_RESUME_MAX_CHARS);
   // Conversation titles (#214), next to the archive whose conversations they
   // name: generated once from a conversation's first exchange, or the person's.
   const titleConversation = (() => {
@@ -536,7 +498,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   };
 
   // Shared by the idle sweep (final capture + close) and by sessionCapture
-  // (the two mid-conversation triggers, neither of which closes the session) —
+  // (the mid-conversation threshold, which doesn't close the session) —
   // one definition of "how to capture", reused everywhere.
   const captureDeps: CaptureDeps = {
     summarize: episodicSummarize,
@@ -569,7 +531,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   }
 
   // Who each tracked session belongs to and how much of it is already in
-  // memory; mirrors the rest at the two mid-conversation triggers.
+  // memory; mirrors the rest every few messages.
   const sessionCapture = createSessionCapture({
     capture: (userId, sessionKey, messages, trigger) => captureSessionToMemory(userId, sessionKey, messages, Date.now(), captureDeps, trigger),
     job: (fn) => backgroundJob("capture", "idle", fn),
@@ -736,7 +698,6 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
       createWikiTools({ vaultPath: wikiVaultPath, key, stageConfirmation: sessionToolContext.stageConfirmation }),
     );
     Object.assign(sessionTools, createProfileTools({ store: profiles, key, languages: i18n.supported }));
-    Object.assign(sessionTools, createToolLogRecallTool({ sessionKey, owner: key }));
     // Verbatim archive recall, scoped to this person — lets the model resurface
     // what was actually said in earlier conversations, beyond the live window.
     if (verbatimProvider !== undefined) Object.assign(sessionTools, verbatimProvider.sessionTools!({ sessionKey, userId: key }));
