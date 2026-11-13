@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from "bun:test";
+import { keptHistory } from "./session/__fixtures__/kept-history.ts";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -512,12 +513,20 @@ describe("composeMercury", () => {
     });
     const wiki = layered("wiki", "session", "WIKI INDEX");
     const rag = layered("rag", "turn", "RAG HIT");
+    // A conversation kept whole, so the second turn reads the first.
+    const keeper = {
+      apiVersion: PLUGIN_API_VERSION,
+      name: "keeper",
+      description: "Keeps the conversation.",
+      actsAs: "anyone" as const,
+      build: () => ({ conversation: { open: async () => keptHistory() } }),
+    };
     try {
       const app = await composeMercury({
-        plugins: [wiki, rag],
+        plugins: [wiki, rag, keeper],
         models: { turn: ollamaModel("big") },
         access: { unknown: "allow" },
-        context: { profiles: { default: { layers: [wiki, rag], budget: { maxChars: 1000 } } } },
+        context: { profiles: { default: { layers: [wiki, rag], budget: { maxChars: 1000 }, conversation: keeper } } },
       });
       const sink = { onToolStart: () => {}, finalize: async () => {}, dispose: () => {} } as never;
       const turn = (text: string) => ({ channel: "http", multiUser: false, text, sessionKey: "http:alice:c1", principal: { provider: "static", id: "alice" }, logPrefix: "" }) as never;

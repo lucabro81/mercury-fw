@@ -2,7 +2,8 @@ import { describe, expect, test } from "bun:test";
 import { createTurnRunner, parseStallTimeoutMs, DEFAULT_STALL_TIMEOUT_MS, OPENING_CUE, OPENING_NOTE, PREFERRED_LANGUAGE_NOTE, PREFERRED_NAME_NOTE, RECAP_NOTE, SHOWN_LISTS_NOTE, RESUMED_LINE, type PostTurnGuard, type TurnRunnerDeps } from "./turn-runner.ts";
 import type { InboundTurn, TurnSink } from "./provider.ts";
 import type { Principal } from "@mercury-fw/channel-types";
-import { createSessionHistory, type SessionHistory } from "../session/history.ts";
+import type { SessionHistory } from "../session/history.ts";
+import { keptHistory } from "../session/__fixtures__/kept-history.ts";
 import { OPERATOR_PRINCIPAL } from "../identity/people.ts";
 import { createSessionLock } from "./session-lock.ts";
 import { ABORTED_MARKER } from "../session/agent-turn.ts";
@@ -1600,7 +1601,7 @@ describe("createTurnRunner", () => {
     }
 
     test("two turns on the same session run one after the other, post-turn work included", async () => {
-      const history = createSessionHistory(async () => "summary");
+      const history = keptHistory();
       const firstGate = gate();
       const events: string[] = [];
       const runner = runnerWith({

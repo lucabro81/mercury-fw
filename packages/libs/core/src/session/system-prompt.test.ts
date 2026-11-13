@@ -168,11 +168,12 @@ describe("buildSystemPrompt recall_verbatim", () => {
   it("leaves recall_verbatim out entirely when the instance has no recall", () => {
     const prompt = buildSystemPrompt({ ...base, recallVerbatim: false });
     expect(prompt).not.toContain("recall_verbatim");
-    // Only that block goes: the one on what ran in this conversation stays.
-    expect(prompt).toContain("You have access to the recall_tool_calls tool.");
+    // Only that block goes: the one on the person's name stays.
+    expect(prompt).toContain("You have access to the set_preferred_name tool.");
     const withRecall = buildSystemPrompt(base);
     const start = withRecall.indexOf("\nYou have access to the recall_verbatim tool.");
-    const end = withRecall.indexOf("use recall_verbatim for what was said in past ones.") + "use recall_verbatim for what was said in past ones.".length;
+    const last = "never for what you ran in the CURRENT one.";
+    const end = withRecall.indexOf(last) + last.length;
     expect(withRecall.slice(0, start) + withRecall.slice(end)).toBe(prompt);
   });
 

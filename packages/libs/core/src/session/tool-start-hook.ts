@@ -45,7 +45,6 @@ export function describeToolStart(
 ): string {
   const describe = toolStatusDescribers[toolName];
   if (describe) return describe(input, t);
-  if (toolName === "recall_tool_calls") return t("core.status.memory");
   if (toolName === "read_skill") return t("core.status.instructions");
   if (toolName === "grep") return t("core.status.searching");
   const wikiCategory = WIKI_TOOL_CATEGORY[toolName];
@@ -92,8 +91,6 @@ export function describeToolDetail(toolName: string, input: unknown, t: Translat
       return truncate(stringField(input, "token") ?? JSON.stringify(input) ?? "");
     case "list_files":
       return t("core.status.wiki-all");
-    case "recall_tool_calls":
-      return t("core.status.call-history");
     default:
       return truncate(JSON.stringify(input) ?? "");
   }

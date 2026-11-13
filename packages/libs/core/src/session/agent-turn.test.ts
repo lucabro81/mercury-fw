@@ -5,7 +5,7 @@ import { HISTORY_CALL_NOTE, SKILL_CALL_NOTE } from "./call-record.ts";
 
 /** The stand-in for an answer the model didn't write, in English. */
 const PENDING_CONFIRMATION_NOTE = CORE_MESSAGES["core.pending.note"]!;
-import { createSessionHistory } from "./history.ts";
+import { keptHistory } from "./__fixtures__/kept-history.ts";
 import type { ModelMessage, Tool } from "ai";
 import type { StepInfo } from "./step-info.ts";
 
@@ -22,10 +22,6 @@ async function stopConditionsMet(stopWhen: unknown, steps: unknown[]): Promise<b
   return (await Promise.all(conditions.map((c) => c({ steps })))).some(Boolean);
 }
 
-function neverSummarize(): Promise<string> {
-  throw new Error("should not be called in these tests");
-}
-
 /** Wraps plain text chunks as a fake `fullStream`'s `text-delta` parts — the shape `runTurn` actually reads today (it no longer consumes `textStream`). */
 async function* textDeltaStream(chunks: string[]) {
   for (const chunk of chunks) {
@@ -37,7 +33,7 @@ const SYSTEM = "you are a test assistant";
 
 describe("runTurn", () => {
   it("adds the user input to history before generating", async () => {
-    const history = createSessionHistory(neverSummarize);
+    const history = keptHistory();
     let messagesAtGenerateTime: ModelMessage[] = [];
     const generateTextFn = async (params: { messages: ModelMessage[] }) => {
       messagesAtGenerateTime = params.messages;
@@ -55,7 +51,7 @@ describe("runTurn", () => {
   });
 
   it("returns exactly the text produced by the fake generator", async () => {
-    const history = createSessionHistory(neverSummarize);
+    const history = keptHistory();
     const generateTextFn = async () => ({ text: "fixed response" });
 
     const result = await runTurn(history, "hi", {
@@ -69,7 +65,7 @@ describe("runTurn", () => {
   });
 
   it("forwards deps.abortSignal to the non-streaming generator (turn cancellation)", async () => {
-    const history = createSessionHistory(neverSummarize);
+    const history = keptHistory();
     const ac = new AbortController();
     let seen: AbortSignal | undefined;
     const generateTextFn = async (params: { abortSignal?: AbortSignal }) => {
@@ -87,7 +83,7 @@ describe("runTurn", () => {
   });
 
   it("forwards deps.abortSignal to the streaming generator (turn cancellation)", async () => {
-    const history = createSessionHistory(neverSummarize);
+    const history = keptHistory();
     const ac = new AbortController();
     let seen: AbortSignal | undefined;
     const streamTextFn = async (params: { abortSignal?: AbortSignal }) => {
@@ -106,7 +102,7 @@ describe("runTurn", () => {
   });
 
   it("adds the assistant's response to history after generating", async () => {
-    const history = createSessionHistory(neverSummarize);
+    const history = keptHistory();
     const generateTextFn = async () => ({ text: "fixed response" });
 
     await runTurn(history, "hi", {
@@ -123,7 +119,7 @@ describe("runTurn", () => {
   });
 
   it("passes the provided tools through to the generation call", async () => {
-    const history = createSessionHistory(neverSummarize);
+    const history = keptHistory();
     const fakeTool = {} as Tool;
     let receivedTools: Record<string, Tool> | undefined;
     const generateTextFn = async (params: { tools: Record<string, Tool> }) => {
@@ -142,7 +138,7 @@ describe("runTurn", () => {
   });
 
   it("passes the provided system prompt through to the generation call unchanged", async () => {
-    const history = createSessionHistory(neverSummarize);
+    const history = keptHistory();
     let receivedSystem: string | undefined;
     const generateTextFn = async (params: { instructions: string }) => {
       receivedSystem = params.instructions;
@@ -167,7 +163,7 @@ describe("runTurn", () => {
   // preserved — only that a step reaching the wrapper reaches the
   // original too.
   it("forwards each step to the caller's onStepFinish when provided, on the generation path", async () => {
-    const history = createSessionHistory(neverSummarize);
+    const history = keptHistory();
     const ordinaryStep: StepInfo = { toolCalls: [], toolResults: [], content: [] };
     const receivedSteps: StepInfo[] = [];
     const generateTextFn = async (params: { onStepEnd?: (step: StepInfo) => void }) => {
@@ -191,7 +187,7 @@ describe("runTurn", () => {
   // src/router/terminal.ts. Google Chat never sets onTextChunk, so it
   // keeps using the generateTextFn path above unchanged.
   it("streams chunks via onTextChunk and returns the full joined text, when onTextChunk is provided", async () => {
-    const history = createSessionHistory(neverSummarize);
+    const history = keptHistory();
     const received: string[] = [];
     const streamTextFn = async () => ({ stream: textDeltaStream(["Hel", "lo, ", "world"]) });
 
@@ -208,7 +204,7 @@ describe("runTurn", () => {
   });
 
   it("records the full joined streamed text as the assistant's message", async () => {
-    const history = createSessionHistory(neverSummarize);
+    const history = keptHistory();
     const streamTextFn = async () => ({ stream: textDeltaStream(["foo", "bar"]) });
 
     await runTurn(history, "hi", {
@@ -226,7 +222,7 @@ describe("runTurn", () => {
   });
 
   it("forwards each step to the caller's onStepFinish when provided, on the streaming path too", async () => {
-    const history = createSessionHistory(neverSummarize);
+    const history = keptHistory();
     const ordinaryStep: StepInfo = { toolCalls: [], toolResults: [], content: [] };
     const receivedSteps: StepInfo[] = [];
     const streamTextFn = async (params: { onStepEnd?: (step: StepInfo) => void }) => {
@@ -252,7 +248,7 @@ describe("runTurn", () => {
       yield { type: "reasoning-delta", id: "block-1", delta: "think." };
       yield { type: "reasoning-end", id: "block-1" };
     }
-    const history = createSessionHistory(neverSummarize);
+    const history = keptHistory();
     const received: Array<[string, string]> = [];
     const streamTextFn = async () => ({ stream: fakeStream() });
 
@@ -280,7 +276,7 @@ describe("runTurn", () => {
       yield { type: "reasoning-end", id: "1" };
       yield { type: "text-delta", id: "2", delta: "the real answer" };
     }
-    const history = createSessionHistory(neverSummarize);
+    const history = keptHistory();
     const streamTextFn = async () => ({ stream: fakeStream() });
 
     const result = await runTurn(history, "hi", {
@@ -303,7 +299,7 @@ describe("runTurn", () => {
       yield { type: "reasoning-delta", id: "block-1", delta: "x" };
       yield { type: "reasoning-end", id: "block-1" };
     }
-    const history = createSessionHistory(neverSummarize);
+    const history = keptHistory();
     const calls: Array<[string, boolean]> = [];
     const streamTextFn = async () => ({ stream: fakeStream() });
 
@@ -324,7 +320,7 @@ describe("runTurn", () => {
       yield { type: "reasoning-delta", id: "block-1", delta: "x" };
       throw new Error("stream broke");
     }
-    const history = createSessionHistory(neverSummarize);
+    const history = keptHistory();
     const calls: Array<[string, boolean]> = [];
     const streamTextFn = async () => ({ stream: fakeStream() });
 
@@ -355,7 +351,7 @@ describe("runTurn", () => {
       yield { type: "reasoning-end", id: "block-2" };
       yield { type: "text-delta", id: "t", delta: "answer" };
     }
-    const history = createSessionHistory(neverSummarize);
+    const history = keptHistory();
     const chunks: Array<[string, string]> = [];
     const ends: Array<[string, boolean]> = [];
     const streamTextFn = async () => ({ stream: fakeStream() });
@@ -381,7 +377,7 @@ describe("runTurn", () => {
   });
 
   it("never calls onReasoningEnd when no reasoning-delta ever arrived", async () => {
-    const history = createSessionHistory(neverSummarize);
+    const history = keptHistory();
     let calls = 0;
     const streamTextFn = async () => ({ stream: textDeltaStream(["just an answer"]) });
 
@@ -400,7 +396,7 @@ describe("runTurn", () => {
   });
 
   it("selects the streaming path when only onReasoningChunk is provided (no onTextChunk)", async () => {
-    const history = createSessionHistory(neverSummarize);
+    const history = keptHistory();
     let streamTextFnCalled = false;
     const streamTextFn = async () => {
       streamTextFnCalled = true;
@@ -433,7 +429,7 @@ describe("runTurn", () => {
       yield { type: "text-delta", id: "2", delta: "t2" };
       yield { type: "text-end", id: "2" };
     }
-    const history = createSessionHistory(neverSummarize);
+    const history = keptHistory();
     const events: string[] = [];
     const streamTextFn = async () => ({ stream: fakeStream() });
 
@@ -468,7 +464,7 @@ describe("runTurn", () => {
       yield { type: "reasoning-end", id: "1" };
       yield { type: "text-delta", id: "2", text: "la risposta vera" };
     }
-    const history = createSessionHistory(neverSummarize);
+    const history = keptHistory();
     const reasoningChunks: string[] = [];
     const streamTextFn = async () => ({ stream: fakeStream() });
 
@@ -489,7 +485,7 @@ describe("runTurn", () => {
   // estimated) context-usage indicator — see src/router/tool-log.ts's
   // formatContextUsage and src/index.ts's wiring.
   it("passes the real inputTokens from usage to onUsage, on the generateText path", async () => {
-    const history = createSessionHistory(neverSummarize);
+    const history = keptHistory();
     let receivedInputTokens: number | undefined;
     const generateTextFn = async () => ({
       text: "ok",
@@ -510,7 +506,7 @@ describe("runTurn", () => {
   });
 
   it("passes the real inputTokens from usage to onUsage, on the streaming path", async () => {
-    const history = createSessionHistory(neverSummarize);
+    const history = keptHistory();
     let receivedInputTokens: number | undefined;
     const streamTextFn = async () => ({
       stream: textDeltaStream(["ok"]),
@@ -540,7 +536,7 @@ describe("runTurn", () => {
   // stuck case is an accepted tradeoff, not solved here (see
   // resolveHistoryText's doc comment in agent-turn.ts).
   it("leaves the streamed answer empty, and sends nothing via onTextChunk, when it's genuinely empty", async () => {
-    const history = createSessionHistory(neverSummarize);
+    const history = keptHistory();
     const received: string[] = [];
     // yields nothing — the model ran out of steps before writing text
     const streamTextFn = async () => ({ stream: textDeltaStream([]) });
@@ -562,7 +558,7 @@ describe("runTurn", () => {
   });
 
   it("treats a whitespace-only streamed answer the same as an empty one", async () => {
-    const history = createSessionHistory(neverSummarize);
+    const history = keptHistory();
     const streamTextFn = async () => ({ stream: textDeltaStream(["   \n"]) });
 
     const result = await runTurn(history, "hi", {
@@ -577,7 +573,7 @@ describe("runTurn", () => {
   });
 
   it("does not touch a non-empty streamed answer", async () => {
-    const history = createSessionHistory(neverSummarize);
+    const history = keptHistory();
     const streamTextFn = async () => ({ stream: textDeltaStream(["a real answer"]) });
 
     const result = await runTurn(history, "hi", {
@@ -595,7 +591,7 @@ describe("runTurn", () => {
   // both real channels always set onTextChunk — but kept correct since
   // it's still a public, directly tested code path.
   it("leaves the text empty when generateText returns empty text and the last step wasn't a pending confirmation", async () => {
-    const history = createSessionHistory(neverSummarize);
+    const history = keptHistory();
     const generateTextFn = async () => ({ text: "" });
 
     const result = await runTurn(history, "hi", {
@@ -627,7 +623,7 @@ describe("runTurn", () => {
   // had actually been confirmed or abandoned (tokens don't survive a
   // restart, or even 5 minutes — see confirmation-store.ts's TTL).
   it("records PENDING_CONFIRMATION_NOTE instead of leaving it empty when the last step staged a confirm-required command (non-streaming)", async () => {
-    const history = createSessionHistory(neverSummarize);
+    const history = keptHistory();
     const generateTextFn = async (params: { onStepEnd?: (step: StepInfo) => void }) => {
       params.onStepEnd?.(PENDING_CONFIRMATION_STEP);
       return { text: "" };
@@ -648,7 +644,7 @@ describe("runTurn", () => {
   });
 
   it("records PENDING_CONFIRMATION_NOTE instead of leaving it empty when the last step staged a confirm-required command (streaming)", async () => {
-    const history = createSessionHistory(neverSummarize);
+    const history = keptHistory();
     const received: string[] = [];
     const streamTextFn = async (params: { onStepEnd?: (step: StepInfo) => void }) => {
       params.onStepEnd?.(PENDING_CONFIRMATION_STEP);
@@ -674,7 +670,7 @@ describe("runTurn", () => {
   });
 
   it("stands in with the note the turn hands it, in the person's language", async () => {
-    const history = createSessionHistory(neverSummarize);
+    const history = keptHistory();
     const generateTextFn = async (params: { onStepEnd?: (step: StepInfo) => void }) => {
       params.onStepEnd?.(PENDING_CONFIRMATION_STEP);
       return { text: "" };
@@ -696,7 +692,7 @@ describe("runTurn", () => {
     };
     const told: string[] = [];
     for (const text of ["", "I staged it."]) {
-      await runTurn(createSessionHistory(neverSummarize), "hi", {
+      await runTurn(keptHistory(), "hi", {
         model: "fake-model" as never,
         tools: {},
         system: SYSTEM,
@@ -715,7 +711,7 @@ describe("runTurn", () => {
   // anyone read the summary back).
   describe("SessionHistory records an opaque [REQ:<token>] marker, not PENDING_CONFIRMATION_NOTE", () => {
     it("uses the real token from the step that staged the confirm-required command", async () => {
-      const history = createSessionHistory(neverSummarize);
+      const history = keptHistory();
       const step: StepInfo = {
         toolCalls: [{ toolCallId: "1", toolName: "runCommand", input: { command: "jira issue delete KAN-9" } }],
         toolResults: [{ toolCallId: "1", toolName: "runCommand", output: { pendingConfirmation: true, token: "OTHER9" } }],
@@ -826,7 +822,7 @@ describe("runTurn reports how the generation ended", () => {
       yield { type: "finish", finishReason: "stop" };
     }
     const calls: Array<[string, string | undefined]> = [];
-    await runTurn(createSessionHistory(neverSummarize), "hi", {
+    await runTurn(keptHistory(), "hi", {
       model: "fake-model" as never,
       tools: {},
       system: SYSTEM,
@@ -844,7 +840,7 @@ describe("runTurn reports how the generation ended", () => {
       yield { type: "finish", finishReason: "error" };
     }
     const calls: Array<[string, string | undefined]> = [];
-    const text = await runTurn(createSessionHistory(neverSummarize), "hi", {
+    const text = await runTurn(keptHistory(), "hi", {
       model: "fake-model" as never,
       tools: {},
       system: SYSTEM,
@@ -862,7 +858,7 @@ describe("runTurn reports how the generation ended", () => {
       yield { type: "finish", finishReason: "error" };
     }
     const calls: Array<[string, string | undefined]> = [];
-    await runTurn(createSessionHistory(neverSummarize), "hi", {
+    await runTurn(keptHistory(), "hi", {
       model: "fake-model" as never,
       tools: {},
       system: SYSTEM,
@@ -879,7 +875,7 @@ describe("runTurn reports how the generation ended", () => {
       yield { type: "abort" };
     }
     let called = false;
-    await runTurn(createSessionHistory(neverSummarize), "hi", {
+    await runTurn(keptHistory(), "hi", {
       model: "fake-model" as never,
       tools: {},
       system: SYSTEM,
@@ -894,7 +890,7 @@ describe("runTurn reports how the generation ended", () => {
 
   it("passes generateText's finishReason to onFinish on the non-streaming path", async () => {
     const calls: Array<[string, string | undefined]> = [];
-    await runTurn(createSessionHistory(neverSummarize), "hi", {
+    await runTurn(keptHistory(), "hi", {
       model: "fake-model" as never,
       tools: {},
       system: SYSTEM,
@@ -906,7 +902,7 @@ describe("runTurn reports how the generation ended", () => {
 
   it("doesn't call onFinish when generateText returns no finishReason", async () => {
     let called = false;
-    await runTurn(createSessionHistory(neverSummarize), "hi", {
+    await runTurn(keptHistory(), "hi", {
       model: "fake-model" as never,
       tools: {},
       system: SYSTEM,
@@ -945,7 +941,7 @@ describe("runTurn — resumed after a confirmation", () => {
   }
 
   it("hands the model the confirmed call and its result after the history, and keeps the result out of the history", async () => {
-    const history = createSessionHistory(neverSummarize);
+    const history = keptHistory();
     let seen: unknown[] = [];
     const generateTextFn = async (params: { messages: unknown[] }) => {
       seen = params.messages;
@@ -975,7 +971,7 @@ describe("runTurn — resumed after a confirmation", () => {
   });
 
   it("does the same on the streaming path", async () => {
-    const history = createSessionHistory(neverSummarize);
+    const history = keptHistory();
     let seen: unknown[] = [];
     const streamTextFn = async (params: { messages: unknown[] }) => {
       seen = params.messages;
@@ -995,7 +991,7 @@ describe("runTurn — resumed after a confirmation", () => {
   });
 
   it("a result that isn't JSON-shaped reaches the model as null rather than breaking the call", async () => {
-    const history = createSessionHistory(neverSummarize);
+    const history = keptHistory();
     let seen: unknown[] = [];
     const generateTextFn = async (params: { messages: unknown[] }) => {
       seen = params.messages;
@@ -1026,7 +1022,7 @@ describe("runTurn — an aborted call", () => {
       ac.abort();
       yield { type: "abort" };
     }
-    const history = createSessionHistory(neverSummarize);
+    const history = keptHistory();
     const text = await runTurn(history, "hi", {
       model: "fake-model" as never,
       tools: {},
@@ -1044,7 +1040,7 @@ describe("runTurn — an aborted call", () => {
 
   it("records the aborted marker instead of the half answer, on the non-streaming path", async () => {
     const ac = new AbortController();
-    const history = createSessionHistory(neverSummarize);
+    const history = keptHistory();
     const text = await runTurn(history, "hi", {
       model: "fake-model" as never,
       tools: {},
@@ -1069,7 +1065,7 @@ describe("runTurn — an aborted call", () => {
       ac.abort();
       throw new Error("aborted");
     }
-    const history = createSessionHistory(neverSummarize);
+    const history = keptHistory();
     await expect(
       runTurn(history, "hi", {
         model: "fake-model" as never,
@@ -1091,7 +1087,7 @@ describe("runTurn — an aborted call", () => {
       yield { type: "text-delta", id: "1", text: "half" };
       throw new Error("broken");
     }
-    const history = createSessionHistory(neverSummarize);
+    const history = keptHistory();
     await expect(
       runTurn(history, "hi", {
         model: "fake-model" as never,
@@ -1108,7 +1104,7 @@ describe("runTurn — an aborted call", () => {
   it("doesn't report the pending note for an aborted call", async () => {
     const ac = new AbortController();
     let noted = false;
-    await runTurn(createSessionHistory(neverSummarize), "hi", {
+    await runTurn(keptHistory(), "hi", {
       model: "fake-model" as never,
       tools: {},
       system: SYSTEM,
@@ -1157,7 +1153,7 @@ describe("runTurn — the turn's tool calls in the history", () => {
   }
 
   it("records the calls of every step, in order, with the answer (non-streaming)", async () => {
-    const history = createSessionHistory(neverSummarize);
+    const history = keptHistory();
     await runTurn(history, "docker pages?", {
       model: "fake-model" as never,
       tools: {},
@@ -1171,7 +1167,7 @@ describe("runTurn — the turn's tool calls in the history", () => {
   });
 
   it("records them on the streaming path too", async () => {
-    const history = createSessionHistory(neverSummarize);
+    const history = keptHistory();
     await runTurn(history, "docker pages?", {
       model: "fake-model" as never,
       tools: {},
@@ -1187,7 +1183,7 @@ describe("runTurn — the turn's tool calls in the history", () => {
   });
 
   it("hands later turns each past answer's calls as tool calls and reduced results, before its text, ids unique", async () => {
-    const history = createSessionHistory(neverSummarize);
+    const history = keptHistory();
     const deps = { model: "fake-model" as never, tools: {}, system: SYSTEM };
     await runTurn(history, "docker pages?", { ...deps, generateTextFn: generating([searchStep], "One page.") });
     await runTurn(history, "show it", { ...deps, generateTextFn: generating([presentStep], "Here.") });
@@ -1225,7 +1221,7 @@ describe("runTurn — the turn's tool calls in the history", () => {
   // A skill read in an earlier turn isn't loaded anymore: the model must be told
   // so, or it guesses the skill's commands instead of reading it again (#356).
   it("hands a later turn an earlier read_skill with the note that the skill must be read again", async () => {
-    const history = createSessionHistory(neverSummarize);
+    const history = keptHistory();
     const deps = { model: "fake-model" as never, tools: {}, system: SYSTEM };
     const skillStep: StepInfo = {
       toolCalls: [{ toolCallId: "s", toolName: "read_skill", input: { name: "confluence" } }],
@@ -1256,7 +1252,7 @@ describe("runTurn — the turn's tool calls in the history", () => {
   });
 
   it("hands a past answer without calls back as its text alone, with no calls field", async () => {
-    const history = createSessionHistory(neverSummarize);
+    const history = keptHistory();
     const deps = { model: "fake-model" as never, tools: {}, system: SYSTEM };
     await runTurn(history, "hi", { ...deps, generateTextFn: generating([], "Hello.") });
     const seen = { messages: [] as ModelMessage[] };
@@ -1269,7 +1265,7 @@ describe("runTurn — the turn's tool calls in the history", () => {
   });
 
   it("records no calls for a turn that staged a confirmation: the resumed turn brings that call back", async () => {
-    const history = createSessionHistory(neverSummarize);
+    const history = keptHistory();
     await runTurn(history, "delete KAN-1", {
       model: "fake-model" as never,
       tools: {},
@@ -1284,7 +1280,7 @@ describe("runTurn — the turn's tool calls in the history", () => {
 
   it("records no calls for an aborted turn", async () => {
     const ac = new AbortController();
-    const history = createSessionHistory(neverSummarize);
+    const history = keptHistory();
     await runTurn(history, "docker pages?", {
       model: "fake-model" as never,
       tools: {},
@@ -1303,7 +1299,7 @@ describe("runTurn — the turn's tool calls in the history", () => {
   });
 
   it("records, for a resumed turn, the confirmed call first, then the turn's own", async () => {
-    const history = createSessionHistory(neverSummarize);
+    const history = keptHistory();
     await runTurn(history, "[Confermato: fetch https://example.org/a — Solo questa volta]", {
       model: "fake-model" as never,
       tools: {},
@@ -1377,7 +1373,7 @@ describe("a step asking for a login ends the turn", () => {
   });
 
   it("answers with the note when the model wrote nothing, and keeps it and the calls in the history", async () => {
-    const history = createSessionHistory(neverSummarize);
+    const history = keptHistory();
     const result = await runTurn(history, "confluence pages on docker?", {
       model: "fake-model" as never,
       tools: {},
@@ -1395,7 +1391,7 @@ describe("a step asking for a login ends the turn", () => {
 
   it("puts the note after what the model streamed, without streaming it", async () => {
     const received: string[] = [];
-    const result = await runTurn(createSessionHistory(neverSummarize), "confluence pages on docker?", {
+    const result = await runTurn(keptHistory(), "confluence pages on docker?", {
       model: "fake-model" as never,
       tools: {},
       system: SYSTEM,
@@ -1411,7 +1407,7 @@ describe("a step asking for a login ends the turn", () => {
 
   it("uses the note the turn hands it, with every service of the step in order", async () => {
     const asked: string[][] = [];
-    const result = await runTurn(createSessionHistory(neverSummarize), "ciao", {
+    const result = await runTurn(keptHistory(), "ciao", {
       model: "fake-model" as never,
       tools: {},
       system: SYSTEM,
@@ -1429,7 +1425,7 @@ describe("a step asking for a login ends the turn", () => {
   });
 
   it("the English note names the services, comma-separated", async () => {
-    const result = await runTurn(createSessionHistory(neverSummarize), "hi", {
+    const result = await runTurn(keptHistory(), "hi", {
       model: "fake-model" as never,
       tools: {},
       system: SYSTEM,
@@ -1454,7 +1450,7 @@ describe("a step asking for a login ends the turn", () => {
       content: [],
     });
     const run = (s: StepInfo, loginNote?: (services: string[]) => string) =>
-      runTurn(createSessionHistory(neverSummarize), "hi", {
+      runTurn(keptHistory(), "hi", {
         model: "fake-model" as never,
         tools: {},
         system: SYSTEM,
@@ -1479,7 +1475,7 @@ describe("a step asking for a login ends the turn", () => {
       toolResults: [...PENDING_CONFIRMATION_STEP.toolResults, ...LOGIN_STEP.toolResults],
       content: [],
     };
-    const history = createSessionHistory(neverSummarize);
+    const history = keptHistory();
     const result = await runTurn(history, "hi", {
       model: "fake-model" as never,
       tools: {},
@@ -1494,7 +1490,7 @@ describe("a step asking for a login ends the turn", () => {
   });
 
   it("leaves a turn with no login as the model wrote it", async () => {
-    const result = await runTurn(createSessionHistory(neverSummarize), "hi", {
+    const result = await runTurn(keptHistory(), "hi", {
       model: "fake-model" as never,
       tools: {},
       system: SYSTEM,
@@ -1513,7 +1509,7 @@ describe("a step asking for a login ends the turn", () => {
 describe("runTurn: the turn's context", () => {
   it("puts the turn's context in front of its message and keeps it there for the next calls, on both paths, the history's text without it", async () => {
     for (const streaming of [false, true]) {
-      const history = createSessionHistory(neverSummarize);
+      const history = keptHistory();
       await history.addUserMessage("earlier");
       await history.addAssistantMessage("answer");
       const sent: ModelMessage[][] = [];

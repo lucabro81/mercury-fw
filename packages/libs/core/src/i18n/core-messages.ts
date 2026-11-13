@@ -42,14 +42,12 @@ export const CORE_MESSAGES: Messages = {
   "core.login.note-any": "Log in with the link shown, then write to me again.",
 
   // What a tool call is doing, on the channel's status (`session/tool-start-hook.ts`).
-  "core.status.memory": "Checking my memory…",
   "core.status.instructions": "Checking the instructions…",
   "core.status.searching": "Searching…",
   "core.status.wiki-read": "Reading the wiki…",
   "core.status.wiki-write": "Writing to the wiki…",
   "core.status.tool": "Using {tool}…",
   "core.status.wiki-all": "Every document in the wiki",
-  "core.status.call-history": "The calls made in this conversation",
   // A CLI command a plugin runs, unless the plugin words it itself (`defaultStatusLabel`, `@mercury-fw/cli-engine`).
   "core.status.command": "Running {binary} {command}",
   "core.status.command-bare": "Running {binary}",

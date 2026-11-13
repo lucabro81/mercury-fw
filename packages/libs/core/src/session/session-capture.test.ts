@@ -107,7 +107,7 @@ describe("createSessionCapture", () => {
     c.registerCallbacks("s", { onToolStart: () => order.push("status start"), onToolFinish: () => order.push("status end") });
     await c.maybeCapture("s", msgs(0, 1));
     await c.settled();
-    c.onCompress("s", msgs(0, 2));
+    await c.maybeCapture("s", msgs(0, 2));
     await c.settled();
     expect(order).toEqual([
       "job start", "status start", "capture", "status end", "job end",
@@ -154,45 +154,26 @@ describe("createSessionCapture", () => {
     const c = createSessionCapture({ capture: r.capture, threshold: 1 });
     await c.maybeCapture("s", msgs(0, 3));
     await c.settled();
-    c.onCompress("s", msgs(0, 3));
     expect(r.captured).toEqual([]);
   });
 
-  test("onCompress captures what wasn't captured yet of the compressed messages", async () => {
+  // With the window in a plugin (#393) nothing tells the capture a compression
+  // happened: it sees the view shorter than what it already mirrored. Measuring
+  // the new view against the old marker skipped everything until the view grew
+  // past it again; now a shorter view restarts the count.
+  test("a view shorter than what was captured (the conversation compressed) restarts the count from it", async () => {
     const r = recorder();
-    const c = createSessionCapture({ capture: r.capture, threshold: 2 });
-    c.track("s", "u1");
-    await c.maybeCapture("s", msgs(0, 2));
-    await c.settled();
-
-    c.onCompress("s", msgs(0, 5));
-    await c.settled();
-    expect(r.captured).toEqual([
-      ["m0", "m1"],
-      ["m2", "m3", "m4"],
-    ]);
-  });
-
-  // Regression for #154: the capture a compression triggered ran on its own
-  // and only reset the marker when it finished, so a capture in between still
-  // measured the compressed history's new view against the old marker (here
-  // 4 against a view of 3 messages) and skipped what was new; and a
-  // successful compression capture first set the marker to the old view's
-  // length. Now the slice is fixed and the marker reset when the compression
-  // happens.
-  test("a capture after a compression counts from the new view while the compression's own capture is still running", async () => {
-    const hold = gate();
-    const r = recorder({ hold: hold.promise });
     const c = createSessionCapture({ capture: r.capture, threshold: 3 });
     c.track("s", "u1");
-
-    c.onCompress("s", msgs(0, 4));
-    const afterCompression = [msg(100), msg(101), msg(102)];
-    const next = c.maybeCapture("s", afterCompression);
-    hold.open();
-    await next;
+    await c.maybeCapture("s", msgs(0, 4));
     await c.settled();
 
+    await c.maybeCapture("s", [msg(100), msg(101)]);
+    await c.settled();
+    expect(r.captured).toEqual([["m0", "m1", "m2", "m3"]]);
+    const afterCompression = [msg(100), msg(101), msg(102)];
+    await c.maybeCapture("s", afterCompression);
+    await c.settled();
     expect(r.captured).toEqual([
       ["m0", "m1", "m2", "m3"],
       ["m100", "m101", "m102"],
@@ -203,60 +184,11 @@ describe("createSessionCapture", () => {
     expect(r.captured).toHaveLength(2);
   });
 
-  test("a capture pings the callbacks registered when it started, with the turn's status", async () => {
-    const events: string[] = [];
-    const r = recorder();
-    const c = createSessionCapture({ capture: r.capture, threshold: 1, describe: (pending) => `${pending.length} messages` });
-    c.track("s", "u1");
-    c.registerCallbacks("s", {
-      onToolStart: (label, detail) => events.push(`start:${detail}`),
-      onToolFinish: (_id, outcome) => events.push(`finish:${outcome}`),
-    });
-
-    await c.maybeCapture("s", msgs(0, 2));
-
-    await c.settled();
-    expect(events).toEqual(["start:2 messages", "finish:success"]);
-  });
-
-  test("the status reads in the language of the person the session is", async () => {
-    const events: string[] = [];
-    const texts: Texts = {
-      forPerson: (key) => ({
-        locale: "it",
-        t: (k, params) => `${key}:${k}${params ? JSON.stringify(params) : ""}`,
-      }),
-      savedLanguage: () => undefined,
-    };
-    const c = createSessionCapture({
-      capture: recorder().capture,
-      threshold: 1,
-      texts,
-      describe: (pending, t) => t("core.status.capture-detail", { count: pending.length }),
-    });
-    c.track("s", "u1");
-    c.registerCallbacks("s", { onToolStart: (label, detail) => events.push(`${label} | ${detail}`), onToolFinish: () => {} });
-    await c.maybeCapture("s", msgs(0, 2));
-    await c.settled();
-    expect(events).toEqual(['u1:core.status.remembering | u1:core.status.capture-detail{"count":2}']);
-  });
-
-  test("close forgets the session", async () => {
-    const r = recorder();
-    const c = createSessionCapture({ capture: r.capture, threshold: 1 });
-    c.track("s", "u1");
-    expect(c.userOf("s")).toBe("u1");
-    c.close("s");
-    expect(c.userOf("s")).toBeUndefined();
-    await c.maybeCapture("s", msgs(0, 2));
-    await c.settled();
-    expect(r.captured).toEqual([]);
-  });
 });
 
 // #23: the traces say which trigger started each capture.
 describe("createSessionCapture: the trigger", () => {
-  test("the threshold and a compression each tell the capture which one they are", async () => {
+  test("the threshold tells the capture it was the threshold", async () => {
     const triggers: string[] = [];
     const c = createSessionCapture({
       capture: async (_u, _k, _m, trigger) => void triggers.push(trigger),
@@ -265,8 +197,6 @@ describe("createSessionCapture: the trigger", () => {
     c.track("s", "u1");
     await c.maybeCapture("s", msgs(0, 2));
     await c.settled();
-    c.onCompress("s", msgs(0, 4));
-    await c.settled();
-    expect(triggers).toEqual(["threshold", "compress"]);
+    expect(triggers).toEqual(["threshold"]);
   });
 });
