@@ -36,6 +36,7 @@
     "packages/traces/*",
     "packages/stores/*",
     "packages/tools/*",
+    "packages/memory/*",
     "packages/formatters/*",
     "packages/libs/*",
     "packages/config/*"

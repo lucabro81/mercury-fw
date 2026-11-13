@@ -277,6 +277,23 @@
         "typescript": "^6.0.3",
       },
     },
+    "packages/memory/conversation-window": {
+      "name": "@mercury-fw/conversation-window",
+      "version": "0.0.0",
+      "dependencies": {
+        "ai": "^7.0.126",
+        "zod": "^4.6.5",
+      },
+      "devDependencies": {
+        "@mercury-fw/plugin-types": "workspace:*",
+        "@mercury-fw/typescript-config": "*",
+        "@types/bun": "^1.4.2",
+        "typescript": "^6.0.3",
+      },
+      "peerDependencies": {
+        "@mercury-fw/plugin-types": ">=0.75.0 <1.0.0",
+      },
+    },
     "packages/stores/store-qdrant": {
       "name": "@mercury-fw/store-qdrant",
       "version": "0.74.0",
@@ -303,7 +320,7 @@
       },
       "peerDependencies": {
         "@mercury-fw/cli-engine": ">=0.54.0 <1.0.0",
-        "@mercury-fw/plugin-types": ">=0.55.0 <1.0.0",
+        "@mercury-fw/plugin-types": ">=0.75.0 <1.0.0",
         "@mercury-fw/utils": ">=0.45.0 <1.0.0",
       },
     },
@@ -320,7 +337,7 @@
       },
       "peerDependencies": {
         "@mercury-fw/cli-engine": ">=0.54.0 <1.0.0",
-        "@mercury-fw/plugin-types": ">=0.55.0 <1.0.0",
+        "@mercury-fw/plugin-types": ">=0.75.0 <1.0.0",
         "@mercury-fw/utils": ">=0.45.0 <1.0.0",
       },
     },
@@ -337,7 +354,7 @@
       },
       "peerDependencies": {
         "@mercury-fw/cli-engine": ">=0.54.0 <1.0.0",
-        "@mercury-fw/plugin-types": ">=0.55.0 <1.0.0",
+        "@mercury-fw/plugin-types": ">=0.75.0 <1.0.0",
         "@mercury-fw/utils": ">=0.45.0 <1.0.0",
       },
     },
@@ -358,7 +375,7 @@
       },
       "peerDependencies": {
         "@mercury-fw/cli-engine": ">=0.54.0 <1.0.0",
-        "@mercury-fw/plugin-types": ">=0.55.0 <1.0.0",
+        "@mercury-fw/plugin-types": ">=0.75.0 <1.0.0",
         "@mercury-fw/utils": ">=0.45.0 <1.0.0",
       },
     },
@@ -378,7 +395,7 @@
         "typescript": "^6.0.3",
       },
       "peerDependencies": {
-        "@mercury-fw/plugin-types": ">=0.55.0 <1.0.0",
+        "@mercury-fw/plugin-types": ">=0.75.0 <1.0.0",
       },
     },
     "packages/tools/plugin-zitadel": {
@@ -396,7 +413,7 @@
       "peerDependencies": {
         "@mercury-fw/channel-types": ">=0.45.0 <1.0.0",
         "@mercury-fw/cli-engine": ">=0.54.0 <1.0.0",
-        "@mercury-fw/plugin-types": ">=0.55.0 <1.0.0",
+        "@mercury-fw/plugin-types": ">=0.75.0 <1.0.0",
         "@mercury-fw/utils": ">=0.45.0 <1.0.0",
       },
     },
@@ -708,6 +725,8 @@
     "@mercury-fw/cli-engine": ["@mercury-fw/cli-engine@workspace:packages/libs/cli-engine"],
 
     "@mercury-fw/confirm-engine": ["@mercury-fw/confirm-engine@workspace:packages/libs/confirm-engine"],
+
+    "@mercury-fw/conversation-window": ["@mercury-fw/conversation-window@workspace:packages/memory/conversation-window"],
 
     "@mercury-fw/core": ["@mercury-fw/core@workspace:packages/libs/core"],
 
