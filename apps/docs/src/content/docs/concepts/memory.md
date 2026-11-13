@@ -11,16 +11,33 @@ window**). So remembering is the framework's job, and Mercury keeps three kinds 
 
 ## The conversation
 
-The **history** is the conversation as the model gets it. It's the one memory the agent can't work without, and it
-lives in the process's memory while the conversation is active.
+The **history** is the conversation as the model gets it, and it lives in the process's memory while the
+conversation is active. A plugin keeps it: `@mercury-fw/conversation-window`, which an app made with `mfw create`
+declares and names in its `default` [context profile](../context/):
+
+```ts title="mercury.config.ts"
+import { conversationWindow } from "@mercury-fw/conversation-window";
+
+const conversation = conversationWindow();
+
+export default defineMercuryConfig({
+  plugins: [conversation],
+  context: { profiles: { default: { conversation, layers: [], budget: { maxChars: 8000 } } } },
+  // …
+});
+```
+
+Without one, the agent keeps no history at all: the model reads each message alone, which suits an agent that only
+answers one-off questions.
 
 Besides what was said, it keeps the tools the model called for each answer: what each call ran and how it went, not
 what came back. On later turns the model sees it looked things up, and runs the tool again when it needs the data.
 The same goes for a [skill](../plugins/#skills) it read: the skill's text isn't kept, and the model is told to read it again before using
 the plugin's tools.
 
-When it grows past about 60,000 characters, Mercury replaces its older part with a **summary** the model writes,
-and the conversation goes on from the summary plus the recent messages. Every message is also kept word for word in
+When it grows past 60,000 characters, the window replaces its older part with a **summary** the model writes, and
+the conversation goes on from the summary plus the recent messages. The person's last message is never part of it:
+it's the question the model is about to answer. Every message is also kept word for word in
 an **archive**, which a chat interface shows when it reopens a conversation, and which the model can search when it
 needs an exact quote. With each answer the archive also keeps what the person saw while it was being written: the
 model's reasoning, the tools it used, the confirmations it asked for and how the person answered them. That part is
@@ -30,7 +47,21 @@ person can rename it from a chat interface. A title the person chose is never re
 
 After 30 minutes of silence (`SESSION_IDLE_TIMEOUT_MS`), Mercury frees the history. What happens next depends on
 the channel: on Google Chat the next message starts a new conversation, with a recap of the last one as background;
-over HTTP the conversation is rebuilt from the archive when the person writes again, as if no time had passed.
+over HTTP the window rebuilds the conversation from the archive when the person writes again, as if no time had
+passed: its newest messages word for word, and, when it was given something to read them with (`earlier`), the
+summaries of what came before them.
+
+The window takes these options:
+
+| Option | |
+|---|---|
+| `maxChars` | How many characters of messages it holds before it shortens what came before (default 60000). |
+| `overflow` | How it shortens: `"summarize"` (the default) has the model write a summary, which the person waits for; `"truncate"` drops the oldest messages, which costs nothing and forgets them. |
+| `reopen` | `{ maxChars }`, how many characters of a reopened conversation come back when the channel sets no budget of its own (default half of `maxChars`, `0` for nothing); `false` never reads the archive, and the window then doesn't need a conversation store. |
+| `earlier` | What reads the summaries of a reopened conversation's older part. Without it, only the newest messages come back. |
+
+It also gives the model `recall_tool_calls`: what it ran earlier in the conversation and what came back, from the
+log of the recent tool calls, so it quotes them instead of guessing.
 
 ## The wiki
 
@@ -73,6 +104,6 @@ with `mfw create` declares Qdrant for both.
 
 ## When something is missing
 
-Only the history is required. Without a vector index there's no long-term memory at all, without a conversation store
-no archive; if either can't be reached, or the wiki is empty, the agent still answers, it just
-remembers less.
+Without a plugin keeping the conversation the model reads each message alone, without a vector index there's no
+long-term memory at all, without a conversation store no archive; if either can't be reached, or the wiki is empty,
+the agent still answers, it just remembers less.

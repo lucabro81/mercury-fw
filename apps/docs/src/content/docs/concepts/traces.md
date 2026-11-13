@@ -51,7 +51,7 @@ What gets recorded:
 | `model.step` | The model finished a step: tokens read and written, time to load, read the prompt and write. |
 | `tool.call` | A tool ran: which, how it went, how long, how big its result was. |
 | `confirmation.staged`, `confirmation.resolved` | An action waits for a confirmation, and how it was resolved. |
-| `history.compressed` | A long conversation was summarized to fit: how much, how long it took. |
+| `history.compressed` | A long conversation was shortened to fit (summarized, or its oldest messages dropped), as the plugin keeping it reported: how much, how long it took. |
 | `context.assembled` | What the [context](../context/) added before the model answered: the profile, and for each layer how many characters and blocks it added, how many it left out for the budget, or why it was skipped. |
 | `context.changed` | Someone changed a [context](../context/) profile while the agent ran: which profile, which of its budget, order and knobs; the values before and after only at the `args` level. |
 | `guard.run` | A plugin's check on the answer ran, and whether it changed it. |

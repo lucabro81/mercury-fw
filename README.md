@@ -98,6 +98,7 @@ The framework, released together under one version:
 | [`@mercury-fw/formatter`](packages/formatters/formatter) | Applies an app's rules to the lists a plugin hands over. |
 | [`@mercury-fw/trace-jsonl`](packages/traces/trace-jsonl) | The trace sink `mfw create` declares: the events of what the agent does, a JSONL file per day, the last days with activity kept. |
 | [`@mercury-fw/store-qdrant`](packages/stores/store-qdrant) | Qdrant as the vector index and the conversation store `mfw create` declares: where the agent's memory is found by meaning, and where every conversation is kept. |
+| [`@mercury-fw/conversation-window`](packages/memory/conversation-window) | The conversation `mfw create` declares: the recent messages the model reads, a summary once they grow long, a reopened conversation brought back from the archive. |
 | [`@mercury-fw/kit`](packages/libs/kit) | For plugin authors: the plugin and channel contracts in one import. |
 | [`@mercury-fw/plugin-types`](packages/types/plugin-types), [`@mercury-fw/channel-types`](packages/types/channel-types) | The contracts a tool plugin and a channel implement. |
 | [`@mercury-fw/cli-engine`](packages/libs/cli-engine) | For plugins that work through a CLI: parsing, allowlist, execution, confirmation staging. |
