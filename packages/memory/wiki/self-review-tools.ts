@@ -26,7 +26,7 @@ import type { ExecutableTool } from "@mercury-fw/plugin-types";
 import { tool } from "ai";
 import { z } from "zod";
 import { listWikiFilesInRoots, readWikiFileInRoots, grepWikiInRoots, selfReviewRoots } from "./wiki-read.ts";
-import { writeCuratedNote, updateIndexFile, deleteRawEntry, deleteCuratedEntry, relativeToCurated } from "./wiki-note.ts";
+import { writeCuratedNote, updateIndexFile, deleteRawEntry, deleteCuratedEntry, relativeToCurated, withoutLeadingFrontmatter } from "./wiki-note.ts";
 import { normalizeIndexKey, upsertIndexEntry, removeIndexEntry } from "./index-entry.ts";
 import { createLockCheck } from "./locks.ts";
 import { RAW_MAX_BYTES, rawEntryOverLimit } from "./raw-limit.ts";
@@ -110,14 +110,16 @@ export function createSelfReviewTools(
   const write_curated = tool({
     description:
       'Create or overwrite a curated doc. "path" is relative to curated/, e.g. "standards/jira-fields.md"; the path list_files and grep give ("curated/standards/jira-fields.md") works too. ' +
-      "To overwrite an existing doc, read it first: the write goes through only over the version you read.",
+      "To overwrite an existing doc, read it first: the write goes through only over the version you read. " +
+      "content is the doc's text without the frontmatter (the block between --- lines at the top): the tool writes that itself.",
     inputSchema: z.object({ path: z.string().min(1), content: z.string() }),
     execute: async ({ path, content }) => {
       const target = relativeToCurated(path);
       const read = readVersions.get(target);
       try {
         if (await isLocked(`curated/${target}`)) return { ok: false as const, error: lockedError(target) };
-        const written = await writeCuratedNote(vaultPath, target, { author: REVIEW_AUTHOR }, content, {
+        // The model often hands back the whole file it read: its frontmatter is the tool's to write, not the body's.
+        const written = await writeCuratedNote(vaultPath, target, { author: REVIEW_AUTHOR }, withoutLeadingFrontmatter(content), {
           when: (current) => current === (read ?? null),
         });
         if (!written) {

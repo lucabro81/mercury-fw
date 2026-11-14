@@ -109,7 +109,7 @@ import pkg from "./package.json";
 import { guestWifiPlugin } from "./src/plugins/guest-wifi.ts";
 
 const name = "Mercury";
-const teamWiki = wiki();
+const teamWiki = wiki({ review: { dreaming: {} } });
 const longTermMemory = memory({ wiki: teamWiki });
 const conversation = conversationWindow({ earlier: longTermMemory });
 

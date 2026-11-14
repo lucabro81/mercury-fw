@@ -154,3 +154,26 @@ describe("runReview: the jobs", () => {
     expect(logs).toEqual(["review contradiction-check pass failed: Error: stopped"]);
   });
 });
+
+describe("runReview with dreaming", () => {
+  const passes = (order: string[]) => ({
+    listRawEntries: async () => ["raw/x.md"],
+    findOrphans: async () => ["curated/x.md"],
+    runRawTriage: async () => void order.push("raw"),
+    runIndexAndOrphan: async () => void order.push("index"),
+    runContradictionCheck: async () => void order.push("contradictions"),
+  });
+
+  it("runs it last, after the three passes, not wrapped in a job of its own (it makes one per note)", async () => {
+    const order: string[] = [];
+    const names = await review({ ...passes(order), runDreaming: async () => void order.push("dreaming") });
+    expect(order).toEqual(["raw", "index", "contradictions", "dreaming"]);
+    expect(names).toEqual(["review-raw", "review-index", "review-contradictions"]);
+  });
+
+  it("logs it when it fails", async () => {
+    const logs: string[] = [];
+    await review({ ...passes([]), runDreaming: async () => Promise.reject(new Error("boom")), log: (m) => logs.push(m) });
+    expect(logs).toEqual(["review dreaming pass failed: Error: boom"]);
+  });
+});

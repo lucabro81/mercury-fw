@@ -43,9 +43,11 @@ const main = ollamaModel(process.env.OLLAMA_MODEL, {
 /**
  * The team's wiki: notes everyone shares (`curated/`) and each person's own,
  * in the vault at WIKI_VAULT_PATH, its index read at the start of each
- * session and the vault reviewed every night at 03:00.
+ * session and the vault reviewed every night at 03:00. The review ends with
+ * the dreaming pass: the notes used that day checked against the
+ * conversations they were used in (`dreaming: false` turns it off).
  */
-const teamWiki = wiki();
+const teamWiki = wiki({ review: { dreaming: {} } });
 
 /**
  * What the assistant remembers of its conversations with each person: a

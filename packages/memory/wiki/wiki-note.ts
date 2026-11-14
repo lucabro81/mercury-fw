@@ -240,6 +240,11 @@ export function parseNote(text: string): NoteFile {
   return { frontmatter, body: text.slice(match[0].length).replace(/^\n/, "").replace(/\n$/, "") };
 }
 
+/** `text` without a frontmatter block at its top: what the model hands back as a note's body when it copied the whole file it read. */
+export function withoutLeadingFrontmatter(text: string): string {
+  return NOTE_FRONTMATTER_RE.test(text) ? parseNote(text).body : text;
+}
+
 /** A note's text, as every writer here lays it out. */
 export function renderNote(frontmatter: Record<string, unknown>, body: string): string {
   // No folding: a long value (a review entry's reason) stays on one line.

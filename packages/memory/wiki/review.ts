@@ -10,7 +10,8 @@
  * Each pass is a job of its own on the core's queue (`ctx.job`, nobody
  * waiting), so the traces show it as `wiki:review-<pass>`. One that fails, or
  * is dropped because the agent stops, is logged and doesn't stop the others.
- * When it runs is `ctx.daily`'s business (see `index.ts`).
+ * When it runs is `ctx.daily`'s business (see `index.ts`). With dreaming on,
+ * the dreaming pass runs last, on what the three passes left (`dreaming.ts`).
  */
 import type { JobUrgency } from "@mercury-fw/plugin-types";
 
@@ -20,6 +21,8 @@ export type ReviewDeps = {
   runRawTriage: (rawEntries: string[]) => Promise<void>;
   runIndexAndOrphan: (orphans: string[]) => Promise<void>;
   runContradictionCheck: () => Promise<void>;
+  /** The dreaming pass, when the instance turned it on: last, and not a job itself, since it makes one for each note it checks. */
+  runDreaming?: () => Promise<void>;
   /** The core's queue (`ctx.job`). */
   job: (name: string, urgency: JobUrgency, fn: () => Promise<void>) => Promise<unknown>;
   log: (msg: string) => void;
@@ -41,4 +44,11 @@ export async function runReview(deps: ReviewDeps): Promise<void> {
   await pass("review-raw", "raw-triage", rawEntries.length > 0 ? () => deps.runRawTriage(rawEntries) : undefined);
   await pass("review-index", "index/orphan", orphans.length > 0 ? () => deps.runIndexAndOrphan(orphans) : undefined);
   await pass("review-contradictions", "contradiction-check", () => deps.runContradictionCheck());
+  if (deps.runDreaming !== undefined) {
+    try {
+      await deps.runDreaming();
+    } catch (err) {
+      deps.log(`review dreaming pass failed: ${String(err)}`);
+    }
+  }
 }
