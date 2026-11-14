@@ -23,7 +23,7 @@
  */
 import { mkdir, writeFile, stat, readFile, rename, rm } from "node:fs/promises";
 import { resolve, sep, dirname, relative } from "node:path";
-import { stringify as stringifyYaml } from "yaml";
+import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import {
   CuratedFrontmatterSchema,
   PersonalFrontmatterSchema,
@@ -223,8 +223,108 @@ async function writeNoteFile(
   commitMessage: string,
   condition: WriteCondition = {},
 ): Promise<boolean> {
-  const content = `---\n${stringifyYaml(frontmatter)}---\n\n${body}\n`;
-  return writeVerbatimFile(vaultPath, fullPath, content, commitMessage, condition);
+  return writeVerbatimFile(vaultPath, fullPath, renderNote(frontmatter, body), commitMessage, condition);
+}
+
+/** A note as its file holds it: the YAML frontmatter, and the Markdown body after it. */
+export type NoteFile = { frontmatter: Record<string, unknown>; body: string };
+
+const NOTE_FRONTMATTER_RE = /^---\n([\s\S]*?)\n?---\n/;
+
+/** Splits a note's text into its frontmatter and body; a file with none is all body. The inverse of `renderNote`. */
+export function parseNote(text: string): NoteFile {
+  const match = NOTE_FRONTMATTER_RE.exec(text);
+  if (!match) return { frontmatter: {}, body: text.replace(/\n$/, "") };
+  const frontmatter = (parseYaml(match[1] as string) ?? {}) as Record<string, unknown>;
+  return { frontmatter, body: text.slice(match[0].length).replace(/^\n/, "").replace(/\n$/, "") };
+}
+
+/** A note's text, as every writer here lays it out. */
+export function renderNote(frontmatter: Record<string, unknown>, body: string): string {
+  return `---\n${stringifyYaml(frontmatter)}---\n\n${body}\n`;
+}
+
+// The notes that carry a status or a lock: curated/ (standards included) and
+// each person's notes/. Never raw/, review/, a person's inferred/ or index.md.
+const NOTE_PATH_RE = /^(curated\/.+|users\/[^/]+\/notes\/.+)\.md$/;
+
+/** The file of the note at the vault path `path`; throws for anything that isn't a curated or a person's note. */
+function notePath(vaultPath: string, path: string): string {
+  const vaultRoot = resolve(vaultPath);
+  const fullPath = resolve(vaultRoot, path);
+  const normalized = relative(vaultRoot, fullPath).split(sep).join("/");
+  if (normalized !== path || !NOTE_PATH_RE.test(path)) throw new Error(`not a note's path: ${path}`);
+  return fullPath;
+}
+
+/** Checks `frontmatter` against the schema of its note's `type`, throwing when it doesn't fit. */
+function validNoteFrontmatter(frontmatter: Record<string, unknown>): CuratedFrontmatter | PersonalFrontmatter | InferredFrontmatter {
+  switch (frontmatter.type) {
+    case "curated":
+      return CuratedFrontmatterSchema.parse(frontmatter);
+    case "personal":
+      return PersonalFrontmatterSchema.parse(frontmatter);
+    case "inferred":
+      return InferredFrontmatterSchema.parse(frontmatter);
+    default:
+      throw new Error(`a note of unknown type: ${JSON.stringify(frontmatter.type)}`);
+  }
+}
+
+/** The note at the vault path `path` (`curated/…` or `users/<key>/notes/…`), or `null` when there's none. */
+export async function readNote(vaultPath: string, path: string): Promise<NoteFile | null> {
+  const text = await readCurrent(notePath(vaultPath, path));
+  return text === null ? null : parseNote(text);
+}
+
+/**
+ * Changes only the frontmatter of the note at `path` as `change` makes it,
+ * read and written in one unit of the commit queue, its body kept as it is.
+ * Throws when the result doesn't fit the note's schema, writing nothing.
+ * Resolves `false` when there's no note.
+ */
+export async function updateNoteFrontmatter(
+  vaultPath: string,
+  path: string,
+  change: (frontmatter: Record<string, unknown>) => Record<string, unknown>,
+  commitMessage: string,
+): Promise<boolean> {
+  const fullPath = notePath(vaultPath, path);
+  return serializeCommit(async () => {
+    const current = await readCurrent(fullPath);
+    if (current === null) return false;
+    const note = parseNote(current);
+    const frontmatter = validNoteFrontmatter(change(note.frontmatter));
+    await replaceFile(fullPath, renderNote(frontmatter, note.body));
+    await commitFile(vaultPath, fullPath, commitMessage);
+    return true;
+  });
+}
+
+/**
+ * Replaces the note at `path` with `body` and its frontmatter as `change`
+ * makes it, only when the note is still `expected` (what the caller read):
+ * a change made since, by a person or anything else, wins. Resolves `false`
+ * when it wrote nothing.
+ */
+export async function rewriteNoteBody(
+  vaultPath: string,
+  path: string,
+  expected: NoteFile,
+  body: string,
+  change: (frontmatter: Record<string, unknown>) => Record<string, unknown>,
+  commitMessage: string,
+): Promise<boolean> {
+  const fullPath = notePath(vaultPath, path);
+  return serializeCommit(async () => {
+    const current = await readCurrent(fullPath);
+    // Compared as parsed, so a note laid out by hand (git on the volume) still matches what was read of it.
+    if (current === null || JSON.stringify(parseNote(current)) !== JSON.stringify(expected)) return false;
+    const frontmatter = validNoteFrontmatter(change(expected.frontmatter));
+    await replaceFile(fullPath, renderNote(frontmatter, body));
+    await commitFile(vaultPath, fullPath, commitMessage);
+    return true;
+  });
 }
 
 /**
