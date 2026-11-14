@@ -13,6 +13,7 @@
  */
 import type { ModelSettings, Plugin } from "@mercury-fw/plugin-types";
 import type { MercuryModels } from "../model/models.ts";
+import type { TurnOutputConfig } from "../session/turn-output.ts";
 import type { AuthPlugin, ChannelPlugin, ConversationStorePlugin, DirectoryPlugin, VectorIndexPlugin } from "@mercury-fw/channel-types";
 import type { Persona } from "../session/system-prompt.ts";
 import type { Messages } from "../i18n/i18n.ts";
@@ -92,8 +93,8 @@ export type MercuryContext<P extends string = string> = {
  * use what (`access`), the languages it speaks (`i18n`), the assistant's
  * persona (its identity and tone; the defaults when left out), the models it
  * runs on (`models`), where the traces of what it does go (`traces`),
- * what the model reads besides the conversation (`context`),
- * plus the app's own version (`version`). */
+ * what the model reads besides the conversation (`context`), what a turn
+ * returns (`output`), plus the app's own version (`version`). */
 export type MercuryConfig<P extends string = string> = {
   plugins: Plugin[];
   /** The models the instance runs on, by role: `turn` (required), `background` (the turn's when left out), `embedding` (needed with `vectorIndex`). */
@@ -112,6 +113,16 @@ export type MercuryConfig<P extends string = string> = {
   traces?: MercuryTraces;
   /** What the model reads besides the conversation: profiles of plugins' layers, with a budget, assigned by role. Left out, nothing is added. */
   context?: MercuryContext<P>;
+  /**
+   * What a turn returns: `"text"`, the model's answer (the default, as when
+   * left out); `{ tool: toolOf(plugin, name) }`, the result of that tool ends
+   * the turn; `{ schema }`, an object matching the schema. `validate` checks
+   * the value further and `retries` (2 by default) is how many times the model
+   * is told the exact error and tries again before the turn fails with a
+   * `TurnOutputError`. Every channel must handle the output
+   * (`ChannelPlugin.outputs`), or the instance doesn't start.
+   */
+  output?: TurnOutputConfig;
   /** The app's version, as its `package.json` has it (`version: pkg.version`), shown next to the framework's on the HTTP channel's `GET /version`. Shown as is, never changed by Mercury. Left out (or empty), nothing is shown. */
   version?: string;
 };

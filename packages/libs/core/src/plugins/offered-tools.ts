@@ -6,7 +6,8 @@
  * asked (see `act-as-self.ts`); only a tool acting as the person can start
  * their login. Every tool's output goes through the display channel (see
  * `display-channel.ts`): its display is stashed for the session, never handed
- * to the model.
+ * to the model. The tool that ends the turn, when the instance has one, is
+ * watched under it (see `turn-output.ts`).
  */
 import type { Tool } from "ai";
 import type { LoginRequired, PersonLogin, SessionToolContext } from "@mercury-fw/plugin-types";
@@ -14,6 +15,7 @@ import type { TurnWho } from "../identity/people.ts";
 import type { Offering } from "./offering.ts";
 import { actingAsSelf } from "./act-as-self.ts";
 import { withDisplayChannel, type StashDisplay } from "../tools/display-channel.ts";
+import type { OutputProbe } from "../session/turn-output.ts";
 
 export type OfferedToolsDeps = {
   /** The session-scoped capabilities every tool gets, bound to this turn. */
@@ -23,6 +25,8 @@ export type OfferedToolsDeps = {
   log: (msg: string) => void;
   /** Stashes a tool's rendered display for this turn's session (see `display-channel.ts`). */
   stashDisplay: StashDisplay;
+  /** The tool that ends the turn (`output: { tool }`), by its plugin and name: wrapped by `probe` under the display channel, so it judges the whole result. */
+  outputTool?: { plugin: string; tool: string; probe: OutputProbe };
 };
 
 /** The tools of `offering` for `who`, and whether any plugin contributed one (`present` goes with them). */
@@ -40,7 +44,12 @@ export function buildOfferedTools(offering: Offering, who: TurnWho, deps: Offere
       person && login && entry.as === "person"
         ? deps.requireLogin(bundle.name, login, person.key)
         : { ok: false, error: `${bundle.name} says the user isn't logged in, and it has no way to log anyone in.` };
-    const built = bundle.build({ ...deps.context, person, requireLogin }, bundle.postProcess);
+    const fresh = bundle.build({ ...deps.context, person, requireLogin }, bundle.postProcess);
+    const output = deps.outputTool;
+    const built =
+      output !== undefined && output.plugin === bundle.name && fresh[output.tool] !== undefined
+        ? { ...fresh, [output.tool]: output.probe.wrapTool(fresh[output.tool]!) }
+        : fresh;
     const offered =
       entry.as === "mercury" && !who.operator
         ? actingAsSelf(built, { plugin: bundle.name, personKey: who.person.key, rename: entry.variant, log: deps.log })

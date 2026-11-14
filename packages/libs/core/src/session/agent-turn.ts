@@ -469,7 +469,7 @@ export async function runTurn(
      * to log in, naming the services (none when no name is known), in the
      * person's language; English when absent. Never streamed: it isn't the model's. */
     loginNote?: (services: string[]) => string;
-    /** What the turn returns when it isn't text (see `turn-output.ts`): the answer is then never streamed, and is its value as indented JSON. */
+    /** What the turn returns when it isn't text (see `turn-output.ts`): the answer is then its value as indented JSON, and what the model writes on the way still reaches `onTextChunk`, for a caller that only watches it. */
     output?: RunOutput;
     /** Called once with the turn's output and how many attempts it took, when there is one. */
     onOutput?: (output: TurnOutput, attempts: number) => void;
@@ -677,7 +677,7 @@ async function generateOutput(history: SessionHistory, deps: Parameters<typeof r
     const steps: StepInfo[] = [];
     let current = messages;
     for (let round = 0; ; round++) {
-      const call = await callModel(deps, current, [() => probe.accepted !== undefined || spent()], undefined);
+      const call = await callModel(deps, current, [() => probe.accepted !== undefined || spent()], deps.onTextChunk);
       steps.push(...call.steps);
       if (call.aborted) {
         await history.addAssistantMessage(ABORTED_MARKER);
@@ -702,7 +702,7 @@ async function generateOutput(history: SessionHistory, deps: Parameters<typeof r
   let steps: StepInfo[] = [];
   let current = messages;
   if (Object.keys(deps.tools).length > 0) {
-    const call = await callModel(deps, current, [], undefined);
+    const call = await callModel(deps, current, [], deps.onTextChunk);
     steps = call.steps;
     if (call.aborted) {
       await history.addAssistantMessage(ABORTED_MARKER);

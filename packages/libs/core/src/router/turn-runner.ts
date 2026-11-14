@@ -25,7 +25,12 @@ import { createTurnTrace, type TraceEntry } from "../session/turn-trace.ts";
 // withhold an already-generated answer.
 import type { HookCall, PostTurnGuard, TurnRecordOfTurn } from "@mercury-fw/plugin-types";
 import type { ResumedAction } from "@mercury-fw/confirm-engine";
+import { isTurnOutputError, type TurnOutput } from "@mercury-fw/channel-types";
+import { createOutputProbe, type OutputProbe, type ResolvedOutput } from "../session/turn-output.ts";
 export type { PostTurnGuard };
+
+/** The tools the core adds to every turn, whatever its plugins: a schema turn with only these has nothing to look up. */
+const CORE_ONLY_TOOLS = new Set(["resolve_reference"]);
 import type { Message, SessionHistory } from "../session/history.ts";
 import { recordStep } from "../session/tool-log-buffer.ts";
 import { shownText } from "../memory/verbatim-archive-store.ts";
@@ -197,6 +202,8 @@ export type TurnRunnerDeps = {
     onToolFinish?: TurnSink["onToolFinish"],
     /** The channel's language hint (`InboundTurn.languageHint`), for the tools' texts. */
     languageHint?: string,
+    /** The tool that ends the turn, for `buildOfferedTools` to wrap (see `OfferedToolsDeps.outputTool`). */
+    outputTool?: { plugin: string; tool: string; probe: OutputProbe },
   ) => Record<string, Tool>;
   /**
    * `key` is the user key, forwarded (not interpreted here) so a provider's
@@ -309,6 +316,14 @@ export type TurnRunnerDeps = {
    * Defaults to a lock of the runner's own.
    */
   sessionLock?: SessionLock;
+  /**
+   * What a turn returns when it isn't text (`MercuryConfig.output`, resolved,
+   * see `session/turn-output.ts`). The answer then isn't streamed to the
+   * channel, no post-turn guard runs, no display is appended, an opening turn
+   * says nothing, and the channel gets the output beside its JSON
+   * (`FinalizeInfo.output`). Absent, every turn returns text.
+   */
+  output?: ResolvedOutput;
 };
 
 /** What stands for the person's message in a turn resumed after a
@@ -403,7 +418,7 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
     const language = turn.multiUser ? undefined : deps.preferredLanguage?.(key);
     // Speaking first is only for someone it doesn't know yet, one to one:
     // otherwise an opening says nothing and leaves nothing behind.
-    if (turn.opening && (turn.multiUser || name !== undefined)) {
+    if (turn.opening && (turn.multiUser || name !== undefined || deps.output !== undefined)) {
       emit({ kind: "turn.end", outcome: "opening-skipped" }, key);
       try {
         await sink.finalize("");
@@ -513,6 +528,10 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
     let cancelled = false;
     // Set when the turn failed (a stall included): recorded once the sink is released.
     let failed = false;
+    // What the turn returned, when the instance asks for an output other than text.
+    let turnOutput: TurnOutput | undefined;
+    const output = deps.output;
+    const probe = output?.mode === "tool" ? createOutputProbe(output.validate) : undefined;
 
     /** The turn's record (see `TurnRunnerDeps.turnRecord`): how it ended and, when it left one, its answer. */
     function recordTurn(outcome: TurnRecordOfTurn["outcome"], answer?: TurnRecordOfTurn["answer"]): void {
@@ -593,7 +612,8 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
           logTurn(`${turn.logPrefix}[context] failed, the turn goes without: ${err instanceof Error ? err.message : String(err)}`);
         }
       }
-      const tools = watching
+      const outputTool = output?.mode === "tool" && probe ? { plugin: output.plugin, tool: output.tool, probe } : undefined;
+      const built = watching
         ? deps.buildTools(
             turn.sessionKey,
             key,
@@ -607,8 +627,11 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
               sink.onToolFinish?.(toolCallId, outcome);
             },
             turn.languageHint,
+            outputTool,
           )
-        : deps.buildTools(turn.sessionKey, key, who, sink.onToolStart, sink.onToolFinish, turn.languageHint);
+        : deps.buildTools(turn.sessionKey, key, who, sink.onToolStart, sink.onToolFinish, turn.languageHint, outputTool);
+      // A schema turn with no tool of a plugin's is one constrained call: the core's own tools alone are nothing to look up.
+      const tools = output?.mode === "schema" && Object.keys(built).every((name) => CORE_ONLY_TOOLS.has(name)) ? {} : built;
       const text = await (deps.runTurnFn ?? runTurn)(history, input, {
         model: deps.model,
         tools,
@@ -622,15 +645,28 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
         ...(context?.turn === undefined ? {} : { turnContext: context.turn }),
         // Counted on the way through, and only where the channel streams: an
         // absent callback keeps the turn on the non-streaming path.
+        // With an output other than text, what the model writes isn't the
+        // answer: it only keeps the watchdog from taking it for silence.
         ...(sink.onTextChunk
           ? {
               onTextChunk: (chunk: string) => {
                 watchdog.kick();
+                if (output !== undefined) return;
                 answerChars += chunk.length;
                 sink.onTextChunk!(chunk);
               },
             }
           : {}),
+        ...(output === undefined
+          ? {}
+          : {
+              output: output.mode === "tool" ? { mode: "tool" as const, tool: output.tool, probe: probe!, retries: output.retries } : output,
+              onOutput: (value: TurnOutput, attempts: number) => {
+                turnOutput = value;
+                emit({ kind: "turn.output", mode: value.mode, outcome: "done", attempts }, key);
+              },
+              onSilentCall: (running: boolean) => (running ? watchdog.pause() : watchdog.resume()),
+            }),
         ...(sink.onReasoningChunk
           ? {
               onReasoningChunk: (chunk: string, id: string) => {
@@ -686,7 +722,8 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
       // handle any (label, detail?, toolCallId?) triple generically. A guard
       // that throws is caught here and never blocks delivery.
       const guardSteps = resumed ? [resumedStep(resumed), ...steps] : steps;
-      for (const guard of postTurnGuards) {
+      // A guard rewrites text to show: an output other than text has none.
+      for (const guard of output === undefined ? postTurnGuards : []) {
         if (!guard.shouldRun(correctedText, guardSteps)) {
           continue;
         }
@@ -720,13 +757,15 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
       // `present`, and what the instance shows always — never the whole set
       // of tool-produced displays. Appending (not replacing) keeps
       // the already-streamed prefix intact, so terminal.ts's safe-slice holds.
-      surfacedDisplays = deps.takeSurfacedDisplays?.(turn.sessionKey) ?? [];
+      // An output other than text appends none: a tool's displays are in its result.
+      surfacedDisplays = output === undefined ? (deps.takeSurfacedDisplays?.(turn.sessionKey) ?? []) : [];
       const finalText = shownText(correctedText, surfacedDisplays);
       // The model said nothing and the turn stood in with the note: the
       // channel is told, never left to recognize the text, also when a
       // guard added to it.
       stoodIn = noteUsed && correctedText.startsWith(pendingNote);
       if (stoodIn) await sink.finalize(finalText, { pendingNote });
+      else if (turnOutput !== undefined) await sink.finalize(finalText, { output: turnOutput });
       else await sink.finalize(finalText);
       // The answer is out: from here on the turn needs the model no more.
       releaseTurn();
@@ -749,6 +788,9 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
         endTurn("cancelled");
         cancelled = true;
         return;
+      }
+      if (output !== undefined && isTurnOutputError(err)) {
+        emit({ kind: "turn.output", mode: output.mode, outcome: err.code, attempts: err.attempts, args: { error: err.message } }, key);
       }
       endTurn("failed", { error: err instanceof Error ? err.message : String(err) });
       failed = true;
@@ -796,6 +838,7 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
       ...(answeredCalls !== undefined ? { calls: answeredCalls } : {}),
       ...(seen.length > 0 ? { trace: seen } : {}),
       ...(stoodIn ? { pendingNote } : {}),
+      ...(turnOutput !== undefined ? { output: turnOutput } : {}),
     });
   }
 }
