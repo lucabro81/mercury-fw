@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { channelOutputs, detectLoginRequests, detectLoginRequired, detectPendingConfirmation, isTurnOutputError, loginLinkText, TurnOutputError, type ChannelPlugin, type Translate } from "./index.ts";
+import { channelOutputs, detectLoginRequests, detectLoginRequired, detectPendingConfirmation, isTurnOutputError, loginLinkText, TurnOutputError, type ChannelPlugin, type OutputMode, type Translate } from "./index.ts";
 
 /** The texts by key and params, so a test sees what a channel asked for. */
 const echo: Translate = (key, params) => (params ? `${key} ${JSON.stringify(params)}` : key);
@@ -123,7 +123,7 @@ describe("isTurnOutputError", () => {
 });
 
 describe("channelOutputs", () => {
-  const channel = (outputs?: ChannelPlugin["outputs"]): ChannelPlugin => ({ apiVersion: 7, name: "c", build: () => undefined, ...(outputs ? { outputs } : {}) });
+  const channel = (outputs?: ChannelPlugin<OutputMode>["outputs"]): ChannelPlugin<OutputMode> => ({ apiVersion: 7, name: "c", build: () => undefined, ...(outputs ? { outputs } : {}) });
 
   test("a channel that declares nothing handles text only", () => {
     expect(channelOutputs(channel())).toEqual(["text"]);

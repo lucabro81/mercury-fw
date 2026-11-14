@@ -14,7 +14,7 @@
 import type { ModelSettings, Plugin } from "@mercury-fw/plugin-types";
 import type { MercuryModels } from "../model/models.ts";
 import type { TurnOutputConfig } from "../session/turn-output.ts";
-import type { AuthPlugin, ChannelPlugin, ConversationStorePlugin, DirectoryPlugin, VectorIndexPlugin } from "@mercury-fw/channel-types";
+import type { AuthPlugin, ChannelPlugin, ConversationStorePlugin, DirectoryPlugin, OutputMode, VectorIndexPlugin } from "@mercury-fw/channel-types";
 import type { Persona } from "../session/system-prompt.ts";
 import type { Messages } from "../i18n/i18n.ts";
 import type { MercuryTraces } from "../traces/trace-loader.ts";
@@ -99,7 +99,7 @@ export type MercuryConfig<P extends string = string> = {
   plugins: Plugin[];
   /** The models the instance runs on, by role: `turn` (required), `background` (the turn's when left out), `embedding` (needed with `vectorIndex`). */
   models: MercuryModels;
-  channels?: ChannelPlugin[];
+  channels?: ChannelPlugin<OutputMode>[];
   auth?: AuthPlugin | AuthPlugin[];
   directory?: DirectoryPlugin;
   /** Where what's found by meaning is kept: the episodic memory, the semantic facts, the procedural corrections and `recall_verbatim`'s search. Left out, none of them runs. */
@@ -127,11 +127,34 @@ export type MercuryConfig<P extends string = string> = {
   version?: string;
 };
 
+/** The mode of an `output`, as a channel declares the ones it takes. */
+type ModeOf<O> = O extends { tool: unknown } ? "tool" : O extends { schema: unknown } ? "schema" : "text";
+
+/** What a channel's type says it takes, besides text (see `ChannelPlugin`). */
+type OutputsOf<C> = C extends { outputs?: readonly (infer M)[] } ? M : never;
+
+/** The channels of `C` (the `channels` tuple, each element kept apart) that don't take `O`'s mode. */
+type Refusing<O, C extends readonly unknown[]> = { [K in keyof C]: ModeOf<O> extends "text" | OutputsOf<C[K]> ? never : C[K] }[number];
+
+/**
+ * `{}` when every channel of `C` takes `O`'s mode, or else an `output` the
+ * config's can't match, whose type is the error the person reads. A channel
+ * whose type doesn't narrow its outputs (an untyped literal) passes: the
+ * startup check still stops it.
+ */
+type OutputCheck<O, C extends readonly unknown[]> = [Refusing<O, C>] extends [never]
+  ? {}
+  : { output: `a channel in "channels" doesn't take the "${ModeOf<O>}" output` };
+
 /**
  * Identity + typing helper for `mercury.config.ts`. Returns its argument
  * unchanged; its only job is to type the config literal against `MercuryConfig`
- * at the call site, exactly like `defineConfig` in the Vite/Nuxt ecosystem.
+ * at the call site, exactly like `defineConfig` in the Vite/Nuxt ecosystem. It
+ * also refuses an `output` one of the `channels` doesn't take, by their types
+ * (see `ChannelPlugin`).
  */
-export function defineMercuryConfig<const P extends string = never>(config: MercuryConfig<P>): MercuryConfig {
+export function defineMercuryConfig<const P extends string = never, const C extends readonly ChannelPlugin<OutputMode>[] = [], O extends TurnOutputConfig = "text">(
+  config: Omit<MercuryConfig<P>, "channels" | "output"> & { channels?: C; output?: O } & OutputCheck<O, C>,
+): MercuryConfig {
   return config as MercuryConfig;
 }

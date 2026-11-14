@@ -1,11 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { z } from "zod";
-import type { ChannelPlugin } from "@mercury-fw/channel-types";
+import type { ChannelPlugin, OutputMode } from "@mercury-fw/channel-types";
 import type { Plugin } from "@mercury-fw/plugin-types";
 import { acceptOutput, resolveOutput, toolOf } from "./turn-output.ts";
 
 const plugin = (name: string): Plugin => ({ apiVersion: 7, name, description: "d", build: () => ({}) }) as Plugin;
-const channel = (name: string, outputs?: ChannelPlugin["outputs"]): ChannelPlugin => ({
+const channel = (name: string, outputs?: ChannelPlugin<OutputMode>["outputs"]): ChannelPlugin<OutputMode> => ({
   apiVersion: 7,
   name,
   build: () => undefined,

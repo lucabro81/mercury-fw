@@ -14,13 +14,13 @@
  * public URL (`HTTP_SURFACE_PUBLIC_URL`) it also takes people's logins: it
  * mounts `<url>/login/callback` and, once it's listening, offers it to the core.
  */
-import type { ChannelPlugin } from "@mercury-fw/channel-types";
+import type { ChannelPlugin, OutputMode } from "@mercury-fw/channel-types";
 import { createHttpProvider } from "./http-provider.ts";
 import { HTTP_MESSAGES } from "./messages.ts";
 
 export { createHttpProvider, type HttpProviderDeps } from "./http-provider.ts";
 
-export const httpChannel: ChannelPlugin = {
+export const httpChannel: ChannelPlugin<OutputMode> = {
   // The contract this channel is written for, as a literal: importing
   // CHANNEL_API_VERSION would report whichever contract is installed.
   apiVersion: 7,

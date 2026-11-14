@@ -7,6 +7,9 @@
 import { describe, expect, test } from "bun:test";
 import { defineMercuryConfig } from "./define-config.ts";
 import { ollamaModel } from "../model/models.ts";
+import { z } from "zod";
+import type { ChannelPlugin, OutputMode } from "@mercury-fw/channel-types";
+import { toolOf } from "../session/turn-output.ts";
 
 const models = { turn: ollamaModel("m") };
 
@@ -58,5 +61,53 @@ describe("defineMercuryConfig: context (#387)", () => {
         assign: { premum: ["paid"] },
       },
     });
+  });
+});
+
+describe("defineMercuryConfig: output and the channels' outputs (#403)", () => {
+  const catalog = { apiVersion: 7, name: "catalog", description: "Builds queries." };
+  const build = toolOf(catalog, "catalog_build");
+  const schema = z.object({ query: z.string() });
+  const chat: ChannelPlugin = { apiVersion: 7, name: "chat", build: () => undefined };
+  const http: ChannelPlugin<OutputMode> = { apiVersion: 7, name: "http", build: () => undefined, outputs: ["text", "tool", "schema"] };
+  const forms: ChannelPlugin<"schema"> = { apiVersion: 7, name: "forms", build: () => undefined, outputs: ["schema"] };
+
+  test("an output every channel takes types, and comes back as given", () => {
+    const output = { tool: build };
+    expect(defineMercuryConfig({ plugins: [catalog], models, channels: [http], output }).output).toBe(output);
+    defineMercuryConfig({ plugins: [], models, channels: [http, forms], output: { schema } });
+    defineMercuryConfig({ plugins: [], models, channels: [chat, http], output: "text" });
+    defineMercuryConfig({ plugins: [], models, channels: [chat] });
+    defineMercuryConfig({ plugins: [catalog], models, output: { tool: build } });
+  });
+
+  test("an output a channel doesn't take doesn't type", () => {
+    defineMercuryConfig({
+      plugins: [catalog],
+      models,
+      channels: [chat],
+      // @ts-expect-error: a channel declared without outputs takes text only
+      output: { tool: build },
+    });
+    defineMercuryConfig({
+      plugins: [catalog],
+      models,
+      channels: [http, chat],
+      // @ts-expect-error: every channel must take it, not just one
+      output: { tool: build, retries: 1 },
+    });
+    defineMercuryConfig({
+      plugins: [catalog],
+      models,
+      channels: [forms],
+      // @ts-expect-error: forms takes schema outputs, not tool ones
+      output: { tool: build },
+    });
+  });
+
+  test("a channel typed as plain ChannelPlugin can't declare outputs besides text", () => {
+    // @ts-expect-error: a channel taking a tool output says so in its type, ChannelPlugin<"tool">
+    const wrong: ChannelPlugin = { apiVersion: 7, name: "w", build: () => undefined, outputs: ["tool"] };
+    expect(wrong.name).toBe("w");
   });
 });
