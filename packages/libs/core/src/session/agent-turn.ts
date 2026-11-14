@@ -57,6 +57,7 @@ import type { StepInfo } from "./step-info.ts";
 import { detectPendingConfirmation } from "./pending-confirmation.ts";
 import { detectLoginRequests, TurnOutputError, type TurnOutput } from "@mercury-fw/channel-types";
 import { acceptOutput, type OutputProbe, type Validate } from "./turn-output.ts";
+import { AS_SELF_SUFFIX } from "../plugins/act-as-self.ts";
 import { CORE_MESSAGES } from "../i18n/core-messages.ts";
 import { interpolate } from "../i18n/i18n.ts";
 
@@ -612,8 +613,9 @@ async function generateAnswer(history: SessionHistory, deps: Parameters<typeof r
   return finishText(history, deps, call, call.steps);
 }
 
-/** What the model is told when it ended a turn with text instead of calling the tool that ends it. Model-facing, so in English. */
-export const missingToolNote = (tool: string): string => `End the turn by calling the tool "${tool}": its result is the answer. Write no text instead.`;
+/** What the model is told when it ended a turn with text instead of calling the tool that ends it, naming its copy acting as Mercury (`asSelf`) when the turn offers one. Model-facing, so in English. */
+export const missingToolNote = (tool: string, asSelf?: string): string =>
+  `End the turn by calling the tool "${tool}"${asSelf === undefined ? "" : `, or "${asSelf}" when the user asked you to act as yourself`}: its result is the answer. Write no text instead.`;
 
 /** What the model is told, after its tools, before the constrained call. Model-facing, so in English. */
 export const FINAL_JSON_NOTE = "Now give the final answer as JSON matching the schema.";
@@ -709,7 +711,7 @@ async function generateOutput(history: SessionHistory, deps: Parameters<typeof r
         ...current,
         ...stepMessages(call.steps, `retry-${round}`),
         ...(call.text.trim().length > 0 ? [{ role: "assistant" as const, content: call.text }] : []),
-        { role: "user", content: missingToolNote(tool) },
+        { role: "user", content: missingToolNote(tool, deps.tools[`${tool}${AS_SELF_SUFFIX}`] === undefined ? undefined : `${tool}${AS_SELF_SUFFIX}`) },
       ];
     }
   }
