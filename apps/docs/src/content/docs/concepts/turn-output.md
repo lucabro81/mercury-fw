@@ -149,6 +149,7 @@ controller waits for anyway.
 | The model's text, live | streamed to the channel | not streamed: it isn't the answer |
 | Guards | run | don't run: there's no text to rewrite |
 | Displays | written after the text | none added: a tool's displays are in its result, a schema has none |
+| `present`, and the lists already shown | offered to the model | not offered: there's nothing to show the person |
 | A turn where the agent speaks first | it introduces itself to someone it doesn't know | says nothing |
 | An action waiting for confirmation, a login | the turn ends there, with its note | the same: the note, no output; the turn resumed after the confirmation returns the output |
 | What the conversation keeps | the text | the value as indented JSON, with the tool calls |
