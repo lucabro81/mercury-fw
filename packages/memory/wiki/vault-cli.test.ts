@@ -184,6 +184,14 @@ describe("vault-cli lock and unlock", () => {
     expect((await run(["read", "curated/policy.md"])).stdout).not.toContain("locked");
   });
 
+  test("locks a curated note written by hand, with no frontmatter", async () => {
+    const { initVault } = await import("./vault-init.ts");
+    await initVault(vault);
+    await Bun.write(join(vault, "curated", "policy.md"), "Policy.\n");
+    expect(await run(["lock", "curated/policy.md"])).toEqual({ code: 0, stdout: "locked curated/policy.md\n", stderr: "" });
+    expect((await run(["read", "curated/policy.md"])).stdout).toContain("type: curated\nlocked: true");
+  });
+
   test("refuses anything but a curated doc a person writes: a person's notes, a standard, a missing note", async () => {
     await openEntry(ENTRY);
     const { writeToolCorrectionNote } = await import("./wiki-note.ts");

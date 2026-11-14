@@ -87,7 +87,7 @@ A `raw/` entry is a Markdown file (`.md`, the only kind the triage lists) of at 
 A locked note is one only people change. A note is locked when:
 
 - its frontmatter says `locked: true`. On a curated document, whoever curates the wiki sets it, with `mfw vault lock`/`unlock` or by hand. On a person's note, the person asks the model and `write_file` sets it;
-- it's under one of the `locked` paths of the config, whatever its frontmatter says. A learned standard (`curated/standards/`, written by counting) is locked only this way.
+- it's under one of the `locked` paths of the config, whatever its frontmatter says. A learned standard (`curated/standards/`, written by counting) is locked only this way, and then the corrections plugin doesn't rewrite it either.
 
 The review's `write_curated` and `delete_curated` refuse a locked document. When one looks wrong, or contradicts another document, the review opens a review entry on it instead (its `flag_for_review` tool), and a person decides. `promote_note` never carries a person's lock into `curated/`.
 
@@ -120,7 +120,7 @@ A learned standard and a person's `inferred/` notes also carry `source`, `confid
 
 The plugin carries `notes`, on the same vault, which the memory plugins are given: `memory({ wiki: teamWiki })` and `corrections({ wiki: teamWiki })`.
 
-- `promoteFact(key, topic, cluster)` makes a fact about a person their note `personal/inferred/<topic>.md`, `promoteCorrection(tool, topic, cluster)` a rule about a tool `curated/standards/<tool>-<topic>.md`, which everyone reads. `cluster(limit)` hands over the last occurrences of that topic the plugin kept. The value that becomes the note is decided by counting, never by the model: the one most frequent among the last three occurrences, with no tie, and only when it has more occurrences behind it than the note already there (`derived_from`, in its frontmatter). Each says what it did: `written`, `no-dominant`, `kept-incumbent`.
+- `promoteFact(key, topic, cluster)` makes a fact about a person their note `personal/inferred/<topic>.md`, `promoteCorrection(tool, topic, cluster)` a rule about a tool `curated/standards/<tool>-<topic>.md`, which everyone reads. `cluster(limit)` hands over the last occurrences of that topic the plugin kept. The value that becomes the note is decided by counting, never by the model: the one most frequent among the last three occurrences, with no tie, and only when it has more occurrences behind it than the note already there (`derived_from`, in its frontmatter). Each says what it did: `written`, `no-dominant`, `kept-incumbent`, or `locked` for a standard under one of the `locked` paths, which it leaves alone.
 - `facts(key)` reads a person's `inferred/` notes back: topic, text, and when the occurrences behind each were found.
 
 The memory plugin declared with the wiki is what writes there; the wiki itself never does.

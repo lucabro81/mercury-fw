@@ -83,7 +83,7 @@ export function wiki(options: WikiOptions = {}): WikiPlugin {
   assertLockPaths(locked);
 
   return {
-    notes: createWikiNotes(vaultPath),
+    notes: createWikiNotes(vaultPath, { locked }),
     apiVersion: PLUGIN_API_VERSION,
     name: "wiki",
     description: "The team's wiki: shared notes everyone reads and each person's own, searched, read and written by the agent.",

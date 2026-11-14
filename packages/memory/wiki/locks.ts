@@ -22,7 +22,12 @@ export function createLockCheck(vaultPath: string, paths: readonly string[]): (p
   const globs = paths.map((p) => new Bun.Glob(p));
   return async (path) => {
     if (globs.some((glob) => glob.match(path))) return true;
-    const note = await readNote(vaultPath, path).catch(() => null);
-    return note?.frontmatter.locked === true;
+    try {
+      const note = await readNote(vaultPath, path);
+      return note?.frontmatter.locked === true;
+    } catch {
+      // A note it can't read might be locked: closed, so nothing writes over it.
+      return true;
+    }
   };
 }

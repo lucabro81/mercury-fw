@@ -25,7 +25,7 @@ type Confidence = "low" | "medium" | "high";
  * `no-dominant` when nothing could be promoted (no candidate, or a tie),
  * `kept-incumbent` when the note already there has as much support or more.
  */
-export type ConsolidationDecision = "written" | "no-dominant" | "kept-incumbent";
+export type ConsolidationDecision = "written" | "no-dominant" | "kept-incumbent" | "locked";
 
 export type ConsolidationDeps = {
   vaultPath: string;

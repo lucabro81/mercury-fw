@@ -57,4 +57,15 @@ describe("createLockCheck", () => {
     expect(await isLocked("curated/confluence/new.md")).toBe(true);
     expect(await isLocked("curated/new.md")).toBe(false);
   });
+
+  // A note whose frontmatter can't be read might be a locked one: the review must not write over it.
+  it("is true for a note it can't read the frontmatter of", async () => {
+    const vaultPath = await makeTempVault();
+    await Bun.write(join(vaultPath, "curated/policy.md"), "---\nlocked: [unclosed\n---\n\nPolicy.\n");
+    expect(await createLockCheck(vaultPath, [])("curated/policy.md")).toBe(true);
+  });
+
+  it("is false for a note that isn't there and no configured path covers", async () => {
+    expect(await createLockCheck(await makeTempVault(), [])("curated/nope.md")).toBe(false);
+  });
 });

@@ -32,7 +32,7 @@ import { resolve, sep } from "node:path";
 import { initVault } from "./vault-init.ts";
 import { RAW_MAX_BYTES, rawEntryOverLimit } from "./raw-limit.ts";
 import { decideReview, listReviews, readReview } from "./review-entries.ts";
-import { readNote, updateNoteFrontmatter, writeCuratedNote, writeRawEntry } from "./wiki-note.ts";
+import { readNote, updateNoteFrontmatter, withNoteType, writeCuratedNote, writeRawEntry } from "./wiki-note.ts";
 
 function usage(): never {
   console.error(
@@ -205,7 +205,7 @@ async function main(): Promise<void> {
         console.error(`no note at ${path} (mfw vault list shows them)`);
         process.exit(1);
       }
-      if (note.frontmatter.type !== "curated") {
+      if (withNoteType(path, note.frontmatter).type !== "curated") {
         console.error(`${path} is the consolidation's (a learned standard): lock it with the wiki's locked paths instead`);
         process.exit(1);
       }

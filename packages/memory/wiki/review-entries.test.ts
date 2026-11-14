@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { closeReview, decideReview, listReviews, openReview, readReview, reviewId, type ReviewEntry } from "./review-entries.ts";
+import { decideReview, listReviews, openReview, readReview, reviewId, type ReviewEntry } from "./review-entries.ts";
 import { initVault } from "./vault-init.ts";
 import { readNote, updateIndexFile, writeCuratedNote, writeToolCorrectionNote } from "./wiki-note.ts";
 
@@ -62,8 +62,8 @@ describe("openReview, readReview, listReviews", () => {
 
     expect(id).toBe("curated--release");
     expect(await readFile(join(vaultPath, "review/curated--release.md"), "utf-8")).toBe(
-      "---\nnote: curated/release.md\nkind: curated\nevidence:\n  - turn-1\n  - turn-2\nopened_at: 2026-11-14T04:00:00.000Z\n---\n\n" +
-        "Two people were told to tag before merging and said the order is the other way round.\n\n## Proposed\n\nMerge first, then tag.\n",
+      "---\nnote: curated/release.md\nkind: curated\nevidence:\n  - turn-1\n  - turn-2\nopened_at: 2026-11-14T04:00:00.000Z\n" +
+        "reason: Two people were told to tag before merging and said the order is the other way round.\n---\n\nMerge first, then tag.\n",
     );
     expect(await readReview(vaultPath, id)).toEqual({ id, ...contested });
     expect(await listReviews(vaultPath)).toEqual([{ id, ...contested }]);
@@ -76,6 +76,18 @@ describe("openReview, readReview, listReviews", () => {
     await openReview(vaultPath, { ...contested, evidence: ["turn-9"], reason: "Newer reason." });
 
     expect((await listReviews(vaultPath)).map((e) => [e.id, e.evidence, e.reason])).toEqual([["curated--release", ["turn-9"], "Newer reason."]]);
+  });
+
+  // The reason is the model's text: kept in the frontmatter, it can't be mistaken for the proposed text, whatever it says.
+  it("reads back a reason and a proposed text whatever they contain", async () => {
+    const vaultPath = await makeTempVault();
+    const tricky = { ...contested, reason: "It says:\n\n## Proposed\n\nnothing.", proposed: "# Title\n\n## Proposed\n\nbody" };
+    const id = await openReview(vaultPath, tricky);
+    expect(await readReview(vaultPath, id)).toEqual({ id, ...tricky });
+  });
+
+  it("refuses an empty proposed text, which accepting would turn into an empty note", async () => {
+    await expect(openReview(await makeTempVault(), { ...contested, proposed: " " })).rejects.toThrow("a review entry's proposed text can't be empty");
   });
 
   it("keeps an entry with no proposed text without one", async () => {
@@ -100,16 +112,6 @@ describe("openReview, readReview, listReviews", () => {
 
   it("readReview refuses an id that would leave review/", async () => {
     await expect(readReview(await makeTempVault(), "../curated/release")).rejects.toThrow("not a review id: ../curated/release");
-  });
-});
-
-describe("closeReview", () => {
-  it("removes the entry and commits it", async () => {
-    const vaultPath = await makeTempVault();
-    const id = await openReview(vaultPath, contested);
-    await closeReview(vaultPath, id);
-    expect(await readReview(vaultPath, id)).toBeNull();
-    expect((await gitLog(vaultPath))[0]).toBe("review: close curated--release");
   });
 });
 
@@ -194,6 +196,30 @@ describe("decideReview", () => {
     const id = await openReview(vaultPath, contested);
     expect(await decideReview(vaultPath, id, "accept", NOW)).toEqual({ note: "curated/release.md", outcome: "note-gone" });
     expect(await readReview(vaultPath, id)).toBeNull();
+  });
+
+  it("takes a curated note with no frontmatter (written by hand) as a curated document", async () => {
+    const vaultPath = await makeTempVault();
+    await Bun.write(join(vaultPath, "curated/release.md"), "Tag first.\n");
+    const id = await openReview(vaultPath, contested);
+
+    expect(await decideReview(vaultPath, id, "reject", NOW)).toEqual({ note: "curated/release.md", outcome: "kept" });
+    expect(await readNote(vaultPath, "curated/release.md")).toEqual({
+      frontmatter: { type: "curated", status: "validated", validated_at: NOW },
+      body: "Tag first.",
+    });
+  });
+
+  // A decision that fails must not lose the entry: the next commit's `git add -A` would sweep its deletion in.
+  it("leaves the entry and the note as they were when the note can't take the decision", async () => {
+    const vaultPath = await makeTempVault();
+    await Bun.write(join(vaultPath, "curated/release.md"), "---\ntype: something-else\n---\n\nTag first.\n");
+    const id = await openReview(vaultPath, contested);
+
+    await expect(decideReview(vaultPath, id, "accept", NOW)).rejects.toThrow();
+
+    expect(await readReview(vaultPath, id)).not.toBeNull();
+    expect(await readFile(join(vaultPath, "curated/release.md"), "utf-8")).toBe("---\ntype: something-else\n---\n\nTag first.\n");
   });
 
   it("throws for an id with no entry", async () => {

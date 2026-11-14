@@ -242,7 +242,8 @@ export function parseNote(text: string): NoteFile {
 
 /** A note's text, as every writer here lays it out. */
 export function renderNote(frontmatter: Record<string, unknown>, body: string): string {
-  return `---\n${stringifyYaml(frontmatter)}---\n\n${body}\n`;
+  // No folding: a long value (a review entry's reason) stays on one line.
+  return `---\n${stringifyYaml(frontmatter, { lineWidth: 0 })}---\n\n${body}\n`;
 }
 
 // The notes that carry a status or a lock: curated/ (standards included) and
@@ -272,6 +273,12 @@ export function validNoteFrontmatter(frontmatter: Record<string, unknown>): Cura
   }
 }
 
+/** `frontmatter` with the `type` its note's folder implies when it has none (a note written by hand): curated under `curated/`, personal under a person's `notes/`. */
+export function withNoteType(path: string, frontmatter: Record<string, unknown>): Record<string, unknown> {
+  if (frontmatter.type !== undefined) return frontmatter;
+  return { type: path.startsWith("curated/") ? "curated" : "personal", ...frontmatter };
+}
+
 /** The note at the vault path `path` (`curated/…` or `users/<key>/notes/…`), or `null` when there's none. */
 export async function readNote(vaultPath: string, path: string): Promise<NoteFile | null> {
   const text = await readCurrent(notePath(vaultPath, path));
@@ -295,7 +302,7 @@ export async function updateNoteFrontmatter(
     const current = await readCurrent(fullPath);
     if (current === null) return false;
     const note = parseNote(current);
-    const frontmatter = validNoteFrontmatter(change(note.frontmatter));
+    const frontmatter = validNoteFrontmatter(change(withNoteType(path, note.frontmatter)));
     await replaceFile(fullPath, renderNote(frontmatter, note.body));
     await commitFile(vaultPath, fullPath, commitMessage);
     return true;
@@ -321,7 +328,7 @@ export async function rewriteNoteBody(
     const current = await readCurrent(fullPath);
     // Compared as parsed, so a note laid out by hand (git on the volume) still matches what was read of it.
     if (current === null || JSON.stringify(parseNote(current)) !== JSON.stringify(expected)) return false;
-    const frontmatter = validNoteFrontmatter(change(expected.frontmatter));
+    const frontmatter = validNoteFrontmatter(change(withNoteType(path, expected.frontmatter)));
     await replaceFile(fullPath, renderNote(frontmatter, body));
     await commitFile(vaultPath, fullPath, commitMessage);
     return true;

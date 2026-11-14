@@ -50,6 +50,17 @@ describe("createWikiNotes (#393)", () => {
     expect(await readVisible({ vaultPath: path, key: "static:anyone" }, "curated/standards/jira-jql.md")).toContain("Quote the project key.");
   });
 
+  // Only people change a locked note: a correction learned by counting doesn't either.
+  it("leaves a standard under the instance's locked paths alone, saying so", async () => {
+    const path = await vault();
+    const notes = createWikiNotes(path, { locked: ["curated/standards/jira-*"] });
+    let asked = false;
+    expect(await notes.promoteCorrection("jira", "jql", async () => ((asked = true), [{ topic: "jql", value: "x", timestamp: at(1) }]))).toBe("locked");
+    expect(asked).toBe(false);
+    expect(await Bun.file(join(path, "curated/standards/jira-jql.md")).exists()).toBe(false);
+    expect(await notes.promoteCorrection("bitbucket", "pr", async () => [{ topic: "pr", value: "y", timestamp: at(1) }])).toBe("written");
+  });
+
   it("asks for the last occurrences, as many as the consolidation window", async () => {
     const path = await vault();
     const limits: number[] = [];

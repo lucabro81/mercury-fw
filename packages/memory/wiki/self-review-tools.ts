@@ -222,7 +222,7 @@ export function createSelfReviewTools(
     description:
       "For a locked curated doc (write_curated refuses it) that looks wrong or contradicts another doc: opens an entry a " +
       'person decides on. "reason" says why in one sentence; "proposed", when you have one, is the text you\'d put in its place.',
-    inputSchema: z.object({ path: z.string().min(1), reason: z.string().min(1), proposed: z.string().optional() }),
+    inputSchema: z.object({ path: z.string().min(1), reason: z.string().min(1), proposed: z.string().min(1).optional() }),
     execute: async ({ path, reason, proposed }) => {
       const note = `curated/${relativeToCurated(path)}`;
       try {

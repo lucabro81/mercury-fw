@@ -444,8 +444,8 @@ describe("locked notes", () => {
 
     expect(result).toEqual({ ok: true, review: "curated--policy" });
     expect(await readFile(join(vaultPath, "review/curated--policy.md"), "utf-8")).toBe(
-      "---\nnote: curated/policy.md\nkind: locked\nevidence: []\nopened_at: 2026-11-14T03:10:00.000Z\n---\n\n" +
-        "release.md says to merge first.\n\n## Proposed\n\nMerge first, then tag.\n",
+      "---\nnote: curated/policy.md\nkind: locked\nevidence: []\nopened_at: 2026-11-14T03:10:00.000Z\nreason: release.md says to merge first.\n---\n\n" +
+        "Merge first, then tag.\n",
     );
   });
 
