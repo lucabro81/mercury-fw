@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { detectLoginRequests, detectLoginRequired, detectPendingConfirmation, loginLinkText, type Translate } from "./index.ts";
+import { channelOutputs, detectLoginRequests, detectLoginRequired, detectPendingConfirmation, isTurnOutputError, loginLinkText, TurnOutputError, type ChannelPlugin, type Translate } from "./index.ts";
 
 /** The texts by key and params, so a test sees what a channel asked for. */
 const echo: Translate = (key, params) => (params ? `${key} ${JSON.stringify(params)}` : key);
@@ -81,5 +81,56 @@ describe("loginLinkText", () => {
   test("names the service through the core's key, or says the service when there's no name", () => {
     expect(loginLinkText({ service: "jira", url: "https://x" }, echo)).toBe('core.login.link {"service":"jira"}');
     expect(loginLinkText({ service: "", url: "https://x" }, echo)).toBe("core.login.link-any");
+  });
+});
+
+describe("TurnOutputError", () => {
+  test("carries its code, the attempts and the last error, and says them in its message", () => {
+    const err = new TurnOutputError("output-invalid", { attempts: 3, lastError: "unknown field \"titel\"" });
+    expect(err).toBeInstanceOf(Error);
+    expect(err.kind).toBe("turn-output");
+    expect(err.code).toBe("output-invalid");
+    expect(err.attempts).toBe(3);
+    expect(err.lastError).toBe('unknown field "titel"');
+    expect(err.message).toBe('The turn\'s output is invalid after 3 attempts: unknown field "titel"');
+  });
+
+  test("a missing output with no error of its own says only that", () => {
+    const err = new TurnOutputError("output-missing", { attempts: 1 });
+    expect(err.lastError).toBeUndefined();
+    expect(err.message).toBe("The turn's output is missing after 1 attempt");
+  });
+
+  test("a tool that isn't offered names it", () => {
+    const err = new TurnOutputError("output-tool-unavailable", { attempts: 0, lastError: "comperio_query_build isn't offered on this turn" });
+    expect(err.message).toBe("The turn's output tool is unavailable: comperio_query_build isn't offered on this turn");
+  });
+});
+
+describe("isTurnOutputError", () => {
+  // Recognized by its shape, not its class: a channel may run on another copy of this package.
+  test("recognizes one from another copy of the package by its kind", () => {
+    const foreign = Object.assign(new Error("x"), { kind: "turn-output", code: "output-missing", attempts: 2 });
+    expect(isTurnOutputError(foreign)).toBe(true);
+    expect(isTurnOutputError(new TurnOutputError("output-missing", { attempts: 2 }))).toBe(true);
+  });
+
+  test("anything else isn't one", () => {
+    expect(isTurnOutputError(new Error("model unreachable"))).toBe(false);
+    expect(isTurnOutputError({ kind: "turn-output" })).toBe(false);
+    expect(isTurnOutputError(undefined)).toBe(false);
+  });
+});
+
+describe("channelOutputs", () => {
+  const channel = (outputs?: ChannelPlugin["outputs"]): ChannelPlugin => ({ apiVersion: 7, name: "c", build: () => undefined, ...(outputs ? { outputs } : {}) });
+
+  test("a channel that declares nothing handles text only", () => {
+    expect(channelOutputs(channel())).toEqual(["text"]);
+  });
+
+  test("a channel's declared outputs, text always among them", () => {
+    expect(channelOutputs(channel(["tool", "schema"]))).toEqual(["text", "tool", "schema"]);
+    expect(channelOutputs(channel(["text", "tool"]))).toEqual(["text", "tool"]);
   });
 });

@@ -669,7 +669,9 @@ export type FinishedTurn = {
  *   the conversation kept, with `interrupted`), `displays` the lists shown
  *   after it, `calls` the tool calls it was written from, `trace` what the
  *   person saw of the turn besides its text, `pendingNote` the core's
- *   sentence `content` begins with when the turn only staged an action;
+ *   sentence `content` begins with when the turn only staged an action,
+ *   `output` what the turn returned when the instance asks for an output
+ *   other than text (`content` is then its value as indented JSON);
  * - `turnId`: the id the turn's trace events carry.
  */
 export type TurnRecordOfTurn = {
@@ -689,8 +691,19 @@ export type TurnRecordOfTurn = {
     trace?: TraceEntry[];
     pendingNote?: string;
     interrupted?: true;
+    output?: TurnOutput;
   };
 };
+
+/**
+ * What a turn returns, as the instance's config decides it: `text`, the
+ * model's answer (the default); `tool`, the result of one tool that ends the
+ * turn; `schema`, an object matching a schema.
+ */
+export type OutputMode = "text" | "tool" | "schema";
+
+/** A turn's output when it isn't text: its mode and its value (a `tool`'s whole result, `display` included; the `schema`'s object). */
+export type TurnOutput = { mode: "tool" | "schema"; value: unknown };
 
 /**
  * How a staged action was resolved, as `onTurnRecord` hears it, outside any
