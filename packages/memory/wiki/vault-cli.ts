@@ -17,6 +17,12 @@
  * schema field. The nightly self-review job (`self-review-tools.ts`) is
  * the only thing that reads raw/ back to triage it into curated/.
  *
+ * `review` lists and decides the entries the nightly passes leave in
+ * `review/` (`review-entries.ts`); `lock`/`unlock` set a curated doc's
+ * `locked` (`updateNoteFrontmatter`), never a learned standard's, which only
+ * the wiki's `locked` paths lock. `write-raw` refuses an entry over the
+ * triage's limit (`raw-limit.ts`).
+ *
  * `list`/`read`/`grep` intentionally bypass the per-person scoping in
  * `vault-access.ts`: that scoping exists to isolate what each
  * person (and the model on their behalf) can see; a maintainer running this

@@ -108,11 +108,20 @@ declares), and it finds the wiki through `WIKI_VAULT_PATH`.
 | `read <path>` | One note. |
 | `grep <pattern>` | Every line matching a regular expression (case ignored), as `path:line:text`. |
 | `write-curated <path> [--author NAME]` | Writes a note in the common area, the body read from stdin. |
-| `write-raw <path>` | Writes raw material for the nightly review to sort, the body read from stdin. |
+| `write-raw <path>` | Writes raw material for the nightly review to sort, the body read from stdin. Over 64 KiB it's refused. |
+| `review list` | What the nightly review left for a person to decide, one entry per line. |
+| `review show <id>` | One entry: which note, why, and the text proposed in its place. |
+| `review accept <id>` | Applies the entry: the note gets the proposed text (a learned standard is deleted instead). |
+| `review reject <id>` | Closes the entry and keeps the note as it is. |
+| `lock <path>` / `unlock <path>` | Locks a document of the common area, so only people change it, or unlocks it. |
+
+[The wiki](../../concepts/memory/#the-wiki) explains review entries and locks.
 
 ```bash
 mfw vault grep "story points"
 cat note.md | mfw vault write-curated curated/standards/new-note.md --author luca
+mfw vault review list
+mfw vault lock curated/policy.md
 ```
 
 ### `mfw memory list` and `mfw memory read <collection> [--limit N]`

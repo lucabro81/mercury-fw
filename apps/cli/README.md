@@ -142,13 +142,23 @@ Maintains the wiki vault, which lives on a Docker volume and not in the app's fo
 | `read <path>` | One note (a path that isn't one says so, exit 1). |
 | `grep <pattern>` | Every line matching `<pattern>`, a regular expression (case ignored), as `path:line:text`. A pattern starting with `-` goes after `--` (`mfw vault grep -- -h`). |
 | `write-curated <path> [--author NAME]` | Writes a curated note, the body read from stdin. |
-| `write-raw <path>` | Writes raw material for the nightly review to triage, the body read from stdin. |
+| `write-raw <path>` | Writes raw material for the nightly review to triage, the body read from stdin. An entry over 64 KiB is refused (the review triages only smaller ones), exit 1. |
+| `review list` | The open review entries, one per line: id, kind, note, when it was opened (`no review entries` when there are none). |
+| `review show <id>` | One entry: its note, why it was opened, the turns behind it, the text proposed in the note's place. |
+| `review accept <id>` | Applies the entry and closes it: a curated or locked note gets the proposed text, a learned standard is deleted. |
+| `review reject <id>` | Closes the entry keeping the note as it is, marked `validated`. |
+| `lock <path>` / `unlock <path>` | Locks or unlocks a curated document: locked, only people change it. A learned standard (`curated/standards/`, written by counting) is locked through the wiki's `locked` paths instead. |
+
+The wiki's [README](../../packages/memory/wiki/README.md#review-entries) says what each kind of review entry is and what deciding it does.
 
 ```bash
 mfw vault list
 mfw vault read curated/standards/jira-fields.md
 mfw vault grep "story points"
 cat note.md | mfw vault write-curated curated/standards/new-note.md --author luca
+mfw vault review list
+mfw vault review accept curated--release
+mfw vault lock curated/policy.md
 ```
 
 There's no command writing inferred notes on purpose: those are the agent's own, written only by its consolidation.
