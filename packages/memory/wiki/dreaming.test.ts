@@ -251,6 +251,18 @@ describe("runDreaming", () => {
       expect(await listReviews(base.vaultPath)).toEqual([]);
     });
 
+    // Regression: the model wrote corrected_text with the note's frontmatter at its top, which became part of the body.
+    it("is rewritten with the corrected text's body only, when the model put a frontmatter at its top", async () => {
+      const base = await setup();
+      await writePersonalNote(base.vaultPath, ALICE, "personal/notes/plan.md", {}, "Standup at 9.");
+      await appendUses(base.dataDir, [use(note, ALICE, "s1", "t1")]);
+      const { judge } = judgeOf(() => ({ contradictedBy: ["t1"], obviouslyWrong: false, reason: "moved", correctedText: "---\ntype: personal\n---\n\nStandup at 10." }));
+
+      await runDreaming(deps(base, judge).deps);
+
+      expect((await readNote(base.vaultPath, note))?.body).toBe("Standup at 10.");
+    });
+
     it("is verified once k sessions used it with nothing against", async () => {
       const base = await setup();
       await writePersonalNote(base.vaultPath, ALICE, "personal/notes/plan.md", {}, "Standup at 9.");
@@ -284,6 +296,18 @@ describe("runDreaming", () => {
           proposed: "Merge first, then tag.",
         },
       ]);
+    });
+
+    // Regression: the same frontmatter at the top of corrected_text became part of the proposed text, and of the note once accepted.
+    it("proposes the corrected text's body only", async () => {
+      const base = await setup();
+      await writeCuratedNote(base.vaultPath, "release.md", {}, "Tag first.");
+      await appendUses(base.dataDir, [use("curated/release.md", ALICE, "s1", "t1")]);
+      const { judge } = judgeOf(() => ({ contradictedBy: ["t1"], obviouslyWrong: false, reason: "r", correctedText: "---\ntype: curated\nauthor: x\n---\n\nMerge first." }));
+
+      await runDreaming(deps(base, judge).deps);
+
+      expect((await listReviews(base.vaultPath))[0]?.proposed).toBe("Merge first.");
     });
 
     it("is contested when the model finds it plainly wrong, even with no turn against it", async () => {

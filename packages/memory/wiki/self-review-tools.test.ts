@@ -136,6 +136,24 @@ describe("createSelfReviewTools", () => {
     expect(result).toEqual({ ok: false, error: "raw/huge.md is over the raw/ limit (65536 bytes): leave it in raw/, it isn't triaged" });
   });
 
+  // Regression: read_file hands the model the whole file, frontmatter included, and the model wrote it back
+  // as `content`; the doc then had two frontmatters, the review's and the old one inside its body.
+  it("write_curated drops a frontmatter the model put at the top of content, keeping only its own", async () => {
+    const vaultPath = await makeTempVault();
+    await writeCuratedNote(vaultPath, "release.md", { author: "e2e" }, "Tag first.");
+    const { read_file, write_curated } = createSelfReviewTools({ vaultPath });
+    const read = (await read_file.execute({ path: "curated/release.md" }, {} as never)) as { content: string };
+
+    await write_curated.execute({ path: "release.md", content: read.content.replace("Tag first.", "Merge first.") }, {} as never);
+
+    expect(await readFile(join(vaultPath, "curated/release.md"), "utf-8")).toBe("---\ntype: curated\nauthor: mercury-review\n---\n\nMerge first.\n");
+  });
+
+  it("write_curated tells the model content is the body only", () => {
+    const { write_curated } = createSelfReviewTools({ vaultPath: "/unused" });
+    expect(write_curated.description).toContain("without the frontmatter");
+  });
+
   // #138: the review's list_files and grep give curated/… paths too.
   it("write_curated takes the vault-relative path list_files and grep give, too", async () => {
     const vaultPath = await makeTempVault();

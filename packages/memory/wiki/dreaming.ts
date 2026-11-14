@@ -30,7 +30,7 @@ import { createLockCheck } from "./locks.ts";
 import { openReview } from "./review-entries.ts";
 import { REVIEW_AUTHOR } from "./self-review-tools.ts";
 import { listWikiFilesInRoots } from "./wiki-read.ts";
-import { readNote, rewriteNoteBody, updateNoteFrontmatter, type NoteFile } from "./wiki-note.ts";
+import { readNote, rewriteNoteBody, updateNoteFrontmatter, withoutLeadingFrontmatter, type NoteFile } from "./wiki-note.ts";
 import { resolve } from "node:path";
 
 /** A turn that read the note, as the model is shown it: its messages and the ones right after. */
@@ -149,7 +149,9 @@ export async function runDreaming(deps: DreamingDeps): Promise<void> {
     const personal = note.startsWith("users/");
     if (personal && noteUses.length === 0) return;
     const excerpts = await Promise.all(noteUses.map((u) => excerptOf(deps.conversations, u)));
-    const judgment = await deps.judge({ kind: personal ? "personal" : "curated", note, body: current.body, excerpts });
+    const judged = await deps.judge({ kind: personal ? "personal" : "curated", note, body: current.body, excerpts });
+    // A frontmatter the model copied at the top of its text isn't part of the note's body.
+    const judgment = { ...judged, correctedText: withoutLeadingFrontmatter(judged.correctedText.trim()) };
     const against = new Set(judgment.contradictedBy);
     const verdicts: Verdict[] = noteUses.map((u) => ({ sessionKey: u.sessionKey, turnId: u.turnId, at: u.at, verdict: against.has(u.turnId) ? "against" : "for" }));
 
