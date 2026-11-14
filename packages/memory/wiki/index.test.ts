@@ -3,7 +3,7 @@ import { mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PLUGIN_API_VERSION, type PluginRuntimeContext, type SessionToolContext } from "@mercury-fw/plugin-types";
-import { wiki, WIKI_MESSAGES } from "./index.ts";
+import { DREAMING_PROMPT_LINE, wiki, WIKI_MESSAGES, WIKI_PROMPT_FRAGMENT } from "./index.ts";
 
 const tempDirs: string[] = [];
 const savedEnv = process.env.WIKI_VAULT_PATH;
@@ -256,6 +256,96 @@ describe("wiki", () => {
       const { ctx, daily } = ctxWith();
       await wiki({ vaultPath: await tempVault(), review: false }).build!(ctx);
       expect(daily).toEqual([]);
+    });
+  });
+
+  describe("dreaming", () => {
+    it("is off by default: no conversation store needed, no hook, no prompt line", async () => {
+      const plugin = wiki({ vaultPath: await tempVault() });
+      expect(plugin.needs).toBeUndefined();
+      expect(plugin.systemPromptFragment).toBe(WIKI_PROMPT_FRAGMENT);
+      const built = await plugin.build!(ctxWith().ctx);
+      expect(built.onTurnRecord).toBeUndefined();
+    });
+
+    it("on, needs the conversation store and tells the model about statuses", async () => {
+      const plugin = wiki({ vaultPath: await tempVault(), review: { dreaming: {} } });
+      expect(plugin.needs).toEqual(["conversationStore"]);
+      expect(plugin.systemPromptFragment).toBe(`${WIKI_PROMPT_FRAGMENT}\n${DREAMING_PROMPT_LINE}`);
+      expect(DREAMING_PROMPT_LINE).toBe(
+        "- A note whose frontmatter says status: contested or status: unverified may be wrong: when your answer relies on one, tell the person so.",
+      );
+    });
+
+    it("runs with the review at its default time when only dreaming is given", async () => {
+      const { ctx, daily } = ctxWith();
+      await wiki({ vaultPath: await tempVault(), review: { dreaming: {} } }).build!(Object.assign(ctx, { dataDir: await tempVault() }));
+      expect(daily.map((d) => [d.name, d.when])).toEqual([["review", { at: "03:00" }]]);
+    });
+
+    it("stops the start with a k that isn't a whole number of at least 1", async () => {
+      for (const k of [0, -1, 1.5]) {
+        expect(() => wiki({ vaultPath: "/v", review: { dreaming: { k } } })).toThrow(`wiki: dreaming.k is a whole number of at least 1 (got ${k})`);
+      }
+    });
+
+    it("records the notes each turn read in the data folder", async () => {
+      const dataDir = await mkdtemp(join(tmpdir(), "mercury-wiki-data-"));
+      tempDirs.push(dataDir);
+      const { ctx } = ctxWith();
+      const built = await wiki({ vaultPath: await tempVault(), review: { dreaming: {} } }).build!(Object.assign(ctx, { dataDir }));
+
+      await built.onTurnRecord!({
+        kind: "turn",
+        sessionKey: "s1",
+        person: { key: "static:alice" },
+        operator: false,
+        as: "anyone",
+        turnId: "t1",
+        multiUser: false,
+        outcome: "done",
+        origin: "person",
+        input: "?",
+        startedAt: "2026-11-14T10:00:00.000Z",
+        endedAt: "2026-11-14T10:00:05.000Z",
+        answer: { content: "ok", calls: [{ toolName: "read_file", input: { path: "curated/release.md" }, result: { ok: true, ran: "" } }] },
+      });
+
+      expect(JSON.parse(await Bun.file(join(dataDir, "uses.jsonl")).text())).toEqual({
+        note: "curated/release.md",
+        turnId: "t1",
+        sessionKey: "s1",
+        person: "static:alice",
+        at: "2026-11-14T10:00:05.000Z",
+      });
+    });
+
+    it("runs the dreaming pass last in the nightly run, on the background model", async () => {
+      const vault = await tempVault();
+      const dataDir = await mkdtemp(join(tmpdir(), "mercury-wiki-data-"));
+      tempDirs.push(dataDir);
+      const { ctx, daily, logs } = ctxWith();
+      const jobs: string[] = [];
+      Object.assign(ctx, {
+        dataDir,
+        conversations: { messages: async () => ({ messages: [] }) },
+        job: async <T,>(name: string, _urgency: string, fn: () => Promise<T>) => (jobs.push(name), fn()),
+      });
+      await wiki({ vaultPath: vault, review: { dreaming: {} } }).build!(ctx);
+      await writeFile(join(vault, "curated", "from-raw.md"), "---\ntype: curated\nauthor: mercury-review\n---\n\nNew.\n");
+
+      await Promise.resolve(daily[0]!.fn());
+
+      expect(jobs).toEqual(["review-index", "review-contradictions", "dreaming"]);
+      // The build context's model is a stand-in that can't answer: the pass got as far as asking it.
+      expect(logs.some((l) => l.startsWith("dreaming: curated/from-raw.md not checked:"))).toBe(true);
+    });
+
+    it("is skipped, saying so, when the core gives no data folder", async () => {
+      const { ctx, daily, logs } = ctxWith();
+      await wiki({ vaultPath: await tempVault(), review: { dreaming: {} } }).build!(ctx);
+      expect(logs).toContain("dreaming is off: the core gave the wiki no data folder to keep what it counts in");
+      expect(daily).toHaveLength(1);
     });
   });
 });

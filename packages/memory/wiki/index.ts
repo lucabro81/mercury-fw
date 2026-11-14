@@ -14,7 +14,9 @@
  */
 import { createWikiNotes, type WikiNotes } from "./notes.ts";
 import { resolve } from "node:path";
-import { PLUGIN_API_VERSION, type Plugin } from "@mercury-fw/plugin-types";
+import { PLUGIN_API_VERSION, type Plugin, type TurnRecord } from "@mercury-fw/plugin-types";
+import { createDreamingJudge, runDreaming } from "./dreaming.ts";
+import { appendUses, usesOf } from "./dreaming-uses.ts";
 import { assertLockPaths } from "./locks.ts";
 import { findOrphanCuratedDocs } from "./orphan-detector.ts";
 import { triageableRawEntries } from "./raw-limit.ts";
@@ -28,14 +30,27 @@ import { createWikiTools } from "./wiki-tools.ts";
 export type WikiOptions = {
   /** Where the vault lives; `WIKI_VAULT_PATH` when absent. */
   vaultPath?: string;
-  /** When the nightly review runs: `at` (`"HH:MM"`) in `timeZone` (the instance's when absent); `false` for none. Every day at `"03:00"` when absent. */
-  review?: { at: string; timeZone?: string } | false;
+  /**
+   * When the nightly review runs: `at` (`"HH:MM"`, `"03:00"` when absent) in
+   * `timeZone` (the instance's when absent); `false` for none. Every day at
+   * `"03:00"` when absent. `dreaming` turns on the dreaming pass, last in the
+   * same run: `k`, how many distinct conversations decide a note's status (3
+   * when absent). Off when absent.
+   */
+  review?: { at?: string; timeZone?: string; dreaming?: { k?: number } | false } | false;
   /** Paths under `curated/` (globs, e.g. `"curated/confluence/**"`) whose notes only people change, besides the notes locked in their frontmatter. */
   locked?: string[];
 };
 
 /** When the review runs unless the instance says otherwise. */
 export const DEFAULT_REVIEW_AT = "03:00";
+
+/** How many distinct conversations decide a note's status in the dreaming pass, unless the instance says otherwise. */
+export const DEFAULT_DREAMING_K = 3;
+
+/** What the model reads besides the wiki tools' fragment when dreaming is on, the only case where notes carry a status. */
+export const DREAMING_PROMPT_LINE =
+  "- A note whose frontmatter says status: contested or status: unverified may be wrong: when your answer relies on one, tell the person so.";
 
 /** The texts a person sees from the wiki, in English (the keys an instance's language files translate). */
 export const WIKI_MESSAGES = {
@@ -78,7 +93,11 @@ export function wiki(options: WikiOptions = {}): WikiPlugin {
   if (!vaultPath) {
     throw new Error("wiki: no vault: pass vaultPath or set WIKI_VAULT_PATH to the folder, on a volume of its own, the wiki lives in");
   }
-  const review = options.review === undefined ? { at: DEFAULT_REVIEW_AT } : options.review;
+  const review = options.review === undefined ? {} : options.review;
+  const when = review === false ? undefined : { at: review.at ?? DEFAULT_REVIEW_AT, ...(review.timeZone === undefined ? {} : { timeZone: review.timeZone }) };
+  const dreaming = review === false || review.dreaming === undefined || review.dreaming === false ? undefined : review.dreaming;
+  const k = dreaming?.k ?? DEFAULT_DREAMING_K;
+  if (!Number.isInteger(k) || k < 1) throw new Error(`wiki: dreaming.k is a whole number of at least 1 (got ${k})`);
   const locked = options.locked ?? [];
   assertLockPaths(locked);
 
@@ -89,7 +108,8 @@ export function wiki(options: WikiOptions = {}): WikiPlugin {
     description: "The team's wiki: shared notes everyone reads and each person's own, searched, read and written by the agent.",
     actsAs: "anyone",
     messages: WIKI_MESSAGES,
-    systemPromptFragment: WIKI_PROMPT_FRAGMENT,
+    ...(dreaming === undefined ? {} : { needs: ["conversationStore" as const] }),
+    systemPromptFragment: dreaming === undefined ? WIKI_PROMPT_FRAGMENT : `${WIKI_PROMPT_FRAGMENT}\n${DREAMING_PROMPT_LINE}`,
     build: async (ctx) => {
       await initVault(vaultPath);
       // A vault from before per-person areas gets its notes moved into them.
@@ -98,9 +118,17 @@ export function wiki(options: WikiOptions = {}): WikiPlugin {
       );
 
       const model = ctx.backgroundModel ?? ctx.model;
-      const job = ctx.job ?? ((_name: string, _urgency: string, fn: () => Promise<void>) => fn());
-      if (review !== false) {
-        ctx.daily?.("review", review, () =>
+      const job = ctx.job ?? (<T,>(_name: string, _urgency: string, fn: () => Promise<T>) => fn());
+      // Dreaming keeps what it counts in the data folder: without one, it's off, and the review runs as before.
+      const dataDir = dreaming === undefined ? undefined : ctx.dataDir;
+      if (dreaming !== undefined && dataDir === undefined) ctx.log("dreaming is off: the core gave the wiki no data folder to keep what it counts in");
+      const conversations = ctx.conversations;
+      const runDreamingPass =
+        dataDir === undefined || conversations === undefined
+          ? undefined
+          : () => runDreaming({ vaultPath, dataDir, k, locked, conversations, judge: createDreamingJudge(model), job, log: ctx.log });
+      if (when !== undefined) {
+        ctx.daily?.("review", when, () =>
           runReview({
             listRawEntries: async () =>
               triageableRawEntries(vaultPath, await listWikiFilesInRoots(vaultPath, [resolve(vaultPath, "raw")]), ctx.log),
@@ -108,6 +136,7 @@ export function wiki(options: WikiOptions = {}): WikiPlugin {
             runRawTriage: (rawEntries) => runRawTriagePass({ vaultPath, model, rawEntries, locked }),
             runIndexAndOrphan: (orphans) => runIndexAndOrphanPass({ vaultPath, model, orphans, locked }),
             runContradictionCheck: () => runContradictionCheckPass({ vaultPath, model, locked }),
+            ...(runDreamingPass === undefined ? {} : { runDreaming: runDreamingPass }),
             job,
             log: ctx.log,
           }),
@@ -115,6 +144,13 @@ export function wiki(options: WikiOptions = {}): WikiPlugin {
       }
 
       return {
+        ...(dataDir === undefined
+          ? {}
+          : {
+              onTurnRecord: async (record: TurnRecord) => {
+                await appendUses(dataDir, usesOf(record));
+              },
+            }),
         sessionTools: (sctx) =>
           sctx.person === null ? {} : createWikiTools({ vaultPath, key: sctx.person.key, stageConfirmation: sctx.stageConfirmation }),
         toolStatusDescribers: {
