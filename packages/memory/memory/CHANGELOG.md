@@ -1,5 +1,13 @@
 # @mercury-fw/memory
 
+## 0.76.0
+
+### Patch Changes
+
+- Updated dependencies [6534831]
+  - @mercury-fw/plugin-types@0.76.0
+  - @mercury-fw/wiki@0.76.0
+
 ## 0.75.0
 
 ### Minor Changes

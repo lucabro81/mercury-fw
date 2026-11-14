@@ -1,5 +1,12 @@
 # @mercury-fw/trace-jsonl
 
+## 0.76.0
+
+### Patch Changes
+
+- Updated dependencies [6534831]
+  - @mercury-fw/channel-types@0.76.0
+
 ## 0.75.0
 
 ### Patch Changes
