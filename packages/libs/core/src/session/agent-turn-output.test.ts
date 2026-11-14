@@ -428,3 +428,33 @@ describe("runTurn with output: { schema }", () => {
     expect(events).toEqual([true, false]);
   });
 });
+
+// Regression (#406): an output turn let ai-sdk-ollama synthesize text after the output, one more model call whose
+// text the core throws away; every model call of a turn with an output asks for no synthesis.
+describe("runTurn with an output: no synthesis call (#406)", () => {
+  it("a tool turn hands the model call synthesis: false, on the generate and the stream path", async () => {
+    const turn = toolTurn(toolOfFn(({ query }) => built(query)));
+    const model = scripted([{ steps: [[{ tool: "build", input: { query: "dante" } }]] }]);
+    const seen: unknown[] = [];
+    const generateTextFn = (async (params: { synthesis?: unknown }) => (seen.push(params.synthesis), model.fn(params as never))) as never;
+    await runTurn(keptHistory(), "q", { model: "m" as never, tools: turn.tools, system: SYSTEM, generateTextFn, output: turn.output });
+    expect(seen).toEqual([false]);
+
+    const streamed: unknown[] = [];
+    const turn2 = toolTurn(toolOfFn(({ query }) => built(query)));
+    const streamTextFn = (async (params: { synthesis?: unknown; tools: Record<string, Tool> }) => {
+      streamed.push(params.synthesis);
+      await (params.tools.build!.execute as (x: unknown, o: unknown) => Promise<unknown>)({ query: "dante" }, { toolCallId: "s1" });
+      return { stream: (async function* () {})() };
+    }) as never;
+    await runTurn(keptHistory(), "q", { model: "m" as never, tools: turn2.tools, system: SYSTEM, streamTextFn, onTextChunk: () => {}, output: turn2.output }).catch(() => {});
+    expect(streamed).toEqual([false]);
+  });
+
+  it("a text turn leaves synthesis as it is", async () => {
+    const seen: unknown[] = [];
+    const generateTextFn = (async (params: { synthesis?: unknown }) => (seen.push("synthesis" in params), { text: "hi" })) as never;
+    await runTurn(keptHistory(), "q", { model: "m" as never, tools: {}, system: SYSTEM, generateTextFn });
+    expect(seen).toEqual([false]);
+  });
+});
