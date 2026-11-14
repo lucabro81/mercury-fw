@@ -75,3 +75,20 @@ describe("vault-cli grep", () => {
     expect(r.stdout).toContain("Monorepo: MON");
   });
 });
+
+describe("vault-cli write-raw", () => {
+  test("an entry over the raw/ limit is refused, exit 1, nothing written", async () => {
+    const r = await run(["write-raw", "raw/huge.md"], "x".repeat(64 * 1024 + 1));
+    expect(r).toEqual({
+      code: 1,
+      stdout: "",
+      stderr: "raw/huge.md is over the raw/ limit (65537 bytes, the limit is 65536): the nightly review triages only smaller entries\n",
+    });
+    expect(await Bun.file(join(vault, "raw", "huge.md")).exists()).toBe(false);
+  });
+
+  test("an entry at the limit is written", async () => {
+    expect((await run(["write-raw", "raw/full.md"], "x".repeat(64 * 1024))).code).toBe(0);
+    expect(await Bun.file(join(vault, "raw", "full.md")).exists()).toBe(true);
+  });
+});

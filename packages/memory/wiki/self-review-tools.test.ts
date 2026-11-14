@@ -126,6 +126,16 @@ describe("createSelfReviewTools", () => {
     );
   });
 
+  it("read_file refuses a raw/ entry over the limit, so the triage never takes part of one", async () => {
+    const vaultPath = await makeTempVault();
+    await writeRawEntry(vaultPath, "huge.md", "x".repeat(64 * 1024 + 1));
+    const { read_file } = createSelfReviewTools({ vaultPath });
+
+    const result = await read_file.execute({ path: "raw/huge.md" }, {} as never);
+
+    expect(result).toEqual({ ok: false, error: "raw/huge.md is over the raw/ limit (65536 bytes): leave it in raw/, it isn't triaged" });
+  });
+
   // #138: the review's list_files and grep give curated/… paths too.
   it("write_curated takes the vault-relative path list_files and grep give, too", async () => {
     const vaultPath = await makeTempVault();

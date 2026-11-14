@@ -24,6 +24,7 @@
  */
 import { resolve, sep } from "node:path";
 import { initVault } from "./vault-init.ts";
+import { RAW_MAX_BYTES, rawEntryOverLimit } from "./raw-limit.ts";
 import { writeCuratedNote, writeRawEntry } from "./wiki-note.ts";
 
 function usage(): never {
@@ -99,7 +100,15 @@ async function main(): Promise<void> {
         console.error("empty body on stdin — nothing to write");
         process.exit(1);
       }
-      await writeRawEntry(vaultPath, rawRelativePath, body.trimEnd());
+      const entry = body.trimEnd();
+      if (rawEntryOverLimit(entry)) {
+        const size = Buffer.byteLength(entry, "utf-8");
+        console.error(
+          `${vaultRelativePath} is over the raw/ limit (${size} bytes, the limit is ${RAW_MAX_BYTES}): the nightly review triages only smaller entries`,
+        );
+        process.exit(1);
+      }
+      await writeRawEntry(vaultPath, rawRelativePath, entry);
       console.log(`wrote ${vaultRelativePath}`);
       break;
     }

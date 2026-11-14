@@ -222,6 +222,20 @@ describe("wiki", () => {
       expect(logs.filter((l) => l.includes("pass failed"))).toHaveLength(3);
     });
 
+    it("leaves a raw/ entry over the limit out of the triage, logging it", async () => {
+      const vault = await tempVault();
+      const { ctx, daily, logs } = ctxWith();
+      const jobs: string[] = [];
+      Object.assign(ctx, { job: async <T,>(name: string, _urgency: string, fn: () => Promise<T>) => (jobs.push(name), fn()) });
+      await wiki({ vaultPath: vault }).build!(ctx);
+      await writeFile(join(vault, "raw", "huge.md"), "x".repeat(64 * 1024 + 1));
+
+      await daily[0]!.fn().catch(() => undefined);
+
+      expect(jobs).not.toContain("review-raw");
+      expect(logs.some((l) => l.startsWith("raw/huge.md is over the raw/ limit"))).toBe(true);
+    });
+
     it("stops the start when the core refuses the review's time", async () => {
       const { ctx } = ctxWith();
       Object.assign(ctx, {

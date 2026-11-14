@@ -28,6 +28,7 @@ import { z } from "zod";
 import { listWikiFilesInRoots, readWikiFileInRoots, grepWikiInRoots, selfReviewRoots } from "./wiki-read.ts";
 import { writeCuratedNote, updateIndexFile, deleteRawEntry, deleteCuratedEntry, relativeToCurated } from "./wiki-note.ts";
 import { normalizeIndexKey, upsertIndexEntry, removeIndexEntry } from "./index-entry.ts";
+import { RAW_MAX_BYTES, rawEntryOverLimit } from "./raw-limit.ts";
 
 export type SelfReviewToolsDeps = { vaultPath: string };
 
@@ -69,6 +70,9 @@ export function createSelfReviewTools(
     execute: async ({ path }) => {
       try {
         const content = await readWikiFileInRoots(vaultPath, roots, path);
+        if (path.startsWith("raw/") && rawEntryOverLimit(content)) {
+          return { ok: false as const, error: `${path} is over the raw/ limit (${RAW_MAX_BYTES} bytes): leave it in raw/, it isn't triaged` };
+        }
         if (path.startsWith("curated/")) readVersions.set(relativeToCurated(path), content);
         return { ok: true as const, content };
       } catch (err) {

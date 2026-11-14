@@ -16,6 +16,7 @@ import { createWikiNotes, type WikiNotes } from "./notes.ts";
 import { resolve } from "node:path";
 import { PLUGIN_API_VERSION, type Plugin } from "@mercury-fw/plugin-types";
 import { findOrphanCuratedDocs } from "./orphan-detector.ts";
+import { triageableRawEntries } from "./raw-limit.ts";
 import { runReview } from "./review.ts";
 import { runContradictionCheckPass, runIndexAndOrphanPass, runRawTriagePass } from "./self-review-runner.ts";
 import { initVault } from "./vault-init.ts";
@@ -96,7 +97,8 @@ export function wiki(options: WikiOptions = {}): WikiPlugin {
       if (review !== false) {
         ctx.daily?.("review", review, () =>
           runReview({
-            listRawEntries: () => listWikiFilesInRoots(vaultPath, [resolve(vaultPath, "raw")]),
+            listRawEntries: async () =>
+              triageableRawEntries(vaultPath, await listWikiFilesInRoots(vaultPath, [resolve(vaultPath, "raw")]), ctx.log),
             findOrphans: () => findOrphanCuratedDocs(vaultPath),
             runRawTriage: (rawEntries) => runRawTriagePass({ vaultPath, model, rawEntries }),
             runIndexAndOrphan: (orphans) => runIndexAndOrphanPass({ vaultPath, model, orphans }),
