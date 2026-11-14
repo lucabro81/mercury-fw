@@ -31,6 +31,9 @@ import { normalizeIndexKey, upsertIndexEntry, removeIndexEntry } from "./index-e
 
 export type SelfReviewToolsDeps = { vaultPath: string };
 
+/** The author every curated doc the review writes carries: the dreaming pass checks those as the model's, not a person's. */
+export const REVIEW_AUTHOR = "mercury-review";
+
 export function createSelfReviewTools(
   deps: SelfReviewToolsDeps,
 ): Record<
@@ -96,7 +99,7 @@ export function createSelfReviewTools(
       const target = relativeToCurated(path);
       const read = readVersions.get(target);
       try {
-        const written = await writeCuratedNote(vaultPath, target, {}, content, {
+        const written = await writeCuratedNote(vaultPath, target, { author: REVIEW_AUTHOR }, content, {
           when: (current) => current === (read ?? null),
         });
         if (!written) {

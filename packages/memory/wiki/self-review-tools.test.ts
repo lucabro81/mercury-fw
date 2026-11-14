@@ -108,6 +108,24 @@ describe("createSelfReviewTools", () => {
     expect(text).toContain("type: curated");
   });
 
+  // The dreaming pass tells a doc the model wrote from one a person wrote by this author.
+  it("write_curated signs what it writes as the review, over a doc a person wrote too", async () => {
+    const vaultPath = await makeTempVault();
+    await writeCuratedNote(vaultPath, "glossary.md", { author: "luca" }, "Glossario.");
+    const { read_file, write_curated } = createSelfReviewTools({ vaultPath });
+
+    await write_curated.execute({ path: "standards/new-doc.md", content: "Nuovo standard." }, {} as never);
+    await read_file.execute({ path: "curated/glossary.md" }, {} as never);
+    await write_curated.execute({ path: "glossary.md", content: "Glossario, unito." }, {} as never);
+
+    expect(await readFile(join(vaultPath, "curated/standards/new-doc.md"), "utf-8")).toBe(
+      "---\ntype: curated\nauthor: mercury-review\n---\n\nNuovo standard.\n",
+    );
+    expect(await readFile(join(vaultPath, "curated/glossary.md"), "utf-8")).toBe(
+      "---\ntype: curated\nauthor: mercury-review\n---\n\nGlossario, unito.\n",
+    );
+  });
+
   // #138: the review's list_files and grep give curated/… paths too.
   it("write_curated takes the vault-relative path list_files and grep give, too", async () => {
     const vaultPath = await makeTempVault();
