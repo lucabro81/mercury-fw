@@ -26,6 +26,8 @@ export const httpChannel: ChannelPlugin = {
   apiVersion: 7,
   name: "http",
   messages: HTTP_MESSAGES,
+  // A UI shows the text, a controller reads a tool's result or a schema's object.
+  outputs: ["text", "tool", "schema"],
   build: (ctx) => {
     if (!ctx.resolveConfirmation || !ctx.reads) {
       throw new Error("http channel requires the resolveConfirmation and reads capabilities on the runtime context");

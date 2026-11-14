@@ -104,7 +104,8 @@ once each is over, as a `TurnRecord`:
 - a turn (`kind: "turn"`): how it ended (`outcome`: `"done"`, `"cancelled"`, `"failed"`), who started it (`origin`:
   the person, the agent speaking first, or a turn going on after a confirmation), what the person wrote (`input`),
   when it started and ended, and its `answer` with everything the archive keeps of it: the lists shown, the tool
-  calls, what the person saw besides the text;
+  calls, what the person saw besides the text, and the turn's `output` when the agent's turns return a tool's result
+  or an object instead of text (see [What a turn returns](../turn-output/));
 - a confirmation (`kind: "confirmation"`): the reply the person got and how it went.
 
 Each says whose it is and whether it was typed in the terminal (`operator`). Mercury doesn't wait for this code

@@ -129,6 +129,10 @@ The channel listens inside the container, so the compose file has to publish its
   holding the role `mercury.context-admin` can see it (`GET /context`), change a profile's budget, its layers' order
   and its layers' knobs (`PATCH /context/profiles/{name}`), and read who changed what (`GET /context/changes`),
   without restarting the agent. See [Changing it while the agent runs](../../concepts/context/#changing-it-while-the-agent-runs).
+- **Answers that aren't text.** On an agent whose [`output`](../../reference/config/#output) asks a turn to return a
+  tool's result or an object matching a schema, the stream sends no `text` events: the `final` event carries
+  `output` (`{ "mode": "tool", "value": … }`) next to the value as indented JSON in `text`, and a turn that couldn't
+  return it ends with an `error` event whose `code` says why. See [What a turn returns](../../concepts/turn-output/).
 - **Which Mercury it is.** `GET /version` answers the framework's version (`{ "ok": true, "version": "0.59.0" }`)
   with no token, so your interface can show it anywhere, the login page included. When the app declares its own
   version (`version` in `mercury.config.ts`, which a new app sets to its `package.json`'s), it comes too, as

@@ -31,6 +31,8 @@ describe("httpChannel", () => {
   it("declares the http name at channel api version 6", () => {
     expect(httpChannel.name).toBe("http");
     expect(httpChannel.apiVersion).toBe(7);
+    // A UI or a controller takes any of a turn's outputs (#403).
+    expect(httpChannel.outputs).toEqual(["text", "tool", "schema"]);
   });
 
   it("declares its texts in English, every key under http.", () => {

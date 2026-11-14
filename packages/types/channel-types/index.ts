@@ -11,9 +11,9 @@
  * `resolveConfirmation`) stays in the core and reaches a channel via
  * `ctx.confirm`.
  */
-import type { ConversationStore, KnobSpec, KnobValue, Messages, StepInfo, ToolOutcome, Translate, VectorIndex } from "@mercury-fw/plugin-types";
+import type { ConversationStore, KnobSpec, KnobValue, Messages, OutputMode, StepInfo, ToolOutcome, Translate, TurnOutput, VectorIndex } from "@mercury-fw/plugin-types";
 
-export type { Messages, Translate };
+export type { Messages, OutputMode, Translate, TurnOutput };
 // The storage primitives are the plugins' contract too (a plugin reaches them through `needs`): defined there, the same types here.
 export type {
   ArchivedConfirmation,
@@ -194,8 +194,66 @@ export type InboundTurn = {
   timeZoneHint?: string;
 };
 
+/**
+ * Why a turn has no output of the kind the instance asked for:
+ * `output-missing`, the model never gave one (it wrote text instead, or a
+ * JSON that doesn't parse or doesn't match the schema); `output-invalid`,
+ * it gave one the instance's validator, or the tool itself, refused;
+ * `output-tool-unavailable`, the tool that ends the turn isn't offered on it.
+ */
+export type TurnOutputErrorCode = "output-missing" | "output-invalid" | "output-tool-unavailable";
+
+/** The message of a `TurnOutputError`, in English (it's a log and an API's, never a person's). */
+function turnOutputMessage(code: TurnOutputErrorCode, attempts: number, lastError: string | undefined): string {
+  const tail = lastError === undefined ? "" : `: ${lastError}`;
+  if (code === "output-tool-unavailable") return `The turn's output tool is unavailable${tail}`;
+  const what = code === "output-missing" ? "missing" : "invalid";
+  return `The turn's output is ${what} after ${attempts} ${attempts === 1 ? "attempt" : "attempts"}${tail}`;
+}
+
+/**
+ * What a turn throws when the output the instance asked for didn't come:
+ * after `attempts` model attempts (each one told the exact error of the one
+ * before), never replaced by text. `lastError` is the error of the last
+ * attempt, when there was one. A channel recognizes it with
+ * `isTurnOutputError`, never `instanceof`: it may run on another copy of
+ * this package.
+ */
+export class TurnOutputError extends Error {
+  readonly kind = "turn-output" as const;
+  readonly code: TurnOutputErrorCode;
+  readonly attempts: number;
+  readonly lastError?: string;
+
+  constructor(code: TurnOutputErrorCode, details: { attempts: number; lastError?: string }) {
+    super(turnOutputMessage(code, details.attempts, details.lastError));
+    this.name = "TurnOutputError";
+    this.code = code;
+    this.attempts = details.attempts;
+    if (details.lastError !== undefined) this.lastError = details.lastError;
+  }
+}
+
+/** Whether `err` is a `TurnOutputError`, from this copy of the package or another: an `Error` whose `kind` is `turn-output`. */
+export function isTurnOutputError(err: unknown): err is TurnOutputError {
+  return err instanceof Error && (err as { kind?: unknown }).kind === "turn-output";
+}
+
+/** The outputs `channel` handles: `text` always, and whatever it declares (`ChannelPlugin.outputs`). */
+export function channelOutputs(channel: Pick<ChannelPlugin, "outputs">): OutputMode[] {
+  return ["text", ...(channel.outputs ?? []).filter((mode) => mode !== "text")];
+}
+
 /** What the core says about a turn's final text, beside it. */
 export type FinalizeInfo = {
+  /**
+   * Set when the instance asks for an output other than text and the turn
+   * gave it: its mode and value. The final text is then that value as
+   * indented JSON, for a channel that shows it as it is. Never set on a
+   * channel that doesn't declare the mode (`ChannelPlugin.outputs`): the
+   * instance doesn't start.
+   */
+  output?: TurnOutput;
   /**
    * Set when the text begins with the core's stand-in for an answer the model
    * didn't write, because the turn staged an action (in the person's
@@ -620,10 +678,12 @@ export type ChannelRuntimeContext = {
  * - `name`: the channel's id, and the key the loader registers the provider under (the cron layer looks up `"google-chat"` for its `Notifier`).
  * - `build`: builds the `Provider` from the context, or `undefined` when the instance isn't configured for this channel (e.g. no `GOOGLE_CHAT_PUBSUB_SUBSCRIPTION`) → the loader treats it as "present but inert" and never starts it.
  * - `messages`: the channel's texts a person sees, in English, every key under `<name>.`; the loader refuses a channel with a key outside it (and one named `core` or `app`). The instance's language files translate them, and the channel gets them through `ctx.i18n`.
+ * - `outputs`: what a turn may return to it besides text (see `OutputMode`); `text` alone when left out. An instance whose `output` one of its channels doesn't declare doesn't start. A channel that shows an output its own way (a query as text) declares it all the same.
  */
 export type ChannelPlugin = {
   apiVersion: number;
   name: string;
   build: (ctx: ChannelRuntimeContext) => Provider | undefined;
   messages?: Messages;
+  outputs?: readonly OutputMode[];
 };

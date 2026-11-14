@@ -7,6 +7,7 @@ import { AS_SELF_NOTE } from "./act-as-self.ts";
 import { buildOfferedTools } from "./offered-tools.ts";
 import { createCliTool, type CliConfig } from "@mercury-fw/cli-engine";
 import { createDisplayStore } from "../tools/display-store.ts";
+import { createOutputProbe } from "../session/turn-output.ts";
 
 /** A plugin whose one tool records the context it was built with. */
 function plugin(name: string, actsAs: "person" | "mercury", built: SessionToolContext[]): LoadedPlugin {
@@ -195,5 +196,47 @@ describe("buildOfferedTools: a real CLI tool through the display channel", () =>
     store.surface("s", "d1");
     expect(store.takeSurfaced("s")).toEqual(["MER-1"]);
     expect(store.shown("s")).toEqual([{ ref: "d1", label: 'jiraCommand {"command":"jira issue search"} (1 item)' }]);
+  });
+});
+
+describe("buildOfferedTools: the tool that ends the turn (#403)", () => {
+  test("the probe sees the whole result, display included, while the model's copy goes through the display channel", async () => {
+    const probe = createOutputProbe();
+    const built: SessionToolContext[] = [];
+    const { tools } = buildOfferedTools(offeringFor([plugin("jira", "person", built)], { roles: [], operator: false }), { person: { key: "people:alice", roles: [] }, operator: false }, {
+      context,
+      requireLogin: async () => ({ ok: false, error: "x" }),
+      log: () => {},
+      stashDisplay: () => "d1",
+      outputTool: { plugin: "jira", tool: "jiraCommand", probe },
+    });
+    const seen = await (tools.jiraCommand!.execute as (i: unknown, o: unknown) => Promise<unknown>)({}, {});
+    expect(probe.offered).toBe(true);
+    expect(probe.accepted).toEqual({ value: { ok: true, display: { type: "list", items: ["jira list"] } } });
+    expect(seen).toEqual({ ok: true, displayRef: "d1" });
+  });
+
+  test("another plugin's tool of the same name isn't the output tool", () => {
+    const probe = createOutputProbe();
+    buildOfferedTools(offeringFor([plugin("jira", "person", [])], { roles: [], operator: false }), { person: { key: "people:alice", roles: [] }, operator: false }, {
+      context,
+      requireLogin: async () => ({ ok: false, error: "x" }),
+      log: () => {},
+      stashDisplay: () => "d1",
+      outputTool: { plugin: "other", tool: "jiraCommand", probe },
+    });
+    expect(probe.offered).toBe(false);
+  });
+
+  test("a plugin not offered to the person leaves the tool unoffered", () => {
+    const probe = createOutputProbe();
+    buildOfferedTools(offeringFor([plugin("admin", "mercury", [])], { roles: [], operator: false }), { person: { key: "people:alice", roles: [] }, operator: false }, {
+      context,
+      requireLogin: async () => ({ ok: false, error: "x" }),
+      log: () => {},
+      stashDisplay: () => "d1",
+      outputTool: { plugin: "admin", tool: "adminCommand", probe },
+    });
+    expect(probe.offered).toBe(false);
   });
 });

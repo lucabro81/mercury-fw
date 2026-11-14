@@ -70,7 +70,7 @@ import { createLinkStore, linksPath } from "./identity/links.ts";
 import { createLinking } from "./identity/linking.ts";
 import { offeringFor, type Offering } from "./plugins/offering.ts";
 import { AS_SELF_SUFFIX } from "./plugins/act-as-self.ts";
-import { buildOfferedTools } from "./plugins/offered-tools.ts";
+import { buildOfferedTools, type OfferedToolsDeps } from "./plugins/offered-tools.ts";
 import { createDaily } from "./cron/daily.ts";
 import { pluginToolLog } from "./session/tool-log-buffer.ts";
 import { pluginProfiles } from "./identity/plugin-profiles.ts";
@@ -83,6 +83,7 @@ import type { LanguageModel, Tool } from "ai";
 import { getSelfHealth } from "./health.ts";
 import { frameworkVersion } from "./version.ts";
 import { buildPluginManifest } from "./plugins/manifest.ts";
+import { resolveOutput } from "./session/turn-output.ts";
 
 /** A stoppable subsystem (cron, server). */
 type Stoppable = { stop: () => void };
@@ -178,6 +179,9 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   if (config.vectorIndex !== undefined && config.models.embedding === undefined) {
     throw new Error("vectorIndex is declared but models.embedding isn't: declare the model the memory is embedded with (ollamaEmbedding(...))");
   }
+  // What a turn returns (#403): a tool of a plugin not declared, or a channel
+  // that can't take the output, is a config that can't work.
+  const output = resolveOutput(config.output, { plugins: config.plugins, channels: config.channels ?? [] });
   const models = resolveModels(config.models, {
     language: (name, settings) => provider(name, settings),
     embedding: (name) => provider.textEmbeddingModel(name),
@@ -445,6 +449,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
     onToolStart?: TurnSink["onToolStart"],
     onToolFinish?: TurnSink["onToolFinish"],
     languageHint?: string,
+    outputTool?: OfferedToolsDeps["outputTool"],
   ): Record<string, Tool> {
     const offering = offeringOf(who);
     // The texts of the person the turn is for, on the channel's hint.
@@ -476,6 +481,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
       requireLogin: (service, login, personKey) => personLogins.require(service, login, personKey),
       log: (msg) => console.error(msg),
       stashDisplay: (artifact, label, opts) => displayStore.stash(sessionKey, artifact, label, opts),
+      ...(outputTool === undefined ? {} : { outputTool }),
     });
     Object.assign(sessionTools, pluginTools);
 
@@ -554,6 +560,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
     // them without knowing what any does (see PostTurnGuard).
     postTurnGuards: loadedPlugins.postTurnGuards,
     afterTurn: pluginHooks.afterTurn,
+    ...(output === undefined ? {} : { output }),
     ...(contextAssembler === undefined ? {} : { contextFor: contextAssembler.forTurn }),
     getOrCreateHistory: (key, tracked, userId, resume, timeZone, who) =>
       conversations.open(who, {

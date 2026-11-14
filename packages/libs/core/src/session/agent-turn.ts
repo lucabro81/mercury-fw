@@ -48,14 +48,15 @@
  * since it's a live UI-only surface, not something the model should ever
  * see reflected back at it on a later turn.
  */
-import { isStepCount, type JSONValue, type LanguageModel, type ModelMessage, type StopCondition, type Tool } from "ai";
+import { generateText as generatePlainText, isStepCount, NoObjectGeneratedError, Output, type FlexibleSchema, type JSONValue, type LanguageModel, type ModelMessage, type StopCondition, type Tool } from "ai";
 import type { ResumedAction } from "@mercury-fw/confirm-engine";
 import { generateText, streamText } from "ai-sdk-ollama";
 import type { Message, SessionHistory } from "./history.ts";
-import { callMessages, callRecords, type CallRecord } from "./call-record.ts";
+import { callMessages, callRecords, errorText, type CallRecord } from "./call-record.ts";
 import type { StepInfo } from "./step-info.ts";
 import { detectPendingConfirmation } from "./pending-confirmation.ts";
-import { detectLoginRequests } from "@mercury-fw/channel-types";
+import { detectLoginRequests, TurnOutputError, type TurnOutput } from "@mercury-fw/channel-types";
+import { acceptOutput, type OutputProbe, type Validate } from "./turn-output.ts";
 import { CORE_MESSAGES } from "../i18n/core-messages.ts";
 import { interpolate } from "../i18n/i18n.ts";
 
@@ -180,7 +181,39 @@ type GenerateTextFn = (params: {
   onStepEnd?: (step: StepInfo) => void;
   /** Aborts the in-flight generation when the caller cancels the turn. */
   abortSignal?: AbortSignal;
+  /** Conditions that end the tool loop besides the turn's own (see `buildGenerateTextParams`). */
+  stopWhen?: StopCondition<any>[];
 }) => Promise<{ text: string; usage?: { inputTokens: number | undefined }; finishReason?: string }>;
+
+/**
+ * One constrained call for `output: { schema }`: no tools, the generation
+ * bound to `schema` (Ollama's `format`), the value parsed against it. A
+ * value that doesn't parse or match is `ok: false` with the error, never a
+ * throw; `text` is what the model wrote either way.
+ */
+type GenerateObjectFn = (params: {
+  model: LanguageModel;
+  messages: ModelMessage[];
+  instructions: string;
+  schema: FlexibleSchema<unknown>;
+  abortSignal?: AbortSignal;
+}) => Promise<{ ok: true; value: unknown; text: string } | { ok: false; error: string; text: string }>;
+
+/** The constrained call on the real AI SDK: `generateText` with `Output.object`. */
+const defaultGenerateObjectFn: GenerateObjectFn = async ({ schema, ...params }) => {
+  try {
+    const result = await generatePlainText({ ...params, output: Output.object({ schema }) });
+    return { ok: true, value: result.output, text: result.text };
+  } catch (err) {
+    if (NoObjectGeneratedError.isInstance(err)) return { ok: false, error: err.message, text: err.text ?? "" };
+    throw err;
+  }
+};
+
+/** The output a turn runs with (`runTurn`'s `output`): the tool that ends it, watched by its probe, or the schema. */
+export type RunOutput =
+  | { mode: "tool"; tool: string; probe: OutputProbe; retries: number }
+  | { mode: "schema"; schema: FlexibleSchema<unknown>; validate?: Validate; retries: number };
 
 /**
  * Minimal shape this file reads off a `fullStream` part — deliberately a
@@ -220,6 +253,8 @@ type StreamTextFn = (params: {
   onStepEnd?: (step: StepInfo) => void;
   /** Aborts the in-flight generation when the caller cancels the turn. */
   abortSignal?: AbortSignal;
+  /** Conditions that end the tool loop besides the turn's own (see `buildGenerateTextParams`). */
+  stopWhen?: StopCondition<any>[];
 }) => Promise<{
   stream: AsyncIterable<StreamPart>;
   usage?: PromiseLike<{ inputTokens: number | undefined }>;
@@ -268,8 +303,10 @@ export function buildGenerateTextParams(params: {
   instructions: string;
   onStepEnd?: (step: StepInfo) => void;
   abortSignal?: AbortSignal;
+  stopWhen?: StopCondition<any>[];
 }) {
-  return { ...params, stopWhen: [isStepCount(100), pendingConfirmationStop(), loginRequiredStop()] };
+  const { stopWhen = [], ...rest } = params;
+  return { ...rest, stopWhen: [isStepCount(100), pendingConfirmationStop(), loginRequiredStop(), ...stopWhen] };
 }
 
 /** Default production implementation: calls the real `generateText` from `ai`. */
@@ -292,8 +329,10 @@ export function buildStreamTextParams(params: {
   instructions: string;
   onStepEnd?: (step: StepInfo) => void;
   abortSignal?: AbortSignal;
+  stopWhen?: StopCondition<any>[];
 }) {
-  return { ...params, stopWhen: [isStepCount(100), pendingConfirmationStop(), loginRequiredStop()] };
+  const { stopWhen = [], ...rest } = params;
+  return { ...rest, stopWhen: [isStepCount(100), pendingConfirmationStop(), loginRequiredStop(), ...stopWhen] };
 }
 
 /** Default production implementation: calls the real `streamText` from `ai-sdk-ollama`. */
@@ -430,6 +469,14 @@ export async function runTurn(
      * to log in, naming the services (none when no name is known), in the
      * person's language; English when absent. Never streamed: it isn't the model's. */
     loginNote?: (services: string[]) => string;
+    /** What the turn returns when it isn't text (see `turn-output.ts`): the answer is then its value as indented JSON, and what the model writes on the way still reaches `onTextChunk`, for a caller that only watches it. */
+    output?: RunOutput;
+    /** Called once with the turn's output and how many attempts it took, when there is one. */
+    onOutput?: (output: TurnOutput, attempts: number) => void;
+    /** Test seam for `output: { schema }`'s constrained call; defaults to the real AI SDK call. */
+    generateObjectFn?: GenerateObjectFn;
+    /** Called with `true` before a call that streams nothing (the constrained one) and `false` after it, so a watchdog doesn't take its silence for a stall. */
+    onSilentCall?: (running: boolean) => void;
   },
 ): Promise<string> {
   await history.addUserMessage(userInput, deps.turnContext);
@@ -441,27 +488,40 @@ export async function runTurn(
   }
 }
 
-/** `runTurn`'s model call, once the user's message is recorded: records the answer, or `ABORTED_MARKER` for an aborted call that returned. */
-async function generateAnswer(history: SessionHistory, deps: Parameters<typeof runTurn>[2]): Promise<string> {
-  const fromHistory = historyMessages(history.getMessages());
-  const messages: ModelMessage[] = deps.resumed ? [...fromHistory, ...resumedMessages(deps.resumed)] : fromHistory;
-  const steps: StepInfo[] = [];
+/** One model call over `messages`: its text, its steps, and whether its signal aborted it. */
+type ModelCall = { text: string; steps: StepInfo[]; lastStep: StepInfo | undefined; aborted: boolean };
 
-  if (deps.onTextChunk || deps.onReasoningChunk) {
+/**
+ * Calls the model once over `messages` with `tools`, streaming when the turn
+ * streams (`streamText`, `onTextChunk`, `onReasoningChunk`), and reports how
+ * the generation ended and what it used. `stopWhen` adds conditions to the
+ * turn's own (see `buildGenerateTextParams`).
+ */
+async function callModel(
+  deps: Parameters<typeof runTurn>[2],
+  messages: ModelMessage[],
+  stopWhen: StopCondition<any>[],
+  streamText: ((chunk: string) => void) | undefined,
+): Promise<ModelCall> {
+  const steps: StepInfo[] = [];
+  let lastStep: StepInfo | undefined;
+  const common = {
+    model: deps.model,
+    messages,
+    tools: deps.tools,
+    instructions: deps.system,
+    abortSignal: deps.abortSignal,
+    ...(stopWhen.length > 0 ? { stopWhen } : {}),
+    onStepEnd: (step: StepInfo) => {
+      lastStep = step;
+      steps.push(step);
+      deps.onStepFinish?.(step);
+    },
+  };
+
+  if (streamText || deps.onReasoningChunk) {
     const stream = deps.streamTextFn ?? defaultStreamTextFn;
-    let lastStep: StepInfo | undefined;
-    const result = await stream({
-      model: deps.model,
-      messages,
-      tools: deps.tools,
-      instructions: deps.system,
-      abortSignal: deps.abortSignal,
-      onStepEnd: (step) => {
-        lastStep = step;
-        steps.push(step);
-        deps.onStepFinish?.(step);
-      },
-    });
+    const result = await stream(common);
 
     let fullText = "";
     // The id of the reasoning block currently open, if any — a tool-
@@ -478,7 +538,7 @@ async function generateAnswer(history: SessionHistory, deps: Parameters<typeof r
         if (part.type === "text-delta") {
           const delta = part.text ?? part.delta ?? "";
           fullText += delta;
-          deps.onTextChunk?.(delta);
+          streamText?.(delta);
         } else if (part.type === "reasoning-delta") {
           const id = part.id ?? "";
           currentReasoningId = id;
@@ -510,46 +570,193 @@ async function generateAnswer(history: SessionHistory, deps: Parameters<typeof r
     }
     // Before usage: a broken stream may reject it, and how it ended matters more.
     if (finishReason !== undefined) deps.onFinish?.(finishReason, streamError);
+    if (deps.abortSignal?.aborted) return { text: "", steps, lastStep, aborted: true };
+    deps.onUsage?.((await result.usage)?.inputTokens);
+    return { text: fullText, steps, lastStep, aborted: false };
+  }
+
+  const generate = deps.generateTextFn ?? defaultGenerateTextFn;
+  const result = await generate(common);
+  deps.onUsage?.(result.usage?.inputTokens);
+  if (result.finishReason !== undefined) deps.onFinish?.(result.finishReason);
+  if (deps.abortSignal?.aborted) return { text: "", steps, lastStep, aborted: true };
+  return { text: result.text, steps, lastStep, aborted: false };
+}
+
+/**
+ * Records and returns a text answer: `text`, or the pending note when the
+ * model wrote nothing because the turn staged an action, with the login note
+ * after it when a tool asked the person to log in.
+ */
+async function finishText(history: SessionHistory, deps: Parameters<typeof runTurn>[2], call: ModelCall, steps: StepInfo[]): Promise<string> {
+  let text = call.text;
+  if (text.trim().length === 0) {
+    text = resolveEmptyText(call.lastStep, deps.pendingNote ?? DEFAULT_PENDING_NOTE);
+    if (text.length > 0) deps.onPendingNote?.();
+  }
+  text = withLoginNote(call.lastStep, text, deps.loginNote ?? defaultLoginNote);
+  await history.addAssistantMessage(resolveHistoryText(call.lastStep, text), turnCalls(steps, deps.resumed));
+  return text;
+}
+
+/** `runTurn`'s model call, once the user's message is recorded: records the answer, or `ABORTED_MARKER` for an aborted call that returned. */
+async function generateAnswer(history: SessionHistory, deps: Parameters<typeof runTurn>[2]): Promise<string> {
+  const fromHistory = historyMessages(history.getMessages());
+  const messages: ModelMessage[] = deps.resumed ? [...fromHistory, ...resumedMessages(deps.resumed)] : fromHistory;
+  if (deps.output) return generateOutput(history, deps, deps.output, messages);
+  const call = await callModel(deps, messages, [], deps.onTextChunk);
+  if (call.aborted) {
+    await history.addAssistantMessage(ABORTED_MARKER);
+    return "";
+  }
+  return finishText(history, deps, call, call.steps);
+}
+
+/** What the model is told when it ended a turn with text instead of calling the tool that ends it. Model-facing, so in English. */
+export const missingToolNote = (tool: string): string => `End the turn by calling the tool "${tool}": its result is the answer. Write no text instead.`;
+
+/** What the model is told, after its tools, before the constrained call. Model-facing, so in English. */
+export const FINAL_JSON_NOTE = "Now give the final answer as JSON matching the schema.";
+
+/** What the model is told when its JSON was refused, with the exact error. Model-facing, so in English. */
+export const invalidJsonNote = (error: string): string => `That answer isn't valid: ${error}. Answer again with JSON matching the schema.`;
+
+/**
+ * `steps` as messages the model reads again within the same turn: each call
+ * and its whole result (an error as its text), unlike the history, which
+ * keeps them reduced.
+ */
+function stepMessages(steps: StepInfo[], idPrefix: string): ModelMessage[] {
+  return steps.flatMap((step, i): ModelMessage[] => {
+    if (step.toolCalls.length === 0) return [];
+    const id = (callId: string) => `${idPrefix}-${i}-${callId}`;
+    return [
+      { role: "assistant", content: step.toolCalls.map((c) => ({ type: "tool-call" as const, toolCallId: id(c.toolCallId), toolName: c.toolName, input: c.input })) },
+      {
+        role: "tool",
+        content: step.toolCalls.map((c) => {
+          const result = step.toolResults.find((r) => r.toolCallId === c.toolCallId);
+          const error = step.content.find((p) => p.type === "tool-error" && p.toolCallId === c.toolCallId);
+          const output =
+            result !== undefined
+              ? { type: "json" as const, value: (JSON.parse(JSON.stringify(result.output ?? null)) as JSONValue) ?? null }
+              : { type: "error-text" as const, value: error === undefined ? "no result" : errorText(error.error) };
+          return { type: "tool-result" as const, toolCallId: id(c.toolCallId), toolName: c.toolName, output };
+        }),
+      },
+    ];
+  });
+}
+
+/** Whether `step` ended the turn on its own: it staged an action or asked the person to log in. */
+const endedTheTurn = (step: StepInfo | undefined): boolean =>
+  step !== undefined && (detectPendingConfirmation(step) !== null || detectLoginRequests(step).length > 0);
+
+/** `steps` without the calls in `refused` (failed attempts at the output). */
+function withoutRefused(steps: StepInfo[], refused: ReadonlySet<string>): StepInfo[] {
+  if (refused.size === 0) return steps;
+  return steps.map((step) => ({
+    toolCalls: step.toolCalls.filter((c) => !refused.has(c.toolCallId)),
+    toolResults: step.toolResults.filter((r) => !refused.has(r.toolCallId)),
+    content: step.content.filter((p) => p.toolCallId === undefined || !refused.has(p.toolCallId)),
+  }));
+}
+
+/** Records the turn's output, as indented JSON, tells the caller, and returns that JSON; a value JSON can't write is an invalid output. */
+async function finishOutput(history: SessionHistory, deps: Parameters<typeof runTurn>[2], output: TurnOutput, attempts: number, steps: StepInfo[]): Promise<string> {
+  let text: string;
+  try {
+    text = JSON.stringify(output.value, null, 2) ?? "null";
+  } catch (err) {
+    throw new TurnOutputError("output-invalid", { attempts, lastError: `the value can't be written as JSON: ${err instanceof Error ? err.message : String(err)}` });
+  }
+  await history.addAssistantMessage(text, turnCalls(steps, deps.resumed));
+  deps.onOutput?.(output, attempts);
+  return text;
+}
+
+/**
+ * A turn whose instance asks for an output other than text (see
+ * `turn-output.ts`): the answer is the output's JSON, never the model's text
+ * (which still reaches `onTextChunk`, for a caller watching it), the model is told the
+ * exact error of a refused or missing output and tries again up to
+ * `retries` times, then the turn throws a `TurnOutputError`. Nothing of the
+ * failed attempts is kept in the history. A turn that staged an action or
+ * asked for a login ends as a text turn does.
+ */
+async function generateOutput(history: SessionHistory, deps: Parameters<typeof runTurn>[2], output: RunOutput, messages: ModelMessage[]): Promise<string> {
+  if (output.mode === "tool") {
+    const { probe, retries, tool } = output;
+    if (!probe.offered) throw new TurnOutputError("output-tool-unavailable", { attempts: 0, lastError: `the tool "${tool}" isn't offered on this turn` });
+    let missing = 0;
+    const spent = () => probe.failures + missing > retries;
+    const steps: StepInfo[] = [];
+    let current = messages;
+    for (let round = 0; ; round++) {
+      const call = await callModel(deps, current, [() => probe.accepted !== undefined || spent()], deps.onTextChunk);
+      steps.push(...call.steps);
+      if (call.aborted) {
+        await history.addAssistantMessage(ABORTED_MARKER);
+        return "";
+      }
+      const accepted = probe.accepted;
+      if (accepted !== undefined) return finishOutput(history, deps, { mode: "tool", value: accepted.value }, probe.failures + missing + 1, withoutRefused(steps, probe.refused));
+      if (endedTheTurn(call.lastStep)) return finishText(history, deps, call, withoutRefused(steps, probe.refused));
+      if (spent()) throw new TurnOutputError("output-invalid", { attempts: probe.failures + missing, ...(probe.lastError === undefined ? {} : { lastError: probe.lastError }) });
+      missing++;
+      if (spent()) throw new TurnOutputError("output-missing", { attempts: probe.failures + missing, lastError: `the turn ended without calling the tool "${tool}"` });
+      current = [
+        ...current,
+        ...stepMessages(call.steps, `retry-${round}`),
+        ...(call.text.trim().length > 0 ? [{ role: "assistant" as const, content: call.text }] : []),
+        { role: "user", content: missingToolNote(tool) },
+      ];
+    }
+  }
+
+  const { schema, validate, retries } = output;
+  let steps: StepInfo[] = [];
+  let current = messages;
+  if (Object.keys(deps.tools).length > 0) {
+    const call = await callModel(deps, current, [], deps.onTextChunk);
+    steps = call.steps;
+    if (call.aborted) {
+      await history.addAssistantMessage(ABORTED_MARKER);
+      return "";
+    }
+    if (endedTheTurn(call.lastStep)) return finishText(history, deps, call, steps);
+    current = [
+      ...current,
+      ...stepMessages(steps, "tools"),
+      ...(call.text.trim().length > 0 ? [{ role: "assistant" as const, content: call.text }] : []),
+      { role: "user", content: FINAL_JSON_NOTE },
+    ];
+  }
+  const generateObject = deps.generateObjectFn ?? defaultGenerateObjectFn;
+  let code: "output-missing" | "output-invalid" = "output-missing";
+  let lastError = "";
+  for (let attempt = 1; attempt <= retries + 1; attempt++) {
+    deps.onSilentCall?.(true);
+    let answer: Awaited<ReturnType<GenerateObjectFn>>;
+    try {
+      answer = await generateObject({ model: deps.model, messages: current, instructions: deps.system, schema, abortSignal: deps.abortSignal });
+    } finally {
+      deps.onSilentCall?.(false);
+    }
     if (deps.abortSignal?.aborted) {
       await history.addAssistantMessage(ABORTED_MARKER);
       return "";
     }
-    deps.onUsage?.((await result.usage)?.inputTokens);
-
-    if (fullText.trim().length === 0) {
-      fullText = resolveEmptyText(lastStep, deps.pendingNote ?? DEFAULT_PENDING_NOTE);
-      if (fullText.length > 0) deps.onPendingNote?.();
+    if (answer.ok) {
+      const verdict = await acceptOutput(answer.value, validate);
+      if (verdict.ok) return finishOutput(history, deps, { mode: "schema", value: answer.value }, attempt, steps);
+      code = "output-invalid";
+      lastError = verdict.error;
+    } else {
+      code = "output-missing";
+      lastError = answer.error;
     }
-    fullText = withLoginNote(lastStep, fullText, deps.loginNote ?? defaultLoginNote);
-
-    await history.addAssistantMessage(resolveHistoryText(lastStep, fullText), turnCalls(steps, deps.resumed));
-    return fullText;
+    current = [...current, { role: "assistant", content: answer.text }, { role: "user", content: invalidJsonNote(lastError) }];
   }
-
-  const generate = deps.generateTextFn ?? defaultGenerateTextFn;
-  let lastStep: StepInfo | undefined;
-  const result = await generate({
-    model: deps.model,
-    messages,
-    tools: deps.tools,
-    instructions: deps.system,
-    abortSignal: deps.abortSignal,
-    onStepEnd: (step) => {
-      lastStep = step;
-      steps.push(step);
-      deps.onStepFinish?.(step);
-    },
-  });
-  deps.onUsage?.(result.usage?.inputTokens);
-  if (result.finishReason !== undefined) deps.onFinish?.(result.finishReason);
-  if (deps.abortSignal?.aborted) {
-    await history.addAssistantMessage(ABORTED_MARKER);
-    return "";
-  }
-
-  const text = result.text.trim().length === 0 ? resolveEmptyText(lastStep, deps.pendingNote ?? DEFAULT_PENDING_NOTE) : result.text;
-  if (result.text.trim().length === 0 && text.length > 0) deps.onPendingNote?.();
-  const answer = withLoginNote(lastStep, text, deps.loginNote ?? defaultLoginNote);
-  await history.addAssistantMessage(resolveHistoryText(lastStep, answer), turnCalls(steps, deps.resumed));
-  return answer;
+  throw new TurnOutputError(code, { attempts: retries + 1, lastError });
 }
