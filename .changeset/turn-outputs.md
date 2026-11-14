@@ -13,7 +13,8 @@
 - with an output other than text: no answer streamed, no post-turn guards, no displays appended, an opening turn says nothing; the conversation keeps the value as indented JSON
 - `toolOf`, `TurnOutputConfig`, `Validate`, `OutputVerdict` exported by `@mercury-fw/core`
 - `ChannelPlugin.outputs` declares the outputs a channel takes besides text (`channelOutputs`); an agent whose `output` a channel doesn't take doesn't start
-- `ChannelPlugin<O>`: a channel's type says the outputs it takes (`ChannelPlugin<"tool" | "schema">`, a plain `ChannelPlugin` text only), and `defineMercuryConfig` refuses an `output` one of the `channels` doesn't take
+- `ChannelPlugin<O>`: a channel's type says the outputs it takes (`ChannelPlugin<"tool" | "schema">`, a plain `ChannelPlugin` text only), and `defineMercuryConfig` refuses an `output` one of the `channels` doesn't take; a channel declaring `outputs` besides text is typed `ChannelPlugin<…>` with them
+- with `output: { tool }` and the tool also offered as Mercury (`<name>AsSelf`), the model asked to call it is told about both
 - `FinalizeInfo.output`: a turn's `{ mode, value }`, beside the value as indented JSON
 - `TurnRecordOfTurn.answer.output`, with the types `OutputMode` and `TurnOutput`
 - a `turn.output` trace event: mode, attempts, outcome
