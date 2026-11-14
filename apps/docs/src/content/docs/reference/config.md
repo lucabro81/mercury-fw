@@ -324,6 +324,34 @@ these until the configuration no longer allows them. See
 
 Left out, nothing is added to what the model reads, and no conversation is kept: the model reads each message alone.
 
+## `output`
+
+What a turn returns. See [What a turn returns](../../concepts/turn-output/).
+
+```ts
+import { toolOf } from "@mercury-fw/core";
+
+output: { tool: toolOf(catalog, "catalog_query_build"), validate: validateQuery, retries: 2 },
+```
+
+| Value | The turn returns |
+|---|---|
+| `"text"`, or left out | the model's text |
+| `{ tool: toolOf(plugin, name) }` | the whole result of the tool `name` of `plugin`, `display` included, once it's accepted; the model takes no further step |
+| `{ schema }` | an object matching `schema` (a Zod schema, for one) |
+
+Both objects take two more fields:
+
+- `validate` checks each value the model gives: a function the plugin exports, returning `{ ok: true }` or
+  `{ ok: false, error }`. The model is told `error` and tries again. A tool result with `ok: false` is refused
+  before `validate` is asked.
+- `retries` is how many times the model tries again after a refused or missing value: a whole number from 0 up, 2
+  when left out. Once they're spent the turn fails with a `TurnOutputError`.
+
+The agent doesn't start when the tool's plugin isn't in [`plugins`](#plugins), when `retries` isn't a whole number
+from 0 up, or when one of its [`channels`](#channels) doesn't take the output (Google Chat takes text only, the HTTP
+channel all three): the log names the channel and the output.
+
 ## `traces`
 
 Where the record of what the agent does goes, event by event, and how much each event carries. See

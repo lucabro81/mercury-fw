@@ -109,7 +109,8 @@ execute: async ({ query }) => ({ ok: true, query, display: { type: "search-link"
 
 Mercury takes `display` out before the model sees the result, so the model reads `query` and a reference, never the
 list itself. The plugin exports the kinds it hands over as a type (as Jira does with `JiraDisplays`), so the app's
-rules for them are checked too.
+rules for them are checked too. [What a turn returns](../turn-output/) follows a display from the tool's result to
+what the person sees, next to the checks a plugin can run on the finished answer (guards).
 
 ## After a turn, and when a conversation closes
 
