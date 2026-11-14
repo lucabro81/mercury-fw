@@ -101,10 +101,13 @@ schema, or gives a value that's well formed but wrong (a query with a field that
 Mercury tells the model the exact error and lets it try again:
 
 - a tool result that says it failed (`ok: false`) reaches the model as it is: the tool's own error is the most
-  precise one there is;
+  precise one there is. A tool that throws counts the same way, the model reading its error;
 - `validate`, when there is one, checks every value further: a function the plugin exports, which knows things the
   schema can't say (the grammar of a query language, the fields of a catalog). Its error is what the model reads;
 - text instead of the tool call, or JSON that doesn't parse, gets a sentence saying what was expected.
+
+A value JSON can't write (one that refers to itself, say) is refused too, and ends the turn at once: the tool would
+return it again.
 
 `retries` (2 when left out) is how many times the model tries again. Every attempt is another model step, so it
 costs time, and the failed ones aren't kept in the conversation: the next turn reads the person's message and the
@@ -117,7 +120,7 @@ that gets something that looks like an answer, and isn't, is worse off than one 
 | `code` | Why |
 |---|---|
 | `output-missing` | the model never gave one: it wrote text instead of calling the tool, or JSON that doesn't parse or doesn't match the schema |
-| `output-invalid` | it gave one, and the tool or `validate` refused it |
+| `output-invalid` | it gave one, and the tool (by failing or throwing) or `validate` refused it, or JSON can't write it |
 | `output-tool-unavailable` | the tool isn't offered on this turn (the person's roles don't include its plugin, or it didn't build) |
 
 The error also says how many attempts there were (`attempts`) and the last error the model was told (`lastError`).
