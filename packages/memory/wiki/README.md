@@ -97,11 +97,24 @@ The review's `write_curated` and `delete_curated` refuse a locked document. When
 
 | Kind | Opened by | `accept` | `reject` |
 |---|---|---|---|
-| `locked` | the review, on a locked note it would have changed | the proposed text, still locked | nothing changes |
-| `curated` | the dreaming pass, on a note it contests | the proposed text, `status: validated` | the text kept, `status: validated` |
-| `standard` | the dreaming pass, on a learned standard that keeps failing | the standard deleted, with its index line (the corrections plugin learns it again) | `status: validated` |
+| `locked` | the review, on a locked note it would have changed | the proposed text, still locked | nothing changes, the entry just closes |
+| `curated` | nothing yet (a check of the notes against the conversations they were used in, in a later release) | the proposed text, `status: validated` | the text kept, `status: validated` |
+| `standard` | nothing yet (the same later check, on a learned standard that keeps failing) | the standard deleted, with its index line (the corrections plugin learns it again) | `status: validated` |
 
-`status` and `validated_at` (when it was decided) go in the note's frontmatter.
+### A note's frontmatter
+
+What the wiki's own writers put at the top of a note, besides `type`:
+
+| Field | On | Set by |
+|---|---|---|
+| `author` | curated documents | `mfw vault write-curated --author`; `mercury-review` when the nightly review wrote it |
+| `last_updated` | curated documents, a person's notes | whoever wrote it, as a date |
+| `locked: true` | curated documents, a person's notes | `mfw vault lock` or by hand; `write_file` when the person asks |
+| `status` | any note | `validated` when a person decided a review entry on it; `unverified`, `verified` and `contested` are kept for the later check of the notes, nothing writes them yet |
+| `validated_at` | any note | when a person decided a review entry on it |
+| `verified_at`, `evidence` | any note | kept for the same later check (when it last looked, the turns its verdict rests on); nothing writes them yet |
+
+A learned standard and a person's `inferred/` notes also carry `source`, `confidence`, `derived_from` and `last_reviewed`, written by the consolidation (see [What the memory writes here](#what-the-memory-writes-here)). A note the review or the consolidation rewrites loses its `status`: new text, nothing decided on it yet.
 
 ## What the memory writes here
 

@@ -191,14 +191,14 @@ Examples:
   vault
     .command("write-raw")
     .summary("writes raw material from stdin")
-    .description("Writes raw material for the nightly review to triage, the body read from stdin.")
+    .description("Writes raw material for the nightly review to triage, the body read from stdin. An entry over 64 KiB is refused: the review triages only smaller ones.")
     .argument("<path>", "raw/…, vault-relative")
     .action(async (path: string) => inApp((app) => app.vault(["write-raw", path]))());
   const review = vault
     .command("review")
     .summary("what the nightly passes left for a person to decide")
     .description(
-      "Lists and decides the review entries the nightly passes open (review/…): a curated note the dreaming pass contests, a learned standard that keeps failing, a locked note the review would have changed.",
+      "Lists and decides the review entries the nightly review opens (review/…), on a locked note it would have changed.",
     )
     .helpCommand(false);
   review
@@ -223,13 +223,13 @@ Examples:
   review
     .command("reject")
     .summary("keeps the note as it is")
-    .description("Closes an entry keeping the note as it is, marked validated so it isn't contested again without new evidence.")
+    .description("Closes an entry keeping the note as it is: marked validated, except a locked note's, whose entry just closes.")
     .argument("<id>", "as mfw vault review list prints it")
     .action(async (id: string) => inApp((app) => app.vault(["review", "reject", id]))());
   vault
     .command("lock")
     .summary("a curated doc only people change")
-    .description("Locks a curated doc: the nightly review and the dreaming pass leave it alone, only people change it.")
+    .description("Locks a curated doc: the nightly review leaves it alone, only people change it.")
     .argument("<path>", "curated/…, vault-relative")
     .action(async (path: string) => inApp((app) => app.vault(["lock", path]))());
   vault

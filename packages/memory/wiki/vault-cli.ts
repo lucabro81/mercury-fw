@@ -111,8 +111,9 @@ async function main(): Promise<void> {
         process.exit(1);
       }
       const entry = body.trimEnd();
-      if (rawEntryOverLimit(entry)) {
-        const size = Buffer.byteLength(entry, "utf-8");
+      // Measured as it lands in raw/, with the final newline writeRawEntry adds: what the triage measures.
+      if (rawEntryOverLimit(`${entry}\n`)) {
+        const size = Buffer.byteLength(`${entry}\n`, "utf-8");
         console.error(
           `${vaultRelativePath} is over the raw/ limit (${size} bytes, the limit is ${RAW_MAX_BYTES}): the nightly review triages only smaller entries`,
         );

@@ -146,7 +146,7 @@ Maintains the wiki vault, which lives on a Docker volume and not in the app's fo
 | `review list` | The open review entries, one per line: id, kind, note, when it was opened (`no review entries` when there are none). |
 | `review show <id>` | One entry: its note, why it was opened, the turns behind it, the text proposed in the note's place. |
 | `review accept <id>` | Applies the entry and closes it: a curated or locked note gets the proposed text, a learned standard is deleted. |
-| `review reject <id>` | Closes the entry keeping the note as it is, marked `validated`. |
+| `review reject <id>` | Closes the entry keeping the note as it is, marked `validated` (a locked note's entry just closes). |
 | `lock <path>` / `unlock <path>` | Locks or unlocks a curated document: locked, only people change it. A learned standard (`curated/standards/`, written by counting) is locked through the wiki's `locked` paths instead. |
 
 The wiki's [README](../../packages/memory/wiki/README.md#review-entries) says what each kind of review entry is and what deciding it does.

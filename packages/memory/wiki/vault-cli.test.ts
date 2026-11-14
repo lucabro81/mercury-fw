@@ -77,8 +77,9 @@ describe("vault-cli grep", () => {
 });
 
 describe("vault-cli write-raw", () => {
-  test("an entry over the raw/ limit is refused, exit 1, nothing written", async () => {
-    const r = await run(["write-raw", "raw/huge.md"], "x".repeat(64 * 1024 + 1));
+  // The limit is on the file that lands in raw/ (the entry and its final newline), the same the triage measures.
+  test("an entry whose file would be over the raw/ limit is refused, exit 1, nothing written", async () => {
+    const r = await run(["write-raw", "raw/huge.md"], "x".repeat(64 * 1024));
     expect(r).toEqual({
       code: 1,
       stdout: "",
@@ -87,9 +88,12 @@ describe("vault-cli write-raw", () => {
     expect(await Bun.file(join(vault, "raw", "huge.md")).exists()).toBe(false);
   });
 
-  test("an entry at the limit is written", async () => {
-    expect((await run(["write-raw", "raw/full.md"], "x".repeat(64 * 1024))).code).toBe(0);
-    expect(await Bun.file(join(vault, "raw", "full.md")).exists()).toBe(true);
+  test("an entry whose file is exactly at the limit is written, and the triage takes it", async () => {
+    expect((await run(["write-raw", "raw/full.md"], "x".repeat(64 * 1024 - 1))).code).toBe(0);
+    const { triageableRawEntries } = await import("./raw-limit.ts");
+    const logs: string[] = [];
+    expect(await triageableRawEntries(vault, ["raw/full.md"], (m) => logs.push(m))).toEqual(["raw/full.md"]);
+    expect(logs).toEqual([]);
   });
 });
 
