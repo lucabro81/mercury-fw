@@ -1,5 +1,15 @@
 # @mercury-fw/corrections
 
+## 0.77.0
+
+### Patch Changes
+
+- Updated dependencies [22bb67b]
+- Updated dependencies [22bb67b]
+- Updated dependencies [63777b4]
+  - @mercury-fw/wiki@0.77.0
+  - @mercury-fw/plugin-types@0.77.0
+
 ## 0.76.0
 
 ### Patch Changes

@@ -1,5 +1,16 @@
 # skill-trainer
 
+## 0.0.31
+
+### Patch Changes
+
+- Updated dependencies [22bb67b]
+- Updated dependencies [63777b4]
+  - @mercury-fw/cli@0.77.0
+  - @mercury-fw/core@0.77.0
+  - @mercury-fw/plugin-types@0.77.0
+  - @mercury-fw/cli-engine@0.77.0
+
 ## 0.0.30
 
 ### Patch Changes

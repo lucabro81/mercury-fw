@@ -1,5 +1,32 @@
 # @mercury-fw/cli
 
+## 0.77.0
+
+### Minor Changes
+
+- 22bb67b: - `wiki({ review: { dreaming: {} } })` adds the dreaming pass at the end of the nightly review: notes used since the last pass, and curated documents the review wrote, checked against the conversations they were used in
+  - dreaming sets `status` (`unverified`, `verified`, `contested`), `verified_at` and `evidence` on the notes it checks, rewrites a person's note a conversation contradicts, and opens `curated` and `standard` entries in `review/`
+  - with dreaming on, the model tells the person when its answer relies on a note marked `contested` or `unverified`
+  - `review.dreaming.k`: how many distinct conversations decide a status, 3 by default
+  - with dreaming on, the wiki needs the conversation store (`needs: ["conversationStore"]`) and records the notes each turn read (`onTurnRecord`, in its data folder)
+  - `review.at` is optional, `"03:00"` when left out
+  - `mfw create`: new apps declare `wiki({ review: { dreaming: {} } })`
+  - **Migration:** to turn dreaming on in an existing app, write `const teamWiki = wiki({ review: { dreaming: {} } });` in `mercury.config.ts`
+- 63777b4: - notes take `status`, `verified_at`, `evidence` and `validated_at` in their frontmatter
+  - the nightly review signs the curated documents it writes `author: mercury-review`
+  - `raw/` entries over 64 KiB are left out of the triage, logged; `mfw vault write-raw` refuses them
+  - locked notes: `locked: true` in a note's frontmatter, or `wiki({ locked: ["curated/…"] })` for whole folders; the nightly review doesn't change or delete them
+  - `notes.promoteCorrection` leaves a standard under a `locked` path alone and resolves `locked`
+  - `write_file` takes `locked`, set only when the person asks; left out, a note keeps its lock
+  - the nightly review opens an entry in `review/` on a locked note it would have changed (`flag_for_review`)
+  - `mfw vault review list|show|accept|reject <id>` decides the entries in `review/`
+  - `mfw vault lock|unlock <path>` locks a curated document
+
+### Patch Changes
+
+- @mercury-fw/core@0.77.0
+- @mercury-fw/utils@0.77.0
+
 ## 0.76.0
 
 ### Minor Changes
