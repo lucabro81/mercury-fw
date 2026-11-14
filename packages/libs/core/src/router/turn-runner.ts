@@ -450,8 +450,8 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
         ...(context ? [context] : []),
         ...(turn.opening ? [OPENING_NOTE(savesName)] : name === undefined ? [] : [PREFERRED_NAME_NOTE(name)]),
         ...(language === undefined ? [] : [PREFERRED_LANGUAGE_NOTE(language)]),
-        // Last, where a small model pays the most attention.
-        ...(shown.length > 0 ? [SHOWN_LISTS_NOTE(shown)] : []),
+        // Last, where a small model pays the most attention; a turn with an output presents nothing.
+        ...(shown.length > 0 && deps.output === undefined ? [SHOWN_LISTS_NOTE(shown)] : []),
       ].join("\n\n");
     const message = resumed ? RESUMED_LINE(resumed) : turn.opening ? OPENING_CUE : turn.text;
     // On the model's input only: the archive keeps `turn.text` and its own timestamp.
@@ -630,8 +630,11 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
             outputTool,
           )
         : deps.buildTools(turn.sessionKey, key, who, sink.onToolStart, sink.onToolFinish, turn.languageHint, outputTool);
+      // No display is appended to an output, so a turn with one has nothing to `present`.
+      const { present: _present, ...withoutPresent } = built;
+      const offered = output === undefined ? built : withoutPresent;
       // A schema turn with no tool of a plugin's is one constrained call: the core's own tools alone are nothing to look up.
-      const tools = output?.mode === "schema" && Object.keys(built).every((name) => CORE_ONLY_TOOLS.has(name)) ? {} : built;
+      const tools = output?.mode === "schema" && Object.keys(offered).every((name) => CORE_ONLY_TOOLS.has(name)) ? {} : offered;
       const text = await (deps.runTurnFn ?? runTurn)(history, input, {
         model: deps.model,
         tools,

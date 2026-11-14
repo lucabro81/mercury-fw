@@ -1544,3 +1544,20 @@ describe("runTurn: the turn's context", () => {
     }
   });
 });
+
+// Regression (#406): ai-sdk-ollama's synthesis made one more model call after a turn's output, its text thrown away
+// (about 7 s live) and its own tool calls never run; a turn with an output turns it off, a text turn keeps it.
+describe("synthesis in the param builders (#406)", () => {
+  const base = { model: "fake-model" as never, messages: [], tools: {}, instructions: SYSTEM };
+
+  it("synthesis: false turns ai-sdk-ollama's synthesis off, on both paths", () => {
+    expect(buildStreamTextParams({ ...base, synthesis: false })).toMatchObject({ enhancedOptions: { enableStreamingSynthesis: false } });
+    expect(buildGenerateTextParams({ ...base, synthesis: false })).toMatchObject({ enhancedOptions: { enableSynthesis: false } });
+    expect("synthesis" in buildStreamTextParams({ ...base, synthesis: false })).toBe(false);
+  });
+
+  it("left out, the builders pass no enhancedOptions: ai-sdk-ollama's defaults", () => {
+    expect("enhancedOptions" in buildStreamTextParams(base)).toBe(false);
+    expect("enhancedOptions" in buildGenerateTextParams(base)).toBe(false);
+  });
+});

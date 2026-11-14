@@ -184,6 +184,8 @@ type GenerateTextFn = (params: {
   abortSignal?: AbortSignal;
   /** Conditions that end the tool loop besides the turn's own (see `buildGenerateTextParams`). */
   stopWhen?: StopCondition<any>[];
+  /** `false` turns off ai-sdk-ollama's synthesis of text after tool calls: a turn with an output wants none. */
+  synthesis?: false;
 }) => Promise<{ text: string; usage?: { inputTokens: number | undefined }; finishReason?: string }>;
 
 /**
@@ -256,6 +258,8 @@ type StreamTextFn = (params: {
   abortSignal?: AbortSignal;
   /** Conditions that end the tool loop besides the turn's own (see `buildGenerateTextParams`). */
   stopWhen?: StopCondition<any>[];
+  /** `false` turns off ai-sdk-ollama's synthesis of text after tool calls: a turn with an output wants none. */
+  synthesis?: false;
 }) => Promise<{
   stream: AsyncIterable<StreamPart>;
   usage?: PromiseLike<{ inputTokens: number | undefined }>;
@@ -295,7 +299,8 @@ type StreamTextFn = (params: {
  * `generateText` is a drop-in replacement (same params/return shape)
  * that specifically synthesizes a real response when this happens —
  * documented as a known Ollama-provider quirk, not something to patch
- * around here by hand.
+ * around here by hand. `synthesis: false` turns it off, for a turn with an
+ * output, whose loop stops on tool calls and has no use for that text.
  */
 export function buildGenerateTextParams(params: {
   model: LanguageModel;
@@ -305,9 +310,14 @@ export function buildGenerateTextParams(params: {
   onStepEnd?: (step: StepInfo) => void;
   abortSignal?: AbortSignal;
   stopWhen?: StopCondition<any>[];
+  synthesis?: false;
 }) {
-  const { stopWhen = [], ...rest } = params;
-  return { ...rest, stopWhen: [isStepCount(100), pendingConfirmationStop(), loginRequiredStop(), ...stopWhen] };
+  const { stopWhen = [], synthesis, ...rest } = params;
+  return {
+    ...rest,
+    stopWhen: [isStepCount(100), pendingConfirmationStop(), loginRequiredStop(), ...stopWhen],
+    ...(synthesis === false ? { enhancedOptions: { enableSynthesis: false } } : {}),
+  };
 }
 
 /** Default production implementation: calls the real `generateText` from `ai`. */
@@ -321,7 +331,8 @@ const defaultGenerateTextFn: GenerateTextFn = (params) =>
  * `streamText` carries its own equivalent of the empty-text-after-
  * tool-call fix (`enableStreamingSynthesis`, on by default) — verified by
  * reading its source before relying on it, not assumed from the
- * non-streaming behavior.
+ * non-streaming behavior. `synthesis: false` turns it off, as for
+ * `buildGenerateTextParams`.
  */
 export function buildStreamTextParams(params: {
   model: LanguageModel;
@@ -331,9 +342,14 @@ export function buildStreamTextParams(params: {
   onStepEnd?: (step: StepInfo) => void;
   abortSignal?: AbortSignal;
   stopWhen?: StopCondition<any>[];
+  synthesis?: false;
 }) {
-  const { stopWhen = [], ...rest } = params;
-  return { ...rest, stopWhen: [isStepCount(100), pendingConfirmationStop(), loginRequiredStop(), ...stopWhen] };
+  const { stopWhen = [], synthesis, ...rest } = params;
+  return {
+    ...rest,
+    stopWhen: [isStepCount(100), pendingConfirmationStop(), loginRequiredStop(), ...stopWhen],
+    ...(synthesis === false ? { enhancedOptions: { enableStreamingSynthesis: false } } : {}),
+  };
 }
 
 /** Default production implementation: calls the real `streamText` from `ai-sdk-ollama`. */
@@ -513,6 +529,8 @@ async function callModel(
     instructions: deps.system,
     abortSignal: deps.abortSignal,
     ...(stopWhen.length > 0 ? { stopWhen } : {}),
+    // The tool loop of a turn with an output stops on tool calls: text synthesized after them is thrown away.
+    ...(deps.output === undefined ? {} : { synthesis: false as const }),
     onStepEnd: (step: StepInfo) => {
       lastStep = step;
       steps.push(step);
