@@ -108,7 +108,8 @@ Mercury tells the model the exact error and lets it try again:
 
 `retries` (2 when left out) is how many times the model tries again. Every attempt is another model step, so it
 costs time, and the failed ones aren't kept in the conversation: the next turn reads the person's message and the
-value that came, nothing else.
+value that came, with the tool calls that led to it (a call to the output tool that was refused isn't one of
+them).
 
 When the retries are spent, the turn fails with a `TurnOutputError`. Text never stands in for the value: a controller
 that gets something that looks like an answer, and isn't, is worse off than one told why there's none.

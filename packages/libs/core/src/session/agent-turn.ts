@@ -652,9 +652,24 @@ function stepMessages(steps: StepInfo[], idPrefix: string): ModelMessage[] {
 const endedTheTurn = (step: StepInfo | undefined): boolean =>
   step !== undefined && (detectPendingConfirmation(step) !== null || detectLoginRequests(step).length > 0);
 
-/** Records the turn's output, as indented JSON, tells the caller, and returns that JSON. */
+/** `steps` without the calls in `refused` (failed attempts at the output). */
+function withoutRefused(steps: StepInfo[], refused: ReadonlySet<string>): StepInfo[] {
+  if (refused.size === 0) return steps;
+  return steps.map((step) => ({
+    toolCalls: step.toolCalls.filter((c) => !refused.has(c.toolCallId)),
+    toolResults: step.toolResults.filter((r) => !refused.has(r.toolCallId)),
+    content: step.content.filter((p) => p.toolCallId === undefined || !refused.has(p.toolCallId)),
+  }));
+}
+
+/** Records the turn's output, as indented JSON, tells the caller, and returns that JSON; a value JSON can't write is an invalid output. */
 async function finishOutput(history: SessionHistory, deps: Parameters<typeof runTurn>[2], output: TurnOutput, attempts: number, steps: StepInfo[]): Promise<string> {
-  const text = JSON.stringify(output.value, null, 2) ?? "null";
+  let text: string;
+  try {
+    text = JSON.stringify(output.value, null, 2) ?? "null";
+  } catch (err) {
+    throw new TurnOutputError("output-invalid", { attempts, lastError: `the value can't be written as JSON: ${err instanceof Error ? err.message : String(err)}` });
+  }
   await history.addAssistantMessage(text, turnCalls(steps, deps.resumed));
   deps.onOutput?.(output, attempts);
   return text;
@@ -685,8 +700,8 @@ async function generateOutput(history: SessionHistory, deps: Parameters<typeof r
         return "";
       }
       const accepted = probe.accepted;
-      if (accepted !== undefined) return finishOutput(history, deps, { mode: "tool", value: accepted.value }, probe.failures + missing + 1, steps);
-      if (endedTheTurn(call.lastStep)) return finishText(history, deps, call, steps);
+      if (accepted !== undefined) return finishOutput(history, deps, { mode: "tool", value: accepted.value }, probe.failures + missing + 1, withoutRefused(steps, probe.refused));
+      if (endedTheTurn(call.lastStep)) return finishText(history, deps, call, withoutRefused(steps, probe.refused));
       if (spent()) throw new TurnOutputError("output-invalid", { attempts: probe.failures + missing, ...(probe.lastError === undefined ? {} : { lastError: probe.lastError }) });
       missing++;
       if (spent()) throw new TurnOutputError("output-missing", { attempts: probe.failures + missing, lastError: `the turn ended without calling the tool "${tool}"` });

@@ -109,6 +109,8 @@ export type OutputProbe = {
   readonly failures: number;
   /** The last refusal's error. */
   readonly lastError: string | undefined;
+  /** The calls (by `toolCallId`) whose result was refused: a failed attempt, kept out of the history. */
+  readonly refused: ReadonlySet<string>;
 };
 
 /** A probe for one turn, judging results with `validate` (see `OutputProbe`). */
@@ -117,6 +119,14 @@ export function createOutputProbe(validate?: Validate): OutputProbe {
   let accepted: { value: unknown } | undefined;
   let failures = 0;
   let lastError: string | undefined;
+  const refused = new Set<string>();
+  /** Counts a failed attempt of the call `options` names. */
+  const fail = (options: unknown, error: string) => {
+    failures++;
+    lastError = error;
+    const id = (options as { toolCallId?: unknown } | undefined)?.toolCallId;
+    if (typeof id === "string") refused.add(id);
+  };
   return {
     wrapTool(tool) {
       offered = true;
@@ -125,15 +135,21 @@ export function createOutputProbe(validate?: Validate): OutputProbe {
       return {
         ...tool,
         execute: async (input: unknown, options: unknown) => {
-          const raw = await (execute as (i: unknown, o: unknown) => unknown)(input, options);
+          let raw: unknown;
+          try {
+            raw = await (execute as (i: unknown, o: unknown) => unknown)(input, options);
+          } catch (err) {
+            // The model sees the throw as the tool's error, and it costs an attempt.
+            if (accepted === undefined) fail(options, `the tool failed: ${err instanceof Error ? err.message : String(err)}`);
+            throw err;
+          }
           if (accepted !== undefined) return raw;
           const verdict = await acceptOutput(raw, validate, { toolResult: true });
           if (verdict.ok) {
             accepted = { value: raw };
             return raw;
           }
-          failures++;
-          lastError = verdict.error;
+          fail(options, verdict.error);
           const toolFailed = typeof raw === "object" && raw !== null && (raw as { ok?: unknown }).ok === false;
           return toolFailed ? raw : { ok: false, error: verdict.error };
         },
@@ -151,5 +167,6 @@ export function createOutputProbe(validate?: Validate): OutputProbe {
     get lastError() {
       return lastError;
     },
+    refused,
   };
 }

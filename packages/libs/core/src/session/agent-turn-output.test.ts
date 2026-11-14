@@ -42,7 +42,12 @@ function scripted(rounds: Round[]) {
       const step: StepInfo = { toolCalls: [], toolResults: [], content: [] };
       for (const [j, c] of calls.entries()) {
         const id = `c${call}-${i}-${j}`;
-        const output = await (params.tools[c.tool]!.execute as (x: unknown, o: unknown) => Promise<unknown>)(c.input, {});
+        let output: unknown;
+        try {
+          output = await (params.tools[c.tool]!.execute as (x: unknown, o: unknown) => Promise<unknown>)(c.input, { toolCallId: id });
+        } catch (err) {
+          output = { thrown: String(err instanceof Error ? err.message : err) };
+        }
         step.toolCalls.push({ toolCallId: id, toolName: c.tool, input: c.input });
         results.push(output);
         step.toolResults.push({ toolCallId: id, toolName: c.tool, output });
@@ -219,6 +224,70 @@ describe("runTurn with output: { tool }", () => {
     expect(noted).toBe(true);
     expect(turn.outputs).toEqual([]);
     expect(history.getMessages().at(-1)!.content).toBe("[REQ:TOK1]");
+  });
+});
+
+describe("runTurn with output: { tool }, what the history keeps (#403 review)", () => {
+  // Regression: refused calls of the output tool were kept as the answer's calls.
+  it("keeps the accepted call and the other tools' calls, never a refused call of the output tool", async () => {
+    const history = keptHistory();
+    const lookup = toolOfFn(() => ({ ok: true, fields: ["title"] }));
+    const turn = toolTurn(toolOfFn(({ query }) => built(query)), { validate: (v) => ((v as { query: string }).query === "ok" ? { ok: true } : { ok: false, error: "no" }) });
+    const model = scripted([
+      { steps: [[{ tool: "lookup", input: { query: "t" } }], [{ tool: "build", input: { query: "bad" } }]], text: "done" },
+      { steps: [[{ tool: "build", input: { query: "ok" } }]] },
+    ]);
+
+    await runTurn(history, "q", { model: "m" as never, tools: { ...turn.tools, lookup }, system: SYSTEM, generateTextFn: model.fn, output: turn.output, onOutput: turn.onOutput });
+
+    const calls = history.getMessages().at(-1)!.calls!;
+    expect(calls.map((c) => [c.toolName, c.input])).toEqual([
+      ["lookup", { query: "t" }],
+      ["build", { query: "ok" }],
+    ]);
+  });
+
+  // Regression: a tool that threw was never counted, so retries didn't bound it.
+  it("a tool that throws counts as a failed attempt", async () => {
+    const history = keptHistory();
+    const turn = toolTurn(
+      toolOfFn(() => {
+        throw new Error("catalog down");
+      }),
+      { retries: 1 },
+    );
+    const model = scripted([{ steps: [[{ tool: "build", input: { query: "a" } }], [{ tool: "build", input: { query: "b" } }], [{ tool: "build", input: { query: "c" } }]] }]);
+
+    const err = await runTurn(history, "q", { model: "m" as never, tools: turn.tools, system: SYSTEM, generateTextFn: model.fn, output: turn.output }).catch((e) => e);
+
+    expect(err).toMatchObject({ code: "output-invalid", attempts: 2, lastError: "the tool failed: catalog down" });
+    // The model saw the throw as the tool's error.
+    expect(model.results).toEqual([{ thrown: "catalog down" }, { thrown: "catalog down" }]);
+  });
+
+  it("a turn resumed after a confirmation returns the output", async () => {
+    const history = keptHistory();
+    const turn = toolTurn(toolOfFn(({ query }) => built(query)));
+    const model = scripted([{ steps: [[{ tool: "build", input: { query: "dante" } }]] }]);
+    const resumed = { toolName: "stage", input: {}, output: { ok: true }, describe: "x" } as never;
+
+    await runTurn(history, "[Confirmed]", { model: "m" as never, tools: turn.tools, system: SYSTEM, generateTextFn: model.fn, output: turn.output, onOutput: turn.onOutput, resumed });
+
+    expect(turn.outputs).toEqual([{ output: { mode: "tool", value: built("dante") }, attempts: 1 }]);
+    expect(history.getMessages().at(-1)!.calls!.map((c) => c.toolName)).toEqual(["stage", "build"]);
+  });
+
+  // Regression: a value JSON can't write failed the turn with a plain error.
+  it("a value that can't be written as JSON is an invalid output", async () => {
+    const circular: Record<string, unknown> = { ok: true };
+    circular.self = circular;
+    const turn = toolTurn(toolOfFn(() => circular));
+    const model = scripted([{ steps: [[{ tool: "build", input: { query: "a" } }]] }]);
+
+    const err = await runTurn(keptHistory(), "q", { model: "m" as never, tools: turn.tools, system: SYSTEM, generateTextFn: model.fn, output: turn.output }).catch((e) => e);
+
+    expect(err).toMatchObject({ kind: "turn-output", code: "output-invalid", attempts: 1 });
+    expect(err.lastError).toStartWith("the value can't be written as JSON");
   });
 });
 
