@@ -141,7 +141,10 @@ paths:
             service the caller has to log in to first, with the link to open;
             one per service, and the turn ends after the step that asked),
             `final` (the
-            authoritative complete answer), and `error`.
+            authoritative complete answer, with the turn's `output` when the
+            agent returns one instead of text; nothing is streamed as `text`
+            then), and `error` (with a `code` when the turn didn't return
+            that output).
           headers:
             Content-Language:
               $ref: "#/components/headers/ContentLanguage"
@@ -931,9 +934,40 @@ components:
             action: the stand-in sentence `text` begins with (followed by any
             list the turn surfaced). A UI showing its own confirmation hides
             it; the conversation's transcript keeps it.
+        output:
+          type: object
+          description: >
+            On `final`, when the agent's configuration asks a turn to return a
+            tool's result (`tool`) or an object matching a schema (`schema`)
+            instead of text: the mode and the value. `text` is then the value
+            as indented JSON. Absent for a text answer, and when the turn only
+            staged an action (`pendingNote`).
+          required: [mode, value]
+          properties:
+            mode:
+              type: string
+              enum: [tool, schema]
+            value:
+              description: The tool's whole result, or the object.
         message:
           type: string
           description: On `error` — the failure message.
+        code:
+          type: string
+          enum: [output-missing, output-invalid, output-tool-unavailable]
+          description: >
+            On `error`, when the turn didn't return the output the agent's
+            configuration asks for: `output-missing` (the model never gave
+            one, or gave JSON that doesn't parse or match the schema),
+            `output-invalid` (the tool or the validator refused it),
+            `output-tool-unavailable` (the tool that ends the turn isn't
+            offered to the caller).
+        attempts:
+          type: integer
+          description: On an `error` with a `code` — how many times the model tried.
+        lastError:
+          type: string
+          description: On an `error` with a `code` — the error of the last attempt, the one the model was told.
     ConfirmRequest:
       type: object
       required: [token, conversationId]

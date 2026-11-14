@@ -1,6 +1,6 @@
 import { describe, it, expect } from "bun:test";
 import { contextRoutes, handleTurnRequest, handleConfirmRequest, handleLinkRequest, handleLoginCallback, openApiResponse, readRoutes, startHttpServer } from "./http-server.ts";
-import { type Admission, type Authenticate, type HandleTurn, type InboundTurn, type TurnSink, type ChannelContextAdmin, type ChannelConversations, type ChannelHostReads, type ChannelSettings, type Principal } from "@mercury-fw/channel-types";
+import { TurnOutputError, type Admission, type Authenticate, type HandleTurn, type InboundTurn, type TurnSink, type ChannelContextAdmin, type ChannelConversations, type ChannelHostReads, type ChannelSettings, type Principal } from "@mercury-fw/channel-types";
 import type { StepInfo } from "@mercury-fw/plugin-types";
 
 /**
@@ -1544,6 +1544,29 @@ describe("the caller's language", () => {
       authenticate: asAlice,
     });
     expect(await res.text()).toContain(`event: final\ndata: ${JSON.stringify({ text: "Action pending.", pendingNote: "Action pending." })}`);
+  });
+
+  it("hands a turn's output beside its JSON in the final event (#403)", async () => {
+    const output = { mode: "tool" as const, value: { ok: true, query: "author ~ 'dante'" } };
+    const text = JSON.stringify(output.value, null, 2);
+    const res = await handleTurnRequest(turnReq({ text: "books by dante", conversationId: "c" }), {
+      handleTurn: async (_turn, sink) => sink.finalize(text, { output }),
+      confirm: async () => null,
+      authenticate: asAlice,
+    });
+    expect(await res.text()).toContain(`event: final\ndata: ${JSON.stringify({ text, output })}`);
+  });
+
+  it("reports a turn with no output as a typed error event (#403)", async () => {
+    const res = await handleTurnRequest(turnReq({ text: "q", conversationId: "c" }), {
+      handleTurn: async () => {
+        throw new TurnOutputError("output-invalid", { attempts: 3, lastError: 'no field "titel"' });
+      },
+      confirm: async () => null,
+      authenticate: asAlice,
+    });
+    const error = { message: 'The turn\'s output is invalid after 3 attempts: no field "titel"', code: "output-invalid", attempts: 3, lastError: 'no field "titel"' };
+    expect(await res.text()).toContain(`event: error\ndata: ${JSON.stringify(error)}`);
   });
 
   it("resolves /confirm in the language asked for, and says it back", async () => {

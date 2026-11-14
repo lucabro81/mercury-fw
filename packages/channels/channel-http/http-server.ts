@@ -23,6 +23,7 @@
  * package never imports the app.
  */
 import {
+  isTurnOutputError,
   detectLoginRequests,
   detectPendingConfirmation,
   type HandleTurn,
@@ -271,8 +272,13 @@ export async function handleTurnRequest(req: Request, deps: TurnRequestDeps): Pr
         onUsage: () => {},
         // The core says when the text is its stand-in for an answer the
         // model didn't write: a UI showing its own confirmation hides it.
+        // An output other than text comes beside its JSON, for a controller.
         finalize: async (finalText, info) =>
-          send("final", info?.pendingNote === undefined ? { text: finalText } : { text: finalText, pendingNote: info.pendingNote }),
+          send("final", {
+            text: finalText,
+            ...(info?.pendingNote === undefined ? {} : { pendingNote: info.pendingNote }),
+            ...(info?.output === undefined ? {} : { output: info.output }),
+          }),
         dispose: () => {},
       };
 
@@ -299,7 +305,13 @@ export async function handleTurnRequest(req: Request, deps: TurnRequestDeps): Pr
         // A client-initiated cancellation is a clean stop, not a failure —
         // don't surface it as an `error` event (and there's no client left).
         if (!abort.signal.aborted) {
-          send("error", { message: err instanceof Error ? err.message : String(err) });
+          // A turn with no output of the kind the instance asks for says which and why.
+          send(
+            "error",
+            isTurnOutputError(err)
+              ? { message: err.message, code: err.code, attempts: err.attempts, ...(err.lastError === undefined ? {} : { lastError: err.lastError }) }
+              : { message: err instanceof Error ? err.message : String(err) },
+          );
         }
       }
       close();
