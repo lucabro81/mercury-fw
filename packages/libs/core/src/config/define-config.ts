@@ -120,7 +120,8 @@ export type MercuryConfig<P extends string = string> = {
    * the value further and `retries` (2 by default) is how many times the model
    * is told the exact error and tries again before the turn fails with a
    * `TurnOutputError`. Every channel must handle the output
-   * (`ChannelPlugin.outputs`), or the instance doesn't start.
+   * (`ChannelPlugin.outputs`), or the instance doesn't start; `defineMercuryConfig`
+   * refuses it at the type level when the channels' types say what they take.
    */
   output?: TurnOutputConfig;
   /** The app's version, as its `package.json` has it (`version: pkg.version`), shown next to the framework's on the HTTP channel's `GET /version`. Shown as is, never changed by Mercury. Left out (or empty), nothing is shown. */
