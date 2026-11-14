@@ -45,7 +45,7 @@ export function createWikiNotes(vaultPath: string, options: { locked?: readonly 
     promoteFact: (key, topic, cluster) =>
       consolidateSemanticFact(key, topic, { vaultPath, clusterFn: (_k, _t, limit) => cluster(limit), writeInferredNoteFn: writeInferredNote }),
     promoteCorrection: async (tool, topic, cluster) => {
-      // By the configured paths only: a standard is the consolidation's and carries no lock of its own.
+      // Checked only when the instance configures locked paths: that's how a standard, the consolidation's, is locked.
       if (locked.length > 0 && (await createLockCheck(vaultPath, locked)(`curated/standards/${tool}-${topic}.md`))) return "locked";
       return consolidateToolCorrection(tool, topic, { vaultPath, clusterFn: (_t, _p, limit) => cluster(limit), writeNoteFn: writeToolCorrectionNote });
     },
