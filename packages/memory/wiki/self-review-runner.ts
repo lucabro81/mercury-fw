@@ -36,9 +36,10 @@ async function runPass(params: {
   model: LanguageModel;
   instructions: string;
   userMessage: string;
+  locked?: readonly string[];
   generateTextFn?: GenerateTextFn;
 }): Promise<void> {
-  const tools = createSelfReviewTools({ vaultPath: params.vaultPath });
+  const tools = createSelfReviewTools({ vaultPath: params.vaultPath, locked: params.locked });
   const generate = params.generateTextFn ?? defaultGenerateTextFn;
   await generate({
     model: params.model,
@@ -55,7 +56,9 @@ const SHARED_BOUNDARIES =
   "no access to inferred/ — it is written exclusively by a separate deterministic process, never by " +
   "judgment calls like this one. Read a curated doc before you rewrite or delete it: write_curated and " +
   "delete_curated act only on the version you last read, because other writes can land while you work. " +
-  "If one says the doc changed since you read it, read it again and redo your edit on the current version.";
+  "If one says the doc changed since you read it, read it again and redo your edit on the current version. " +
+  "A locked doc is changed only by people: write_curated and delete_curated refuse it. When one looks wrong or " +
+  "contradicts another doc, call flag_for_review instead.";
 
 const RAW_TRIAGE_SYSTEM =
   "You are performing the wiki's periodic self-review — the raw/ triage pass. For each entry " +
@@ -82,6 +85,8 @@ const CONTRADICTION_CHECK_SYSTEM =
 export type RawTriagePassDeps = {
   vaultPath: string;
   model: LanguageModel;
+  /** The instance's locked paths (`wiki({ locked })`). */
+  locked?: readonly string[];
   rawEntries: string[];
   generateTextFn?: GenerateTextFn;
 };
@@ -93,6 +98,7 @@ export async function runRawTriagePass(deps: RawTriagePassDeps): Promise<void> {
     model: deps.model,
     instructions: RAW_TRIAGE_SYSTEM,
     userMessage,
+    locked: deps.locked,
     generateTextFn: deps.generateTextFn,
   });
 }
@@ -100,6 +106,8 @@ export async function runRawTriagePass(deps: RawTriagePassDeps): Promise<void> {
 export type IndexAndOrphanPassDeps = {
   vaultPath: string;
   model: LanguageModel;
+  /** The instance's locked paths (`wiki({ locked })`). */
+  locked?: readonly string[];
   orphans: string[];
   generateTextFn?: GenerateTextFn;
 };
@@ -114,6 +122,7 @@ export async function runIndexAndOrphanPass(deps: IndexAndOrphanPassDeps): Promi
     model: deps.model,
     instructions: INDEX_AND_ORPHAN_SYSTEM,
     userMessage,
+    locked: deps.locked,
     generateTextFn: deps.generateTextFn,
   });
 }
@@ -121,6 +130,8 @@ export async function runIndexAndOrphanPass(deps: IndexAndOrphanPassDeps): Promi
 export type ContradictionCheckPassDeps = {
   vaultPath: string;
   model: LanguageModel;
+  /** The instance's locked paths (`wiki({ locked })`). */
+  locked?: readonly string[];
   generateTextFn?: GenerateTextFn;
 };
 
@@ -130,6 +141,7 @@ export async function runContradictionCheckPass(deps: ContradictionCheckPassDeps
     model: deps.model,
     instructions: CONTRADICTION_CHECK_SYSTEM,
     userMessage: "Review curated/ for contradictions and missing cross-links.",
+    locked: deps.locked,
     generateTextFn: deps.generateTextFn,
   });
 }

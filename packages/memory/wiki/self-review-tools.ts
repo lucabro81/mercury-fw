@@ -28,9 +28,17 @@ import { z } from "zod";
 import { listWikiFilesInRoots, readWikiFileInRoots, grepWikiInRoots, selfReviewRoots } from "./wiki-read.ts";
 import { writeCuratedNote, updateIndexFile, deleteRawEntry, deleteCuratedEntry, relativeToCurated } from "./wiki-note.ts";
 import { normalizeIndexKey, upsertIndexEntry, removeIndexEntry } from "./index-entry.ts";
+import { createLockCheck } from "./locks.ts";
 import { RAW_MAX_BYTES, rawEntryOverLimit } from "./raw-limit.ts";
+import { openReview } from "./review-entries.ts";
 
-export type SelfReviewToolsDeps = { vaultPath: string };
+export type SelfReviewToolsDeps = {
+  vaultPath: string;
+  /** The instance's locked paths (`wiki({ locked })`), besides the notes locked in their frontmatter. */
+  locked?: readonly string[];
+  /** The clock a review entry is opened at. */
+  now?: () => string;
+};
 
 /** The author every curated doc the review writes carries: the dreaming pass checks those as the model's, not a person's. */
 export const REVIEW_AUTHOR = "mercury-review";
@@ -45,11 +53,16 @@ export function createSelfReviewTools(
   | "update_index_entry"
   | "remove_index_entry"
   | "delete_raw"
-  | "delete_curated",
+  | "delete_curated"
+  | "flag_for_review",
   ExecutableTool
 > {
   const { vaultPath } = deps;
   const roots = selfReviewRoots(vaultPath);
+  const isLocked = createLockCheck(vaultPath, deps.locked ?? []);
+  const now = deps.now ?? (() => new Date().toISOString());
+  const lockedError = (path: string) =>
+    `curated/${path} is locked: only people change it. If it's wrong or contradicts another doc, call flag_for_review`;
   // What read_file last returned for each curated doc, by its path under curated/.
   const readVersions = new Map<string, string>();
   const changedSinceRead = (path: string) =>
@@ -103,6 +116,7 @@ export function createSelfReviewTools(
       const target = relativeToCurated(path);
       const read = readVersions.get(target);
       try {
+        if (await isLocked(`curated/${target}`)) return { ok: false as const, error: lockedError(target) };
         const written = await writeCuratedNote(vaultPath, target, { author: REVIEW_AUTHOR }, content, {
           when: (current) => current === (read ?? null),
         });
@@ -187,6 +201,7 @@ export function createSelfReviewTools(
       const target = path.slice("curated/".length);
       const read = readVersions.get(target);
       try {
+        if (await isLocked(`curated/${target}`)) return { ok: false as const, error: lockedError(target) };
         // A doc that's already gone needs no read: deleting it is a no-op.
         const deleted = await deleteCuratedEntry(vaultPath, target, {
           when: (current) => current === null || current === read,
@@ -203,5 +218,29 @@ export function createSelfReviewTools(
     },
   });
 
-  return { list_files, read_file, grep, write_curated, update_index_entry, remove_index_entry, delete_raw, delete_curated };
+  const flag_for_review = tool({
+    description:
+      "For a locked curated doc (write_curated refuses it) that looks wrong or contradicts another doc: opens an entry a " +
+      'person decides on. "reason" says why in one sentence; "proposed", when you have one, is the text you\'d put in its place.',
+    inputSchema: z.object({ path: z.string().min(1), reason: z.string().min(1), proposed: z.string().optional() }),
+    execute: async ({ path, reason, proposed }) => {
+      const note = `curated/${relativeToCurated(path)}`;
+      try {
+        if (!(await isLocked(note))) return { ok: false as const, error: `${note} isn't locked: edit it with write_curated` };
+        const review = await openReview(vaultPath, {
+          note,
+          kind: "locked",
+          evidence: [],
+          opened_at: now(),
+          reason,
+          ...(proposed === undefined ? {} : { proposed }),
+        });
+        return { ok: true as const, review };
+      } catch (err) {
+        return { ok: false as const, error: String(err) };
+      }
+    },
+  });
+
+  return { list_files, read_file, grep, write_curated, update_index_entry, remove_index_entry, delete_raw, delete_curated, flag_for_review };
 }

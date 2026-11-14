@@ -388,7 +388,7 @@ export function relativeToCurated(path: string): string {
 export async function writeCuratedNote(
   vaultPath: string,
   relativePath: string,
-  fields: { author?: string; last_updated?: string },
+  fields: Omit<CuratedFrontmatter, "type">,
   body: string,
   condition: WriteCondition = {},
 ): Promise<boolean> {

@@ -390,3 +390,73 @@ describe("createSelfReviewTools", () => {
   });
 });
 
+
+describe("locked notes", () => {
+  type Result = { ok: true } | { ok: false; error: string };
+
+  it("write_curated refuses a note locked in its frontmatter, and the note stays as it was", async () => {
+    const vaultPath = await makeTempVault();
+    await writeCuratedNote(vaultPath, "policy.md", { locked: true }, "Policy.");
+    const before = await readFile(join(vaultPath, "curated/policy.md"), "utf-8");
+    const { read_file, write_curated } = createSelfReviewTools({ vaultPath });
+    await read_file.execute({ path: "curated/policy.md" }, {} as never);
+
+    const result = (await write_curated.execute({ path: "policy.md", content: "Changed." }, {} as never)) as Result;
+
+    expect(result).toEqual({
+      ok: false,
+      error: "curated/policy.md is locked: only people change it. If it's wrong or contradicts another doc, call flag_for_review",
+    });
+    expect(await readFile(join(vaultPath, "curated/policy.md"), "utf-8")).toBe(before);
+  });
+
+  it("write_curated refuses a path under a configured locked one, even a new doc", async () => {
+    const vaultPath = await makeTempVault();
+    const { write_curated } = createSelfReviewTools({ vaultPath, locked: ["curated/confluence/**"] });
+
+    const result = (await write_curated.execute({ path: "confluence/new.md", content: "X." }, {} as never)) as Result;
+
+    expect(result.ok).toBe(false);
+    expect(await Bun.file(join(vaultPath, "curated/confluence/new.md")).exists()).toBe(false);
+  });
+
+  it("delete_curated refuses a locked note", async () => {
+    const vaultPath = await makeTempVault();
+    await writeCuratedNote(vaultPath, "policy.md", { locked: true }, "Policy.");
+    const { read_file, delete_curated } = createSelfReviewTools({ vaultPath });
+    await read_file.execute({ path: "curated/policy.md" }, {} as never);
+
+    const result = (await delete_curated.execute({ path: "curated/policy.md" }, {} as never)) as Result;
+
+    expect(result.ok).toBe(false);
+    expect(await Bun.file(join(vaultPath, "curated/policy.md")).exists()).toBe(true);
+  });
+
+  it("flag_for_review opens a locked entry on a locked note, with the reason and the proposed text", async () => {
+    const vaultPath = await makeTempVault();
+    await writeCuratedNote(vaultPath, "policy.md", { locked: true }, "Tag first.");
+    const { flag_for_review } = createSelfReviewTools({ vaultPath, now: () => "2026-11-14T03:10:00.000Z" });
+
+    const result = await flag_for_review.execute(
+      { path: "curated/policy.md", reason: "release.md says to merge first.", proposed: "Merge first, then tag." },
+      {} as never,
+    );
+
+    expect(result).toEqual({ ok: true, review: "curated--policy" });
+    expect(await readFile(join(vaultPath, "review/curated--policy.md"), "utf-8")).toBe(
+      "---\nnote: curated/policy.md\nkind: locked\nevidence: []\nopened_at: 2026-11-14T03:10:00.000Z\n---\n\n" +
+        "release.md says to merge first.\n\n## Proposed\n\nMerge first, then tag.\n",
+    );
+  });
+
+  it("flag_for_review refuses a note that isn't locked: the review edits those itself", async () => {
+    const vaultPath = await makeTempVault();
+    await writeCuratedNote(vaultPath, "release.md", {}, "Tag first.");
+    const { flag_for_review } = createSelfReviewTools({ vaultPath });
+
+    const result = await flag_for_review.execute({ path: "curated/release.md", reason: "x" }, {} as never);
+
+    expect(result).toEqual({ ok: false, error: "curated/release.md isn't locked: edit it with write_curated" });
+    expect(await Bun.file(join(vaultPath, "review/curated--release.md")).exists()).toBe(false);
+  });
+});

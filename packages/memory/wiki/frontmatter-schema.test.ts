@@ -79,8 +79,8 @@ describe("InferredFrontmatterSchema", () => {
 
 
 describe("the status fields a reviewed note carries", () => {
-  const status = { status: "contested", verified_at: "2026-11-14T04:00:00.000Z", evidence: ["turn-1", "turn-2"], validated_at: "2026-11-15T10:00:00.000Z" };
-  const inferred = { type: "inferred", source: "agent", confidence: "low", derived_from: ["a"], last_reviewed: null };
+  const status = { status: "contested" as const, verified_at: "2026-11-14T04:00:00.000Z", evidence: ["turn-1", "turn-2"], validated_at: "2026-11-15T10:00:00.000Z" };
+  const inferred = { type: "inferred" as const, source: "agent" as const, confidence: "low" as const, derived_from: ["a"], last_reviewed: null };
 
   it("are accepted on a curated, a personal and an inferred note, and kept as written", () => {
     expect(CuratedFrontmatterSchema.parse({ type: "curated", ...status })).toEqual({ type: "curated", ...status });

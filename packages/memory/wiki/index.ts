@@ -15,6 +15,7 @@
 import { createWikiNotes, type WikiNotes } from "./notes.ts";
 import { resolve } from "node:path";
 import { PLUGIN_API_VERSION, type Plugin } from "@mercury-fw/plugin-types";
+import { assertLockPaths } from "./locks.ts";
 import { findOrphanCuratedDocs } from "./orphan-detector.ts";
 import { triageableRawEntries } from "./raw-limit.ts";
 import { runReview } from "./review.ts";
@@ -29,6 +30,8 @@ export type WikiOptions = {
   vaultPath?: string;
   /** When the nightly review runs: `at` (`"HH:MM"`) in `timeZone` (the instance's when absent); `false` for none. Every day at `"03:00"` when absent. */
   review?: { at: string; timeZone?: string } | false;
+  /** Paths under `curated/` (globs, e.g. `"curated/confluence/**"`) whose notes only people change, besides the notes locked in their frontmatter. */
+  locked?: string[];
 };
 
 /** When the review runs unless the instance says otherwise. */
@@ -76,6 +79,8 @@ export function wiki(options: WikiOptions = {}): WikiPlugin {
     throw new Error("wiki: no vault: pass vaultPath or set WIKI_VAULT_PATH to the folder, on a volume of its own, the wiki lives in");
   }
   const review = options.review === undefined ? { at: DEFAULT_REVIEW_AT } : options.review;
+  const locked = options.locked ?? [];
+  assertLockPaths(locked);
 
   return {
     notes: createWikiNotes(vaultPath),
@@ -100,9 +105,9 @@ export function wiki(options: WikiOptions = {}): WikiPlugin {
             listRawEntries: async () =>
               triageableRawEntries(vaultPath, await listWikiFilesInRoots(vaultPath, [resolve(vaultPath, "raw")]), ctx.log),
             findOrphans: () => findOrphanCuratedDocs(vaultPath),
-            runRawTriage: (rawEntries) => runRawTriagePass({ vaultPath, model, rawEntries }),
-            runIndexAndOrphan: (orphans) => runIndexAndOrphanPass({ vaultPath, model, orphans }),
-            runContradictionCheck: () => runContradictionCheckPass({ vaultPath, model }),
+            runRawTriage: (rawEntries) => runRawTriagePass({ vaultPath, model, rawEntries, locked }),
+            runIndexAndOrphan: (orphans) => runIndexAndOrphanPass({ vaultPath, model, orphans, locked }),
+            runContradictionCheck: () => runContradictionCheckPass({ vaultPath, model, locked }),
             job,
             log: ctx.log,
           }),

@@ -38,6 +38,7 @@ describe("runRawTriagePass", () => {
         "write_curated",
         "update_index_entry",
         "remove_index_entry",
+        "flag_for_review",
       ].sort(),
     );
     expect(received!.instructions).toContain("raw/");
@@ -108,6 +109,25 @@ describe("every pass", () => {
     for (const text of instructions) {
       expect(text).toContain("Read a curated doc before you rewrite or delete it");
       expect(text).toContain("read it again and redo your edit");
+      expect(text).toContain("A locked doc is changed only by people: write_curated and delete_curated refuse it. When one looks wrong or contradicts another doc, call flag_for_review instead.");
+    }
+  });
+
+  it("gets the instance's locked paths in its tools", async () => {
+    const tools: Record<string, Tool>[] = [];
+    const generateTextFn = async (params: ReceivedParams) => {
+      tools.push(params.tools);
+      return { text: "ok" };
+    };
+    const locked = ["curated/confluence/**"];
+
+    await runRawTriagePass({ vaultPath: VAULT_PATH, model: MODEL, rawEntries: [], locked, generateTextFn });
+    await runIndexAndOrphanPass({ vaultPath: VAULT_PATH, model: MODEL, orphans: [], locked, generateTextFn });
+    await runContradictionCheckPass({ vaultPath: VAULT_PATH, model: MODEL, locked, generateTextFn });
+
+    for (const set of tools) {
+      const result = await set.write_curated!.execute!({ path: "confluence/page.md", content: "x" }, {} as never);
+      expect(result).toMatchObject({ ok: false, error: expect.stringContaining("is locked") });
     }
   });
 });
