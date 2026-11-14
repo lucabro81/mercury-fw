@@ -126,7 +126,7 @@ With `review: { dreaming: {} }` the nightly run ends with a check of the notes a
 - every curated note and every person's note (`personal/notes/`) used since the last pass. A note nobody opened has no new conversation to be checked against, so it's left for a night when someone uses it;
 - every curated document the review wrote (`author: mercury-review`) that has no status yet, even unused, so what came from `raw/` is looked at the same night.
 
-What it counts lives in the plugin's data folder, which must be on a volume like the rest of Mercury's state: `uses.jsonl` (the uses waiting for the next pass, moved to `uses.taking.jsonl` and `uses.taken.jsonl` while a pass works on them) and `dreaming.json` (the counts of each note). Without a data folder, or without a conversation store, the log says `dreaming is off` and why, and nothing is recorded; a note the pass couldn't check says `dreaming: <note> not checked` and why.
+What it counts lives in the plugin's data folder, which must be on a volume like the rest of Mercury's state: `uses.jsonl` (the uses waiting for the next pass, moved to `uses.taking.jsonl` and `uses.taken.jsonl` while a pass works on them) and `dreaming.json` (the counts of each note). Without a data folder (an older core) the log says `dreaming is off` and why, and nothing is recorded; a note the pass couldn't check says `dreaming: <note> not checked` and why.
 
 It leaves alone locked notes, notes `contested` and waiting for a person, a person's `inferred/` notes (facts about them, already promoted by counting) and the operator's turns. It reads the conversations from the instance's conversation store, so with dreaming on the wiki needs one (`needs: ["conversationStore"]`): an app without it stops at startup.
 

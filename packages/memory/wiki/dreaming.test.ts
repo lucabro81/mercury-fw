@@ -366,6 +366,25 @@ describe("runDreaming", () => {
       expect((await readNote(base.vaultPath, "curated/release.md"))?.frontmatter.status).toBe("contested");
     });
 
+    // Regression: the counts behind a contest outlived the person's decision on the note (same text), so the
+    // next pass contested it again from the first later use.
+    it("once a person rejected its contest, isn't contested again by the counts from before", async () => {
+      const base = await setup();
+      await writeCuratedNote(base.vaultPath, "release.md", { status: "validated", validated_at: "2026-11-01T00:00:00.000Z" }, "Tag first.");
+      const against = (req: JudgeRequest): Judgment => ({ ...keep, contradictedBy: req.excerpts.map((e) => e.turnId), reason: "again" });
+      await appendUses(base.dataDir, ["s1", "s2", "s3"].map((s, i) => use("curated/release.md", ALICE, s, `t${i}`)));
+      await runDreaming(deps(base, judgeOf(against).judge).deps);
+      expect((await readNote(base.vaultPath, "curated/release.md"))?.frontmatter.status).toBe("contested");
+      const { decideReview } = await import("./review-entries.ts");
+      await decideReview(base.vaultPath, "curated--release", "reject", "2026-11-14T12:00:00.000Z");
+
+      await appendUses(base.dataDir, [use("curated/release.md", BOB, "s4", "t4", { at: "2026-11-15T10:00:00.000Z" })]);
+      await runDreaming(deps(base, judgeOf(against).judge).deps);
+
+      expect((await readNote(base.vaultPath, "curated/release.md"))?.frontmatter.status).toBe("validated");
+      expect(await listReviews(base.vaultPath)).toEqual([]);
+    });
+
     it("counts nothing from before the person's decision", async () => {
       const base = await setup();
       await writeCuratedNote(base.vaultPath, "release.md", { status: "validated", validated_at: "2026-11-20T00:00:00.000Z" }, "Tag first.");
