@@ -265,6 +265,18 @@ describe("runTurn with output: { tool }, what the history keeps (#403 review)", 
     expect(model.results).toEqual([{ thrown: "catalog down" }, { thrown: "catalog down" }]);
   });
 
+  it("a staged action after a refused attempt ends the turn as a staging, the refusal counted", async () => {
+    const history = keptHistory();
+    const turn = toolTurn(toolOfFn(({ query }) => built(query)), { validate: () => ({ ok: false, error: "no" }) });
+    const stage = { description: "d", inputSchema: z.object({}), execute: async () => ({ ok: false, pendingConfirmation: true, token: "TOK1", summary: "s" }) } as unknown as Tool;
+    const model = scripted([{ steps: [[{ tool: "build", input: { query: "bad" } }], [{ tool: "stage", input: {} }]] }]);
+
+    await runTurn(history, "q", { model: "m" as never, tools: { ...turn.tools, stage }, system: SYSTEM, generateTextFn: model.fn, output: turn.output });
+
+    expect(history.getMessages().at(-1)!.content).toBe("[REQ:TOK1]");
+    expect(turn.output.probe.refused.size).toBe(1);
+  });
+
   it("a turn resumed after a confirmation returns the output", async () => {
     const history = keptHistory();
     const turn = toolTurn(toolOfFn(({ query }) => built(query)));
