@@ -135,3 +135,19 @@ describe("rewriteNoteBody", () => {
     expect((await readNote(vaultPath, path))?.body).toBe("The person's own edit.");
   });
 });
+
+// A standard the consolidation rewrites is new content: whatever the dreaming pass said of the old one no longer holds.
+describe("a standard rewritten by the consolidation", () => {
+  it("loses the status of the text it replaced", async () => {
+    const vaultPath = await makeTempVault();
+    const fields = { confidence: "low" as const, derived_from: ["t1"], last_reviewed: null };
+    await writeToolCorrectionNote(vaultPath, "jira", "fields", fields, "Use --fields.");
+    await updateNoteFrontmatter(vaultPath, "curated/standards/jira-fields.md", (fm) => ({ ...fm, status: "contested", evidence: ["t9"] }), "x");
+
+    await writeToolCorrectionNote(vaultPath, "jira", "fields", { ...fields, derived_from: ["t1", "t2"] }, "Use --fields key,summary.");
+
+    const note = await readNote(vaultPath, "curated/standards/jira-fields.md");
+    expect(note?.frontmatter.status).toBeUndefined();
+    expect(note?.frontmatter.evidence).toBeUndefined();
+  });
+});

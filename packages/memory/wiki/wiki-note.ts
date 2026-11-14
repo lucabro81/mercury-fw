@@ -203,13 +203,14 @@ async function commitFile(vaultPath: string, fullPath: string, commitMessage: st
 async function writeVerbatimFile(
   vaultPath: string,
   fullPath: string,
-  content: string,
+  content: string | ((current: string | null) => string),
   commitMessage: string,
   condition: WriteCondition = {},
 ): Promise<boolean> {
   return serializeCommit(async () => {
-    if (condition.when && !condition.when(await readCurrent(fullPath))) return false;
-    await replaceFile(fullPath, content);
+    const current = await readCurrent(fullPath);
+    if (condition.when && !condition.when(current)) return false;
+    await replaceFile(fullPath, typeof content === "string" ? content : content(current));
     await commitFile(vaultPath, fullPath, commitMessage);
     return true;
   });
@@ -403,13 +404,19 @@ export async function writePersonalNote(
   vaultPath: string,
   key: string,
   path: string,
-  fields: { last_updated?: string },
+  fields: Omit<PersonalFrontmatter, "type">,
   body: string,
+  options: { keepLock?: boolean } = {},
 ): Promise<void> {
   const fullPath = personalNotePath(vaultPath, key, path);
   const frontmatter = PersonalFrontmatterSchema.parse({ type: "personal", ...fields });
   const notesRelative = relative(resolve(vaultPath, userArea(key), "notes"), fullPath);
-  await writeNoteFile(vaultPath, fullPath, frontmatter, body, `personal: ${key}/${notesRelative}`);
+  // With keepLock, a note locked now stays locked, read inside the queue like the write.
+  const content = (current: string | null) =>
+    options.keepLock && frontmatter.locked === undefined && current !== null && parseNote(current).frontmatter.locked === true
+      ? renderNote({ ...frontmatter, locked: true }, body)
+      : renderNote(frontmatter, body);
+  await writeVerbatimFile(vaultPath, fullPath, content, `personal: ${key}/${notesRelative}`);
 }
 
 /** Writes a semantic note for the person `key` at `<userArea(key)>/inferred/<topic>.md`. */
