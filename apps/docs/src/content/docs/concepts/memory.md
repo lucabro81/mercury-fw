@@ -25,7 +25,7 @@ import { profile } from "@mercury-fw/profile";
 import { memory } from "@mercury-fw/memory";
 import { corrections } from "@mercury-fw/corrections";
 
-const teamWiki = wiki();
+const teamWiki = wiki({ review: { dreaming: {} } });
 const longTermMemory = memory({ wiki: teamWiki });
 const conversation = conversationWindow({ earlier: longTermMemory });
 
