@@ -21,7 +21,7 @@ Declared in `plugins`, it gives the model its tools; listed among a profile's `l
 | Option | |
 |---|---|
 | `vaultPath` | Where the vault lives, `WIKI_VAULT_PATH` when left out. With neither, the app stops at startup. In a scaffolded app it's a Docker volume mounted at `/app/wiki-vault`. |
-| `review` | When the nightly review runs: `{ at, timeZone }`, `at` a time of day (`"HH:MM"`) and `timeZone` an IANA name, the instance's (`i18n.timeZone`) when left out. Every day at `"03:00"` when left out, `false` for none. A time or a time zone that can't be stops the app at startup. |
+| `review` | When the nightly review runs: `{ at, timeZone, dreaming }`, `at` a time of day (`"HH:MM"`, `"03:00"` when left out) and `timeZone` an IANA name, the instance's (`i18n.timeZone`) when left out. Every day at `"03:00"` when left out, `false` for none. A time or a time zone that can't be stops the app at startup. `dreaming: {}` turns on the [dreaming pass](#dreaming), last in the same run; `dreaming: { k }` says how many distinct conversations decide a note's status (3 when left out, a whole number of at least 1 or the app stops at startup). Off when left out; a new app made with `mfw create` has it on. |
 | `locked` | Paths under `curated/`, as globs (`["curated/confluence/**"]`), whose documents only people change: the nightly review leaves them alone (see [Locked notes](#locked-notes)). For whole folders copied from an official source. A path outside `curated/` stops the app at startup. |
 
 ## The vault
@@ -54,7 +54,7 @@ The model reads what they're for in the system prompt, and when to look in the w
 
 ## The nightly review
 
-Every day at the time `review` says, the background model goes through the vault in three passes, each a job of its own on Mercury's queue (the traces show them as `background.job` events named `wiki:review-raw`, `wiki:review-index`, `wiki:review-contradictions`). A pass that fails is logged and the others go on. A day the agent wasn't running isn't made up.
+Every day at the time `review` says, the background model goes through the vault in three passes, each a job of its own on Mercury's queue (the traces show them as `background.job` events named `wiki:review-raw`, `wiki:review-index`, `wiki:review-contradictions`), then, when it's on, the dreaming pass, one job for each note it checks (`wiki:dreaming`). A pass that fails is logged and the others go on. A day the agent wasn't running isn't made up.
 
 It's easy to lose track of who touches what, so here's the vault from the review's side first:
 
@@ -65,16 +65,17 @@ It's easy to lose track of who touches what, so here's the vault from the review
 | `personal/notes/` | the model, for that person | that person's model |
 | `personal/inferred/` | the memory plugin, by counting | that person's model |
 | `raw/` | people (`mfw vault write-raw`) | the nightly review |
-| `review/` | the nightly review | people (`mfw vault review`); never the model |
+| `review/` | the nightly review, the dreaming pass | people (`mfw vault review`); never the model |
 | `index.md` | the nightly review | everyone's model, at the start of a session |
 
-The review never sees anyone's area, only `curated/` and `raw/`. Then the passes, in the order they run:
+The three passes of the review never see anyone's area, only `curated/` and `raw/`; the dreaming pass reads a person's notes, each with that person's conversations only. Then the passes, in the order they run:
 
 | Pass | Reads | Writes | Leaves behind |
 |---|---|---|---|
 | **raw triage**, when `raw/` has something | `raw/`, `curated/` | `curated/`, `index.md`, `raw/` (deleting) | each entry merged into a document, promoted to a new one, or discarded, then deleted from `raw/` |
 | **index**, when a document isn't in `index.md` | `curated/`, `index.md` | `index.md`, `curated/` (cross-links) | a line in the index for each orphan |
 | **contradictions**, every time | `curated/` | `curated/`, `index.md` | contradictions fixed and cross-links added where it's confident, duplicates deleted |
+| **dreaming**, when it's on | the notes used since the last pass, the curated documents the review wrote that have no status yet, and the conversations those notes were used in | the notes' frontmatter, a person's notes, `review/` | a status on each note it decided on, a person's note corrected, a review entry for each curated note or learned standard it contests |
 
 Every document the review writes is signed `author: mercury-review` in its frontmatter, over whatever author it had: that's how you tell, from the file alone, a text the model wrote from one a person wrote.
 
@@ -98,8 +99,8 @@ The review's `write_curated` and `delete_curated` refuse a locked document. When
 | Kind | Opened by | `accept` | `reject` |
 |---|---|---|---|
 | `locked` | the review, on a locked note it would have changed | the proposed text, still locked | nothing changes, the entry just closes |
-| `curated` | nothing yet (a check of the notes against the conversations they were used in, in a later release) | the proposed text, `status: validated` | the text kept, `status: validated` |
-| `standard` | nothing yet (the same later check, on a learned standard that keeps failing) | the standard deleted, with its index line (the corrections plugin learns it again) | `status: validated` |
+| `curated` | the dreaming pass, on a curated note it contests | the proposed text, `status: validated` | the text kept, `status: validated` |
+| `standard` | the dreaming pass, on a learned standard that keeps failing | the standard deleted, with its index line (the corrections plugin learns it again) | `status: validated` |
 
 ### A note's frontmatter
 
@@ -110,11 +111,56 @@ What the wiki's own writers put at the top of a note, besides `type`:
 | `author` | curated documents | `mfw vault write-curated --author`; `mercury-review` when the nightly review wrote it |
 | `last_updated` | curated documents, a person's notes | whoever wrote it, as a date |
 | `locked: true` | curated documents, a person's notes | `mfw vault lock` or by hand; `write_file` when the person asks |
-| `status` | any note | `validated` when a person decided a review entry on it; `unverified`, `verified` and `contested` are kept for the later check of the notes, nothing writes them yet |
+| `status` | any note | the dreaming pass (`unverified`, `verified`, `contested`); `validated` when a person decided a review entry on it |
 | `validated_at` | any note | when a person decided a review entry on it |
-| `verified_at`, `evidence` | any note | kept for the same later check (when it last looked, the turns its verdict rests on); nothing writes them yet |
+| `verified_at`, `evidence` | any note | the dreaming pass: when it last decided on the note, and the turns its verdict rests on |
 
 A learned standard and a person's `inferred/` notes also carry `source`, `confidence`, `derived_from` and `last_reviewed`, written by the consolidation (see [What the memory writes here](#what-the-memory-writes-here)). A note the review or the consolidation rewrites loses its `status`: new text, nothing decided on it yet.
+
+## Dreaming
+
+With `review: { dreaming: {} }` the nightly run ends with a check of the notes against what happened when they were used. Nothing else checks them: in a conversation the model takes what it finds in the wiki as true, and the triage takes `raw/` as given.
+
+**Which notes.** A note is *used* when the model opened it with `read_file` in a turn and the read worked: the plugin records every such read from each turn's record (`onTurnRecord`), in its data folder (`ctx.dataDir`). Each night the pass checks:
+
+- every curated note and every person's note (`personal/notes/`) used since the last pass. A note nobody opened has no new conversation to be checked against, so it's left for a night when someone uses it;
+- every curated document the review wrote (`author: mercury-review`) that has no status yet, even unused, so what came from `raw/` is looked at the same night.
+
+It leaves alone locked notes, notes `contested` and waiting for a person, a person's `inferred/` notes (facts about them, already promoted by counting) and the operator's turns. It reads the conversations from the instance's conversation store, so with dreaming on the wiki needs one (`needs: ["conversationStore"]`): an app without it stops at startup.
+
+**How each kind is decided.** *k* is `dreaming.k`, 3 by default; conversations are counted once each, however many of their turns used the note.
+
+| Note | Who decides | What it looks at | What can come of it |
+|---|---|---|---|
+| a learned standard (`curated/standards/`) | code, never the model | the later calls to the standard's tool in each turn that read it: one worked counts for, all failed counts against | `verified` at *k* conversations for and none against; `contested` at *k* against, with a `standard` review entry |
+| a person's note | the model | that person's turns that read it, and the few messages after each | rewritten when a turn contradicts it (`status: verified`, no review entry: the note is theirs); `verified` at *k* conversations with nothing against |
+| any other curated note | the model | everyone's turns that read it, and what it knows of the world | `contested` when a turn contradicts it or it's plainly false, with a `curated` review entry carrying the text proposed in its place; `verified` at *k* conversations with nothing against |
+| a document the review wrote, unused | the model | what it knows of the world only | `contested` when it's plainly false, `unverified` otherwise |
+
+The model's own knowledge only ever contests, and only something plainly false about the world in general, never the team's own conventions, projects, people or tools, which it can't know. A review entry's reason is a sentence of the model's own, with no quotes from the conversations: a curated note's entry is read by a person who wasn't in them.
+
+A note a person **validated** (by deciding its review entry) is never made `verified` by counting; it's contested again only by *k* conversations against it after their decision. A note whose text changed, whoever changed it, is counted from scratch. A note that fails (the model or the store away) is logged, kept for the next night, and the others go on.
+
+**What a person sees.** The model reads the statuses in the frontmatter, and with dreaming on it's told that a note `contested` or `unverified` may be wrong, and to say so when its answer relies on one. Review entries wait in `mfw vault review list`.
+
+**An example, from `raw/` to a validated note.**
+
+1. Monday, someone runs `mfw vault write-raw raw/release.md` with "We tag the release, then merge it."
+2. Monday night, the triage makes it `curated/release.md`, `author: mercury-review`. The dreaming pass, last in the same run, finds it unchecked, sees nothing plainly false in it, and marks it `status: unverified`.
+3. Tuesday, Anna asks how to release. The model reads `curated/release.md`, answers, and says the note isn't verified yet. Anna replies that it's the other way round: merge first, then tag.
+4. Tuesday night, the note was used, so the pass checks it against Anna's turn and the messages after it. The turn contradicts it: the note becomes `status: contested`, and `review/curated--release.md` opens with the reason and "Merge first, then tag." as the proposed text.
+5. Wednesday, the model still reads the note, but says it's contested. Luca runs `mfw vault review show curated--release`, agrees, and runs `mfw vault review accept curated--release`: the note gets the new text, `status: validated`, and the entry is gone.
+6. From then on the note is contested again only if *k* conversations after Wednesday contradict it.
+
+**When to leave it off.** Every instance has the three passes of the review; the dreaming pass is worth it only when someone will act on what it finds:
+
+| Situation | Why dreaming doesn't help, or does harm |
+|---|---|
+| the wiki is a copy of an official source (docs synced from Confluence or a repository) | the truth is in the source: a contested note is fixed there, not in the wiki, and review entries are only noise (lock the copied folders with `locked`, or leave dreaming off) |
+| a small team with someone looking after the notes | people notice by themselves, and review entries are extra work |
+| little GPU, nights already full | every used note that isn't a standard is at least one call to the model |
+| privacy or internal rules | for a common note the model reads several people's conversations together; it writes no quotes from them, but some may not want them read together at all |
+| a model too small | wrong contests, and a person's notes rewritten worse than they were |
 
 ## What the memory writes here
 

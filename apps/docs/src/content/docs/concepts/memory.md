@@ -114,7 +114,7 @@ example above). The vault is where `WIKI_VAULT_PATH` says, unless `wiki({ vaultP
 | Option | |
 |---|---|
 | `vaultPath` | Where the vault lives; `WIKI_VAULT_PATH` when left out. With neither, the app doesn't start. |
-| `review` | When the nightly review runs, `{ at: "HH:MM", timeZone }` (the instance's time zone when left out); every day at `"03:00"` by default, `false` for none. |
+| `review` | When the nightly review runs, `{ at: "HH:MM", timeZone }` (the instance's time zone when left out); every day at `"03:00"` by default, `false` for none. `dreaming: {}` adds the [dreaming](#dreaming) pass at the end of it (`dreaming: { k: 3 }` to say how many conversations decide; off when left out, on in a new app). |
 | `locked` | Folders of the common area, as patterns (`["curated/confluence/**"]`), that only people change. |
 
 ### The nightly review
@@ -144,6 +144,39 @@ The nightly review never changes a locked note. When one looks wrong to it, it l
 note in the wiki's `review/` folder, which the model never reads, saying what's wrong and what it would write in its
 place. A person reads them with `mfw vault review list`, then accepts one (the note gets the new text) or rejects it
 (the note stays as it is).
+
+### Dreaming
+
+The review keeps the wiki tidy, but it never asks whether a note is **true**. In a conversation the agent takes
+whatever it finds in the wiki as right. Dreaming is a last pass of the nightly review that checks the notes against
+what happened when they were used: if someone corrected the agent right after it read a note, or a command the note
+suggests failed, the note is probably wrong.
+
+It looks only at the notes the agent opened since the night before (a note nobody opened has nothing new to be
+checked against), plus whatever the review just wrote from `raw/`. For each one:
+
+| Note | What can happen |
+|---|---|
+| a person's own note | the model rewrites it when one of that person's conversations contradicts it |
+| a document of the common area | the model marks it **contested** when a conversation contradicts it, or when it says something plainly false about the world, and leaves a review entry with the text it would put instead; a person decides |
+| a rule the agent learned about a tool | the code, not the model, marks it contested once the tool failed after it in three conversations |
+
+A note that held up in three conversations becomes **verified**. Contested notes stay readable: the agent says,
+when it uses one, that it may be wrong. A person decides each contested note with `mfw vault review`, and after
+that only three new conversations against it contest it again. Locked notes are never checked.
+
+To read the conversations, the wiki needs the app's conversation store, which a new app has. A new app has dreaming
+on; it's not always worth it, though:
+
+| Situation | Why to leave it off |
+|---|---|
+| the wiki is a copy of your official documentation | a wrong note gets fixed in the source, so review entries are only noise (or lock the copied folders) |
+| a small team with someone looking after the notes | people notice by themselves, and review entries are extra work |
+| little GPU, nights already busy | every note checked is at least one call to the model |
+| privacy or internal rules | for a common note, the model reads several people's conversations together |
+| a small model | it may contest notes that are right, and rewrite a person's notes worse than they were |
+
+To turn it off, write `wiki({ review: { dreaming: false } })`, or just `wiki()`.
 
 `mfw vault` reads and writes the wiki from your terminal.
 
