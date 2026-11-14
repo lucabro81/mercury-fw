@@ -63,7 +63,12 @@ export function createExpect(run: Run): { expect: Expect; checks: () => Check[] 
     answerNot: (pattern, label) => record(label ?? `answer ${saidNot(pattern)}`, !found(run.last.answer, pattern), run.last.answer),
     output: (match, label) => {
       const out = run.last.output;
-      record(label ?? (match === undefined ? "an output" : "an output that matches"), out !== undefined && (match?.(out.value) ?? true), gave(run.last));
+      const name = label ?? (match === undefined ? "an output" : "an output that matches");
+      try {
+        record(name, out !== undefined && (match?.(out.value) ?? true), gave(run.last));
+      } catch (err) {
+        record(name, false, `the check threw: ${err instanceof Error ? err.message : String(err)} on ${gave(run.last)}`);
+      }
     },
     outputError: (code, label) => {
       const e = run.last.outputError;

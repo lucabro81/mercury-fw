@@ -123,6 +123,13 @@ describe("createExpect: outputs (#403)", () => {
     ]);
   });
 
+  // Regression: a match that threw on a value of an unexpected shape threw out of the check, though checks never throw.
+  test("output: a match that throws is a failed check with the error, not a thrown one", () => {
+    const c = createExpect(runOf(withOutput({ mode: "tool", value: { ok: true } })));
+    c.expect.output((v) => (v as { query: string }).query.includes("x"), "the query names x");
+    expect(c.checks()).toEqual([{ label: "the query names x", ok: false, detail: expect.stringContaining('the check threw: ') }]);
+  });
+
   test("outputError: passes when the last turn failed with the code (or any), fails on an output", () => {
     const run = runOf(failed({ code: "output-invalid", attempts: 2 }));
     const c = createExpect(run);
