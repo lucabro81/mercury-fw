@@ -662,7 +662,8 @@ async function finishOutput(history: SessionHistory, deps: Parameters<typeof run
 
 /**
  * A turn whose instance asks for an output other than text (see
- * `turn-output.ts`): the answer is never streamed, the model is told the
+ * `turn-output.ts`): the answer is the output's JSON, never the model's text
+ * (which still reaches `onTextChunk`, for a caller watching it), the model is told the
  * exact error of a refused or missing output and tries again up to
  * `retries` times, then the turn throws a `TurnOutputError`. Nothing of the
  * failed attempts is kept in the history. A turn that staged an action or
