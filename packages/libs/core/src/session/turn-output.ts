@@ -52,7 +52,7 @@ export function toolOf(plugin: Plugin, name: string): ToolRef {
  */
 export function resolveOutput(
   output: TurnOutputConfig | undefined,
-  instance: { plugins: Plugin[]; channels: ChannelPlugin[] },
+  instance: { plugins: Plugin[]; channels: ChannelPlugin<OutputMode>[] },
 ): ResolvedOutput | undefined {
   if (output === undefined || output === "text") return undefined;
   const retries = output.retries ?? DEFAULT_RETRIES;

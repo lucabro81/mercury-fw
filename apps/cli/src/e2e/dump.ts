@@ -11,8 +11,15 @@
  * (its output has the token) though it reports `ok: false`. */
 export type Call = { tool: string; input: unknown; output: unknown; ok: boolean; pending: boolean };
 
-/** What a turn did: its tool calls in order, and its final text. */
-export type TurnData = { calls: Call[]; answer: string };
+/** What a turn returned instead of text (`output` in the app's config): its mode and value. */
+export type TurnOutputData = { mode: string; value: unknown };
+
+/** Why a turn with an output gave none (a `TurnOutputError`): its code, the attempts, the last error the model was told. */
+export type TurnOutputErrorData = { code: string; attempts: number; lastError?: string };
+
+/** What a turn did: its tool calls in order, and its final text; on HTTP, its
+ * output, or the error a turn gets that gave none. */
+export type TurnData = { calls: Call[]; answer: string; output?: TurnOutputData; outputError?: TurnOutputErrorData };
 
 type Part = { type?: unknown; toolCallId?: unknown; toolName?: unknown; input?: unknown; output?: unknown; error?: unknown; text?: unknown };
 

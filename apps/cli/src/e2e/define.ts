@@ -11,13 +11,13 @@
  */
 import type { Call, TurnData } from "./dump.ts";
 
-export type { Call } from "./dump.ts";
+export type { Call, TurnOutputData, TurnOutputErrorData } from "./dump.ts";
 export { turnFromDump } from "./dump.ts";
 export { createExpect, type Check } from "./expect.ts";
 
 /** One turn as a check sees it: its calls, its answer, how long it took, and
  * on HTTP the response's status (200, or 401 for a token the app refused).
- * On HTTP a call's `input` is the detail line the surface shows (the command,
+ * On HTTP a turn also has its `output` (or its `outputError`), and a call's `input` is the detail line the surface shows (the command,
  * for a CLI tool) and its `output` is there only for a call staged for
  * confirmation (`{ pendingConfirmation, token, summary }`): the stream carries
  * no tool results. */
@@ -51,6 +51,10 @@ export type Expect = {
   answer(pattern: string | RegExp, label?: string): void;
   /** The answer doesn't contain `pattern`, or doesn't match it. */
   answerNot(pattern: string | RegExp, label?: string): void;
+  /** On HTTP, the last turn returned an output (`output` in the app's config), its value matching `match` when given. */
+  output(match?: (value: unknown) => boolean, label?: string): void;
+  /** On HTTP, the last turn gave no output and failed with a `TurnOutputError`, with `code` when given. */
+  outputError(code?: string, label?: string): void;
   /** Anything else. */
   that(label: string, condition: boolean): void;
 };

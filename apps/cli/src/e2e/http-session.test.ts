@@ -79,6 +79,21 @@ describe("turnFromSse", () => {
     expect(() => turnFromSse(event("error", { message: "model exploded" }))).toThrow("the turn failed in the app: model exploded");
   });
 
+  test("a final event with an output gives the turn its mode and value (#403)", () => {
+    const output = { mode: "tool", value: { ok: true, query: "author ~ 'dante'" } };
+    expect(turnFromSse(event("final", { text: JSON.stringify(output.value, null, 2), output }))).toEqual({
+      calls: [],
+      answer: JSON.stringify(output.value, null, 2),
+      output,
+    });
+  });
+
+  test("a TurnOutputError is the turn's outputError, not a failed turn (#403)", () => {
+    const data = { message: "no output", code: "output-invalid", attempts: 3, lastError: "no field titel" };
+    expect(turnFromSse(event("error", data))).toEqual({ calls: [], answer: "", outputError: { code: "output-invalid", attempts: 3, lastError: "no field titel" } });
+    expect(turnFromSse(event("error", { message: "m", code: "output-missing", attempts: 1 }))).toEqual({ calls: [], answer: "", outputError: { code: "output-missing", attempts: 1 } });
+  });
+
   test("a stream that ends without a final event fails the turn", () => {
     expect(() => turnFromSse(event("text", { chunk: "half" }))).toThrow("the stream ended without a final event");
   });

@@ -3,7 +3,7 @@
  * against a run, passed or failed with a detail, and never throw.
  */
 import type { Call } from "./dump.ts";
-import type { Expect, Run } from "./define.ts";
+import type { Expect, Run, Turn } from "./define.ts";
 
 /** One check's outcome; `detail` says what was found when it failed. */
 export type Check = { label: string; ok: boolean; detail?: string };
@@ -15,6 +15,14 @@ const describe = (c: Call) => `${c.tool} ${JSON.stringify(c.input)}`;
 const said = (pattern: string | RegExp) => (typeof pattern === "string" ? `contains "${pattern}"` : `matches ${pattern}`);
 const saidNot = (pattern: string | RegExp) => (typeof pattern === "string" ? `doesn't contain "${pattern}"` : `doesn't match ${pattern}`);
 const found = (text: string, pattern: string | RegExp) => (typeof pattern === "string" ? text.includes(pattern) : pattern.test(text));
+
+/** What a turn gave instead of the expected output, or the error instead of it, for a failure's detail. */
+function gave(turn: Turn): string {
+  if (turn.output !== undefined) return `${turn.output.mode} ${JSON.stringify(turn.output.value)}`;
+  const e = turn.outputError;
+  if (e !== undefined) return `${e.code} after ${e.attempts} attempts${e.lastError === undefined ? "" : `: ${e.lastError}`}`;
+  return `no output: ${turn.answer}`;
+}
 
 /** The checks' bounds, as a label says them. */
 function boundsLabel({ min, max }: { min?: number; max?: number }, what: string): string {
@@ -53,6 +61,19 @@ export function createExpect(run: Run): { expect: Expect; checks: () => Check[] 
     },
     answer: (pattern, label) => record(label ?? `answer ${said(pattern)}`, found(run.last.answer, pattern), run.last.answer),
     answerNot: (pattern, label) => record(label ?? `answer ${saidNot(pattern)}`, !found(run.last.answer, pattern), run.last.answer),
+    output: (match, label) => {
+      const out = run.last.output;
+      const name = label ?? (match === undefined ? "an output" : "an output that matches");
+      try {
+        record(name, out !== undefined && (match?.(out.value) ?? true), gave(run.last));
+      } catch (err) {
+        record(name, false, `the check threw: ${err instanceof Error ? err.message : String(err)} on ${gave(run.last)}`);
+      }
+    },
+    outputError: (code, label) => {
+      const e = run.last.outputError;
+      record(label ?? `a TurnOutputError${code === undefined ? "" : ` ${code}`}`, e !== undefined && (code === undefined || e.code === code), gave(run.last));
+    },
     that: (label, condition) => record(label, condition),
   };
   return { expect, checks: () => [...checks] };

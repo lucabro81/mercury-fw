@@ -162,4 +162,9 @@ an `error` event with its `code`, `attempts` and `lastError` (see the
 [HTTP API](../../reference/http-api/)). Google Chat takes text only.
 
 An agent whose `output` one of its channels doesn't take doesn't start, and says which channel and which output.
-The terminal (`mfw repl`) takes them all and prints the value as JSON.
+The type check catches it first: a channel's type says what it takes (`ChannelPlugin<"tool" | "schema">`; a plain
+`ChannelPlugin` takes text only), so `tsc` marks the `output` of a `mercury.config.ts` one of its channels doesn't
+take. The terminal (`mfw repl`) takes them all and prints the value as JSON.
+
+An e2e test checks an output on the HTTP channel with `expect.output` and `expect.outputError` (see
+[the CLI's `mfw e2e`](https://github.com/lucabro81/mercury-fw/tree/main/apps/cli#mfw-e2e-tests---repeat-n)).

@@ -317,6 +317,8 @@ The `expect` helpers record a named check each and never stop the others, so a f
 | `callCount({ min?, max? }, tool?)` | the number of calls, to any tool or to `tool`, is within the bounds |
 | `answer(text \| regex)` | the last answer contains the text, or matches |
 | `answerNot(text \| regex)` | it doesn't |
+| `output(match?)` | on HTTP, the last turn returned an output (the app's `output` isn't text), its value passing `match` when given |
+| `outputError(code?)` | on HTTP, the last turn gave no output and failed with a `TurnOutputError`, with `code` when given (`output-missing`, `output-invalid`, `output-tool-unavailable`) |
 | `that(label, condition)` | `condition` is true |
 
 The call helpers look at every turn of the run, the answer helpers at the last one; each takes an optional label as its last argument. A case that records no check fails: it proves nothing.
@@ -352,7 +354,7 @@ export default e2e({
 });
 ```
 
-Each run of an HTTP case is a conversation of its own. A turn also has the response's `status` (200, or 401 for a refused token). The event stream carries no tool results, so on HTTP a call's `input` is the line the surface shows for it (the command, for a CLI tool) and its `output` is there only for a call staged for confirmation, with the token, as on the REPL. A turn may span several lines.
+Each run of an HTTP case is a conversation of its own. A turn also has the response's `status` (200, or 401 for a refused token), and, for an app whose `output` isn't text, its `output` (`{ mode, value }`) or the `outputError` (`{ code, attempts, lastError }`) that came instead: a turn whose output never came is a result to check, not a broken run. On the REPL the answer of such a turn is the value as JSON. The event stream carries no tool results, so on HTTP a call's `input` is the line the surface shows for it (the command, for a CLI tool) and its `output` is there only for a call staged for confirmation, with the token, as on the REPL. A turn may span several lines.
 
 To see what happens when people talk at the same time, an HTTP case can have `lanes` instead of `turns`: every lane sends its own turns in order, as its own user (`as`, or the case's), while the other lanes send theirs. Each lane gets a conversation of its own, unless lanes name the same `conversation`, which sends their turns at once on one conversation id, like two tabs on one chat. In the check, `run.lanes` holds each lane's run, and `run.turns` every turn, lane by lane:
 

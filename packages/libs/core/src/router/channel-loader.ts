@@ -17,17 +17,17 @@
  *  - a `build()` that returns `undefined` means "present but inert" (the
  *    instance isn't configured for it) — not started, not an error.
  */
-import { CHANNEL_API_VERSION, type ChannelPlugin, type ChannelRuntimeContext, type Provider } from "@mercury-fw/channel-types";
+import { CHANNEL_API_VERSION, type ChannelPlugin, type ChannelRuntimeContext, type OutputMode, type Provider } from "@mercury-fw/channel-types";
 import { catalogErrors, type Messages } from "../i18n/i18n.ts";
 import type { Tracer } from "../traces/tracer.ts";
 
 /** Whether the loader would build `channel`: its contract is this core's and its texts are its own. */
-function loadable(channel: ChannelPlugin): boolean {
+function loadable(channel: ChannelPlugin<OutputMode>): boolean {
   return channel.apiVersion === CHANNEL_API_VERSION && catalogErrors(channel.name, channel.messages ?? {}).length === 0;
 }
 
 /** The English texts of the channels in `channels` the loader would load, merged: the instance's languages translate those. */
-export function channelMessages(channels: ChannelPlugin[]): Messages {
+export function channelMessages(channels: ChannelPlugin<OutputMode>[]): Messages {
   return Object.assign({}, ...channels.filter(loadable).map((c) => c.messages ?? {})) as Messages;
 }
 
@@ -42,7 +42,7 @@ export type LoadChannelsContext = {
 export type LoadedChannel = { name: string; provider: Provider };
 
 /** Builds every declared channel in `channels`, returning the providers that actually constructed (skipping incompatible, inert, or failed ones). */
-export function loadChannels(channels: ChannelPlugin[], ctx: LoadChannelsContext): LoadedChannel[] {
+export function loadChannels(channels: ChannelPlugin<OutputMode>[], ctx: LoadChannelsContext): LoadedChannel[] {
   const loaded: LoadedChannel[] = [];
   const inert: string[] = [];
   const left: Array<{ name: string; reason: string }> = [];

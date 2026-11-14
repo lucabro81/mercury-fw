@@ -37,7 +37,7 @@ import { createTurnRunner, parseStallTimeoutMs } from "./router/turn-runner.ts";
 import { loadAuth } from "./router/auth-loader.ts";
 import { loadDirectory } from "./router/directory-loader.ts";
 import type { TurnSink } from "./router/provider.ts";
-import type { HandleTurn, ChannelRuntimeContext, ChannelPlugin } from "@mercury-fw/channel-types";
+import type { HandleTurn, ChannelRuntimeContext, ChannelPlugin, OutputMode } from "@mercury-fw/channel-types";
 import type { MercuryModelHandle, PluginNeed } from "@mercury-fw/plugin-types";
 import {
   truncateForDisplay,
@@ -104,7 +104,7 @@ export type ComposedApp = {
   /** The turn driver every channel funnels through (see `turn-runner.ts`). */
   handleTurn: HandleTurn;
   /** The declared channel plugins (from `mercury.config.ts`). */
-  channels: ChannelPlugin[];
+  channels: ChannelPlugin<OutputMode>[];
   /** The runtime context each channel's `build()` gets — confirm + in-process reads injected by the core. */
   channelRuntime: ChannelRuntimeContext;
   /** The confirm binding, for a caller (the terminal) that intercepts tokens directly. */

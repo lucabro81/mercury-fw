@@ -240,7 +240,7 @@ export function isTurnOutputError(err: unknown): err is TurnOutputError {
 }
 
 /** The outputs `channel` handles: `text` always, and whatever it declares (`ChannelPlugin.outputs`). */
-export function channelOutputs(channel: Pick<ChannelPlugin, "outputs">): OutputMode[] {
+export function channelOutputs(channel: Pick<ChannelPlugin<OutputMode>, "outputs">): OutputMode[] {
   return ["text", ...(channel.outputs ?? []).filter((mode) => mode !== "text")];
 }
 
@@ -679,11 +679,15 @@ export type ChannelRuntimeContext = {
  * - `build`: builds the `Provider` from the context, or `undefined` when the instance isn't configured for this channel (e.g. no `GOOGLE_CHAT_PUBSUB_SUBSCRIPTION`) → the loader treats it as "present but inert" and never starts it.
  * - `messages`: the channel's texts a person sees, in English, every key under `<name>.`; the loader refuses a channel with a key outside it (and one named `core` or `app`). The instance's language files translate them, and the channel gets them through `ctx.i18n`.
  * - `outputs`: what a turn may return to it besides text (see `OutputMode`); `text` alone when left out. An instance whose `output` one of its channels doesn't declare doesn't start. A channel that shows an output its own way (a query as text) declares it all the same.
+ *
+ * `O` is what `outputs` may name besides text, so that `defineMercuryConfig` refuses an `output` a channel doesn't
+ * take at the type level: a plain `ChannelPlugin` takes text only, and a channel taking more says so in its type
+ * (`ChannelPlugin<"tool" | "schema">`, or `ChannelPlugin<OutputMode>` for every one).
  */
-export type ChannelPlugin = {
+export type ChannelPlugin<O extends OutputMode = never> = {
   apiVersion: number;
   name: string;
   build: (ctx: ChannelRuntimeContext) => Provider | undefined;
   messages?: Messages;
-  outputs?: readonly OutputMode[];
+  outputs?: readonly (O | "text")[];
 };

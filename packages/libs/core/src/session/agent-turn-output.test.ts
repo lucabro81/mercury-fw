@@ -149,6 +149,22 @@ describe("runTurn with output: { tool }", () => {
     expect(history.getMessages().map((m) => m.content)).toEqual(["books by dante", JSON.stringify(built("dante"), null, 2)]);
   });
 
+  // Regression: with the tool's copy acting as Mercury on the turn too (`buildAsSelf`), the note named only
+  // `build`, steering a person who asked Mercury to act as itself to their own account's copy.
+  it("a model that ends with text is told about both copies of the tool when the turn offers its AsSelf variant", async () => {
+    const history = keptHistory();
+    const turn = toolTurn(toolOfFn(({ query }) => built(query)));
+    const tools = { ...turn.tools, buildAsSelf: turn.output.probe.wrapTool(toolOfFn(({ query }) => built(query))) };
+    const model = scripted([{ steps: [], text: "Here is your query" }, { steps: [[{ tool: "buildAsSelf", input: { query: "dante" } }]] }]);
+
+    await runTurn(history, "act as yourself: books by dante", { model: "m" as never, tools, system: SYSTEM, generateTextFn: model.fn, output: turn.output, onOutput: turn.onOutput });
+
+    expect(lastUser(model.seen[1]!)).toBe(
+      'End the turn by calling the tool "build", or "buildAsSelf" when the user asked you to act as yourself: its result is the answer. Write no text instead.',
+    );
+    expect(turn.outputs).toEqual([{ output: { mode: "tool", value: built("dante") }, attempts: 2 }]);
+  });
+
   it("a retry shows the model the calls it made before, with their whole results", async () => {
     const history = keptHistory();
     const turn = toolTurn(toolOfFn(({ query }) => built(query)), { validate: (v) => ((v as { query: string }).query === "ok" ? { ok: true } : { ok: false, error: "no" }) });

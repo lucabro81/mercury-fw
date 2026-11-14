@@ -350,7 +350,9 @@ Both objects take two more fields:
 
 The agent doesn't start when the tool's plugin isn't in [`plugins`](#plugins), when `retries` isn't a whole number
 from 0 up, or when one of its [`channels`](#channels) doesn't take the output (Google Chat takes text only, the HTTP
-channel all three): the log names the channel and the output.
+channel all three): the log names the channel and the output. Most of the time `tsc` says so before then: a
+channel's type says what it takes, so an `output` one of the `channels` doesn't take is a type error on `output`
+(`a channel in "channels" doesn't take the "tool" output`).
 
 ## `traces`
 
