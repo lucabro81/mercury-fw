@@ -1,5 +1,5 @@
 import { describe, it, expect } from "bun:test";
-import { CuratedFrontmatterSchema, InferredFrontmatterSchema } from "./frontmatter-schema.ts";
+import { CuratedFrontmatterSchema, InferredFrontmatterSchema, PersonalFrontmatterSchema } from "./frontmatter-schema.ts";
 
 describe("CuratedFrontmatterSchema", () => {
   it("accepts a minimal curated frontmatter", () => {
@@ -77,3 +77,45 @@ describe("InferredFrontmatterSchema", () => {
   });
 });
 
+
+describe("the status fields a reviewed note carries", () => {
+  const status = { status: "contested", verified_at: "2026-11-14T04:00:00.000Z", evidence: ["turn-1", "turn-2"], validated_at: "2026-11-15T10:00:00.000Z" };
+  const inferred = { type: "inferred", source: "agent", confidence: "low", derived_from: ["a"], last_reviewed: null };
+
+  it("are accepted on a curated, a personal and an inferred note, and kept as written", () => {
+    expect(CuratedFrontmatterSchema.parse({ type: "curated", ...status })).toEqual({ type: "curated", ...status });
+    expect(PersonalFrontmatterSchema.parse({ type: "personal", ...status })).toEqual({ type: "personal", ...status });
+    expect(InferredFrontmatterSchema.parse({ ...inferred, ...status })).toEqual({ ...inferred, ...status });
+  });
+
+  it("take each of the four statuses", () => {
+    for (const s of ["unverified", "verified", "contested", "validated"]) {
+      expect(CuratedFrontmatterSchema.safeParse({ type: "curated", status: s }).success).toBe(true);
+    }
+  });
+
+  it("refuse a status outside the four", () => {
+    expect(CuratedFrontmatterSchema.safeParse({ type: "curated", status: "wrong" }).success).toBe(false);
+  });
+
+  it("refuse evidence that isn't a list of turn ids", () => {
+    expect(CuratedFrontmatterSchema.safeParse({ type: "curated", evidence: "turn-1" }).success).toBe(false);
+  });
+});
+
+describe("locked", () => {
+  it("is accepted as true on a curated and a personal note", () => {
+    expect(CuratedFrontmatterSchema.parse({ type: "curated", locked: true })).toEqual({ type: "curated", locked: true });
+    expect(PersonalFrontmatterSchema.parse({ type: "personal", locked: true })).toEqual({ type: "personal", locked: true });
+  });
+
+  it("refuses anything but true (an unlocked note has no field)", () => {
+    expect(CuratedFrontmatterSchema.safeParse({ type: "curated", locked: false }).success).toBe(false);
+    expect(CuratedFrontmatterSchema.safeParse({ type: "curated", locked: "yes" }).success).toBe(false);
+  });
+
+  it("isn't a field of an inferred note: only people lock, and inferred notes are the consolidation's", () => {
+    const parsed = InferredFrontmatterSchema.parse({ type: "inferred", source: "agent", confidence: "low", derived_from: ["a"], last_reviewed: null, locked: true });
+    expect("locked" in parsed).toBe(false);
+  });
+});
