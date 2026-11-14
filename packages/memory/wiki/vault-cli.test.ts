@@ -92,3 +92,108 @@ describe("vault-cli write-raw", () => {
     expect(await Bun.file(join(vault, "raw", "full.md")).exists()).toBe(true);
   });
 });
+
+/** Writes the review entry `entry` on the temporary vault, as the nightly passes would. */
+async function openEntry(entry: Parameters<typeof import("./review-entries.ts").openReview>[1]) {
+  const { openReview } = await import("./review-entries.ts");
+  const { initVault } = await import("./vault-init.ts");
+  await initVault(vault);
+  return openReview(vault, entry);
+}
+
+const ENTRY = {
+  note: "curated/release.md",
+  kind: "curated" as const,
+  evidence: ["turn-1", "turn-2"],
+  opened_at: "2026-11-14T04:00:00.000Z",
+  reason: "Two people said the order is the other way round.",
+  proposed: "Merge first, then tag.",
+};
+
+describe("vault-cli review", () => {
+  test("list prints one line per entry: id, kind, note, when it was opened", async () => {
+    await openEntry(ENTRY);
+    await openEntry({ ...ENTRY, note: "curated/standards/jira-fields.md", kind: "standard", proposed: undefined });
+    expect(await run(["review", "list"])).toEqual({
+      code: 0,
+      stdout:
+        "curated--release  curated  curated/release.md  2026-11-14T04:00:00.000Z\n" +
+        "curated--standards--jira-fields  standard  curated/standards/jira-fields.md  2026-11-14T04:00:00.000Z\n",
+      stderr: "",
+    });
+  });
+
+  test("list with nothing open says so", async () => {
+    expect(await run(["review", "list"])).toEqual({ code: 0, stdout: "no review entries\n", stderr: "" });
+  });
+
+  test("show prints the entry whole", async () => {
+    await openEntry(ENTRY);
+    expect(await run(["review", "show", "curated--release"])).toEqual({
+      code: 0,
+      stdout:
+        "note: curated/release.md\nkind: curated\nopened: 2026-11-14T04:00:00.000Z\nevidence: turn-1, turn-2\n\n" +
+        "Two people said the order is the other way round.\n\nproposed:\n\nMerge first, then tag.\n",
+      stderr: "",
+    });
+  });
+
+  test("accept and reject decide the entry and say what came of the note", async () => {
+    expect((await run(["write-curated", "curated/release.md"], "Tag first.")).code).toBe(0);
+    await openEntry(ENTRY);
+    expect(await run(["review", "accept", "curated--release"])).toEqual({
+      code: 0,
+      stdout: "accepted curated--release: curated/release.md rewritten\n",
+      stderr: "",
+    });
+    expect((await run(["read", "curated/release.md"])).stdout).toContain("Merge first, then tag.");
+
+    await openEntry(ENTRY);
+    expect(await run(["review", "reject", "curated--release"])).toEqual({
+      code: 0,
+      stdout: "rejected curated--release: curated/release.md kept\n",
+      stderr: "",
+    });
+  });
+
+  test("an id with no entry is one clear line, exit 1", async () => {
+    for (const command of ["show", "accept", "reject"]) {
+      expect(await run(["review", command, "curated--nope"])).toEqual({
+        code: 1,
+        stdout: "",
+        stderr: "no review entry curated--nope (mfw vault review list shows them)\n",
+      });
+    }
+  });
+});
+
+describe("vault-cli lock and unlock", () => {
+  test("lock sets locked on a curated note, unlock removes it, the text untouched", async () => {
+    expect((await run(["write-curated", "curated/policy.md"], "Policy.")).code).toBe(0);
+
+    expect(await run(["lock", "curated/policy.md"])).toEqual({ code: 0, stdout: "locked curated/policy.md\n", stderr: "" });
+    const locked = (await run(["read", "curated/policy.md"])).stdout;
+    expect(locked).toContain("locked: true");
+    expect(locked).toContain("Policy.");
+
+    expect(await run(["unlock", "curated/policy.md"])).toEqual({ code: 0, stdout: "unlocked curated/policy.md\n", stderr: "" });
+    expect((await run(["read", "curated/policy.md"])).stdout).not.toContain("locked");
+  });
+
+  test("refuses anything but a curated doc a person writes: a person's notes, a standard, a missing note", async () => {
+    await openEntry(ENTRY);
+    const { writeToolCorrectionNote } = await import("./wiki-note.ts");
+    await writeToolCorrectionNote(vault, "jira", "fields", { confidence: "low", derived_from: ["t"], last_reviewed: null }, "x");
+    expect(await run(["lock", "users/a/notes/x.md"])).toEqual({
+      code: 1,
+      stdout: "",
+      stderr: "only a curated doc is locked here (curated/…); a person locks their own notes\n",
+    });
+    expect(await run(["lock", "curated/standards/jira-fields.md"])).toEqual({
+      code: 1,
+      stdout: "",
+      stderr: "curated/standards/jira-fields.md is the consolidation's (a learned standard): lock it with the wiki's locked paths instead\n",
+    });
+    expect(await run(["lock", "curated/nope.md"])).toEqual({ code: 1, stdout: "", stderr: "no note at curated/nope.md (mfw vault list shows them)\n" });
+  });
+});
