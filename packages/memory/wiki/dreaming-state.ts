@@ -15,8 +15,8 @@ import { readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { NoteStatus } from "./frontmatter-schema.ts";
 
-/** One note's counts: sessions for and against its text (`hash`), and the turns they come from. */
-export type NoteTally = { hash: string; for: string[]; against: string[]; evidence: string[] };
+/** One note's counts: sessions for and against its text (`hash`) since a person's decision on it (`since`, when there was one), and the turns they come from. */
+export type NoteTally = { hash: string; since?: string; for: string[]; against: string[]; evidence: string[] };
 
 export type DreamingState = { lastPass?: string; notes: Record<string, NoteTally> };
 
@@ -33,11 +33,16 @@ export function bodyHash(body: string): string {
 /** `state` with `verdicts` added to the counts of `note` (started over when its text isn't `hash` any more), counting only those after `since`. */
 export function tally(state: DreamingState, note: string, hash: string, verdicts: Verdict[], since?: string): DreamingState {
   const current = state.notes[note];
-  const base: NoteTally = current !== undefined && current.hash === hash ? current : { hash, for: [], against: [], evidence: [] };
+  // Counts hold for one text and one decision: a new text or a newer decision starts them over.
+  const base: NoteTally =
+    current !== undefined && current.hash === hash && current.since === since
+      ? current
+      : { hash, ...(since === undefined ? {} : { since }), for: [], against: [], evidence: [] };
   const counted = verdicts.filter((v) => since === undefined || v.at > since);
   const add = (list: string[], items: string[]) => [...new Set([...list, ...items])];
   const next: NoteTally = {
     hash,
+    ...(since === undefined ? {} : { since }),
     for: add(base.for, counted.filter((v) => v.verdict === "for").map((v) => v.sessionKey)),
     against: add(base.against, counted.filter((v) => v.verdict === "against").map((v) => v.sessionKey)),
     evidence: add(base.evidence, counted.map((v) => v.turnId)),

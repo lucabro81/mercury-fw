@@ -177,6 +177,23 @@ describe("runDreaming", () => {
         },
       ]);
     });
+    // Regression: a standard contested at k sessions and then validated by a person was contested again by
+    // its first later use, the old counts still standing for the same text.
+    it("once validated, isn't contested again by the counts from before the decision", async () => {
+      const base = await setup();
+      await write(base.vaultPath);
+      const run = () => runDreaming(deps(base, judgeOf(() => keep).judge).deps);
+      await appendUses(base.dataDir, ["s1", "s2", "s3"].map((s, i) => use(standard, ALICE, s, `t${i}`, { outcome: "against" })));
+      await run();
+      const { decideReview } = await import("./review-entries.ts");
+      await decideReview(base.vaultPath, "curated--standards--jira-fields", "reject", "2026-11-14T12:00:00.000Z");
+
+      await appendUses(base.dataDir, [use(standard, BOB, "s4", "t4", { outcome: "for", at: "2026-11-15T10:00:00.000Z" })]);
+      await run();
+
+      expect((await readNote(base.vaultPath, standard))?.frontmatter.status).toBe("validated");
+      expect(await listReviews(base.vaultPath)).toEqual([]);
+    });
   });
 
   describe("a person's note, checked by the model", () => {

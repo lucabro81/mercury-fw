@@ -51,7 +51,16 @@ describe("tally", () => {
       ],
       "2026-11-15T00:00:00.000Z",
     );
-    expect(state.notes["curated/a.md"]).toEqual({ hash: "h1", for: [], against: ["s2"], evidence: ["t2"] });
+    expect(state.notes["curated/a.md"]).toEqual({ hash: "h1", since: "2026-11-15T00:00:00.000Z", for: [], against: ["s2"], evidence: ["t2"] });
+  });
+
+  // Regression: counts from before a person's decision survived it (same text, same hash), so the first
+  // use after a `reject` found k sessions against already there and contested the note again.
+  it("starts over when `since` moves, even for the same text", () => {
+    const contested = tally(empty, "curated/a.md", "h1", ["s1", "s2", "s3"].map((s, i) => ({ sessionKey: s, verdict: "against" as const, at: `2026-11-1${i}T10:00:00.000Z`, turnId: `t${i}` })));
+    const afterDecision = tally(contested, "curated/a.md", "h1", [{ sessionKey: "s4", verdict: "for", at: "2026-11-20T10:00:00.000Z", turnId: "t4" }], "2026-11-15T00:00:00.000Z");
+    expect(afterDecision.notes["curated/a.md"]).toEqual({ hash: "h1", since: "2026-11-15T00:00:00.000Z", for: ["s4"], against: [], evidence: ["t4"] });
+    expect(decide(afterDecision.notes["curated/a.md"]!, K, "validated")).toBeUndefined();
   });
 
   it("leaves the state it was given as it was", () => {

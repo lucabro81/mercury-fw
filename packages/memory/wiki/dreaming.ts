@@ -209,8 +209,9 @@ export async function runDreaming(deps: DreamingDeps): Promise<void> {
   }
   state = { ...state, lastPass: now() };
   await saveState(deps.dataDir, state);
-  await finishUses(deps.dataDir);
+  // The failed notes' uses go back before the handled ones are dropped: a stop in between repeats some, loses none.
   await appendUses(deps.dataDir, failed);
+  await finishUses(deps.dataDir);
 }
 
 const JudgmentSchema = z.object({

@@ -293,7 +293,9 @@ describe("wiki", () => {
       const dataDir = await mkdtemp(join(tmpdir(), "mercury-wiki-data-"));
       tempDirs.push(dataDir);
       const { ctx } = ctxWith();
-      const built = await wiki({ vaultPath: await tempVault(), review: { dreaming: {} } }).build!(Object.assign(ctx, { dataDir }));
+      const built = await wiki({ vaultPath: await tempVault(), review: { dreaming: {} } }).build!(
+        Object.assign(ctx, { dataDir, conversations: { messages: async () => ({ messages: [] }) } }),
+      );
 
       await built.onTurnRecord!({
         kind: "turn",
@@ -339,6 +341,14 @@ describe("wiki", () => {
       expect(jobs).toEqual(["review-index", "review-contradictions", "dreaming"]);
       // The build context's model is a stand-in that can't answer: the pass got as far as asking it.
       expect(logs.some((l) => l.startsWith("dreaming: curated/from-raw.md not checked:"))).toBe(true);
+    });
+
+    // Without a store to read the conversations from there's no pass, so recording uses would only grow a file.
+    it("is skipped, saying so and recording nothing, when there's no conversation store", async () => {
+      const { ctx, logs } = ctxWith();
+      const built = await wiki({ vaultPath: await tempVault(), review: { dreaming: {} } }).build!(Object.assign(ctx, { dataDir: await tempVault() }));
+      expect(logs).toContain("dreaming is off: the wiki was given no conversation store to read the conversations from");
+      expect(built.onTurnRecord).toBeUndefined();
     });
 
     it("is skipped, saying so, when the core gives no data folder", async () => {

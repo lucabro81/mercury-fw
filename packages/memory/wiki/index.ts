@@ -123,6 +123,7 @@ export function wiki(options: WikiOptions = {}): WikiPlugin {
       const dataDir = dreaming === undefined ? undefined : ctx.dataDir;
       if (dreaming !== undefined && dataDir === undefined) ctx.log("dreaming is off: the core gave the wiki no data folder to keep what it counts in");
       const conversations = ctx.conversations;
+      if (dataDir !== undefined && conversations === undefined) ctx.log("dreaming is off: the wiki was given no conversation store to read the conversations from");
       const runDreamingPass =
         dataDir === undefined || conversations === undefined
           ? undefined
@@ -144,7 +145,7 @@ export function wiki(options: WikiOptions = {}): WikiPlugin {
       }
 
       return {
-        ...(dataDir === undefined
+        ...(runDreamingPass === undefined || dataDir === undefined
           ? {}
           : {
               onTurnRecord: async (record: TurnRecord) => {
