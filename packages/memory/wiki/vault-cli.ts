@@ -17,6 +17,12 @@
  * schema field. The nightly self-review job (`self-review-tools.ts`) is
  * the only thing that reads raw/ back to triage it into curated/.
  *
+ * `review` lists and decides the entries the nightly passes leave in
+ * `review/` (`review-entries.ts`); `lock`/`unlock` set a curated doc's
+ * `locked` (`updateNoteFrontmatter`), never a learned standard's, which only
+ * the wiki's `locked` paths lock. `write-raw` refuses an entry over the
+ * triage's limit (`raw-limit.ts`).
+ *
  * `list`/`read`/`grep` intentionally bypass the per-person scoping in
  * `vault-access.ts`: that scoping exists to isolate what each
  * person (and the model on their behalf) can see; a maintainer running this
@@ -24,7 +30,9 @@
  */
 import { resolve, sep } from "node:path";
 import { initVault } from "./vault-init.ts";
-import { writeCuratedNote, writeRawEntry } from "./wiki-note.ts";
+import { RAW_MAX_BYTES, rawEntryOverLimit } from "./raw-limit.ts";
+import { decideReview, listReviews, readReview } from "./review-entries.ts";
+import { readNote, updateNoteFrontmatter, withNoteType, writeCuratedNote, writeRawEntry } from "./wiki-note.ts";
 
 function usage(): never {
   console.error(
@@ -37,6 +45,9 @@ function usage(): never {
       "  read <path>",
       "  list",
       "  grep <pattern>",
+      "  review list",
+      "  review show|accept|reject <id>",
+      "  lock|unlock <curated/...path.md>",
       "",
       "Every path is relative to the vault root (as printed by `list`), including",
       "the leading `curated/`/`raw/` — write-curated/write-raw require it too, so",
@@ -99,7 +110,16 @@ async function main(): Promise<void> {
         console.error("empty body on stdin — nothing to write");
         process.exit(1);
       }
-      await writeRawEntry(vaultPath, rawRelativePath, body.trimEnd());
+      const entry = body.trimEnd();
+      // Measured as it lands in raw/, with the final newline writeRawEntry adds: what the triage measures.
+      if (rawEntryOverLimit(`${entry}\n`)) {
+        const size = Buffer.byteLength(`${entry}\n`, "utf-8");
+        console.error(
+          `${vaultRelativePath} is over the raw/ limit (${size} bytes, the limit is ${RAW_MAX_BYTES}): the nightly review triages only smaller entries`,
+        );
+        process.exit(1);
+      }
+      await writeRawEntry(vaultPath, rawRelativePath, entry);
       console.log(`wrote ${vaultRelativePath}`);
       break;
     }
@@ -143,6 +163,59 @@ async function main(): Promise<void> {
           }
         });
       }
+      break;
+    }
+
+    case "review": {
+      const [sub, id] = args;
+      if (sub === "list") {
+        const entries = await listReviews(vaultPath);
+        if (entries.length === 0) console.log("no review entries");
+        for (const e of entries) console.log(`${e.id}  ${e.kind}  ${e.note}  ${e.opened_at}`);
+        break;
+      }
+      if (!id || !["show", "accept", "reject"].includes(sub ?? "")) usage();
+      const entry = await readReview(vaultPath, id);
+      if (entry === null) {
+        console.error(`no review entry ${id} (mfw vault review list shows them)`);
+        process.exit(1);
+      }
+      if (sub === "show") {
+        const lines = [`note: ${entry.note}`, `kind: ${entry.kind}`, `opened: ${entry.opened_at}`, `evidence: ${entry.evidence.join(", ")}`, "", entry.reason];
+        if (entry.proposed !== undefined) lines.push("", "proposed:", "", entry.proposed);
+        console.log(lines.join("\n"));
+        break;
+      }
+      const decision = sub as "accept" | "reject";
+      const { note, outcome } = await decideReview(vaultPath, id, decision, new Date().toISOString());
+      console.log(`${decision === "accept" ? "accepted" : "rejected"} ${id}: ${note} ${outcome === "note-gone" ? "was already gone" : outcome}`);
+      break;
+    }
+
+    case "lock":
+    case "unlock": {
+      const path = args[0];
+      if (!path) usage();
+      if (!path.startsWith("curated/")) {
+        console.error("only a curated doc is locked here (curated/…); a person locks their own notes");
+        process.exit(1);
+      }
+      const note = await readNote(vaultPath, path).catch(() => null);
+      if (note === null) {
+        console.error(`no note at ${path} (mfw vault list shows them)`);
+        process.exit(1);
+      }
+      if (withNoteType(path, note.frontmatter).type !== "curated") {
+        console.error(`${path} is the consolidation's (a learned standard): lock it with the wiki's locked paths instead`);
+        process.exit(1);
+      }
+      await updateNoteFrontmatter(
+        vaultPath,
+        path,
+        ({ locked: _locked, ...rest }) => (command === "lock" ? { ...rest, locked: true } : rest),
+        `${command}: ${path}`,
+      );
+      console.log(`${command}ed ${path}`);
       break;
     }
 

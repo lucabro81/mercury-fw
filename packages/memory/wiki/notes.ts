@@ -14,6 +14,7 @@ import {
   type ConsolidationDecision,
   type Occurrence,
 } from "./consolidation.ts";
+import { createLockCheck } from "./locks.ts";
 import { userArea } from "./user-area.ts";
 import { listWikiFilesInRoots, readWikiFileInRoots } from "./wiki-read.ts";
 import { writeInferredNote, writeToolCorrectionNote } from "./wiki-note.ts";
@@ -31,19 +32,23 @@ export type WikiNotes = {
   promoteFact: (key: string, topic: string, cluster: Cluster) => Promise<ConsolidationDecision>;
   /** The person's facts, from their `inferred/` notes. */
   facts: (key: string) => Promise<WikiFact[]>;
-  /** The same as `promoteFact` for a tool's correction, in `curated/standards/<tool>-<topic>.md`, which everyone reads. */
+  /** The same as `promoteFact` for a tool's correction, in `curated/standards/<tool>-<topic>.md`, which everyone reads; `locked`, untouched, when that path is one of the instance's locked ones. */
   promoteCorrection: (tool: string, topic: string, cluster: Cluster) => Promise<ConsolidationDecision>;
 };
 
 const FRONTMATTER_RE = /^---\n([\s\S]*?)\n---\n/;
 
-/** The notes on the vault at `vaultPath` (see the module comment). */
-export function createWikiNotes(vaultPath: string): WikiNotes {
+/** The notes on the vault at `vaultPath` (see the module comment), `options.locked` being the instance's locked paths. */
+export function createWikiNotes(vaultPath: string, options: { locked?: readonly string[] } = {}): WikiNotes {
+  const locked = options.locked ?? [];
   return {
     promoteFact: (key, topic, cluster) =>
       consolidateSemanticFact(key, topic, { vaultPath, clusterFn: (_k, _t, limit) => cluster(limit), writeInferredNoteFn: writeInferredNote }),
-    promoteCorrection: (tool, topic, cluster) =>
-      consolidateToolCorrection(tool, topic, { vaultPath, clusterFn: (_t, _p, limit) => cluster(limit), writeNoteFn: writeToolCorrectionNote }),
+    promoteCorrection: async (tool, topic, cluster) => {
+      // Checked only when the instance configures locked paths: that's how a standard, the consolidation's, is locked.
+      if (locked.length > 0 && (await createLockCheck(vaultPath, locked)(`curated/standards/${tool}-${topic}.md`))) return "locked";
+      return consolidateToolCorrection(tool, topic, { vaultPath, clusterFn: (_t, _p, limit) => cluster(limit), writeNoteFn: writeToolCorrectionNote });
+    },
     facts: async (key) => {
       const root = resolve(vaultPath, userArea(key), "inferred");
       const facts: WikiFact[] = [];

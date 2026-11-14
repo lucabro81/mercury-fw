@@ -171,6 +171,12 @@ describe("wiki", () => {
     });
   });
 
+  it("stops the start with a locked path outside curated/", async () => {
+    const vaultPath = await tempVault();
+    expect(() => wiki({ vaultPath, locked: ["users/**"] })).toThrow('wiki: locked takes paths under curated/ (got "users/**")');
+    expect(() => wiki({ vaultPath, locked: ["curated/confluence/**"] })).not.toThrow();
+  });
+
   describe("the nightly review", () => {
     it("runs every day at 03:00 in the instance's time zone by default", async () => {
       const { ctx, daily } = ctxWith();
@@ -220,6 +226,20 @@ describe("wiki", () => {
       expect(jobs).toEqual(["review-raw:idle", "review-index:idle", "review-contradictions:idle"]);
       expect(used).toEqual(["background", "background", "background"]);
       expect(logs.filter((l) => l.includes("pass failed"))).toHaveLength(3);
+    });
+
+    it("leaves a raw/ entry over the limit out of the triage, logging it", async () => {
+      const vault = await tempVault();
+      const { ctx, daily, logs } = ctxWith();
+      const jobs: string[] = [];
+      Object.assign(ctx, { job: async <T,>(name: string, _urgency: string, fn: () => Promise<T>) => (jobs.push(name), fn()) });
+      await wiki({ vaultPath: vault }).build!(ctx);
+      await writeFile(join(vault, "raw", "huge.md"), "x".repeat(64 * 1024 + 1));
+
+      await Promise.resolve(daily[0]!.fn()).catch(() => undefined);
+
+      expect(jobs).not.toContain("review-raw");
+      expect(logs.some((l) => l.startsWith("raw/huge.md is over the raw/ limit"))).toBe(true);
     });
 
     it("stops the start when the core refuses the review's time", async () => {

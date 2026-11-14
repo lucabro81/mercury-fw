@@ -86,11 +86,14 @@ export function createWikiTools(
   const write_file = tool({
     description:
       'Write or update a note for the person you\'re talking to, under personal/notes/ (e.g. "personal/notes/plan.md"). ' +
-      "Only they can see it. curated/ can't be written here: to share a note with the team, use promote_note.",
-    inputSchema: z.object({ path: z.string().min(1), content: z.string() }),
-    execute: async ({ path, content }) => {
+      "Only they can see it. curated/ can't be written here: to share a note with the team, use promote_note. " +
+      "Set locked: true only when the person asks you not to have the note changed (the nightly checks then leave it " +
+      "alone), locked: false when they ask to unlock it; leave it out otherwise, and the note keeps its lock.",
+    inputSchema: z.object({ path: z.string().min(1), content: z.string(), locked: z.boolean().optional() }),
+    execute: async ({ path, content, locked }) => {
       try {
-        await writePersonalNote(vaultPath, key, path, { last_updated: today() }, content);
+        const fields = { last_updated: today(), ...(locked === true ? { locked: true as const } : {}) };
+        await writePersonalNote(vaultPath, key, path, fields, content, { keepLock: locked === undefined });
         return { ok: true as const };
       } catch (err) {
         return { ok: false as const, error: String(err) };

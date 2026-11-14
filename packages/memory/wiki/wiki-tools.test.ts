@@ -104,6 +104,50 @@ describe("createWikiTools", () => {
     expect(text).toContain("Daily at 9.");
   });
 
+  describe("write_file and a note's lock", () => {
+    const file = (vaultPath: string) => join(vaultPath, "users/static%3Aalice/notes/plan.md");
+
+    it("locks the note with locked: true, and unlocks it with locked: false", async () => {
+      const vaultPath = await makeTempVault();
+      const { write_file } = toolsFor(vaultPath, ALICE).tools;
+
+      await call(write_file, { path: "personal/notes/plan.md", content: "Plan.", locked: true });
+      expect(await readFile(file(vaultPath), "utf-8")).toMatch(/^---\ntype: personal\nlast_updated: \d{4}-\d{2}-\d{2}\nlocked: true\n---\n\nPlan\.\n$/);
+
+      await call(write_file, { path: "personal/notes/plan.md", content: "Plan.", locked: false });
+      expect(await readFile(file(vaultPath), "utf-8")).not.toContain("locked");
+    });
+
+    it("keeps the note's lock when locked is left out, so updating a locked note doesn't unlock it", async () => {
+      const vaultPath = await makeTempVault();
+      const { write_file } = toolsFor(vaultPath, ALICE).tools;
+      await call(write_file, { path: "personal/notes/plan.md", content: "Plan.", locked: true });
+
+      expect(await call(write_file, { path: "personal/notes/plan.md", content: "Plan, updated." })).toEqual({ ok: true });
+
+      const text = await readFile(file(vaultPath), "utf-8");
+      expect(text).toContain("locked: true");
+      expect(text).toContain("Plan, updated.");
+    });
+
+    it("drops the note's status: new text, checked again from scratch", async () => {
+      const vaultPath = await makeTempVault();
+      await writePersonalNote(vaultPath, ALICE, "personal/notes/plan.md", {}, "Plan.");
+      const { updateNoteFrontmatter } = await import("./wiki-note.ts");
+      await updateNoteFrontmatter(vaultPath, "users/static%3Aalice/notes/plan.md", (fm) => ({ ...fm, status: "verified" }), "x");
+      const { write_file } = toolsFor(vaultPath, ALICE).tools;
+
+      await call(write_file, { path: "personal/notes/plan.md", content: "Plan, updated." });
+
+      expect(await readFile(file(vaultPath), "utf-8")).not.toContain("status");
+    });
+
+    it("tells the model to set it only when the person asks", () => {
+      const { write_file } = toolsFor("/unused", ALICE).tools;
+      expect(write_file.description).toContain("locked: true only when the person asks you not to have the note changed");
+    });
+  });
+
   it("write_file refuses the common area and points at promote_note, writing nothing", async () => {
     const vaultPath = await makeTempVault();
     const { write_file } = toolsFor(vaultPath, ALICE).tools;
@@ -166,6 +210,18 @@ describe("createWikiTools", () => {
       expect(String(result.error)).toContain("Never mention the token");
       expect(staged.map((s) => s.describe)).toEqual(["promote personal/notes/release.md to curated/standards/release.md"]);
       expect(await exists(join(vaultPath, "curated/standards/release.md"))).toBe(false);
+    });
+
+    // A person locks their own notes; only whoever curates the wiki locks a common one.
+    it("never carries a person's lock into the common area", async () => {
+      const vaultPath = await makeTempVault();
+      await writePersonalNote(vaultPath, ALICE, "personal/notes/release.md", { locked: true }, "Release on Tuesdays.");
+      const { tools, staged } = toolsFor(vaultPath, ALICE);
+      await call(tools.promote_note, { from: "personal/notes/release.md", to: "standards/release.md" });
+
+      await staged[0]!.run();
+
+      expect(await readFile(join(vaultPath, "curated/standards/release.md"), "utf-8")).not.toContain("locked");
     });
 
     it("writes the note's text, as it was when staged, into the common area once confirmed", async () => {

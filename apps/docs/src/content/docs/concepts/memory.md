@@ -115,9 +115,35 @@ example above). The vault is where `WIKI_VAULT_PATH` says, unless `wiki({ vaultP
 |---|---|
 | `vaultPath` | Where the vault lives; `WIKI_VAULT_PATH` when left out. With neither, the app doesn't start. |
 | `review` | When the nightly review runs, `{ at: "HH:MM", timeZone }` (the instance's time zone when left out); every day at `"03:00"` by default, `false` for none. |
+| `locked` | Folders of the common area, as patterns (`["curated/confluence/**"]`), that only people change. |
 
-Every night the review goes through the vault on the model: it sorts what was pasted into `raw/` into the common
-area, keeps the index in line with it, and looks for documents that contradict each other.
+### The nightly review
+
+Every night the review goes through the wiki on the model, in three passes, one after the other:
+
+| Pass | What it reads | What it changes |
+|---|---|---|
+| sorting | `raw/`, the material people pasted in, and the common area | merges each piece into a document of the common area, or makes a new one, or throws it away; then deletes it from `raw/` |
+| index | the common area and its index | adds a line to the index for every document that has none |
+| contradictions | the common area | fixes documents that contradict each other, adds links between related ones |
+
+It never reads a person's own area. Every document it writes is signed `author: mercury-review`, so you can tell what
+the model wrote from what a person wrote.
+
+A piece in `raw/` is a Markdown file of at most 64 KiB. A larger one stays where it is, and the log says so.
+
+### Locked notes
+
+Some notes shouldn't be changed by the model at all: a policy, or a folder copied from your official documentation,
+where a fix belongs in the source. Those are **locked**:
+
+- a document of the common area is locked with `mfw vault lock`, or by the `locked` option for whole folders;
+- a person's own note is locked when they ask the agent to.
+
+The nightly review never changes a locked note. When one looks wrong to it, it leaves a **review entry** instead: a
+note in the wiki's `review/` folder, which the model never reads, saying what's wrong and what it would write in its
+place. A person reads them with `mfw vault review list`, then accepts one (the note gets the new text) or rejects it
+(the note stays as it is).
 
 `mfw vault` reads and writes the wiki from your terminal.
 

@@ -191,9 +191,53 @@ Examples:
   vault
     .command("write-raw")
     .summary("writes raw material from stdin")
-    .description("Writes raw material for the nightly review to triage, the body read from stdin.")
+    .description("Writes raw material for the nightly review to triage, the body read from stdin. An entry over 64 KiB is refused: the review triages only smaller ones.")
     .argument("<path>", "raw/…, vault-relative")
     .action(async (path: string) => inApp((app) => app.vault(["write-raw", path]))());
+  const review = vault
+    .command("review")
+    .summary("what the nightly passes left for a person to decide")
+    .description(
+      "Lists and decides the review entries the nightly review opens (review/…), on a locked note it would have changed.",
+    )
+    .helpCommand(false);
+  review
+    .command("list")
+    .summary("the open entries")
+    .description("Lists the open entries, one per line: id, kind, note, when it was opened.")
+    .action(async () => inApp((app) => app.vault(["review", "list"]))());
+  review
+    .command("show")
+    .summary("an entry")
+    .description("Prints an entry: its note, why it was opened, the turns behind it, the text proposed in the note's place.")
+    .argument("<id>", "as mfw vault review list prints it")
+    .action(async (id: string) => inApp((app) => app.vault(["review", "show", id]))());
+  review
+    .command("accept")
+    .summary("applies an entry")
+    .description(
+      "Applies an entry and closes it: a curated or locked note gets the proposed text, a learned standard is deleted (corrections learn it again).",
+    )
+    .argument("<id>", "as mfw vault review list prints it")
+    .action(async (id: string) => inApp((app) => app.vault(["review", "accept", id]))());
+  review
+    .command("reject")
+    .summary("keeps the note as it is")
+    .description("Closes an entry keeping the note as it is: marked validated, except a locked note's, whose entry just closes.")
+    .argument("<id>", "as mfw vault review list prints it")
+    .action(async (id: string) => inApp((app) => app.vault(["review", "reject", id]))());
+  vault
+    .command("lock")
+    .summary("a curated doc only people change")
+    .description("Locks a curated doc: the nightly review leaves it alone, only people change it.")
+    .argument("<path>", "curated/…, vault-relative")
+    .action(async (path: string) => inApp((app) => app.vault(["lock", path]))());
+  vault
+    .command("unlock")
+    .summary("unlocks a curated doc")
+    .description("Unlocks a curated doc locked with mfw vault lock.")
+    .argument("<path>", "curated/…, vault-relative")
+    .action(async (path: string) => inApp((app) => app.vault(["unlock", path]))());
 
   const memory = program
     .command("memory")
