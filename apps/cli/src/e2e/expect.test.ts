@@ -95,3 +95,48 @@ describe("createExpect", () => {
     ]);
   });
 });
+
+describe("createExpect: outputs (#403)", () => {
+  const withOutput = (output: Turn["output"]): Turn => ({ calls: [], answer: "", seconds: 1, ...(output === undefined ? {} : { output }) });
+  const failed = (outputError: NonNullable<Turn["outputError"]>): Turn => ({ calls: [], answer: "", seconds: 1, outputError });
+  const value = { ok: true, query: "author ~ 'dante'" };
+
+  test("output: passes on the last turn's output, matching when given; fails saying what came instead", () => {
+    const run = runOf(withOutput({ mode: "tool", value }));
+    const c = createExpect(run);
+    c.expect.output();
+    c.expect.output((v) => (v as typeof value).query.includes("dante"), "the query names dante");
+    c.expect.output((v) => (v as typeof value).query === "x");
+    expect(c.checks()).toEqual([
+      { label: "an output", ok: true },
+      { label: "the query names dante", ok: true },
+      { label: "an output that matches", ok: false, detail: `tool ${JSON.stringify(value)}` },
+    ]);
+
+    const none = createExpect(runOf(turn([], "just text")));
+    none.expect.output();
+    const err = createExpect(runOf(failed({ code: "output-missing", attempts: 3, lastError: "no call" })));
+    err.expect.output();
+    expect([...none.checks(), ...err.checks()]).toEqual([
+      { label: "an output", ok: false, detail: "no output: just text" },
+      { label: "an output", ok: false, detail: "output-missing after 3 attempts: no call" },
+    ]);
+  });
+
+  test("outputError: passes when the last turn failed with the code (or any), fails on an output", () => {
+    const run = runOf(failed({ code: "output-invalid", attempts: 2 }));
+    const c = createExpect(run);
+    c.expect.outputError();
+    c.expect.outputError("output-invalid");
+    c.expect.outputError("output-missing");
+    expect(c.checks()).toEqual([
+      { label: "a TurnOutputError", ok: true },
+      { label: "a TurnOutputError output-invalid", ok: true },
+      { label: "a TurnOutputError output-missing", ok: false, detail: "output-invalid after 2 attempts" },
+    ]);
+
+    const ok = createExpect(runOf(withOutput({ mode: "schema", value })));
+    ok.expect.outputError();
+    expect(ok.checks()).toEqual([{ label: "a TurnOutputError", ok: false, detail: `schema ${JSON.stringify(value)}` }]);
+  });
+});

@@ -10,7 +10,7 @@
  * staged for confirmation (the `pending` event's token), shaped like the one
  * a REPL dump has, so a confirmation turn reads the token the same way.
  */
-import type { Call, TurnData } from "./dump.ts";
+import type { Call, TurnData, TurnOutputData, TurnOutputErrorData } from "./dump.ts";
 import type { HttpReply, Session } from "./runner.ts";
 
 export type HttpSessionOptions = {
@@ -32,13 +32,16 @@ function events(body: string): Array<{ name: string; data: Record<string, unknow
     .filter((e) => e !== undefined);
 }
 
-/** The calls and the answer in the body of a `/turn` stream; throws on an
- * `error` event, or when the stream has no `final` one. */
+/** The calls and the answer in the body of a `/turn` stream, with the
+ * `final` event's output when it has one; a `TurnOutputError` (an `error`
+ * event with an `output-*` code) is the turn's `outputError`. Throws on any
+ * other `error` event, or when the stream has no `final` one. */
 export function turnFromSse(body: string): TurnData {
   const calls: Array<Call & { id: unknown }> = [];
   // A pending event's output, waiting for its call's tool_finish when it came first.
   const unclaimed: unknown[] = [];
   let answer: string | undefined;
+  let output: TurnOutputData | undefined;
   for (const { name, data } of events(body)) {
     if (name === "tool" && typeof data.name === "string") {
       // A tool event with no name is Mercury saving to memory, not a call.
@@ -56,12 +59,20 @@ export function turnFromSse(body: string): TurnData {
       else unclaimed.push(output);
     } else if (name === "final") {
       answer = String(data.text ?? "");
+      const out = data.output as { mode?: unknown; value?: unknown } | undefined;
+      if (typeof out?.mode === "string") output = { mode: out.mode, value: out.value };
     } else if (name === "error") {
+      // A turn whose output never came is a result a case checks, not a broken run.
+      if (typeof data.code === "string" && data.code.startsWith("output-")) {
+        const outputError: TurnOutputErrorData = { code: data.code, attempts: Number(data.attempts ?? 0) };
+        if (typeof data.lastError === "string") outputError.lastError = data.lastError;
+        return { calls: calls.map(({ id: _, ...call }) => call), answer: "", outputError };
+      }
       throw new Error(`the turn failed in the app: ${String(data.message)}`);
     }
   }
   if (answer === undefined) throw new Error("the stream ended without a final event");
-  return { calls: calls.map(({ id: _, ...call }) => call), answer };
+  return { calls: calls.map(({ id: _, ...call }) => call), answer, ...(output === undefined ? {} : { output }) };
 }
 
 /** Opens a session on the surface at `opts.baseUrl`: nothing is sent until the first turn. */
