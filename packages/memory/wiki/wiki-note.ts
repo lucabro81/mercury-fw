@@ -249,7 +249,7 @@ export function renderNote(frontmatter: Record<string, unknown>, body: string): 
 const NOTE_PATH_RE = /^(curated\/.+|users\/[^/]+\/notes\/.+)\.md$/;
 
 /** The file of the note at the vault path `path`; throws for anything that isn't a curated or a person's note. */
-function notePath(vaultPath: string, path: string): string {
+export function notePath(vaultPath: string, path: string): string {
   const vaultRoot = resolve(vaultPath);
   const fullPath = resolve(vaultRoot, path);
   const normalized = relative(vaultRoot, fullPath).split(sep).join("/");
@@ -258,7 +258,7 @@ function notePath(vaultPath: string, path: string): string {
 }
 
 /** Checks `frontmatter` against the schema of its note's `type`, throwing when it doesn't fit. */
-function validNoteFrontmatter(frontmatter: Record<string, unknown>): CuratedFrontmatter | PersonalFrontmatter | InferredFrontmatter {
+export function validNoteFrontmatter(frontmatter: Record<string, unknown>): CuratedFrontmatter | PersonalFrontmatter | InferredFrontmatter {
   switch (frontmatter.type) {
     case "curated":
       return CuratedFrontmatterSchema.parse(frontmatter);
