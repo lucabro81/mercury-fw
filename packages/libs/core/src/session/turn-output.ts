@@ -5,7 +5,7 @@
  * resolution at startup (a contradiction stops the instance) and the verdict
  * on a value the model gave; the turn itself runs it in `agent-turn.ts`.
  */
-import type { FlexibleSchema } from "ai";
+import type { FlexibleSchema, Tool } from "ai";
 import { channelOutputs, type ChannelPlugin, type OutputMode } from "@mercury-fw/channel-types";
 import type { Plugin } from "@mercury-fw/plugin-types";
 
@@ -88,4 +88,68 @@ export async function acceptOutput(value: unknown, validate: Validate | undefine
   } catch (err) {
     return { ok: false, error: `the validator failed: ${err instanceof Error ? err.message : String(err)}` };
   }
+}
+
+/**
+ * One turn's watch on the tool that ends it (`output: { tool }`): `wrapTool`
+ * wraps that tool where its whole result is still there (before the display
+ * channel takes `display` out), so every result it returns gets a verdict
+ * (`acceptOutput`). The first one accepted is the turn's output; a refused one
+ * counts as a failed attempt and reaches the model as its error (the tool's
+ * own failure as it is, the validator's as `{ ok: false, error }`).
+ */
+export type OutputProbe = {
+  /** `tool`, wrapped; marks the tool as offered on this turn. */
+  wrapTool: (tool: Tool) => Tool;
+  /** Whether `wrapTool` was called: the tool is offered on this turn. */
+  readonly offered: boolean;
+  /** The accepted result, once there is one. */
+  readonly accepted: { value: unknown } | undefined;
+  /** How many results were refused. */
+  readonly failures: number;
+  /** The last refusal's error. */
+  readonly lastError: string | undefined;
+};
+
+/** A probe for one turn, judging results with `validate` (see `OutputProbe`). */
+export function createOutputProbe(validate?: Validate): OutputProbe {
+  let offered = false;
+  let accepted: { value: unknown } | undefined;
+  let failures = 0;
+  let lastError: string | undefined;
+  return {
+    wrapTool(tool) {
+      offered = true;
+      const { execute } = tool;
+      if (execute === undefined) return tool;
+      return {
+        ...tool,
+        execute: async (input: unknown, options: unknown) => {
+          const raw = await (execute as (i: unknown, o: unknown) => unknown)(input, options);
+          if (accepted !== undefined) return raw;
+          const verdict = await acceptOutput(raw, validate, { toolResult: true });
+          if (verdict.ok) {
+            accepted = { value: raw };
+            return raw;
+          }
+          failures++;
+          lastError = verdict.error;
+          const toolFailed = typeof raw === "object" && raw !== null && (raw as { ok?: unknown }).ok === false;
+          return toolFailed ? raw : { ok: false, error: verdict.error };
+        },
+      } as Tool;
+    },
+    get offered() {
+      return offered;
+    },
+    get accepted() {
+      return accepted;
+    },
+    get failures() {
+      return failures;
+    },
+    get lastError() {
+      return lastError;
+    },
+  };
 }
