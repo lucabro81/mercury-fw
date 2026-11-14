@@ -104,6 +104,26 @@ describe("the turn runner with an output (#403)", () => {
     expect(Object.keys(r.runDeps[0]!.tools)).toEqual(["resolve_reference", "lookup"]);
   });
 
+  // Regression (#406): present and the note on the lists already shown were offered with an output, though no
+  // display is appended to it; a small model spent its reasoning looking for a ref to present.
+  test("an output turn offers no present and no note on the lists already shown", async () => {
+    const tools = { resolve_reference: plainTool, present: plainTool, lookup: plainTool };
+    const shownLists = () => [{ ref: "d1", label: "jira (3 items)" }];
+    const tool = runner(toolOutput, async () => json, { buildTools: () => tools, shownLists });
+    await tool.handle(turn(), sink().sink);
+    expect(Object.keys(tool.runDeps[0]!.tools)).toEqual(["resolve_reference", "lookup"]);
+    expect(tool.runDeps[0]!.system).not.toContain("Lists already shown");
+
+    const schemaOnlyCore = runner(schemaOutput, async () => "{}", { buildTools: () => ({ resolve_reference: plainTool, present: plainTool }), shownLists });
+    await schemaOnlyCore.handle(turn(), sink().sink);
+    expect(schemaOnlyCore.runDeps[0]!.tools).toEqual({});
+
+    const text = runner(undefined, async () => "answer", { buildTools: () => tools, shownLists });
+    await text.handle(turn(), sink().sink);
+    expect(Object.keys(text.runDeps[0]!.tools)).toEqual(["resolve_reference", "present", "lookup"]);
+    expect(text.runDeps[0]!.system).toContain("Lists already shown");
+  });
+
   test("text, the default, runs as today: guards and displays", async () => {
     const r = runner(undefined, async () => "answer");
     const s = sink();
