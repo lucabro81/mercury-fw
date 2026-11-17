@@ -1265,6 +1265,23 @@ describe("runTurn — the turn's tool calls in the history", () => {
     expect(failed).toEqual([["confluenceCommand", "file gone"]]);
   });
 
+  // A rendering of undefined would be a tool result with no value, on every later turn.
+  it("hands later turns a past call's reduced result when the conversation renders it as nothing, and says which tool", async () => {
+    const history = { ...keptHistory(), pastCall: () => undefined as never };
+    const deps = { model: "fake-model" as never, tools: {}, system: SYSTEM };
+    await runTurn(history, "docker pages?", { ...deps, generateTextFn: generating([searchStep], "One page.") });
+    const seen = { messages: [] as ModelMessage[] };
+    const failed: unknown[] = [];
+    await runTurn(history, "thanks", { ...deps, generateTextFn: generating([], "You're welcome.", seen), onViewFailed: (tool, error) => void failed.push([tool, error]) });
+    expect(seen.messages[2]).toEqual({
+      role: "tool",
+      content: [
+        { type: "tool-result", toolCallId: "history-1-0", toolName: "confluenceCommand", output: { type: "json", value: { ...searchCall.result, note: HISTORY_CALL_NOTE } } },
+      ],
+    });
+    expect(failed).toEqual([["confluenceCommand", "the rendering returned nothing"]]);
+  });
+
   // A skill read in an earlier turn isn't loaded anymore: the model must be told
   // so, or it guesses the skill's commands instead of reading it again (#356).
   it("hands a later turn an earlier read_skill with the note that the skill must be read again", async () => {

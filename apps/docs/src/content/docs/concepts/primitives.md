@@ -103,8 +103,8 @@ Mercury always did:
   back on what the method returns; a staged confirmation and a login request never reach it. If it throws or
   returns `undefined`, the model reads the result as it is, and the traces show a `tool.view` event.
 - `pastCall(call)`: what the model reads of an earlier call's result, in later turns. It is still a real tool
-  result for the model. If it throws, the model reads Mercury's reduced result, and the traces show a `tool.view`
-  event.
+  result for the model. If it throws or returns `undefined`, the model reads Mercury's reduced result, and the
+  traces show a `tool.view` event, at every turn that reads that call.
 - `turnIndex()`: text that goes in front of the person's message at every turn, after the turn layers, and is kept
   with the message like them.
 - `placeLayers({ session })`: the session layers' blocks (`LayerBlocks`, by plugin), once per person and session;

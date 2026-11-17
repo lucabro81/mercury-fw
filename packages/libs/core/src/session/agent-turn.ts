@@ -138,7 +138,7 @@ function turnCalls(steps: StepInfo[], resumed: ResumedAction | undefined): CallR
   return callRecords([...confirmed, ...steps]);
 }
 
-/** The history as the model reads it: each person's message with its context in front, each past answer's calls, as tool calls and their results (as the conversation renders them, else reduced, a rendering that throws reduced too and told to `onViewFailed`), before its text. */
+/** The history as the model reads it: each person's message with its context in front, each past answer's calls, as tool calls and their results (as the conversation renders them, else reduced, a rendering that throws or returns `undefined` reduced too and told to `onViewFailed`), before its text. */
 function historyMessages(history: SessionHistory, onViewFailed?: (toolName: string, error: string) => void): ModelMessage[] {
   const { pastCall } = history;
   const render =
@@ -146,7 +146,9 @@ function historyMessages(history: SessionHistory, onViewFailed?: (toolName: stri
       ? undefined
       : (record: CallRecord): JSONValue => {
           try {
-            return pastCall(record);
+            const rendered = pastCall(record);
+            if (rendered === undefined) throw new Error("the rendering returned nothing");
+            return rendered;
           } catch (err) {
             const error = err instanceof Error ? err.message : String(err);
             console.error(`[conversation] its rendering of a past ${record.toolName} call failed, the model reads the reduced result: ${error}`);
