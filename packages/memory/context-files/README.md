@@ -35,7 +35,7 @@ A context profile names it as its `conversation`, the same object as in `plugins
 | `overflow` | How it shortens: `"files"` (the default) moves the older messages to a history file, `"summarize"` and `"truncate"` work as in `conversationWindow()`. |
 | `keepRecent` | How many exchanges (a person's message and the answers after it, the current one included) always stay in the window with `overflow: "files"`, 4 when left out. |
 | `outputs` | `{ overChars }`: a tool output longer than this (4000 characters when left out) goes to a file. `false` leaves every output whole. |
-| `layers` | `true` moves the session layers (the wiki's index, what the memory recalls) to files, the system prompt keeping one line for each. Off when left out. |
+| `layers` | `true` moves the session layers (the wiki's index, what the memory recalls) to files, the system prompt keeping one line for each. Off when left out; with a profile listing no layer it does nothing. |
 | `index` | `{ maxEntries }`: how many files the list in front of each message names one by one, 30 when left out; the oldest are folded into one line pointing at the search. |
 | `reopen`, `earlier` | As in `conversationWindow()`. With `reopen: false` the plugin doesn't need the app's conversation store. |
 
