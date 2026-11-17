@@ -102,10 +102,35 @@ export function withToolOutputView(
   return out;
 }
 
-/** `step` with each tool result's output as the tool returned it, where `originals` kept one. */
+/**
+ * Every field of `step` as a plain object: its own ones and those its class
+ * reads through getters. The AI SDK's steps are class instances whose
+ * `toolCalls`, `toolResults`, `text` and the like are getters, which a spread
+ * leaves out.
+ */
+function fieldsOf(step: object): Record<string, unknown> {
+  const fields: Record<string, unknown> = {};
+  for (let proto: object | null = step; proto !== null && proto !== Object.prototype; proto = Object.getPrototypeOf(proto)) {
+    for (const key of Object.getOwnPropertyNames(proto)) {
+      if (key === "constructor" || key in fields) continue;
+      const value = (step as Record<string, unknown>)[key];
+      if (typeof value !== "function") fields[key] = value;
+    }
+  }
+  return fields;
+}
+
+/** `part` with its output as the tool returned it, when it's a tool result `originals` kept one for. */
+function restored<T extends { toolCallId?: string }>(part: T, originals: Map<string, unknown>): T {
+  return part.toolCallId !== undefined && originals.has(part.toolCallId) && "output" in part ? { ...part, output: originals.get(part.toolCallId) } : part;
+}
+
+/** `step`, every field kept, with each tool result's output as the tool returned it, where `originals` kept one (in `toolResults` and in `content`). */
 export function restoreStep(step: StepInfo, originals: Map<string, unknown>): StepInfo {
+  const fields = fieldsOf(step) as StepInfo;
   return {
-    ...step,
-    toolResults: step.toolResults.map((r) => (originals.has(r.toolCallId) ? { ...r, output: originals.get(r.toolCallId) } : r)),
+    ...fields,
+    toolResults: step.toolResults.map((r) => restored(r, originals)),
+    content: step.content.map((p) => (p.type === "tool-result" ? restored(p, originals) : p)),
   };
 }
