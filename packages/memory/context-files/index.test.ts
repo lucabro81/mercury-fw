@@ -72,7 +72,7 @@ describe("contextFiles: a session's conversation", () => {
       await (text.startsWith("q") ? conversation.addUserMessage(text) : conversation.addAssistantMessage(text));
     }
     expect(conversation.getMessages().map((m) => m.content)).toEqual(["q2........", "a2........"]);
-    expect(await conversation.turnIndex!()).toContain('- history/1 — messages 1–2, from "q1........" (2 lines)');
+    expect(await conversation.turnIndex!()).toContain('- history/1 — 2 messages, from "q1........" (2 lines)');
   });
 
   it("shortens as conversation-window does with overflow summarize or truncate", async () => {

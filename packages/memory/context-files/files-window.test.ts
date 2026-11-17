@@ -41,16 +41,16 @@ describe("createFilesWindow", () => {
     const moved = await w.addAssistantMessage("a3".padEnd(10, "."));
     expect(w.getMessages().map((m) => m.content.slice(0, 2))).toEqual(["q2", "a2", "q3", "a3"]);
     expect(moved).toEqual({ messages: 2, charsBefore: 20, charsAfter: 0, durationMs: 5, outcome: "done" });
-    expect(files.entries()).toEqual([{ ref: "history/1", label: 'messages 1–2, from "q1........"', lines: 2, chars: 40 }]);
+    expect(files.entries()).toEqual([{ ref: "history/1", label: '2 messages, from "q1........"', lines: 2, chars: 40 }]);
     expect(await files.read("history/1")).toMatchObject({ text: "1: [user] q1........\n2: [assistant] a1........" });
   });
 
-  it("numbers the moved messages from the conversation's start across files", async () => {
+  it("labels each history file with how many messages it holds and the first thing the person said", async () => {
     const w = createFilesWindow({ files, maxChars: 40, keepRecent: 1 });
     await exchanges(w, 6);
     expect(files.entries().map((e) => e.label)).toEqual([
-      'messages 1–4, from "q1........"',
-      'messages 5–8, from "q3........"',
+      '4 messages, from "q1........"',
+      '4 messages, from "q3........"',
     ]);
     expect(w.getMessages().map((m) => m.content.slice(0, 2))).toEqual(["q5", "a5", "q6", "a6"]);
   });
@@ -101,11 +101,12 @@ describe("createFilesWindow", () => {
     expect(w.getCapturable()).toEqual([{ role: "user", content: "new q" }]);
   });
 
-  it("keeps a moved message out of what's capturable, and replaces the last answer", async () => {
+  it("keeps a moved message capturable: what the plugins hear of the session isn't cut by the move; replaces the last answer", async () => {
     const w = createFilesWindow({ files, maxChars: 30, keepRecent: 1 });
     await exchanges(w, 2);
     w.replaceLastAssistantMessage("fixed");
-    expect(w.getCapturable().map((m) => m.content)).toEqual(["q2........", "fixed"]);
+    expect(w.getMessages().map((m) => m.content)).toEqual(["q2........", "fixed"]);
+    expect(w.getCapturable().map((m) => m.content)).toEqual(["q1........", "a1........", "q2........", "fixed"]);
     expect(w.getCharCount()).toBe(15);
   });
 });

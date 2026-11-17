@@ -43,9 +43,9 @@ Sizes are whole numbers above 0 (`reopen.maxChars` from 0 up), and `overflow` on
 
 ## What the model gets
 
-A tool output that goes to a file reaches the model as `{ file, lines, chars, head, note }`, where `head` is its first 20 lines (1000 characters at most) and `note` tells it to read the rest before answering on it; the fields Mercury reads itself (`ok`, `error`, `displayRef`) stay on it, and a staged confirmation or a login request never goes to a file. In later turns the same call points at its file instead of saying its data is gone. What Mercury records doesn't change: the archive, the tool log, the traces and the plugins' hooks get the real output.
+A tool output that goes to a file reaches the model as `{ file, lines, chars, head, note }`, where `head` is its first 20 lines (1000 characters at most) and `note` tells it to read the rest before answering on it; the fields Mercury reads itself (`ok`, `error`, `displayRef`) stay on it, and a staged confirmation or a login request never goes to a file. In later turns the same call points at its file instead of saying its data is gone (Mercury keeps no id for a call, so a call is told apart by its tool and input: one run again with the same input points at its latest run's file, and at none when that run's output was short enough to stay whole). What Mercury records doesn't change: the archive, the tool log, the traces and the plugins' hooks get the real output.
 
-In front of each message the model reads the list of the conversation's files (`<context-files>`), one line each with what it holds (the tool and its input, which messages, which layer) and how many lines it has. It reads them with two tools, on the files of the turn's own conversation only:
+In front of each message the model reads the list of the conversation's files (`<context-files>`), one line each with what it holds (the tool and its input, how many messages and how the first began, which layer) and how many lines it has. It reads them with two tools, on the files of the turn's own conversation only:
 
 - `read_context_file({ ref, from?, to? })`: the file's lines, numbered, 200 at most per call, with `next` when there's more;
 - `search_context_files({ text, ref? })`: the lines holding a text, case-insensitive and taken as it is (not as a pattern), as `ref:line: text`, 50 at most.

@@ -105,6 +105,17 @@ describe("createFilesConversation: past calls", () => {
     expect(conversation.pastCall!({ toolName: "web_fetch", input: kept, result: { ok: true, ran: "x" } }, shown)).toMatchObject({ file: "outputs/1" });
   });
 
+  it("points a call run again with the same input at its latest run's file, and at none when that run stayed whole", async () => {
+    const conversation = createFilesConversation({ files, window: window(), outputs: { overChars: 100 }, index: { maxEntries: 30 } });
+    const call = { toolName: "jira_search", toolCallId: "c1", input: { jql: "project = X" } };
+    const record = { toolName: "jira_search", input: { jql: "project = X" }, result: { ok: true, ran: "x" } };
+    await conversation.toolOutput!(call, big);
+    await conversation.toolOutput!({ ...call, toolCallId: "c2" }, big);
+    expect(conversation.pastCall!(record, shown)).toMatchObject({ file: "outputs/2" });
+    await conversation.toolOutput!({ ...call, toolCallId: "c3" }, { issues: [] });
+    expect(conversation.pastCall!(record, shown)).toBe(shown);
+  });
+
   it("shows what the core shows of a past call with no file", async () => {
     const conversation = createFilesConversation({ files, window: window(), outputs: { overChars: 100 }, index: { maxEntries: 30 } });
     expect(conversation.pastCall!({ toolName: "jira_search", input: {}, result: { ok: true, ran: "x" } }, shown)).toBe(shown);

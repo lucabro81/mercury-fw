@@ -131,6 +131,8 @@ export async function openSessionFiles(root: string, sessionKey: string): Promis
       if (!got.ok) return got;
       const lines = got.text.split("\n");
       const start = Math.max(1, Math.floor(from));
+      if (start > lines.length) return { ok: false, error: `${ref} has ${lines.length} lines: from must be ${lines.length} or less` };
+      if (to !== undefined && Math.floor(to) < start) return { ok: false, error: `${ref}: to (${Math.floor(to)}) comes before from (${start})` };
       const end = Math.min(lines.length, to === undefined ? lines.length : Math.floor(to), start + MAX_READ_LINES - 1);
       const text = lines
         .slice(start - 1, end)

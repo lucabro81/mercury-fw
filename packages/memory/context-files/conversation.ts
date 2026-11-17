@@ -6,7 +6,10 @@
  *
  * - `toolOutput`: an output longer than `outputs.overChars` is written to a
  *   file; the model reads the file's ref, size and first lines.
- * - `pastCall`: a past call whose output went to a file points at it.
+ * - `pastCall`: a past call whose output went to a file points at it. The
+ *   core keeps no call id, so a call is told apart by its tool and input: a
+ *   call run again with the same input points at its latest run's file, and
+ *   at none when that run stayed whole.
  * - `turnIndex`: the session's files, one line each, in front of every
  *   message, the oldest past `index.maxEntries` folded into one line.
  * - `placeLayers` (with `layers: true`): each session layer's blocks go to a
@@ -42,7 +45,8 @@ export const OUTPUT_NOTE = (ref: string) =>
   `The whole output is in the file ${ref}: read it in pieces with read_context_file, or search it with search_context_files, before answering on what isn't in the head.`;
 
 /** What the model reads of a past call whose output is in a file. Model-facing, so in English. */
-export const PAST_CALL_NOTE = (ref: string) => `What this call returned is in the file ${ref}: read it with read_context_file instead of running the call again.`;
+export const PAST_CALL_NOTE = (ref: string) =>
+  `What this call returned (its latest run with this input) is in the file ${ref}: read it with read_context_file instead of running the call again.`;
 
 /** What the system prompt keeps of a layer moved to a file. Model-facing, so in English. */
 export const LAYER_NOTE = (layer: string, ref: string) => `The ${layer} context is in the file ${ref}: read it with read_context_file when it may help.`;
@@ -90,13 +94,20 @@ function linesLabel(lines: number): string {
 /** The conversation; see the module comment. */
 export function createFilesConversation(opts: FilesConversationOptions): Conversation {
   const { files, window, outputs } = opts;
+  // The latest run of each call (by `callKey`) in this process: its file, or null when it stayed whole.
+  const latest = new Map<string, string | null>();
 
   const toolOutput: Conversation["toolOutput"] = async (call, content) => {
     if (outputs === false || OWN_TOOLS.has(call.toolName)) return content;
     const text = typeof content === "string" ? content : JSON.stringify(content, null, 2);
-    if (text === undefined || text.length <= outputs.overChars) return content;
+    const key = callKey(call.toolName, call.input);
+    if (text === undefined || text.length <= outputs.overChars) {
+      latest.set(key, null);
+      return content;
+    }
     const label = `${call.toolName} ${cut(JSON.stringify(call.input) ?? "", LABEL_INPUT_CHARS)}`;
-    const ref = await files.write("outputs", text, label, callKey(call.toolName, call.input));
+    const ref = await files.write("outputs", text, label, key);
+    latest.set(key, ref);
     return { file: ref, lines: text.split("\n").length, chars: text.length, head: headOf(text), note: OUTPUT_NOTE(ref) };
   };
 
@@ -123,8 +134,9 @@ export function createFilesConversation(opts: FilesConversationOptions): Convers
         }
       : {}),
     pastCall: (call, shown): JSONValue => {
-      const ref = files.refFor(callKey(call.toolName, call.input));
-      if (ref === undefined) return shown;
+      const key = callKey(call.toolName, call.input);
+      const ref = latest.has(key) ? latest.get(key) : files.refFor(key);
+      if (ref === undefined || ref === null) return shown;
       return { ...(shown as Record<string, JSONValue>), file: ref, note: PAST_CALL_NOTE(ref) };
     },
     turnIndex: () => {

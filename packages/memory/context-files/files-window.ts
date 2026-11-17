@@ -5,7 +5,8 @@
  * summary. What came before the last `keepRecent` exchanges (an exchange is a
  * person's message and the answers after it, the current one included) is
  * written to the file, one line per message and one per past call, and
- * dropped from the window; the index (`turnIndex`) lists the file.
+ * dropped from the window; the index (`turnIndex`) lists the file. A moved
+ * message stays capturable: what the plugins hear of the session is whole.
  *
  * A file that can't be written leaves the window as it was, past its size;
  * the next message tries again, and the report says the move failed.
@@ -51,8 +52,8 @@ export function createFilesWindow(opts: FilesWindowOptions): Window {
   let messages: Message[] = [...(opts.resumed?.messages ?? [])];
   const summary = opts.resumed?.summary || undefined;
   let restoredCount = messages.length;
-  // How many messages earlier files hold: the next file numbers its messages after them.
-  let moved = 0;
+  // The messages this session added that went to a file: still capturable, the plugins hearing of the session see them.
+  let moved: Message[] = [];
 
   /** Where the last `keepRecent` exchanges start. */
   function keptFrom(): number {
@@ -72,7 +73,7 @@ export function createFilesWindow(opts: FilesWindowOptions): Window {
     const startedAt = now();
     const charsBefore = batch.reduce((sum, m) => sum + m.content.length, 0);
     const first = batch.find((m) => m.role === "user") ?? batch[0]!;
-    const label = `messages ${moved + 1}–${moved + batch.length}, from "${first.content.slice(0, LABEL_CHARS)}"`;
+    const label = `${batch.length} messages, from "${first.content.slice(0, LABEL_CHARS)}"`;
     try {
       await opts.files.write("history", historyText(batch), label);
     } catch (err) {
@@ -80,7 +81,7 @@ export function createFilesWindow(opts: FilesWindowOptions): Window {
       return { messages: batch.length, charsBefore, durationMs: now() - startedAt, outcome: "failed", error };
     }
     messages = messages.slice(from);
-    moved += batch.length;
+    moved = [...moved, ...batch.slice(Math.min(restoredCount, batch.length))];
     restoredCount = Math.max(0, restoredCount - batch.length);
     return { messages: batch.length, charsBefore, charsAfter: 0, durationMs: now() - startedAt, outcome: "done" };
   }
@@ -97,7 +98,7 @@ export function createFilesWindow(opts: FilesWindowOptions): Window {
       if (last?.role === "assistant") messages[messages.length - 1] = { ...last, content };
     },
     getMessages,
-    getCapturable: () => messages.slice(restoredCount),
+    getCapturable: () => [...moved, ...messages.slice(restoredCount)],
     getCharCount: () => getMessages().reduce((sum, m) => sum + messageChars(m), 0),
   };
 }

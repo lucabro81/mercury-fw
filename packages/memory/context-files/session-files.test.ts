@@ -73,6 +73,13 @@ describe("openSessionFiles", () => {
     expect(await files.read("outputs/1", 3, 99)).toEqual({ ok: true, ref: "outputs/1", from: 3, to: 4, totalLines: 4, text: "3: gamma\n4: delta" });
   });
 
+  it("refuses a range past the end of the file, or one that ends before it starts, saying how many lines there are", async () => {
+    const files = await openSessionFiles(root, "s1");
+    await files.write("outputs", "a\nb\nc", "t");
+    expect(await files.read("outputs/1", 4)).toEqual({ ok: false, error: "outputs/1 has 3 lines: from must be 3 or less" });
+    expect(await files.read("outputs/1", 3, 2)).toEqual({ ok: false, error: "outputs/1: to (2) comes before from (3)" });
+  });
+
   it("caps a read at 200 lines, and says where to go on from", async () => {
     const files = await openSessionFiles(root, "s1");
     await files.write("outputs", Array.from({ length: 500 }, (_, i) => `line ${i + 1}`).join("\n"), "t");
