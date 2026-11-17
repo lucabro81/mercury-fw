@@ -95,6 +95,23 @@ archived messages stamps the person's ones with `formatTurnStamp`, the same line
 so the model reads them as it read them live. `@mercury-fw/conversation-window` is the one Mercury ships (see
 [Memory](../memory/#the-conversation)).
 
+A conversation can also decide what else the model reads, with four optional methods; one it leaves out works as
+Mercury always did:
+
+- `toolOutput(call, content)`: what the model reads of each tool's result during the turn, a confirmed action's
+  result included. Mercury keeps the fields it reads itself (`ok`, `error`, `displayRef`, `shown`) and puts them
+  back on what the method returns; a staged confirmation and a login request never reach it. If it throws, the
+  model reads the result as it is, and the traces show a `tool.view` event.
+- `pastCall(call)`: what the model reads of an earlier call's result, in later turns. It is still a real tool
+  result for the model.
+- `turnIndex()`: text that goes in front of the person's message at every turn, after the turn layers, and is kept
+  with the message like them.
+- `placeLayers({ session })`: the session layers' blocks (`LayerBlocks`, by plugin), once per person and session;
+  what it returns goes in the system prompt, and the profile's budget counts that.
+
+Whatever the model reads, what was recorded doesn't change: the archive, the tool log, the traces and the plugins'
+hooks get the real results.
+
 ## What every turn leaves
 
 `afterTurn` hears a turn that ended with an answer. A plugin that keeps what was said needs more than that: the turns
