@@ -47,6 +47,15 @@ describe("openSessionFiles", () => {
     expect(files.entries()[0]).toEqual({ ref: "outputs/1", label: "t", lines: 1, chars: 1 });
   });
 
+  // Regression: two writes at once took the same number, the second file overwriting the first.
+  it("gives writes made at once refs of their own, each with its text", async () => {
+    const files = await openSessionFiles(root, "s1");
+    const refs = await Promise.all(["a", "b", "c"].map((t) => files.write("layers", t, t)));
+    expect(refs).toEqual(["layers/1", "layers/2", "layers/3"]);
+    expect(await Promise.all(refs.map(async (r) => ((await files.read(r)) as { text: string }).text))).toEqual(["1: a", "1: b", "1: c"]);
+    expect((await openSessionFiles(root, "s1")).entries().map((e) => e.ref)).toEqual(refs);
+  });
+
   it("writes atomically: no temporary file is left next to what it wrote", async () => {
     const files = await openSessionFiles(root, "s1");
     await files.write("outputs", "x", "t");

@@ -104,15 +104,25 @@ export async function openSessionFiles(root: string, sessionKey: string): Promis
     }
   }
 
+  // Writes go one at a time: each takes the number after the last one written.
+  let writing: Promise<unknown> = Promise.resolve();
+
+  /** Writes `text` as the next file of `kind`; see `SessionFiles.write`. */
+  async function writeNext(kind: FileKind, text: string, label: string, key?: string): Promise<string> {
+    const n = 1 + entries.filter((e) => e.ref.startsWith(`${kind}/`)).reduce((max, e) => Math.max(max, Number(e.ref.slice(kind.length + 1))), 0);
+    const ref = `${kind}/${n}`;
+    await mkdir(join(folder, kind), { recursive: true });
+    await writeAtomic(join(folder, kind, `${n}.txt`), text);
+    entries.push({ ref, label, lines: lineCount(text), chars: text.length, ...(key === undefined ? {} : { key }) });
+    await writeAtomic(indexPath, JSON.stringify(entries));
+    return ref;
+  }
+
   return {
-    write: async (kind, text, label, key) => {
-      const n = 1 + entries.filter((e) => e.ref.startsWith(`${kind}/`)).reduce((max, e) => Math.max(max, Number(e.ref.slice(kind.length + 1))), 0);
-      const ref = `${kind}/${n}`;
-      await mkdir(join(folder, kind), { recursive: true });
-      await writeAtomic(join(folder, kind, `${n}.txt`), text);
-      entries.push({ ref, label, lines: lineCount(text), chars: text.length, ...(key === undefined ? {} : { key }) });
-      await writeAtomic(indexPath, JSON.stringify(entries));
-      return ref;
+    write: (kind, text, label, key) => {
+      const next = writing.then(() => writeNext(kind, text, label, key));
+      writing = next.catch(() => {});
+      return next;
     },
     entries: () => entries.map(({ key: _key, ...e }) => e),
     refFor: (key) => entries.findLast((e) => e.key === key)?.ref,

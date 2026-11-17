@@ -9,10 +9,14 @@
  * - `pastCall`: a past call whose output went to a file points at it.
  * - `turnIndex`: the session's files, one line each, in front of every
  *   message, the oldest past `index.maxEntries` folded into one line.
+ * - `placeLayers` (with `layers: true`): each session layer's blocks go to a
+ *   file, the system prompt keeping one line saying where; a layer already in
+ *   a file, word for word, points at it.
  *
  * Used by: `index.ts`, which opens one per session.
  */
-import type { Conversation } from "@mercury-fw/plugin-types";
+import { createHash } from "node:crypto";
+import type { Conversation, LayerBlocks } from "@mercury-fw/plugin-types";
 import type { JSONValue } from "ai";
 import type { Window } from "@mercury-fw/conversation-window";
 import type { SessionFiles } from "./session-files.ts";
@@ -40,12 +44,17 @@ export const OUTPUT_NOTE = (ref: string) =>
 /** What the model reads of a past call whose output is in a file. Model-facing, so in English. */
 export const PAST_CALL_NOTE = (ref: string) => `What this call returned is in the file ${ref}: read it with read_context_file instead of running the call again.`;
 
+/** What the system prompt keeps of a layer moved to a file. Model-facing, so in English. */
+export const LAYER_NOTE = (layer: string, ref: string) => `The ${layer} context is in the file ${ref}: read it with read_context_file when it may help.`;
+
 export type FilesConversationOptions = {
   files: SessionFiles;
   /** The window keeping the messages. */
   window: Window;
   /** Outputs longer than `overChars` go to a file; `false`, they stay whole. */
   outputs: { overChars: number } | false;
+  /** Whether the session layers go to files. */
+  layers?: boolean;
   /** How many files the index lists one by one. */
   index: { maxEntries: number };
 };
@@ -91,6 +100,13 @@ export function createFilesConversation(opts: FilesConversationOptions): Convers
     return { file: ref, lines: text.split("\n").length, chars: text.length, head: headOf(text), note: OUTPUT_NOTE(ref) };
   };
 
+  /** `layer`'s blocks in a file, the one already holding them when there is one. */
+  async function layerFile({ layer, blocks }: LayerBlocks): Promise<string> {
+    const text = blocks.join("\n\n");
+    const key = `layer:${layer}:${createHash("sha256").update(text).digest("hex")}`;
+    return files.refFor(key) ?? files.write("layers", text, `${layer} layer`, key);
+  }
+
   return {
     getMessages: () => window.getMessages(),
     addUserMessage: (content, context) => window.addUserMessage(content, context),
@@ -99,6 +115,13 @@ export function createFilesConversation(opts: FilesConversationOptions): Convers
     getCharCount: () => window.getCharCount(),
     getCapturable: () => window.getCapturable(),
     ...(outputs === false ? {} : { toolOutput }),
+    ...(opts.layers === true
+      ? {
+          placeLayers: async ({ session }) => ({
+            session: await Promise.all(session.map(async (l) => ({ layer: l.layer, blocks: [LAYER_NOTE(l.layer, await layerFile(l))] }))),
+          }),
+        }
+      : {}),
     pastCall: (call, shown): JSONValue => {
       const ref = files.refFor(callKey(call.toolName, call.input));
       if (ref === undefined) return shown;

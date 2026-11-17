@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createWindow } from "@mercury-fw/conversation-window";
-import { createFilesConversation, OUTPUT_NOTE, PAST_CALL_NOTE } from "./conversation.ts";
+import { createFilesConversation, LAYER_NOTE, OUTPUT_NOTE, PAST_CALL_NOTE } from "./conversation.ts";
 import { openSessionFiles, type SessionFiles } from "./session-files.ts";
 
 let root: string;
@@ -145,5 +145,40 @@ describe("createFilesConversation: the index in front of each message", () => {
         "</context-files>",
       ].join("\n"),
     );
+  });
+});
+
+describe("createFilesConversation: session layers to files", () => {
+  const session = [
+    { layer: "wiki", blocks: ["# Index\n- docker.md", "- k8s.md"] },
+    { layer: "memory", blocks: ["Last time: docker"] },
+  ];
+
+  it("moves each layer's blocks to a file, and leaves one line saying where", async () => {
+    const conversation = createFilesConversation({ files, window: window(), outputs: false, layers: true, index: { maxEntries: 30 } });
+    expect(await conversation.placeLayers!({ session })).toEqual({
+      session: [
+        { layer: "wiki", blocks: [LAYER_NOTE("wiki", "layers/1")] },
+        { layer: "memory", blocks: [LAYER_NOTE("memory", "layers/2")] },
+      ],
+    });
+    expect(await files.read("layers/1")).toMatchObject({ text: "1: # Index\n2: - docker.md\n3: \n4: - k8s.md" });
+    expect(files.entries().map((e) => e.label)).toEqual(["wiki layer", "memory layer"]);
+  });
+
+  it("writes the same layer once: again for another person, or after a restart, it points at the file already there", async () => {
+    const conversation = createFilesConversation({ files, window: window(), outputs: false, layers: true, index: { maxEntries: 30 } });
+    await conversation.placeLayers!({ session });
+    const again = createFilesConversation({ files: await openSessionFiles(root, "s1"), window: window(), outputs: false, layers: true, index: { maxEntries: 30 } });
+    expect(await again.placeLayers!({ session: [session[0]!, { layer: "memory", blocks: ["Something new"] }] })).toEqual({
+      session: [
+        { layer: "wiki", blocks: [LAYER_NOTE("wiki", "layers/1")] },
+        { layer: "memory", blocks: [LAYER_NOTE("memory", "layers/3")] },
+      ],
+    });
+  });
+
+  it("has no placing without layers: true", () => {
+    expect(createFilesConversation({ files, window: window(), outputs: false, index: { maxEntries: 30 } }).placeLayers).toBeUndefined();
   });
 });
