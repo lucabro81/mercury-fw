@@ -141,6 +141,13 @@ describe("openSessionFiles", () => {
     expect(await after.write("outputs", "new", "t2")).toBe("outputs/2");
   });
 
+  it("starts with no files when opened fresh, removing those there were", async () => {
+    await (await openSessionFiles(root, "s1")).write("outputs", "old", "t");
+    const fresh = await openSessionFiles(root, "s1", { fresh: true });
+    expect(fresh.entries()).toEqual([]);
+    expect(await fresh.read("outputs/1")).toEqual({ ok: false, error: "outputs/1 is no longer available" });
+  });
+
   it("starts empty when the session's index can't be read", async () => {
     const before = await openSessionFiles(root, "s1");
     await before.write("outputs", "kept", "t");

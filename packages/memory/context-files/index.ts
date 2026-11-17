@@ -147,7 +147,8 @@ export function contextFiles(options: ContextFilesOptions = {}): Plugin {
       return {
         conversation: {
           open: async (req) => {
-            const pending = openSessionFiles(root, req.sessionKey);
+            // Only a person's conversation is ever reopened: one nobody vouched for (the terminal's) starts without files.
+            const pending = openSessionFiles(root, req.sessionKey, { fresh: req.person === undefined });
             open.set(req.sessionKey, pending);
             const files = await pending;
             const resumed = await resumedFor(req);
