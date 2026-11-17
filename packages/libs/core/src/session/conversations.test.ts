@@ -144,7 +144,7 @@ describe("createConversations", () => {
     const placeLayers = (layers: { session: Array<{ layer: string; blocks: string[] }> }) => layers;
     const withBoth: ConversationOwner = { open: async () => ({ ...memoryConversation(), pastCall, toolOutput, turnIndex, placeLayers }) };
     const own = await createConversations({ ownerFor: () => withBoth, primerFor: async () => undefined }).open(alice, { sessionKey: "s", tracked: false });
-    expect(own.pastCall?.({ toolName: "t", input: {}, result: { ok: true, ran: "t" } })).toEqual({ shown: "t" });
+    expect(own.pastCall?.({ toolName: "t", input: {}, result: { ok: true, ran: "t" } }, {})).toEqual({ shown: "t" });
     expect(await own.toolOutput?.({ toolName: "t", toolCallId: "c", input: {} }, {})).toEqual({ file: "f" });
     expect(await own.turnIndex?.()).toBe("files: f");
     expect(await own.placeLayers?.({ session: [{ layer: "wiki", blocks: ["b"] }] })).toEqual({ session: [{ layer: "wiki", blocks: ["b"] }] });
@@ -182,7 +182,7 @@ describe("createConversations", () => {
       sessionKey: "s",
       tracked: false,
     });
-    expect(history.pastCall?.({ toolName: "t", input: {}, result: { ok: true, ran: "t" } })).toEqual({ file: "outputs/c1" });
+    expect(history.pastCall?.({ toolName: "t", input: {}, result: { ok: true, ran: "t" } }, {})).toEqual({ file: "outputs/c1" });
     expect(await history.toolOutput?.({ toolName: "t", toolCallId: "c", input: {} }, {})).toEqual({ file: "outputs/c1" });
     expect(await history.turnIndex?.()).toBe("files: outputs/c1");
     expect(await history.placeLayers?.({ session: [] })).toEqual({ session: [{ layer: "wiki", blocks: ["outputs/c1"] }] });

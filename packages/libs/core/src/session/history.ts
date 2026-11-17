@@ -51,7 +51,7 @@ export type SessionHistory = {
   /** What the conversation added since it was opened, without what a reopening brought back: what the memory may still have to learn. */
   getCapturable(): Message[];
   /** What the model reads as a past call's result, when the conversation renders it itself (the contract's `Conversation.pastCall`). */
-  pastCall?: (call: CallRecord) => JSONValue;
+  pastCall?: (call: CallRecord, shown: JSONValue) => JSONValue;
   /** What the model reads of a tool's output inside the turn, when the conversation has its own view of it (the contract's `Conversation.toolOutput`). */
   toolOutput?: Conversation["toolOutput"];
   /** What the model reads in front of the person's message, after the turn layers (the contract's `Conversation.turnIndex`). */

@@ -146,7 +146,7 @@ function historyMessages(history: SessionHistory, onViewFailed?: (toolName: stri
       ? undefined
       : (record: CallRecord): JSONValue => {
           try {
-            const rendered = pastCall(record);
+            const rendered = pastCall(record, reducedResult(record));
             if (rendered === undefined) throw new Error("the rendering returned nothing");
             return rendered;
           } catch (err) {

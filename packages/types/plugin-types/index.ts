@@ -548,12 +548,13 @@ export type Conversation = {
   /**
    * What the model reads as the result of a past call, on later turns: the
    * core still hands it the call and this value as a real tool call and tool
-   * result. Absent, the core shows the reduced result with a note that the
+   * result. `shown` is what the core would show (the reduced result with its
+   * note), for a conversation that only adds to it. Absent, the core shows the reduced result with a note that the
    * data isn't kept, and the same when it throws or returns `undefined`. It changes only what the
    * model sees: the call is recorded, archived and given to the plugins'
    * hooks as it is.
    */
-  pastCall?: (call: CallRecord) => JSONValue;
+  pastCall?: (call: CallRecord, shown: JSONValue) => JSONValue;
   /**
    * What the model reads of a tool's output inside the turn, in place of the
    * output itself, after the display channel took its list out. `content` is
