@@ -137,6 +137,57 @@ describe("createConversations", () => {
     ]);
   });
 
+  it("hands the turn the conversation's own rendering of past calls, view of tool outputs, index and placing of layers, and none when it has none", async () => {
+    const pastCall = (call: { toolName: string }) => ({ shown: call.toolName });
+    const toolOutput = () => ({ file: "f" });
+    const turnIndex = () => "files: f";
+    const placeLayers = (layers: { session: Array<{ layer: string; blocks: string[] }> }) => layers;
+    const withBoth: ConversationOwner = { open: async () => ({ ...memoryConversation(), pastCall, toolOutput, turnIndex, placeLayers }) };
+    const own = await createConversations({ ownerFor: () => withBoth, primerFor: async () => undefined }).open(alice, { sessionKey: "s", tracked: false });
+    expect(own.pastCall?.({ toolName: "t", input: {}, result: { ok: true, ran: "t" } })).toEqual({ shown: "t" });
+    expect(await own.toolOutput?.({ toolName: "t", toolCallId: "c", input: {} }, {})).toEqual({ file: "f" });
+    expect(await own.turnIndex?.()).toBe("files: f");
+    expect(await own.placeLayers?.({ session: [{ layer: "wiki", blocks: ["b"] }] })).toEqual({ session: [{ layer: "wiki", blocks: ["b"] }] });
+
+    const plain = await createConversations({ ownerFor: () => recordingOwner().owner, primerFor: async () => undefined }).open(alice, { sessionKey: "s", tracked: false });
+    expect(plain.pastCall).toBeUndefined();
+    expect(plain.toolOutput).toBeUndefined();
+    expect(plain.turnIndex).toBeUndefined();
+    expect(plain.placeLayers).toBeUndefined();
+  });
+
+  it("keeps the conversation's own methods working when they read `this`, as a class's do", async () => {
+    class FilesConversation {
+      private readonly ref = "outputs/c1";
+      private readonly base = memoryConversation();
+      getMessages = () => this.base.getMessages();
+      addUserMessage = (c: string) => this.base.addUserMessage(c);
+      addAssistantMessage = (c: string) => this.base.addAssistantMessage(c);
+      replaceLastAssistantMessage = (c: string) => this.base.replaceLastAssistantMessage(c);
+      getCharCount = () => this.base.getCharCount();
+      pastCall() {
+        return { file: this.ref };
+      }
+      toolOutput() {
+        return { file: this.ref };
+      }
+      turnIndex() {
+        return `files: ${this.ref}`;
+      }
+      placeLayers() {
+        return { session: [{ layer: "wiki", blocks: [this.ref] }] };
+      }
+    }
+    const history = await createConversations({ ownerFor: () => ({ open: async () => new FilesConversation() as Conversation }), primerFor: async () => undefined }).open(alice, {
+      sessionKey: "s",
+      tracked: false,
+    });
+    expect(history.pastCall?.({ toolName: "t", input: {}, result: { ok: true, ran: "t" } })).toEqual({ file: "outputs/c1" });
+    expect(await history.toolOutput?.({ toolName: "t", toolCallId: "c", input: {} }, {})).toEqual({ file: "outputs/c1" });
+    expect(await history.turnIndex?.()).toBe("files: outputs/c1");
+    expect(await history.placeLayers?.({ session: [] })).toEqual({ session: [{ layer: "wiki", blocks: ["outputs/c1"] }] });
+  });
+
   it("closes a session: the plugin hears it, and the next turn opens a new conversation", async () => {
     const { owner, opened, closed } = recordingOwner();
     const conversations = createConversations({ ownerFor: () => owner, primerFor: async () => undefined });

@@ -268,6 +268,8 @@ export type TurnRunnerDeps = {
    * turn goes without.
    */
   contextFor?: (who: TurnWho, turn: ContextTurn) => Promise<ContextAssembly>;
+  /** How many model steps a turn of `who` takes at most (their profile's `maxSteps`; `false`, no limit). Absent, `runTurn`'s default. */
+  maxStepsFor?: (who: TurnWho) => number | false;
   /** The texts of the person with `key` on a channel hinting `hint`, for what the turn shows them that isn't the model's; English when absent. */
   translatorFor?: (key: string, hint?: string) => Translate;
   /**
@@ -606,6 +608,7 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
             multiUser: turn.multiUser,
             // Only someone vouched for has conversations to reopen.
             reopened: tracked && turn.resume !== undefined,
+            ...(history.placeLayers === undefined ? {} : { placeLayers: history.placeLayers }),
           });
           emit({ kind: "context.assembled", ...context.event }, key);
         } catch (err) {
@@ -690,6 +693,8 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
           sink.onStep?.(step);
         },
         onUsage: sink.onUsage,
+        ...(deps.maxStepsFor === undefined ? {} : { maxSteps: deps.maxStepsFor(who) }),
+        onViewFailed: (tool, error) => emit({ kind: "tool.view", tool, outcome: "failed", args: { error } }, key),
         onFinish: (reason, error) => {
           finish = { reason, error };
         },

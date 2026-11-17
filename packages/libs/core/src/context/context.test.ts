@@ -187,6 +187,41 @@ describe("createContextAssembler", () => {
     });
   });
 
+  // #414: a conversation keeping its context elsewhere (files) puts in the
+  // system prompt only what it wants of the session layers; the budget then
+  // counts what the model reads.
+  it("hands the session layers' blocks to the conversation's placeLayers, once per person and session, before the budget", async () => {
+    const wiki = plugin("wiki", layer("session", ["a long index of the wiki"]));
+    const memory = plugin("memory", layer("session", ["the recap"]));
+    const rag = plugin("rag", layer("turn", ["hit"]));
+    const a = assembler([wiki, memory, rag], 30);
+    const asked: unknown[] = [];
+    const placeLayers = (layers: { session: Array<{ layer: string; blocks: string[] }> }) => (
+      asked.push(layers), { session: layers.session.map((l) => (l.layer === "wiki" ? { layer: "wiki", blocks: ["wiki → layers/wiki"] } : l)) }
+    );
+
+    const first = await a.forTurn(alice, { ...turn("first"), placeLayers });
+    await a.forTurn(alice, { ...turn("second"), placeLayers });
+
+    expect(asked).toEqual([{ session: [{ layer: "wiki", blocks: ["a long index of the wiki"] }, { layer: "memory", blocks: ["the recap"] }] }]);
+    expect(first.system).toBe("wiki → layers/wiki\n\nthe recap");
+    expect(first.event.layers.find((l) => l.plugin === "wiki")).toEqual({ plugin: "wiki", scope: "session", chars: 18, blocks: 1, dropped: 0 });
+  });
+
+  it("leaves a layer the conversation doesn't return with no blocks, and ignores one it names that isn't there", async () => {
+    const a = assembler([plugin("wiki", layer("session", ["index"])), plugin("memory", layer("session", ["recap"]))], 100);
+    const result = await a.forTurn(alice, { ...turn(), placeLayers: () => ({ session: [{ layer: "memory", blocks: ["recap"] }, { layer: "nope", blocks: ["x"] }] }) });
+    expect(result.system).toBe("recap");
+  });
+
+  it("keeps the session layers' own blocks when the conversation's placeLayers fails, logging it", async () => {
+    const logs: string[] = [];
+    const a = assembler([plugin("wiki", layer("session", ["index"]))], 100, { logs });
+    const result = await a.forTurn(alice, { ...turn(), placeLayers: async () => Promise.reject(new Error("disk full")) });
+    expect(result.system).toBe("index");
+    expect(logs).toEqual(["[context] the conversation's placing of the session layers failed, they go as they are: disk full"]);
+  });
+
   it("skips a layer whose plugin isn't offered to the person, and one that fails, logging the failure", async () => {
     const logs: string[] = [];
     const hidden = plugin("hidden", layer("turn", ["secret"]));
@@ -492,5 +527,29 @@ describe("resolveContext: the conversation a profile keeps (#393)", () => {
       ),
     ).toThrow(message);
     expect(() => resolveContext(undefined, { declared: [w.declared], loaded: [w.loaded], log: () => {} })).toThrow(message);
+  });
+});
+
+describe("resolveContext: how many steps a profile's turns take at most (#414)", () => {
+  const resolve = (maxSteps: unknown) =>
+    resolveContext({ profiles: { default: { layers: [], budget: { maxChars: 0 }, maxSteps: maxSteps as number | false } } }, { declared: [], loaded: [], log: () => {} });
+
+  it("is 100 when the profile says nothing", () => {
+    expect(resolveContext({ profiles: { default: { layers: [], budget: { maxChars: 0 } } } }, { declared: [], loaded: [], log: () => {} })?.profiles.get("default")?.maxSteps).toBe(100);
+  });
+
+  it("is the profile's whole number, from 1 up", () => {
+    expect(resolve(1)?.profiles.get("default")?.maxSteps).toBe(1);
+    expect(resolve(250)?.profiles.get("default")?.maxSteps).toBe(250);
+  });
+
+  it("is false, no limit, when the profile says so", () => {
+    expect(resolve(false)?.profiles.get("default")?.maxSteps).toBe(false);
+  });
+
+  it("stops the start on anything else, naming the profile", () => {
+    for (const bad of [0, -3, 2.5, Number.NaN, Number.POSITIVE_INFINITY, true, "10"]) {
+      expect(() => resolve(bad)).toThrow('context profile "default": maxSteps must be a whole number from 1 up, or false for no limit');
+    }
   });
 });

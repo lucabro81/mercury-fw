@@ -155,6 +155,27 @@ describe("callMessages", () => {
     expect(callMessages([], "history-0")).toEqual([]);
   });
 
+  it("gives each result the value a strategy renders for it, still as the call and its tool result", () => {
+    const records = callRecords([
+      step([cli("x", "confluence page children 1103")], [out("x", { ok: true, data: { results: [] } })]),
+    ]);
+    const seen: unknown[] = [];
+    const render = (call: (typeof records)[number]) => (seen.push(call), { ok: call.result.ok, file: "outputs/t1-c1" });
+    expect(callMessages(records, "history-4", render)).toEqual([
+      {
+        role: "assistant",
+        content: [{ type: "tool-call", toolCallId: "history-4-0", toolName: "confluenceCommand", input: { command: "confluence page children 1103" } }],
+      },
+      {
+        role: "tool",
+        content: [
+          { type: "tool-result", toolCallId: "history-4-0", toolName: "confluenceCommand", output: { type: "json", value: { ok: true, file: "outputs/t1-c1" } } },
+        ],
+      },
+    ]);
+    expect(seen).toEqual([records[0]]);
+  });
+
   // The skill's text isn't in the history: with the generic note the model saw
   // its own read_skill call, took the skill for still loaded and didn't read it
   // again (13 later turns out of 120, against 90 before the calls were kept),

@@ -12,7 +12,7 @@
  * text, and with the generic note the model took the skill for still loaded
  * and guessed its commands instead of reading it again (#356).
  */
-import type { ModelMessage } from "ai";
+import type { JSONValue, ModelMessage } from "ai";
 import type { CallRecord, CallResult, HookCall } from "@mercury-fw/plugin-types";
 import type { StepInfo } from "./step-info.ts";
 import { READ_SKILL_TOOL } from "./read-skill-tool.ts";
@@ -119,14 +119,22 @@ export function callRecords(steps: StepInfo[]): CallRecord[] {
   );
 }
 
+/** What the model reads of a past call by default: its reduced result and `HISTORY_CALL_NOTE` (`SKILL_CALL_NOTE` for a `read_skill` call). */
+export function reducedResult(record: CallRecord): JSONValue {
+  return { ...record.result, note: record.toolName === READ_SKILL_TOOL ? SKILL_CALL_NOTE : HISTORY_CALL_NOTE };
+}
+
 /**
  * `records` as the model reads them back: the assistant's tool calls, then a
- * tool message with each one's reduced result and `HISTORY_CALL_NOTE`
- * (`SKILL_CALL_NOTE` for a `read_skill` call). Ids are
- * `<idPrefix>-<n>`, so the caller keeps them unique within a prompt. Nothing
- * for no records.
+ * tool message with each one's result as `render` gives it (`reducedResult`
+ * when absent). Ids are `<idPrefix>-<n>`, so the caller keeps them unique
+ * within a prompt. Nothing for no records.
  */
-export function callMessages(records: CallRecord[], idPrefix: string): ModelMessage[] {
+export function callMessages(
+  records: CallRecord[],
+  idPrefix: string,
+  render: (record: CallRecord) => JSONValue = reducedResult,
+): ModelMessage[] {
   if (records.length === 0) return [];
   const id = (n: number) => `${idPrefix}-${n}`;
   return [
@@ -140,7 +148,7 @@ export function callMessages(records: CallRecord[], idPrefix: string): ModelMess
         type: "tool-result" as const,
         toolCallId: id(n),
         toolName: r.toolName,
-        output: { type: "json" as const, value: { ...r.result, note: r.toolName === READ_SKILL_TOOL ? SKILL_CALL_NOTE : HISTORY_CALL_NOTE } },
+        output: { type: "json" as const, value: render(r) },
       })),
     },
   ];

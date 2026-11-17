@@ -562,6 +562,7 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
     afterTurn: pluginHooks.afterTurn,
     ...(output === undefined ? {} : { output }),
     ...(contextAssembler === undefined ? {} : { contextFor: contextAssembler.forTurn }),
+    ...(resolvedContext === undefined ? {} : { maxStepsFor: (who: TurnWho) => profileFor(resolvedContext, who).maxSteps }),
     getOrCreateHistory: (key, tracked, userId, resume, timeZone, who) =>
       conversations.open(who, {
         sessionKey: key,

@@ -1218,6 +1218,70 @@ describe("runTurn — the turn's tool calls in the history", () => {
     ]);
   });
 
+  it("hands later turns past calls as the conversation renders them, still as tool calls and tool results", async () => {
+    const history = { ...keptHistory(), pastCall: (call: { toolName: string }) => ({ ok: true, shown: `rendered ${call.toolName}` }) };
+    const deps = { model: "fake-model" as never, tools: {}, system: SYSTEM };
+    await runTurn(history, "docker pages?", { ...deps, generateTextFn: generating([searchStep], "One page.") });
+    const seen = { messages: [] as ModelMessage[] };
+    await runTurn(history, "thanks", { ...deps, generateTextFn: generating([], "You're welcome.", seen) });
+
+    expect(seen.messages.slice(1, 3)).toEqual([
+      { role: "assistant", content: [{ type: "tool-call", toolCallId: "history-1-0", toolName: "confluenceCommand", input: searchCall.input }] },
+      {
+        role: "tool",
+        content: [
+          { type: "tool-result", toolCallId: "history-1-0", toolName: "confluenceCommand", output: { type: "json", value: { ok: true, shown: "rendered confluenceCommand" } } },
+        ],
+      },
+    ]);
+  });
+
+  // Regression (#414 review): a pastCall that threw on one stored call failed
+  // every later turn of the session, the call staying in the history.
+  it("hands later turns a past call's reduced result when the conversation fails to render it, and says which tool", async () => {
+    const history = {
+      ...keptHistory(),
+      pastCall: (): never => {
+        throw new Error("file gone");
+      },
+    };
+    const deps = { model: "fake-model" as never, tools: {}, system: SYSTEM };
+    await runTurn(history, "docker pages?", { ...deps, generateTextFn: generating([searchStep], "One page.") });
+    const seen = { messages: [] as ModelMessage[] };
+    const failed: unknown[] = [];
+    const answer = await runTurn(history, "thanks", {
+      ...deps,
+      generateTextFn: generating([], "You're welcome.", seen),
+      onViewFailed: (tool, error) => void failed.push([tool, error]),
+    });
+
+    expect(answer).toBe("You're welcome.");
+    expect(seen.messages[2]).toEqual({
+      role: "tool",
+      content: [
+        { type: "tool-result", toolCallId: "history-1-0", toolName: "confluenceCommand", output: { type: "json", value: { ...searchCall.result, note: HISTORY_CALL_NOTE } } },
+      ],
+    });
+    expect(failed).toEqual([["confluenceCommand", "file gone"]]);
+  });
+
+  // A rendering of undefined would be a tool result with no value, on every later turn.
+  it("hands later turns a past call's reduced result when the conversation renders it as nothing, and says which tool", async () => {
+    const history = { ...keptHistory(), pastCall: () => undefined as never };
+    const deps = { model: "fake-model" as never, tools: {}, system: SYSTEM };
+    await runTurn(history, "docker pages?", { ...deps, generateTextFn: generating([searchStep], "One page.") });
+    const seen = { messages: [] as ModelMessage[] };
+    const failed: unknown[] = [];
+    await runTurn(history, "thanks", { ...deps, generateTextFn: generating([], "You're welcome.", seen), onViewFailed: (tool, error) => void failed.push([tool, error]) });
+    expect(seen.messages[2]).toEqual({
+      role: "tool",
+      content: [
+        { type: "tool-result", toolCallId: "history-1-0", toolName: "confluenceCommand", output: { type: "json", value: { ...searchCall.result, note: HISTORY_CALL_NOTE } } },
+      ],
+    });
+    expect(failed).toEqual([["confluenceCommand", "the rendering returned nothing"]]);
+  });
+
   // A skill read in an earlier turn isn't loaded anymore: the model must be told
   // so, or it guesses the skill's commands instead of reading it again (#356).
   it("hands a later turn an earlier read_skill with the note that the skill must be read again", async () => {
@@ -1547,6 +1611,35 @@ describe("runTurn: the turn's context", () => {
 
 // Regression (#406): ai-sdk-ollama's synthesis made one more model call after a turn's output, its text thrown away
 // (about 7 s live) and its own tool calls never run; a turn with an output turns it off, a text turn keeps it.
+describe("runTurn: the conversation's index in front of the message (#414)", () => {
+  const deps = { model: "fake-model" as never, tools: {}, system: SYSTEM };
+  const reading = (seen: { messages: ModelMessage[] }) => (async (p: { messages: ModelMessage[] }) => ((seen.messages = p.messages), { text: "ok" })) as never;
+
+  it("puts the conversation's index after the turn layers, in front of the message and kept with it", async () => {
+    const history = { ...keptHistory(), turnIndex: () => "files: outputs/t1-c1 — jira list" };
+    const seen = { messages: [] as ModelMessage[] };
+    await runTurn(history, "and the second one?", { ...deps, turnContext: "<context>\nhit\n</context>", generateTextFn: reading(seen) });
+    expect(history.getMessages()[0]).toEqual({ role: "user", content: "and the second one?", context: "<context>\nhit\n</context>\n\nfiles: outputs/t1-c1 — jira list" });
+    expect(seen.messages[0]).toEqual({ role: "user", content: "<context>\nhit\n</context>\n\nfiles: outputs/t1-c1 — jira list\n\nand the second one?" });
+  });
+
+  it("puts the index alone when there are no turn layers, and nothing when the index is empty", async () => {
+    const indexed = { ...keptHistory(), turnIndex: () => "files: f" };
+    await runTurn(indexed, "x", { ...deps, generateTextFn: reading({ messages: [] }) });
+    expect(indexed.getMessages()[0]).toEqual({ role: "user", content: "x", context: "files: f" });
+
+    const empty = { ...keptHistory(), turnIndex: () => "" };
+    await runTurn(empty, "x", { ...deps, generateTextFn: reading({ messages: [] }) });
+    expect(empty.getMessages()[0]).toEqual({ role: "user", content: "x" });
+  });
+
+  it("goes on without the index when the conversation fails to give it", async () => {
+    const history = { ...keptHistory(), turnIndex: async (): Promise<string> => Promise.reject(new Error("disk full")) };
+    await runTurn(history, "x", { ...deps, turnContext: "layers", generateTextFn: reading({ messages: [] }) });
+    expect(history.getMessages()[0]).toEqual({ role: "user", content: "x", context: "layers" });
+  });
+});
+
 describe("synthesis in the param builders (#406)", () => {
   const base = { model: "fake-model" as never, messages: [], tools: {}, instructions: SYSTEM };
 
@@ -1559,5 +1652,202 @@ describe("synthesis in the param builders (#406)", () => {
   it("left out, the builders pass no enhancedOptions: ai-sdk-ollama's defaults", () => {
     expect("enhancedOptions" in buildStreamTextParams(base)).toBe(false);
     expect("enhancedOptions" in buildGenerateTextParams(base)).toBe(false);
+  });
+});
+
+describe("runTurn: the conversation's own view of tool outputs (#414)", () => {
+  /** A model that calls `name` once with `input`, through the tools it was given, then answers. */
+  function callingOnce(name: string, input: unknown, seen: { output?: unknown }) {
+    return async (params: { tools: Record<string, Tool>; onStepEnd?: (step: StepInfo) => void }) => {
+      const output = await (params.tools[name]!.execute as (i: unknown, o: unknown) => Promise<unknown>)(input, { toolCallId: "c1", messages: [] });
+      seen.output = output;
+      params.onStepEnd?.({ toolCalls: [{ toolCallId: "c1", toolName: name, input }], toolResults: [{ toolCallId: "c1", toolName: name, output }], content: [] });
+      return { text: "done" };
+    };
+  }
+  const returning = (output: unknown): Record<string, Tool> => ({ fetch: { execute: async () => output } as unknown as Tool });
+  const deps = { model: "fake-model" as never, system: SYSTEM };
+
+  it("hands the model what the conversation makes of an output, the record and the steps the output itself", async () => {
+    const original = { ok: true, data: { results: [1, 2, 3] } };
+    const asked: unknown[] = [];
+    const history = { ...keptHistory(), toolOutput: (call: unknown, content: unknown) => (asked.push([call, content]), { file: "outputs/c1" }) };
+    const seen: { output?: unknown } = {};
+    const steps: StepInfo[] = [];
+    await runTurn(history, "fetch it", { ...deps, tools: returning(original), generateTextFn: callingOnce("fetch", { url: "u" }, seen) as never, onStepFinish: (s) => steps.push(s) });
+
+    expect(asked).toEqual([[{ toolName: "fetch", toolCallId: "c1", input: { url: "u" } }, { data: { results: [1, 2, 3] } }]]);
+    expect(seen.output).toEqual({ file: "outputs/c1", ok: true });
+    expect(steps[0]!.toolResults[0]!.output).toEqual(original);
+    expect(history.getMessages()[1]!.calls).toEqual([{ toolName: "fetch", input: { url: "u" }, result: { ok: true, ran: '{"url":"u"}', results: 3 } }]);
+  });
+
+  it("keeps the fields the core reads on what the conversation returns, whatever it returns", async () => {
+    const history = { ...keptHistory(), toolOutput: () => ({ file: "f", ok: true, displayRef: "forged" }) };
+    const seen: { output?: unknown } = {};
+    await runTurn(history, "x", { ...deps, tools: returning({ ok: false, error: "boom", displayRef: "d1", shown: true, data: "big" }), generateTextFn: callingOnce("fetch", {}, seen) as never });
+    expect(seen.output).toEqual({ file: "f", ok: false, error: "boom", displayRef: "d1", shown: true });
+  });
+
+  it("puts a value that isn't an object under content, next to the fields the core reads", async () => {
+    const history = { ...keptHistory(), toolOutput: () => "see outputs/c1" };
+    const seen: { output?: unknown } = {};
+    await runTurn(history, "x", { ...deps, tools: returning({ ok: true, data: "big" }), generateTextFn: callingOnce("fetch", {}, seen) as never });
+    expect(seen.output).toEqual({ ok: true, content: "see outputs/c1" });
+  });
+
+  it("hands an output that isn't an object to the conversation as it is, and the model what it returns", async () => {
+    const asked: unknown[] = [];
+    const history = { ...keptHistory(), toolOutput: (_call: unknown, content: unknown) => (asked.push(content), "short") };
+    const seen: { output?: unknown } = {};
+    await runTurn(history, "x", { ...deps, tools: returning("a very long page"), generateTextFn: callingOnce("fetch", {}, seen) as never });
+    expect(asked).toEqual(["a very long page"]);
+    expect(seen.output).toBe("short");
+  });
+
+  // A staged confirmation or a login request is what stops the turn: rewritten,
+  // the loop would go on past it.
+  it("never hands the conversation a staged confirmation or a login request: the model gets them as they are", async () => {
+    const asked: unknown[] = [];
+    const history = { ...keptHistory(), toolOutput: (_call: unknown, content: unknown) => (asked.push(content), { file: "f" }) };
+    for (const output of [
+      { ok: true, pendingConfirmation: true, token: "T-1", summary: "delete it" },
+      { ok: false, loginRequired: true, authorizeUrl: "https://login", service: "jira" },
+    ]) {
+      const seen: { output?: unknown } = {};
+      await runTurn(history, "x", { ...deps, tools: returning(output), generateTextFn: callingOnce("fetch", {}, seen) as never });
+      expect(seen.output).toEqual(output);
+    }
+    expect(asked).toEqual([]);
+  });
+
+  it("gives the model the output itself when the conversation fails on it", async () => {
+    const history = { ...keptHistory(), toolOutput: () => Promise.reject(new Error("disk full")) };
+    const seen: { output?: unknown } = {};
+    await runTurn(history, "x", { ...deps, tools: returning({ ok: true, data: "big" }), generateTextFn: callingOnce("fetch", {}, seen) as never });
+    expect(seen.output).toEqual({ ok: true, data: "big" });
+  });
+
+  it("tells the turn which tool's view failed, and why", async () => {
+    const failed: unknown[] = [];
+    const history = { ...keptHistory(), toolOutput: () => Promise.reject(new Error("disk full")) };
+    await runTurn(history, "x", {
+      ...deps,
+      tools: returning({ ok: true, data: "big" }),
+      generateTextFn: callingOnce("fetch", {}, {}) as never,
+      onViewFailed: (tool, error) => void failed.push([tool, error]),
+    });
+    expect(failed).toEqual([["fetch", "disk full"]]);
+  });
+
+  // A result of undefined would reach the model as no result at all.
+  it("treats a view that returns nothing as failed: the model gets the output itself, and the turn hears why", async () => {
+    const failed: unknown[] = [];
+    const history = { ...keptHistory(), toolOutput: () => undefined };
+    const seen: { output?: unknown } = {};
+    await runTurn(history, "x", {
+      ...deps,
+      tools: returning({ data: "big" }),
+      generateTextFn: callingOnce("fetch", {}, seen) as never,
+      onViewFailed: (tool, error) => void failed.push([tool, error]),
+    });
+    expect(seen.output).toEqual({ data: "big" });
+    expect(failed).toEqual([["fetch", "the view returned nothing"]]);
+  });
+
+  const resumed = { toolName: "web_fetch", input: { url: "https://example.org/a" }, output: { ok: true, data: "a very long page" }, describe: "fetch https://example.org/a" };
+  /** A model that answers at once, keeping the messages it was given. */
+  const reading = (seen: { messages: ModelMessage[] }) => (async (p: { messages: ModelMessage[] }) => ((seen.messages = p.messages), { text: "Here." })) as never;
+
+  // The confirmed action's result reaches the model outside the tools: it must
+  // go through the same view, or a long one fills the context anyway.
+  it("hands the model a confirmed action's result as the conversation views it, the history the result itself", async () => {
+    const asked: unknown[] = [];
+    const history = { ...keptHistory(), toolOutput: (call: unknown, content: unknown) => (asked.push([call, content]), { file: "outputs/r1" }) };
+    const seen = { messages: [] as ModelMessage[] };
+    await runTurn(history, "[Confermato]", { ...deps, tools: {}, resumed, generateTextFn: reading(seen) });
+
+    const [call, content] = asked[0] as [{ toolName: string; toolCallId: string; input: unknown }, unknown];
+    expect(asked).toHaveLength(1);
+    expect({ toolName: call.toolName, input: call.input, content }).toEqual({ toolName: "web_fetch", input: resumed.input, content: { data: "a very long page" } });
+    const result = seen.messages.find((m) => m.role === "tool") as { content: Array<{ toolCallId: string; output: unknown }> };
+    expect(result.content[0]!.toolCallId).toBe(call.toolCallId);
+    expect(result.content[0]!.output).toEqual({ type: "json", value: { file: "outputs/r1", ok: true } });
+    expect(history.getMessages()[1]!.calls).toEqual([{ toolName: "web_fetch", input: resumed.input, result: { ok: true, ran: '{"url":"https://example.org/a"}' } }]);
+  });
+
+  it("hands the model a confirmed action's result itself when the view fails on it, and says so", async () => {
+    const failed: unknown[] = [];
+    const history = { ...keptHistory(), toolOutput: () => Promise.reject(new Error("disk full")) };
+    const seen = { messages: [] as ModelMessage[] };
+    await runTurn(history, "[Confermato]", { ...deps, tools: {}, resumed, generateTextFn: reading(seen), onViewFailed: (tool, error) => void failed.push([tool, error]) });
+    const result = seen.messages.find((m) => m.role === "tool") as { content: Array<{ output: unknown }> };
+    expect(result.content[0]!.output).toEqual({ type: "json", value: resumed.output });
+    expect(failed).toEqual([["web_fetch", "disk full"]]);
+  });
+
+  it("hands the model the tools as they are when the conversation has no view of its own", async () => {
+    const tools = returning({ ok: true });
+    let given: Record<string, Tool> | undefined;
+    await runTurn(keptHistory(), "x", { ...deps, tools, generateTextFn: (async (p: { tools: Record<string, Tool> }) => ((given = p.tools), { text: "ok" })) as never });
+    expect(given).toBe(tools);
+  });
+});
+
+describe("the turn's step limit (#414)", () => {
+  const base = { model: "fake-model" as never, messages: [], tools: {}, instructions: SYSTEM };
+  const ordinaryStep: StepInfo = { toolCalls: [], toolResults: [], content: [] };
+  const LOGIN_STEP: StepInfo = {
+    toolCalls: [{ toolCallId: "c", toolName: "confluenceCommand", input: {} }],
+    toolResults: [{ toolCallId: "c", toolName: "confluenceCommand", output: { ok: false, loginRequired: true, service: "confluence", authorizeUrl: "https://login.example" } }],
+    content: [],
+  };
+
+  for (const [path, build] of [
+    ["generateText", buildGenerateTextParams],
+    ["streamText", buildStreamTextParams],
+  ] as const) {
+    it(`${path}: a number stops the tool loop at that step`, async () => {
+      const params = build({ ...base, maxSteps: 3 });
+      expect(await stopConditionsMet(params.stopWhen, new Array(2).fill(ordinaryStep))).toBe(false);
+      expect(await stopConditionsMet(params.stopWhen, new Array(3).fill(ordinaryStep))).toBe(true);
+    });
+
+    it(`${path}: false sets no limit, while a staged confirmation and a login still stop it`, async () => {
+      const params = build({ ...base, maxSteps: false });
+      expect(await stopConditionsMet(params.stopWhen, new Array(10_000).fill(ordinaryStep))).toBe(false);
+      expect(await stopConditionsMet(params.stopWhen, [PENDING_CONFIRMATION_STEP])).toBe(true);
+      expect(await stopConditionsMet(params.stopWhen, [LOGIN_STEP])).toBe(true);
+    });
+
+    it(`${path}: the builder hands the AI SDK no maxSteps of its own`, () => {
+      expect("maxSteps" in build({ ...base, maxSteps: 3 })).toBe(false);
+    });
+  }
+
+  it("runTurn hands the limit to the model call, streaming or not; left out, the call gets none", async () => {
+    const seen: unknown[] = [];
+    await runTurn(keptHistory(), "hi", {
+      model: "fake-model" as never,
+      tools: {},
+      system: SYSTEM,
+      maxSteps: 7,
+      generateTextFn: async (params) => (seen.push(params.maxSteps), { text: "ok" }),
+    });
+    await runTurn(keptHistory(), "hi", {
+      model: "fake-model" as never,
+      tools: {},
+      system: SYSTEM,
+      maxSteps: false,
+      onTextChunk: () => {},
+      streamTextFn: async (params) => (seen.push(params.maxSteps), { stream: textDeltaStream(["ok"]) }),
+    });
+    await runTurn(keptHistory(), "hi", {
+      model: "fake-model" as never,
+      tools: {},
+      system: SYSTEM,
+      generateTextFn: async (params) => (seen.push("maxSteps" in params ? params.maxSteps : "absent"), { text: "ok" }),
+    });
+    expect(seen).toEqual([7, false, "absent"]);
   });
 });

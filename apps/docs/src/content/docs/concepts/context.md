@@ -67,6 +67,10 @@ and what happens when it grows too long. A profile that names none keeps no conv
 message alone. A conversation is kept by the profile of whoever started it, for as long as it stays open. A layer learns whether the conversation is one its chat interface reopened (`reopened`), rather
 than one just started: a layer recalling the person's last conversation leaves it out then.
 
+A profile also sets how many steps a turn takes at most (`maxSteps`, 100 when left out): each step is one call to
+the model, with the tools it asks for. `false` sets no limit, for an interface that lets the person stop an answer:
+the turn then ends when the model answers, when it waits for a confirmation or a login, or when it's stopped.
+
 ## Changing it while the agent runs
 
 A profile's budget, the order of its layers and the layers' **knobs** can change without restarting the agent. A knob

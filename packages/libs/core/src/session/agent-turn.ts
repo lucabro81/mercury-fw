@@ -52,7 +52,8 @@ import { generateText as generatePlainText, isStepCount, NoObjectGeneratedError,
 import type { ResumedAction } from "@mercury-fw/confirm-engine";
 import { generateText, streamText } from "ai-sdk-ollama";
 import type { Message, SessionHistory } from "./history.ts";
-import { callMessages, callRecords, errorText, type CallRecord } from "./call-record.ts";
+import { callMessages, callRecords, errorText, reducedResult, type CallRecord } from "./call-record.ts";
+import { restoreStep, viewOf, withToolOutputView, type ToolOutputView, type ViewFailed } from "./tool-output-view.ts";
 import type { StepInfo } from "./step-info.ts";
 import { detectPendingConfirmation } from "./pending-confirmation.ts";
 import { detectLoginRequests, TurnOutputError, type TurnOutput } from "@mercury-fw/channel-types";
@@ -137,11 +138,27 @@ function turnCalls(steps: StepInfo[], resumed: ResumedAction | undefined): CallR
   return callRecords([...confirmed, ...steps]);
 }
 
-/** The history as the model reads it: each person's message with its context in front, each past answer's calls, as tool calls and their reduced results, before its text. */
-function historyMessages(messages: Message[]): ModelMessage[] {
-  return messages.flatMap((m, i): ModelMessage[] =>
+/** The history as the model reads it: each person's message with its context in front, each past answer's calls, as tool calls and their results (as the conversation renders them, else reduced, a rendering that throws or returns `undefined` reduced too and told to `onViewFailed`), before its text. */
+function historyMessages(history: SessionHistory, onViewFailed?: (toolName: string, error: string) => void): ModelMessage[] {
+  const { pastCall } = history;
+  const render =
+    pastCall === undefined
+      ? undefined
+      : (record: CallRecord): JSONValue => {
+          try {
+            const rendered = pastCall(record);
+            if (rendered === undefined) throw new Error("the rendering returned nothing");
+            return rendered;
+          } catch (err) {
+            const error = err instanceof Error ? err.message : String(err);
+            console.error(`[conversation] its rendering of a past ${record.toolName} call failed, the model reads the reduced result: ${error}`);
+            onViewFailed?.(record.toolName, error);
+            return reducedResult(record);
+          }
+        };
+  return history.getMessages().flatMap((m, i): ModelMessage[] =>
     m.role === "assistant" && m.calls !== undefined
-      ? [...callMessages(m.calls, `history-${i}`), { role: "assistant", content: m.content }]
+      ? [...callMessages(m.calls, `history-${i}`, render), { role: "assistant", content: m.content }]
       : [{ role: m.role, content: m.context === undefined ? m.content : `${m.context}\n\n${m.content}` }],
   );
 }
@@ -151,8 +168,9 @@ function historyMessages(messages: Message[]): ModelMessage[] {
  * confirm-required command — the model never gets a further step to
  * write anything about it (see `resolveHistoryText` above for why). `stopWhen` conditions are OR'd together (confirmed against the
  * AI SDK's own source: `isStopConditionMet` resolves every condition and
- * stops if *any* is true), so combining this with `stepCountIs(100)`
- * doesn't change when the step-budget cap itself kicks in.
+ * stops if *any* is true), so combining this with the step limit
+ * (`stepLimit`) doesn't change when the limit itself kicks in, and it
+ * still stops a turn that has no limit.
  */
 function pendingConfirmationStop(): StopCondition<any> {
   return ({ steps }) => {
@@ -173,6 +191,14 @@ function loginRequiredStop(): StopCondition<any> {
   };
 }
 
+/** How many model steps a turn takes at most when its profile doesn't say (see `buildGenerateTextParams` for why so many). */
+export const DEFAULT_MAX_STEPS = 100;
+
+/** The condition ending the tool loop after `maxSteps` steps: none for `false`, `DEFAULT_MAX_STEPS` when absent. */
+function stepLimit(maxSteps: number | false | undefined): StopCondition<any>[] {
+  return maxSteps === false ? [] : [isStepCount(maxSteps ?? DEFAULT_MAX_STEPS)];
+}
+
 /** The shape of the AI SDK call this module needs, injectable for tests. */
 type GenerateTextFn = (params: {
   model: LanguageModel;
@@ -184,6 +210,8 @@ type GenerateTextFn = (params: {
   abortSignal?: AbortSignal;
   /** Conditions that end the tool loop besides the turn's own (see `buildGenerateTextParams`). */
   stopWhen?: StopCondition<any>[];
+  /** How many steps the tool loop takes at most; `false`, no limit; `DEFAULT_MAX_STEPS` when absent. */
+  maxSteps?: number | false;
   /** `false` turns off ai-sdk-ollama's synthesis of text after tool calls: a turn with an output wants none. */
   synthesis?: false;
 }) => Promise<{ text: string; usage?: { inputTokens: number | undefined }; finishReason?: string }>;
@@ -258,6 +286,8 @@ type StreamTextFn = (params: {
   abortSignal?: AbortSignal;
   /** Conditions that end the tool loop besides the turn's own (see `buildGenerateTextParams`). */
   stopWhen?: StopCondition<any>[];
+  /** How many steps the tool loop takes at most; `false`, no limit; `DEFAULT_MAX_STEPS` when absent. */
+  maxSteps?: number | false;
   /** `false` turns off ai-sdk-ollama's synthesis of text after tool calls: a turn with an output wants none. */
   synthesis?: false;
 }) => Promise<{
@@ -271,7 +301,8 @@ type StreamTextFn = (params: {
  * `defaultGenerateTextFn` below is otherwise a thin, untestable wrapper
  * around a direct SDK call.
  *
- * `stopWhen: stepCountIs(100)` is the one non-obvious part: `generateText`
+ * The step limit (`maxSteps`, `DEFAULT_MAX_STEPS` when absent) is the one
+ * non-obvious part: `generateText`
  * defaults to stopping after a single step. If that step is a tool call
  * with no accompanying text (the normal case — the model calls a tool,
  * then needs the tool's result before it can answer), the call returns
@@ -290,7 +321,9 @@ type StreamTextFn = (params: {
  * exhausts it with nothing to show, that's communicated explicitly
  * rather than left silent — the real backstop against a runaway loop is
  * that fallback plus the step count itself still being finite, not the
- * specific number.
+ * specific number. A profile sets it (`maxSteps`), `false` meaning no limit
+ * at all: then only the confirmation and login stops, the caller's abort
+ * signal and the stall watchdog end the loop.
  *
  * `generateText` itself is imported from `ai-sdk-ollama`, not the plain
  * `ai` package — confirmed by a real run: with the standard SDK's
@@ -310,12 +343,13 @@ export function buildGenerateTextParams(params: {
   onStepEnd?: (step: StepInfo) => void;
   abortSignal?: AbortSignal;
   stopWhen?: StopCondition<any>[];
+  maxSteps?: number | false;
   synthesis?: false;
 }) {
-  const { stopWhen = [], synthesis, ...rest } = params;
+  const { stopWhen = [], synthesis, maxSteps, ...rest } = params;
   return {
     ...rest,
-    stopWhen: [isStepCount(100), pendingConfirmationStop(), loginRequiredStop(), ...stopWhen],
+    stopWhen: [...stepLimit(maxSteps), pendingConfirmationStop(), loginRequiredStop(), ...stopWhen],
     ...(synthesis === false ? { enhancedOptions: { enableSynthesis: false } } : {}),
   };
 }
@@ -342,12 +376,13 @@ export function buildStreamTextParams(params: {
   onStepEnd?: (step: StepInfo) => void;
   abortSignal?: AbortSignal;
   stopWhen?: StopCondition<any>[];
+  maxSteps?: number | false;
   synthesis?: false;
 }) {
-  const { stopWhen = [], synthesis, ...rest } = params;
+  const { stopWhen = [], synthesis, maxSteps, ...rest } = params;
   return {
     ...rest,
-    stopWhen: [isStepCount(100), pendingConfirmationStop(), loginRequiredStop(), ...stopWhen],
+    stopWhen: [...stepLimit(maxSteps), pendingConfirmationStop(), loginRequiredStop(), ...stopWhen],
     ...(synthesis === false ? { enhancedOptions: { enableStreamingSynthesis: false } } : {}),
   };
 }
@@ -360,13 +395,15 @@ const defaultStreamTextFn: StreamTextFn = (params) => streamText(buildStreamText
  * `toolName` and the result that came back, so the result stays in the tool
  * role and is never mistaken for words of the person's. Never stored in the
  * history, like any other tool result. A result that isn't JSON-shaped goes as
- * `null`.
+ * `null`. `forModel`, when the conversation viewed the result, is the call id
+ * and the output the model reads instead.
  */
-function resumedMessages(resumed: ResumedAction): ModelMessage[] {
-  const toolCallId = `resumed-${crypto.randomUUID()}`;
+function resumedMessages(resumed: ResumedAction, forModel?: { toolCallId: string; output: unknown }): ModelMessage[] {
+  const toolCallId = forModel?.toolCallId ?? `resumed-${crypto.randomUUID()}`;
+  const output = forModel === undefined ? resumed.output : forModel.output;
   let value: JSONValue = null;
   try {
-    value = (JSON.parse(JSON.stringify(resumed.output ?? null)) as JSONValue) ?? null;
+    value = (JSON.parse(JSON.stringify(output ?? null)) as JSONValue) ?? null;
   } catch {
     value = null;
   }
@@ -488,6 +525,10 @@ export async function runTurn(
     loginNote?: (services: string[]) => string;
     /** What the turn returns when it isn't text (see `turn-output.ts`): the answer is then its value as indented JSON, and what the model writes on the way still reaches `onTextChunk`, for a caller that only watches it. */
     output?: RunOutput;
+    /** How many model steps the turn takes at most (the person's profile's `maxSteps`); `false`, no limit; `DEFAULT_MAX_STEPS` when absent. */
+    maxSteps?: number | false;
+    /** Called when the conversation's view of a tool's output failed (the model then reads the output itself), with the tool and the error. */
+    onViewFailed?: (toolName: string, error: string) => void;
     /** Called once with the turn's output and how many attempts it took, when there is one. */
     onOutput?: (output: TurnOutput, attempts: number) => void;
     /** Test seam for `output: { schema }`'s constrained call; defaults to the real AI SDK call. */
@@ -496,13 +537,64 @@ export async function runTurn(
     onSilentCall?: (running: boolean) => void;
   },
 ): Promise<string> {
-  await history.addUserMessage(userInput, deps.turnContext);
+  await history.addUserMessage(userInput, await withIndex(deps.turnContext, history));
+  const turnDeps = history.toolOutput === undefined ? deps : await withOwnView(deps, history.toolOutput);
   try {
-    return await generateAnswer(history, deps);
+    return await generateAnswer(history, turnDeps);
   } catch (err) {
     if (deps.abortSignal?.aborted) await history.addAssistantMessage(ABORTED_MARKER);
     throw err;
   }
+}
+
+/**
+ * What the turn's calls run with: `runTurn`'s deps, plus how a step gets back
+ * the outputs a conversation's view replaced for the model, and the confirmed
+ * action's result as the model reads it (its call id and the viewed output).
+ */
+type TurnDeps = Parameters<typeof runTurn>[2] & {
+  restoreStep?: (step: StepInfo) => StepInfo;
+  resumedForModel?: { toolCallId: string; output: unknown };
+};
+
+/**
+ * `deps` with the tools going through the conversation's `view` of their
+ * outputs, every step handed on with the outputs themselves, and the confirmed
+ * action's result viewed the same way. A view that fails is logged and goes to
+ * `deps.onViewFailed`.
+ */
+async function withOwnView(deps: Parameters<typeof runTurn>[2], view: ToolOutputView): Promise<TurnDeps> {
+  const originals = new Map<string, unknown>();
+  const onFailed: ViewFailed = (toolName, error) => {
+    console.error(`[conversation] its view of ${toolName}'s output failed, the model reads the output itself: ${error}`);
+    deps.onViewFailed?.(toolName, error);
+  };
+  const resumed = deps.resumed;
+  const toolCallId = `resumed-${crypto.randomUUID()}`;
+  return {
+    ...deps,
+    tools: withToolOutputView(deps.tools, view, originals, onFailed),
+    restoreStep: (step) => restoreStep(step, originals),
+    ...(resumed === undefined
+      ? {}
+      : { resumedForModel: { toolCallId, output: await viewOf(view, { toolName: resumed.toolName, toolCallId, input: resumed.input }, resumed.output, onFailed) } }),
+  };
+}
+
+/**
+ * What goes in front of the person's message: the turn layers, then the
+ * conversation's index, apart by a blank line; undefined when both are empty.
+ * An index that fails is logged and left out.
+ */
+async function withIndex(turnContext: string | undefined, history: SessionHistory): Promise<string | undefined> {
+  let index: string | undefined;
+  try {
+    index = await history.turnIndex?.();
+  } catch (err) {
+    console.error(`[conversation] its index failed, the turn goes without: ${err instanceof Error ? err.message : String(err)}`);
+  }
+  const parts = [turnContext, index].filter((p): p is string => p !== undefined && p !== "");
+  return parts.length === 0 ? undefined : parts.join("\n\n");
 }
 
 /** One model call over `messages`: its text, its steps, and whether its signal aborted it. */
@@ -515,7 +607,7 @@ type ModelCall = { text: string; steps: StepInfo[]; lastStep: StepInfo | undefin
  * turn's own (see `buildGenerateTextParams`).
  */
 async function callModel(
-  deps: Parameters<typeof runTurn>[2],
+  deps: TurnDeps,
   messages: ModelMessage[],
   stopWhen: StopCondition<any>[],
   streamText: ((chunk: string) => void) | undefined,
@@ -529,9 +621,11 @@ async function callModel(
     instructions: deps.system,
     abortSignal: deps.abortSignal,
     ...(stopWhen.length > 0 ? { stopWhen } : {}),
+    ...(deps.maxSteps === undefined ? {} : { maxSteps: deps.maxSteps }),
     // The tool loop of a turn with an output stops on tool calls: text synthesized after them is thrown away.
     ...(deps.output === undefined ? {} : { synthesis: false as const }),
-    onStepEnd: (step: StepInfo) => {
+    onStepEnd: (modelStep: StepInfo) => {
+      const step = deps.restoreStep?.(modelStep) ?? modelStep;
       lastStep = step;
       steps.push(step);
       deps.onStepFinish?.(step);
@@ -607,7 +701,7 @@ async function callModel(
  * model wrote nothing because the turn staged an action, with the login note
  * after it when a tool asked the person to log in.
  */
-async function finishText(history: SessionHistory, deps: Parameters<typeof runTurn>[2], call: ModelCall, steps: StepInfo[]): Promise<string> {
+async function finishText(history: SessionHistory, deps: TurnDeps, call: ModelCall, steps: StepInfo[]): Promise<string> {
   let text = call.text;
   if (text.trim().length === 0) {
     text = resolveEmptyText(call.lastStep, deps.pendingNote ?? DEFAULT_PENDING_NOTE);
@@ -619,9 +713,9 @@ async function finishText(history: SessionHistory, deps: Parameters<typeof runTu
 }
 
 /** `runTurn`'s model call, once the user's message is recorded: records the answer, or `ABORTED_MARKER` for an aborted call that returned. */
-async function generateAnswer(history: SessionHistory, deps: Parameters<typeof runTurn>[2]): Promise<string> {
-  const fromHistory = historyMessages(history.getMessages());
-  const messages: ModelMessage[] = deps.resumed ? [...fromHistory, ...resumedMessages(deps.resumed)] : fromHistory;
+async function generateAnswer(history: SessionHistory, deps: TurnDeps): Promise<string> {
+  const fromHistory = historyMessages(history, deps.onViewFailed);
+  const messages: ModelMessage[] = deps.resumed ? [...fromHistory, ...resumedMessages(deps.resumed, deps.resumedForModel)] : fromHistory;
   if (deps.output) return generateOutput(history, deps, deps.output, messages);
   const call = await callModel(deps, messages, [], deps.onTextChunk);
   if (call.aborted) {
@@ -683,7 +777,7 @@ function withoutRefused(steps: StepInfo[], refused: ReadonlySet<string>): StepIn
 }
 
 /** Records the turn's output, as indented JSON, tells the caller, and returns that JSON; a value JSON can't write is an invalid output. */
-async function finishOutput(history: SessionHistory, deps: Parameters<typeof runTurn>[2], output: TurnOutput, attempts: number, steps: StepInfo[]): Promise<string> {
+async function finishOutput(history: SessionHistory, deps: TurnDeps, output: TurnOutput, attempts: number, steps: StepInfo[]): Promise<string> {
   let text: string;
   try {
     text = JSON.stringify(output.value, null, 2) ?? "null";
@@ -704,7 +798,7 @@ async function finishOutput(history: SessionHistory, deps: Parameters<typeof run
  * failed attempts is kept in the history. A turn that staged an action or
  * asked for a login ends as a text turn does.
  */
-async function generateOutput(history: SessionHistory, deps: Parameters<typeof runTurn>[2], output: RunOutput, messages: ModelMessage[]): Promise<string> {
+async function generateOutput(history: SessionHistory, deps: TurnDeps, output: RunOutput, messages: ModelMessage[]): Promise<string> {
   if (output.mode === "tool") {
     const { probe, retries, tool } = output;
     if (!probe.offered) throw new TurnOutputError("output-tool-unavailable", { attempts: 0, lastError: `the tool "${tool}" isn't offered on this turn` });

@@ -2886,6 +2886,27 @@ describe("traces of a turn", () => {
     ]);
   });
 
+  // #414: a conversation's view of an output that failed leaves the model the
+  // output itself; the event says the context grew where it shouldn't have.
+  test("a view of an output that failed is a tool.view event of the turn, its error at the args level", async () => {
+    const { runner, events } = traced({
+      runTurnFn: async (_h, _i, deps) => {
+        deps.onViewFailed?.("web_fetch", "disk full");
+        return "reply";
+      },
+    });
+    await runner(baseTurn({ principal: verified("u1"), sessionKey: "sk" }), baseSink());
+    expect(events.find((e) => e.kind === "tool.view")).toEqual({
+      kind: "tool.view",
+      turn: "turn-1",
+      session: "sk",
+      person: "google-chat:u1",
+      tool: "web_fetch",
+      outcome: "failed",
+      args: { error: "disk full" },
+    });
+  });
+
   test("each model step adds its events between start and end, under the turn's id", async () => {
     const step = { toolCalls: [], toolResults: [], content: [], stepNumber: 0 } as unknown as StepInfo;
     const { runner, events } = traced({
@@ -3178,6 +3199,14 @@ describe("createTurnRunner: the context (#387)", () => {
     expect(asked[0]![1]).toEqual({ sessionKey: "session-1", input: "hello", multiUser: false, reopened: false });
   });
 
+  test("hands the context the conversation's placing of the session layers, when it has one", async () => {
+    const asked: unknown[][] = [];
+    const placeLayers = (layers: { session: Array<{ layer: string; blocks: string[] }> }) => layers;
+    const contextFor = async (...args: unknown[]) => (asked.push(args), { event: { profile: "default", budget: 10, used: 0, layers: [] } });
+    await runnerWith({ contextFor, getOrCreateHistory: () => ({ ...fakeHistory(), placeLayers }) }, [])(baseTurn({ text: "hello" }), baseSink());
+    expect((asked[0]![1] as { placeLayers?: unknown }).placeLayers).toBe(placeLayers);
+  });
+
   test("tells the context a conversation its client reopens, for a person someone vouched for", async () => {
     const asked: unknown[][] = [];
     const contextFor = async (...args: unknown[]) => (asked.push(args), { event: { profile: "default", budget: 10, used: 0, layers: [] } });
@@ -3351,5 +3380,37 @@ describe("createTurnRunner: the turn's record (#393)", () => {
     });
     await runner(baseTurn({ principal: verified("u1") }), baseSink());
     expect(records).toEqual([]);
+  });
+});
+
+describe("the turn's step limit, from the profile of whoever writes (#414)", () => {
+  /** A runner that records the `maxSteps` each turn's `runTurn` gets ("absent" when it gets none). */
+  function runner(overrides: Partial<TurnRunnerDeps>, seen: unknown[]) {
+    return createTurnRunner({
+      model: {} as any,
+      systemPrompts: { singleUser: "s", multiUser: "m" },
+      buildTools: () => ({}),
+      getOrCreateHistory: () => fakeHistory(),
+      trackSession: () => {},
+      logStep: () => {},
+      runTurnFn: async (_history, _input, deps) => (seen.push("maxSteps" in deps ? deps.maxSteps : "absent"), "reply"),
+      ...overrides,
+    });
+  }
+
+  test("hands runTurn the limit of the writer's profile, asked with who they are", async () => {
+    const seen: unknown[] = [];
+    const asked: string[] = [];
+    const maxStepsFor = (who: { person: { key: string } }) => (asked.push(who.person.key), who.person.key === "google-chat:u1" ? 12 : false);
+    await runner({ maxStepsFor }, seen)(baseTurn({ principal: verified("u1") }), baseSink());
+    await runner({ maxStepsFor }, seen)(baseTurn({ principal: verified("u2") }), baseSink());
+    expect(seen).toEqual([12, false]);
+    expect(asked).toEqual(["google-chat:u1", "google-chat:u2"]);
+  });
+
+  test("hands runTurn none without a context: its own default", async () => {
+    const seen: unknown[] = [];
+    await runner({}, seen)(baseTurn(), baseSink());
+    expect(seen).toEqual(["absent"]);
   });
 });

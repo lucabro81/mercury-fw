@@ -14,7 +14,7 @@
  * them, but because adding either later would be a retrofit on every plugin
  * already written.
  */
-import type { LanguageModel, Tool } from "ai";
+import type { JSONValue, LanguageModel, Tool } from "ai";
 
 /**
  * Contract version. The core and a plugin are versioned and installed
@@ -545,7 +545,49 @@ export type Conversation = {
   replaceLastAssistantMessage: (content: string) => void;
   getCharCount: () => number;
   getCapturable?: () => ConversationMessage[];
+  /**
+   * What the model reads as the result of a past call, on later turns: the
+   * core still hands it the call and this value as a real tool call and tool
+   * result. Absent, the core shows the reduced result with a note that the
+   * data isn't kept, and the same when it throws or returns `undefined`. It changes only what the
+   * model sees: the call is recorded, archived and given to the plugins'
+   * hooks as it is.
+   */
+  pastCall?: (call: CallRecord) => JSONValue;
+  /**
+   * What the model reads of a tool's output inside the turn, in place of the
+   * output itself, after the display channel took its list out. `content` is
+   * the output without the fields the core reads (`ok`, `error`,
+   * `displayRef`, `shown`), which the core puts back on what this returns (a
+   * value that isn't an object goes under `content`); an output that isn't an
+   * object comes as it is. A staged confirmation or a login request never
+   * comes here: the turn stops on them. Called for every tool, this
+   * conversation's own included. When it fails or returns `undefined`, the
+   * model reads the output itself. It changes only what the model sees: the call is recorded,
+   * archived and given to the plugins' hooks with the output itself.
+   */
+  toolOutput?: (call: { toolName: string; toolCallId: string; input: unknown }, content: unknown) => unknown | Promise<unknown>;
+  /**
+   * What the model reads in front of the person's message at each turn,
+   * after the turn layers, kept with the message like them (the model's
+   * cache of the conversation holds): for a conversation that keeps part of
+   * itself elsewhere, the list of what's there. Not counted in the profile's
+   * budget: the conversation bounds it itself. Empty or absent, nothing goes
+   * there; when it fails, the turn goes on without it.
+   */
+  turnIndex?: () => string | undefined | Promise<string | undefined>;
+  /**
+   * The session layers' blocks as the model reads them in the system prompt,
+   * in place of the layers' own: called once per person and session, before
+   * the profile's budget, with every layer that had blocks, by plugin name. A
+   * layer it doesn't return goes without blocks; a name it returns that isn't
+   * one of them is ignored. When it fails, the layers' own blocks go.
+   */
+  placeLayers?: (layers: { session: LayerBlocks[] }) => { session: LayerBlocks[] } | Promise<{ session: LayerBlocks[] }>;
 };
+
+/** A context layer's blocks, by the name of the plugin it's of (see `Conversation.placeLayers`). */
+export type LayerBlocks = { layer: string; blocks: string[] };
 
 /**
  * What a plugin contributes to keep conversations, when an instance's context
