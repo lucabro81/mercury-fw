@@ -86,9 +86,10 @@ async function readIndex(path: string): Promise<FileEntry[]> {
   }
 }
 
-/** Opens the files of the session `sessionKey` under `root`, those already written included. */
-export async function openSessionFiles(root: string, sessionKey: string): Promise<SessionFiles> {
+/** Opens the files of the session `sessionKey` under `root`, those already written included, or none with `fresh` (removed first). */
+export async function openSessionFiles(root: string, sessionKey: string, opts: { fresh?: boolean } = {}): Promise<SessionFiles> {
   const folder = sessionFolder(root, sessionKey);
+  if (opts.fresh === true) await rm(folder, { recursive: true, force: true });
   const indexPath = join(folder, "index.json");
   const stored = await readIndex(indexPath);
   // Opening the session is using it: its folder isn't removed as unused.

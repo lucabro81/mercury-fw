@@ -116,12 +116,27 @@ describe("contextFiles: a session's conversation", () => {
   // same id) finds its files again: they go only when unused for days.
   it("keeps the session's files when the session closes: the conversation reopened finds them", async () => {
     const owner = (await built(contextFiles())).conversation!;
-    const conversation = await owner.open({ sessionKey: "c1" });
+    const conversation = await owner.open({ sessionKey: "c1", person: { key: "static:alice" } });
     await conversation.toolOutput!({ toolName: "fetch", toolCallId: "t", input: {} }, big.repeat(20));
     owner.close!("c1");
     expect(existsSync(sessionFolder(dataDir, "c1"))).toBe(true);
-    const reopened = await owner.open({ sessionKey: "c1" });
+    const reopened = await owner.open({ sessionKey: "c1", person: { key: "static:alice" } });
     expect(await reopened.turnIndex!()).toContain("- outputs/1 — fetch {}");
+  });
+
+  // A conversation nobody vouched for (the terminal) is never reopened: its
+  // files went to the next REPL session on the same key, listed as its own.
+  it("starts a conversation nobody vouched for without files, while a person's reopened conversation finds them", async () => {
+    const owner = (await built(contextFiles({ outputs: { overChars: 100 } }))).conversation!;
+    const terminal = await owner.open({ sessionKey: "terminal" });
+    await terminal.toolOutput!({ toolName: "fetch", toolCallId: "t", input: {} }, big);
+    owner.close!("terminal");
+    expect(await (await owner.open({ sessionKey: "terminal" })).turnIndex!()).toBeUndefined();
+
+    const alice = await owner.open({ sessionKey: "c1", person: { key: "static:alice" } });
+    await alice.toolOutput!({ toolName: "fetch", toolCallId: "t", input: {} }, big);
+    owner.close!("c1");
+    expect(await (await owner.open({ sessionKey: "c1", person: { key: "static:alice" } })).turnIndex!()).toContain("outputs/1");
   });
 
   it("removes the files of sessions unused for cleanup.afterDays (7) before it starts taking turns, and every day at 04:00", async () => {
