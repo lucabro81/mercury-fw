@@ -52,7 +52,7 @@ import { generateText as generatePlainText, isStepCount, NoObjectGeneratedError,
 import type { ResumedAction } from "@mercury-fw/confirm-engine";
 import { generateText, streamText } from "ai-sdk-ollama";
 import type { Message, SessionHistory } from "./history.ts";
-import { callMessages, callRecords, errorText, type CallRecord } from "./call-record.ts";
+import { callMessages, callRecords, errorText, reducedResult, type CallRecord } from "./call-record.ts";
 import { restoreStep, viewOf, withToolOutputView, type ToolOutputView, type ViewFailed } from "./tool-output-view.ts";
 import type { StepInfo } from "./step-info.ts";
 import { detectPendingConfirmation } from "./pending-confirmation.ts";
@@ -138,11 +138,25 @@ function turnCalls(steps: StepInfo[], resumed: ResumedAction | undefined): CallR
   return callRecords([...confirmed, ...steps]);
 }
 
-/** The history as the model reads it: each person's message with its context in front, each past answer's calls, as tool calls and their results (as the conversation renders them, else reduced), before its text. */
-function historyMessages(history: SessionHistory): ModelMessage[] {
+/** The history as the model reads it: each person's message with its context in front, each past answer's calls, as tool calls and their results (as the conversation renders them, else reduced, a rendering that throws reduced too and told to `onViewFailed`), before its text. */
+function historyMessages(history: SessionHistory, onViewFailed?: (toolName: string, error: string) => void): ModelMessage[] {
+  const { pastCall } = history;
+  const render =
+    pastCall === undefined
+      ? undefined
+      : (record: CallRecord): JSONValue => {
+          try {
+            return pastCall(record);
+          } catch (err) {
+            const error = err instanceof Error ? err.message : String(err);
+            console.error(`[conversation] its rendering of a past ${record.toolName} call failed, the model reads the reduced result: ${error}`);
+            onViewFailed?.(record.toolName, error);
+            return reducedResult(record);
+          }
+        };
   return history.getMessages().flatMap((m, i): ModelMessage[] =>
     m.role === "assistant" && m.calls !== undefined
-      ? [...callMessages(m.calls, `history-${i}`, history.pastCall), { role: "assistant", content: m.content }]
+      ? [...callMessages(m.calls, `history-${i}`, render), { role: "assistant", content: m.content }]
       : [{ role: m.role, content: m.context === undefined ? m.content : `${m.context}\n\n${m.content}` }],
   );
 }
@@ -698,7 +712,7 @@ async function finishText(history: SessionHistory, deps: TurnDeps, call: ModelCa
 
 /** `runTurn`'s model call, once the user's message is recorded: records the answer, or `ABORTED_MARKER` for an aborted call that returned. */
 async function generateAnswer(history: SessionHistory, deps: TurnDeps): Promise<string> {
-  const fromHistory = historyMessages(history);
+  const fromHistory = historyMessages(history, deps.onViewFailed);
   const messages: ModelMessage[] = deps.resumed ? [...fromHistory, ...resumedMessages(deps.resumed, deps.resumedForModel)] : fromHistory;
   if (deps.output) return generateOutput(history, deps, deps.output, messages);
   const call = await callModel(deps, messages, [], deps.onTextChunk);

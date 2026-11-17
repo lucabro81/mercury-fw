@@ -56,7 +56,8 @@ export type ViewFailed = (toolName: string, error: string) => void;
 /**
  * What the model reads of `output`, a result of `call`: `output` itself when
  * the turn stops on it, else `view`'s value with the fields the core reads put
- * back. A view that fails gives `output` itself, and `onFailed` hears it.
+ * back. A view that fails, or returns `undefined`, gives `output` itself, and
+ * `onFailed` hears it.
  */
 export async function viewOf(
   view: ToolOutputView,
@@ -67,7 +68,9 @@ export async function viewOf(
   if (stopsTheTurn(output)) return output;
   const { control, content } = split(output);
   try {
-    return join(control, await view(call, content));
+    const viewed = await view(call, content);
+    if (viewed === undefined) throw new Error("the view returned nothing");
+    return join(control, viewed);
   } catch (err) {
     onFailed(call.toolName, err instanceof Error ? err.message : String(err));
     return output;

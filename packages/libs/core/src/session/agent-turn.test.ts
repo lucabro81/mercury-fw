@@ -1236,6 +1236,35 @@ describe("runTurn — the turn's tool calls in the history", () => {
     ]);
   });
 
+  // Regression (#414 review): a pastCall that threw on one stored call failed
+  // every later turn of the session, the call staying in the history.
+  it("hands later turns a past call's reduced result when the conversation fails to render it, and says which tool", async () => {
+    const history = {
+      ...keptHistory(),
+      pastCall: (): never => {
+        throw new Error("file gone");
+      },
+    };
+    const deps = { model: "fake-model" as never, tools: {}, system: SYSTEM };
+    await runTurn(history, "docker pages?", { ...deps, generateTextFn: generating([searchStep], "One page.") });
+    const seen = { messages: [] as ModelMessage[] };
+    const failed: unknown[] = [];
+    const answer = await runTurn(history, "thanks", {
+      ...deps,
+      generateTextFn: generating([], "You're welcome.", seen),
+      onViewFailed: (tool, error) => void failed.push([tool, error]),
+    });
+
+    expect(answer).toBe("You're welcome.");
+    expect(seen.messages[2]).toEqual({
+      role: "tool",
+      content: [
+        { type: "tool-result", toolCallId: "history-1-0", toolName: "confluenceCommand", output: { type: "json", value: { ...searchCall.result, note: HISTORY_CALL_NOTE } } },
+      ],
+    });
+    expect(failed).toEqual([["confluenceCommand", "file gone"]]);
+  });
+
   // A skill read in an earlier turn isn't loaded anymore: the model must be told
   // so, or it guesses the skill's commands instead of reading it again (#356).
   it("hands a later turn an earlier read_skill with the note that the skill must be read again", async () => {
@@ -1692,6 +1721,21 @@ describe("runTurn: the conversation's own view of tool outputs (#414)", () => {
       onViewFailed: (tool, error) => void failed.push([tool, error]),
     });
     expect(failed).toEqual([["fetch", "disk full"]]);
+  });
+
+  // A result of undefined would reach the model as no result at all.
+  it("treats a view that returns nothing as failed: the model gets the output itself, and the turn hears why", async () => {
+    const failed: unknown[] = [];
+    const history = { ...keptHistory(), toolOutput: () => undefined };
+    const seen: { output?: unknown } = {};
+    await runTurn(history, "x", {
+      ...deps,
+      tools: returning({ data: "big" }),
+      generateTextFn: callingOnce("fetch", {}, seen) as never,
+      onViewFailed: (tool, error) => void failed.push([tool, error]),
+    });
+    expect(seen.output).toEqual({ data: "big" });
+    expect(failed).toEqual([["fetch", "the view returned nothing"]]);
   });
 
   const resumed = { toolName: "web_fetch", input: { url: "https://example.org/a" }, output: { ok: true, data: "a very long page" }, describe: "fetch https://example.org/a" };

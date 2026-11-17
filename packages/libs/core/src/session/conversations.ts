@@ -96,10 +96,10 @@ export function createConversations(deps: ConversationsDeps): Conversations {
         getCharCount: () => conversation.getCharCount(),
         getCapturable: () => conversation.getCapturable?.() ?? conversation.getMessages(),
         primer: () => (primer && primer.current ? primer : undefined),
-        ...(conversation.pastCall === undefined ? {} : { pastCall: conversation.pastCall }),
-        ...(conversation.toolOutput === undefined ? {} : { toolOutput: conversation.toolOutput }),
-        ...(conversation.turnIndex === undefined ? {} : { turnIndex: conversation.turnIndex }),
-        ...(conversation.placeLayers === undefined ? {} : { placeLayers: conversation.placeLayers }),
+        ...(conversation.pastCall === undefined ? {} : { pastCall: (call) => conversation.pastCall!(call) }),
+        ...(conversation.toolOutput === undefined ? {} : { toolOutput: (call, content) => conversation.toolOutput!(call, content) }),
+        ...(conversation.turnIndex === undefined ? {} : { turnIndex: () => conversation.turnIndex!() }),
+        ...(conversation.placeLayers === undefined ? {} : { placeLayers: (layers) => conversation.placeLayers!(layers) }),
       };
       open.set(req.sessionKey, owner === undefined ? { history } : { history, owner });
       return history;

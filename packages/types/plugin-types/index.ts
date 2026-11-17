@@ -549,8 +549,9 @@ export type Conversation = {
    * What the model reads as the result of a past call, on later turns: the
    * core still hands it the call and this value as a real tool call and tool
    * result. Absent, the core shows the reduced result with a note that the
-   * data isn't kept. It changes only what the model sees: the call is
-   * recorded, archived and given to the plugins' hooks as it is.
+   * data isn't kept, and the same when it throws. It changes only what the
+   * model sees: the call is recorded, archived and given to the plugins'
+   * hooks as it is.
    */
   pastCall?: (call: CallRecord) => JSONValue;
   /**
@@ -561,8 +562,8 @@ export type Conversation = {
    * value that isn't an object goes under `content`); an output that isn't an
    * object comes as it is. A staged confirmation or a login request never
    * comes here: the turn stops on them. Called for every tool, this
-   * conversation's own included. When it fails, the model reads the output
-   * itself. It changes only what the model sees: the call is recorded,
+   * conversation's own included. When it fails or returns `undefined`, the
+   * model reads the output itself. It changes only what the model sees: the call is recorded,
    * archived and given to the plugins' hooks with the output itself.
    */
   toolOutput?: (call: { toolName: string; toolCallId: string; input: unknown }, content: unknown) => unknown | Promise<unknown>;
