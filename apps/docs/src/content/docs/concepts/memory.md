@@ -105,8 +105,8 @@ Which one suits an agent depends on what its tools return and how people use it.
 small when tools return a lot and the next questions are about a piece of it ("and the third one?"): the model reads
 that piece and nothing else. They cost more when every answer needs the whole content, since the model then reads
 it from the file in several steps, and they ask the model to use its tools well, which a small model doesn't always
-do. A strategy is chosen per profile, up front, and a conversation keeps the one it started with until it closes:
-to see which works better for your agent, run the same conversations under both. The plugin's options, and where it keeps
+do. A strategy is chosen per profile in the config, up front, and changes only with the config and a restart: to
+see which works better for your agent, run the same conversations under both. The plugin's options, and where it keeps
 the files and for how long, are in [its README](https://github.com/lucabro81/mercury-fw/tree/main/packages/memory/context-files#readme).
 
 ## The archive and the titles
