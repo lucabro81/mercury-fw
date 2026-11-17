@@ -295,6 +295,21 @@
         "typescript": "^6.0.3",
       },
     },
+    "packages/memory/context-files": {
+      "name": "@mercury-fw/context-files",
+      "version": "0.78.0",
+      "dependencies": {
+        "@mercury-fw/conversation-window": "workspace:*",
+        "@mercury-fw/plugin-types": "workspace:*",
+        "ai": "^7.0.126",
+        "zod": "^4.6.5",
+      },
+      "devDependencies": {
+        "@mercury-fw/typescript-config": "*",
+        "@types/bun": "^1.4.2",
+        "typescript": "^6.0.3",
+      },
+    },
     "packages/memory/conversation-window": {
       "name": "@mercury-fw/conversation-window",
       "version": "0.78.0",
@@ -815,6 +830,8 @@
     "@mercury-fw/cli-engine": ["@mercury-fw/cli-engine@workspace:packages/libs/cli-engine"],
 
     "@mercury-fw/confirm-engine": ["@mercury-fw/confirm-engine@workspace:packages/libs/confirm-engine"],
+
+    "@mercury-fw/context-files": ["@mercury-fw/context-files@workspace:packages/memory/context-files"],
 
     "@mercury-fw/conversation-window": ["@mercury-fw/conversation-window@workspace:packages/memory/conversation-window"],
 
