@@ -12,7 +12,7 @@ import { z } from "zod";
 import { MAX_MATCHES, MAX_READ_LINES, type SessionFiles } from "./session-files.ts";
 
 /** The two tools on `files`, the files of the turn's session. */
-export function createContextFileTools(files: SessionFiles): { read_context_file: ExecutableTool; search_context_files: ExecutableTool } {
+export function createContextFileTools(files: Pick<SessionFiles, "read" | "search">): { read_context_file: ExecutableTool; search_context_files: ExecutableTool } {
   const read_context_file = tool({
     description:
       `Read a file of this conversation (a ref such as outputs/3, history/1 or layers/2, from the list in front of the message), ` +
