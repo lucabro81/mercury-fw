@@ -690,6 +690,7 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
           sink.onStep?.(step);
         },
         onUsage: sink.onUsage,
+        onViewFailed: (tool, error) => emit({ kind: "tool.view", tool, outcome: "failed", args: { error } }, key),
         onFinish: (reason, error) => {
           finish = { reason, error };
         },

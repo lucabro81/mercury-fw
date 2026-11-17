@@ -1653,6 +1653,49 @@ describe("runTurn: the conversation's own view of tool outputs (#414)", () => {
     expect(seen.output).toEqual({ ok: true, data: "big" });
   });
 
+  it("tells the turn which tool's view failed, and why", async () => {
+    const failed: unknown[] = [];
+    const history = { ...keptHistory(), toolOutput: () => Promise.reject(new Error("disk full")) };
+    await runTurn(history, "x", {
+      ...deps,
+      tools: returning({ ok: true, data: "big" }),
+      generateTextFn: callingOnce("fetch", {}, {}) as never,
+      onViewFailed: (tool, error) => void failed.push([tool, error]),
+    });
+    expect(failed).toEqual([["fetch", "disk full"]]);
+  });
+
+  const resumed = { toolName: "web_fetch", input: { url: "https://example.org/a" }, output: { ok: true, data: "a very long page" }, describe: "fetch https://example.org/a" };
+  /** A model that answers at once, keeping the messages it was given. */
+  const reading = (seen: { messages: ModelMessage[] }) => (async (p: { messages: ModelMessage[] }) => ((seen.messages = p.messages), { text: "Here." })) as never;
+
+  // The confirmed action's result reaches the model outside the tools: it must
+  // go through the same view, or a long one fills the context anyway.
+  it("hands the model a confirmed action's result as the conversation views it, the history the result itself", async () => {
+    const asked: unknown[] = [];
+    const history = { ...keptHistory(), toolOutput: (call: unknown, content: unknown) => (asked.push([call, content]), { file: "outputs/r1" }) };
+    const seen = { messages: [] as ModelMessage[] };
+    await runTurn(history, "[Confermato]", { ...deps, tools: {}, resumed, generateTextFn: reading(seen) });
+
+    const [call, content] = asked[0] as [{ toolName: string; toolCallId: string; input: unknown }, unknown];
+    expect(asked).toHaveLength(1);
+    expect({ toolName: call.toolName, input: call.input, content }).toEqual({ toolName: "web_fetch", input: resumed.input, content: { data: "a very long page" } });
+    const result = seen.messages.find((m) => m.role === "tool") as { content: Array<{ toolCallId: string; output: unknown }> };
+    expect(result.content[0]!.toolCallId).toBe(call.toolCallId);
+    expect(result.content[0]!.output).toEqual({ type: "json", value: { file: "outputs/r1", ok: true } });
+    expect(history.getMessages()[1]!.calls).toEqual([{ toolName: "web_fetch", input: resumed.input, result: { ok: true, ran: '{"url":"https://example.org/a"}' } }]);
+  });
+
+  it("hands the model a confirmed action's result itself when the view fails on it, and says so", async () => {
+    const failed: unknown[] = [];
+    const history = { ...keptHistory(), toolOutput: () => Promise.reject(new Error("disk full")) };
+    const seen = { messages: [] as ModelMessage[] };
+    await runTurn(history, "[Confermato]", { ...deps, tools: {}, resumed, generateTextFn: reading(seen), onViewFailed: (tool, error) => void failed.push([tool, error]) });
+    const result = seen.messages.find((m) => m.role === "tool") as { content: Array<{ output: unknown }> };
+    expect(result.content[0]!.output).toEqual({ type: "json", value: resumed.output });
+    expect(failed).toEqual([["web_fetch", "disk full"]]);
+  });
+
   it("hands the model the tools as they are when the conversation has no view of its own", async () => {
     const tools = returning({ ok: true });
     let given: Record<string, Tool> | undefined;

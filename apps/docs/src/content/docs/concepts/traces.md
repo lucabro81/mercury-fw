@@ -50,6 +50,7 @@ What gets recorded:
 | `turn.start`, `turn.end` | A turn begins and ends: how it ended (done, failed, cancelled, stalled, refused…), how long it took, how many steps and tool calls. |
 | `model.step` | The model finished a step: tokens read and written, time to load, read the prompt and write. |
 | `tool.call` | A tool ran: which, how it went, how long, how big its result was. |
+| `tool.view` | The plugin keeping the conversation couldn't make its own version of a tool's result for the model, so the model read the whole result: which tool; the error only at the `args` level. |
 | `confirmation.staged`, `confirmation.resolved` | An action waits for a confirmation, and how it was resolved. |
 | `history.compressed` | A long conversation was shortened to fit (summarized, or its oldest messages dropped), as the plugin keeping it reported: how much, how long it took. |
 | `context.assembled` | What the [context](../context/) added before the model answered: the profile, and for each layer how many characters and blocks it added, how many it left out for the budget, or why it was skipped. |

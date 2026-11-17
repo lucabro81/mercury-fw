@@ -53,7 +53,7 @@ import type { ResumedAction } from "@mercury-fw/confirm-engine";
 import { generateText, streamText } from "ai-sdk-ollama";
 import type { Message, SessionHistory } from "./history.ts";
 import { callMessages, callRecords, errorText, type CallRecord } from "./call-record.ts";
-import { restoreStep, withToolOutputView, type ToolOutputView } from "./tool-output-view.ts";
+import { restoreStep, viewOf, withToolOutputView, type ToolOutputView, type ViewFailed } from "./tool-output-view.ts";
 import type { StepInfo } from "./step-info.ts";
 import { detectPendingConfirmation } from "./pending-confirmation.ts";
 import { detectLoginRequests, TurnOutputError, type TurnOutput } from "@mercury-fw/channel-types";
@@ -361,13 +361,15 @@ const defaultStreamTextFn: StreamTextFn = (params) => streamText(buildStreamText
  * `toolName` and the result that came back, so the result stays in the tool
  * role and is never mistaken for words of the person's. Never stored in the
  * history, like any other tool result. A result that isn't JSON-shaped goes as
- * `null`.
+ * `null`. `forModel`, when the conversation viewed the result, is the call id
+ * and the output the model reads instead.
  */
-function resumedMessages(resumed: ResumedAction): ModelMessage[] {
-  const toolCallId = `resumed-${crypto.randomUUID()}`;
+function resumedMessages(resumed: ResumedAction, forModel?: { toolCallId: string; output: unknown }): ModelMessage[] {
+  const toolCallId = forModel?.toolCallId ?? `resumed-${crypto.randomUUID()}`;
+  const output = forModel === undefined ? resumed.output : forModel.output;
   let value: JSONValue = null;
   try {
-    value = (JSON.parse(JSON.stringify(resumed.output ?? null)) as JSONValue) ?? null;
+    value = (JSON.parse(JSON.stringify(output ?? null)) as JSONValue) ?? null;
   } catch {
     value = null;
   }
@@ -489,6 +491,8 @@ export async function runTurn(
     loginNote?: (services: string[]) => string;
     /** What the turn returns when it isn't text (see `turn-output.ts`): the answer is then its value as indented JSON, and what the model writes on the way still reaches `onTextChunk`, for a caller that only watches it. */
     output?: RunOutput;
+    /** Called when the conversation's view of a tool's output failed (the model then reads the output itself), with the tool and the error. */
+    onViewFailed?: (toolName: string, error: string) => void;
     /** Called once with the turn's output and how many attempts it took, when there is one. */
     onOutput?: (output: TurnOutput, attempts: number) => void;
     /** Test seam for `output: { schema }`'s constrained call; defaults to the real AI SDK call. */
@@ -498,7 +502,7 @@ export async function runTurn(
   },
 ): Promise<string> {
   await history.addUserMessage(userInput, deps.turnContext);
-  const turnDeps = history.toolOutput === undefined ? deps : withOwnView(deps, history.toolOutput);
+  const turnDeps = history.toolOutput === undefined ? deps : await withOwnView(deps, history.toolOutput);
   try {
     return await generateAnswer(history, turnDeps);
   } catch (err) {
@@ -507,16 +511,37 @@ export async function runTurn(
   }
 }
 
-/** What the turn's calls run with: `runTurn`'s deps, plus how a step gets back the outputs a conversation's view replaced for the model. */
-type TurnDeps = Parameters<typeof runTurn>[2] & { restoreStep?: (step: StepInfo) => StepInfo };
+/**
+ * What the turn's calls run with: `runTurn`'s deps, plus how a step gets back
+ * the outputs a conversation's view replaced for the model, and the confirmed
+ * action's result as the model reads it (its call id and the viewed output).
+ */
+type TurnDeps = Parameters<typeof runTurn>[2] & {
+  restoreStep?: (step: StepInfo) => StepInfo;
+  resumedForModel?: { toolCallId: string; output: unknown };
+};
 
-/** `deps` with the tools going through the conversation's `view` of their outputs, and every step handed on with the outputs themselves. */
-function withOwnView(deps: Parameters<typeof runTurn>[2], view: ToolOutputView): TurnDeps {
+/**
+ * `deps` with the tools going through the conversation's `view` of their
+ * outputs, every step handed on with the outputs themselves, and the confirmed
+ * action's result viewed the same way. A view that fails is logged and goes to
+ * `deps.onViewFailed`.
+ */
+async function withOwnView(deps: Parameters<typeof runTurn>[2], view: ToolOutputView): Promise<TurnDeps> {
   const originals = new Map<string, unknown>();
+  const onFailed: ViewFailed = (toolName, error) => {
+    console.error(`[conversation] its view of ${toolName}'s output failed, the model reads the output itself: ${error}`);
+    deps.onViewFailed?.(toolName, error);
+  };
+  const resumed = deps.resumed;
+  const toolCallId = `resumed-${crypto.randomUUID()}`;
   return {
     ...deps,
-    tools: withToolOutputView(deps.tools, view, originals, (msg) => console.error(msg)),
+    tools: withToolOutputView(deps.tools, view, originals, onFailed),
     restoreStep: (step) => restoreStep(step, originals),
+    ...(resumed === undefined
+      ? {}
+      : { resumedForModel: { toolCallId, output: await viewOf(view, { toolName: resumed.toolName, toolCallId, input: resumed.input }, resumed.output, onFailed) } }),
   };
 }
 
@@ -637,7 +662,7 @@ async function finishText(history: SessionHistory, deps: TurnDeps, call: ModelCa
 /** `runTurn`'s model call, once the user's message is recorded: records the answer, or `ABORTED_MARKER` for an aborted call that returned. */
 async function generateAnswer(history: SessionHistory, deps: TurnDeps): Promise<string> {
   const fromHistory = historyMessages(history);
-  const messages: ModelMessage[] = deps.resumed ? [...fromHistory, ...resumedMessages(deps.resumed)] : fromHistory;
+  const messages: ModelMessage[] = deps.resumed ? [...fromHistory, ...resumedMessages(deps.resumed, deps.resumedForModel)] : fromHistory;
   if (deps.output) return generateOutput(history, deps, deps.output, messages);
   const call = await callModel(deps, messages, [], deps.onTextChunk);
   if (call.aborted) {

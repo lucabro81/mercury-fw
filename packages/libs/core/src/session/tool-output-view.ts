@@ -7,8 +7,9 @@
  *
  * `withToolOutputView` wraps the turn's tools: each output is kept by its call
  * id, and the model gets what the view makes of it, with the fields the core
- * reads put back. A staged confirmation and a login request pass as they are:
- * the turn stops on them. `restoreStep` gives a step its outputs back.
+ * reads put back (`viewOf`, which a confirmed action's result goes through
+ * too). A staged confirmation and a login request pass as they are: the turn
+ * stops on them. `restoreStep` gives a step its outputs back.
  *
  * Used by: `agent-turn.ts` (`runTurn`), when the session's conversation has a view.
  */
@@ -49,16 +50,36 @@ function join(control: Record<string, unknown>, viewed: unknown): unknown {
   return isRecord(viewed) ? { ...viewed, ...control } : { ...control, content: viewed };
 }
 
+/** What tells the turn a view failed: the tool and the error. */
+export type ViewFailed = (toolName: string, error: string) => void;
+
 /**
- * `tools`, each output going through `view` for the model and kept as it was
- * in `originals` by call id. A view that fails gives the model the output
- * itself, with a line in `log`.
+ * What the model reads of `output`, a result of `call`: `output` itself when
+ * the turn stops on it, else `view`'s value with the fields the core reads put
+ * back. A view that fails gives `output` itself, and `onFailed` hears it.
  */
+export async function viewOf(
+  view: ToolOutputView,
+  call: { toolName: string; toolCallId: string; input: unknown },
+  output: unknown,
+  onFailed: ViewFailed,
+): Promise<unknown> {
+  if (stopsTheTurn(output)) return output;
+  const { control, content } = split(output);
+  try {
+    return join(control, await view(call, content));
+  } catch (err) {
+    onFailed(call.toolName, err instanceof Error ? err.message : String(err));
+    return output;
+  }
+}
+
+/** `tools`, each output going through `view` (see `viewOf`) for the model and kept as it was in `originals` by call id. */
 export function withToolOutputView(
   tools: Record<string, Tool>,
   view: ToolOutputView,
   originals: Map<string, unknown>,
-  log: (msg: string) => void,
+  onFailed: ViewFailed,
 ): Record<string, Tool> {
   const out: Record<string, Tool> = {};
   for (const [toolName, tool] of Object.entries(tools)) {
@@ -71,14 +92,7 @@ export function withToolOutputView(
             execute: async (input: unknown, options: { toolCallId: string }) => {
               const output = await (execute as (i: unknown, o: unknown) => unknown)(input, options);
               originals.set(options.toolCallId, output);
-              if (stopsTheTurn(output)) return output;
-              const { control, content } = split(output);
-              try {
-                return join(control, await view({ toolName, toolCallId: options.toolCallId, input }, content));
-              } catch (err) {
-                log(`[conversation] its view of ${toolName}'s output failed, the model reads the output itself: ${err instanceof Error ? err.message : String(err)}`);
-                return output;
-              }
+              return viewOf(view, { toolName, toolCallId: options.toolCallId, input }, output, onFailed);
             },
           } as Tool);
   }

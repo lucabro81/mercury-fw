@@ -2886,6 +2886,27 @@ describe("traces of a turn", () => {
     ]);
   });
 
+  // #414: a conversation's view of an output that failed leaves the model the
+  // output itself; the event says the context grew where it shouldn't have.
+  test("a view of an output that failed is a tool.view event of the turn, its error at the args level", async () => {
+    const { runner, events } = traced({
+      runTurnFn: async (_h, _i, deps) => {
+        deps.onViewFailed?.("web_fetch", "disk full");
+        return "reply";
+      },
+    });
+    await runner(baseTurn({ principal: verified("u1"), sessionKey: "sk" }), baseSink());
+    expect(events.find((e) => e.kind === "tool.view")).toEqual({
+      kind: "tool.view",
+      turn: "turn-1",
+      session: "sk",
+      person: "google-chat:u1",
+      tool: "web_fetch",
+      outcome: "failed",
+      args: { error: "disk full" },
+    });
+  });
+
   test("each model step adds its events between start and end, under the turn's id", async () => {
     const step = { toolCalls: [], toolResults: [], content: [], stepNumber: 0 } as unknown as StepInfo;
     const { runner, events } = traced({
