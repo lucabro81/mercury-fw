@@ -137,11 +137,11 @@ function turnCalls(steps: StepInfo[], resumed: ResumedAction | undefined): CallR
   return callRecords([...confirmed, ...steps]);
 }
 
-/** The history as the model reads it: each person's message with its context in front, each past answer's calls, as tool calls and their reduced results, before its text. */
-function historyMessages(messages: Message[]): ModelMessage[] {
-  return messages.flatMap((m, i): ModelMessage[] =>
+/** The history as the model reads it: each person's message with its context in front, each past answer's calls, as tool calls and their results (as the conversation renders them, else reduced), before its text. */
+function historyMessages(history: SessionHistory): ModelMessage[] {
+  return history.getMessages().flatMap((m, i): ModelMessage[] =>
     m.role === "assistant" && m.calls !== undefined
-      ? [...callMessages(m.calls, `history-${i}`), { role: "assistant", content: m.content }]
+      ? [...callMessages(m.calls, `history-${i}`, history.pastCall), { role: "assistant", content: m.content }]
       : [{ role: m.role, content: m.context === undefined ? m.content : `${m.context}\n\n${m.content}` }],
   );
 }
@@ -620,7 +620,7 @@ async function finishText(history: SessionHistory, deps: Parameters<typeof runTu
 
 /** `runTurn`'s model call, once the user's message is recorded: records the answer, or `ABORTED_MARKER` for an aborted call that returned. */
 async function generateAnswer(history: SessionHistory, deps: Parameters<typeof runTurn>[2]): Promise<string> {
-  const fromHistory = historyMessages(history.getMessages());
+  const fromHistory = historyMessages(history);
   const messages: ModelMessage[] = deps.resumed ? [...fromHistory, ...resumedMessages(deps.resumed)] : fromHistory;
   if (deps.output) return generateOutput(history, deps, deps.output, messages);
   const call = await callModel(deps, messages, [], deps.onTextChunk);

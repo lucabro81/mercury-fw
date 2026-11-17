@@ -14,7 +14,7 @@
  * them, but because adding either later would be a retrofit on every plugin
  * already written.
  */
-import type { LanguageModel, Tool } from "ai";
+import type { JSONValue, LanguageModel, Tool } from "ai";
 
 /**
  * Contract version. The core and a plugin are versioned and installed
@@ -545,6 +545,14 @@ export type Conversation = {
   replaceLastAssistantMessage: (content: string) => void;
   getCharCount: () => number;
   getCapturable?: () => ConversationMessage[];
+  /**
+   * What the model reads as the result of a past call, on later turns: the
+   * core still hands it the call and this value as a real tool call and tool
+   * result. Absent, the core shows the reduced result with a note that the
+   * data isn't kept. It changes only what the model sees: the call is
+   * recorded, archived and given to the plugins' hooks as it is.
+   */
+  pastCall?: (call: CallRecord) => JSONValue;
 };
 
 /**

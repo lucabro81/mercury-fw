@@ -1218,6 +1218,24 @@ describe("runTurn — the turn's tool calls in the history", () => {
     ]);
   });
 
+  it("hands later turns past calls as the conversation renders them, still as tool calls and tool results", async () => {
+    const history = { ...keptHistory(), pastCall: (call: { toolName: string }) => ({ ok: true, shown: `rendered ${call.toolName}` }) };
+    const deps = { model: "fake-model" as never, tools: {}, system: SYSTEM };
+    await runTurn(history, "docker pages?", { ...deps, generateTextFn: generating([searchStep], "One page.") });
+    const seen = { messages: [] as ModelMessage[] };
+    await runTurn(history, "thanks", { ...deps, generateTextFn: generating([], "You're welcome.", seen) });
+
+    expect(seen.messages.slice(1, 3)).toEqual([
+      { role: "assistant", content: [{ type: "tool-call", toolCallId: "history-1-0", toolName: "confluenceCommand", input: searchCall.input }] },
+      {
+        role: "tool",
+        content: [
+          { type: "tool-result", toolCallId: "history-1-0", toolName: "confluenceCommand", output: { type: "json", value: { ok: true, shown: "rendered confluenceCommand" } } },
+        ],
+      },
+    ]);
+  });
+
   // A skill read in an earlier turn isn't loaded anymore: the model must be told
   // so, or it guesses the skill's commands instead of reading it again (#356).
   it("hands a later turn an earlier read_skill with the note that the skill must be read again", async () => {
