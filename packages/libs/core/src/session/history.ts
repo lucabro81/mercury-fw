@@ -54,6 +54,10 @@ export type SessionHistory = {
   pastCall?: (call: CallRecord) => JSONValue;
   /** What the model reads of a tool's output inside the turn, when the conversation has its own view of it (the contract's `Conversation.toolOutput`). */
   toolOutput?: Conversation["toolOutput"];
+  /** What the model reads in front of the person's message, after the turn layers (the contract's `Conversation.turnIndex`). */
+  turnIndex?: Conversation["turnIndex"];
+  /** The session layers' blocks as the model reads them (the contract's `Conversation.placeLayers`). */
+  placeLayers?: Conversation["placeLayers"];
 };
 
 /** How much of the conversation `m` takes: its text, its context and, as JSON, its calls. */

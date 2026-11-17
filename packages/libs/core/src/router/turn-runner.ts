@@ -606,6 +606,7 @@ export function createTurnRunner(deps: TurnRunnerDeps): HandleTurn {
             multiUser: turn.multiUser,
             // Only someone vouched for has conversations to reopen.
             reopened: tracked && turn.resume !== undefined,
+            ...(history.placeLayers === undefined ? {} : { placeLayers: history.placeLayers }),
           });
           emit({ kind: "context.assembled", ...context.event }, key);
         } catch (err) {

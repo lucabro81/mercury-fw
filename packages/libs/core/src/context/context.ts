@@ -37,7 +37,7 @@
  * Used by: `compose.ts`, which resolves the config after the plugins load
  * and hands the assembler to the turn runner.
  */
-import type { ContextRequest, KnobValue, Plugin } from "@mercury-fw/plugin-types";
+import type { ContextRequest, Conversation, KnobValue, Plugin } from "@mercury-fw/plugin-types";
 import type { MercuryContext } from "../config/define-config.ts";
 import type { TurnWho } from "../identity/people.ts";
 import type { PluginAccess } from "../plugins/offering.ts";
@@ -161,8 +161,8 @@ export type ContextAssembly = {
   event: { profile: string; budget: number; used: number; layers: LayerReport[] };
 };
 
-/** What the assembler is told about a turn: its session, what the person wrote, whether the space is shared, whether the conversation is one its client reopened. */
-export type ContextTurn = { sessionKey: string; input: string; multiUser: boolean; reopened: boolean };
+/** What the assembler is told about a turn: its session, what the person wrote, whether the space is shared, whether the conversation is one its client reopened, and how the session's conversation places the session layers, when it does. */
+export type ContextTurn = { sessionKey: string; input: string; multiUser: boolean; reopened: boolean; placeLayers?: Conversation["placeLayers"] };
 
 export type ContextAssembler = {
   /** Builds `who`'s context for a turn; never throws. */
@@ -242,6 +242,20 @@ export function createContextAssembler(deps: {
     );
   }
 
+  /** `built` with each layer's blocks as `placeLayers` returns them (see `Conversation.placeLayers`); as it is without one, or when it fails. */
+  async function placed(built: Built[], placeLayers: ContextTurn["placeLayers"]): Promise<Built[]> {
+    if (placeLayers === undefined) return built;
+    const withBlocks = built.filter((b) => b.blocks.length > 0);
+    try {
+      const { session } = await placeLayers({ session: withBlocks.map((b) => ({ layer: b.plugin.name, blocks: b.blocks })) });
+      const byLayer = new Map(session.map((l) => [l.layer, l.blocks.filter((b) => typeof b === "string" && b !== "")]));
+      return built.map((b) => (b.blocks.length === 0 ? b : { ...b, blocks: byLayer.get(b.plugin.name) ?? [] }));
+    } catch (err) {
+      deps.log(`[context] the conversation's placing of the session layers failed, they go as they are: ${err instanceof Error ? err.message : String(err)}`);
+      return built;
+    }
+  }
+
   return {
     async forTurn(who, turn) {
       let people = sessions.get(turn.sessionKey);
@@ -252,7 +266,7 @@ export function createContextAssembler(deps: {
       let session = people.get(who.person.key);
       if (session === undefined) {
         const profile = profileFor(deps.resolved, who);
-        const fitted = fit(await build(profile, "session", who, turn), profile.maxChars, "session");
+        const fitted = fit(await placed(await build(profile, "session", who, turn), turn.placeLayers), profile.maxChars, "session");
         session = {
           profile,
           ...(fitted.kept.length === 0 ? {} : { text: fitted.kept.join("\n\n") }),

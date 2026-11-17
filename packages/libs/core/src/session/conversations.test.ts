@@ -137,17 +137,23 @@ describe("createConversations", () => {
     ]);
   });
 
-  it("hands the turn the conversation's own rendering of past calls and view of tool outputs, and none when it has none", async () => {
+  it("hands the turn the conversation's own rendering of past calls, view of tool outputs, index and placing of layers, and none when it has none", async () => {
     const pastCall = (call: { toolName: string }) => ({ shown: call.toolName });
     const toolOutput = () => ({ file: "f" });
-    const withBoth: ConversationOwner = { open: async () => ({ ...memoryConversation(), pastCall, toolOutput }) };
+    const turnIndex = () => "files: f";
+    const placeLayers = (layers: { session: Array<{ layer: string; blocks: string[] }> }) => layers;
+    const withBoth: ConversationOwner = { open: async () => ({ ...memoryConversation(), pastCall, toolOutput, turnIndex, placeLayers }) };
     const own = await createConversations({ ownerFor: () => withBoth, primerFor: async () => undefined }).open(alice, { sessionKey: "s", tracked: false });
     expect(own.pastCall).toBe(pastCall);
     expect(own.toolOutput).toBe(toolOutput);
+    expect(own.turnIndex).toBe(turnIndex);
+    expect(own.placeLayers).toBe(placeLayers);
 
     const plain = await createConversations({ ownerFor: () => recordingOwner().owner, primerFor: async () => undefined }).open(alice, { sessionKey: "s", tracked: false });
     expect(plain.pastCall).toBeUndefined();
     expect(plain.toolOutput).toBeUndefined();
+    expect(plain.turnIndex).toBeUndefined();
+    expect(plain.placeLayers).toBeUndefined();
   });
 
   it("closes a session: the plugin hears it, and the next turn opens a new conversation", async () => {

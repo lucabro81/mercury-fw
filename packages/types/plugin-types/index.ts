@@ -566,7 +566,27 @@ export type Conversation = {
    * archived and given to the plugins' hooks with the output itself.
    */
   toolOutput?: (call: { toolName: string; toolCallId: string; input: unknown }, content: unknown) => unknown | Promise<unknown>;
+  /**
+   * What the model reads in front of the person's message at each turn,
+   * after the turn layers, kept with the message like them (the model's
+   * cache of the conversation holds): for a conversation that keeps part of
+   * itself elsewhere, the list of what's there. Not counted in the profile's
+   * budget: the conversation bounds it itself. Empty or absent, nothing goes
+   * there; when it fails, the turn goes on without it.
+   */
+  turnIndex?: () => string | undefined | Promise<string | undefined>;
+  /**
+   * The session layers' blocks as the model reads them in the system prompt,
+   * in place of the layers' own: called once per person and session, before
+   * the profile's budget, with every layer that had blocks, by plugin name. A
+   * layer it doesn't return goes without blocks; a name it returns that isn't
+   * one of them is ignored. When it fails, the layers' own blocks go.
+   */
+  placeLayers?: (layers: { session: LayerBlocks[] }) => { session: LayerBlocks[] } | Promise<{ session: LayerBlocks[] }>;
 };
+
+/** A context layer's blocks, by the name of the plugin it's of (see `Conversation.placeLayers`). */
+export type LayerBlocks = { layer: string; blocks: string[] };
 
 /**
  * What a plugin contributes to keep conversations, when an instance's context

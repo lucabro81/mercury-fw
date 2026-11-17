@@ -98,6 +98,8 @@ export function createConversations(deps: ConversationsDeps): Conversations {
         primer: () => (primer && primer.current ? primer : undefined),
         ...(conversation.pastCall === undefined ? {} : { pastCall: conversation.pastCall }),
         ...(conversation.toolOutput === undefined ? {} : { toolOutput: conversation.toolOutput }),
+        ...(conversation.turnIndex === undefined ? {} : { turnIndex: conversation.turnIndex }),
+        ...(conversation.placeLayers === undefined ? {} : { placeLayers: conversation.placeLayers }),
       };
       open.set(req.sessionKey, owner === undefined ? { history } : { history, owner });
       return history;

@@ -3199,6 +3199,14 @@ describe("createTurnRunner: the context (#387)", () => {
     expect(asked[0]![1]).toEqual({ sessionKey: "session-1", input: "hello", multiUser: false, reopened: false });
   });
 
+  test("hands the context the conversation's placing of the session layers, when it has one", async () => {
+    const asked: unknown[][] = [];
+    const placeLayers = (layers: { session: Array<{ layer: string; blocks: string[] }> }) => layers;
+    const contextFor = async (...args: unknown[]) => (asked.push(args), { event: { profile: "default", budget: 10, used: 0, layers: [] } });
+    await runnerWith({ contextFor, getOrCreateHistory: () => ({ ...fakeHistory(), placeLayers }) }, [])(baseTurn({ text: "hello" }), baseSink());
+    expect((asked[0]![1] as { placeLayers?: unknown }).placeLayers).toBe(placeLayers);
+  });
+
   test("tells the context a conversation its client reopens, for a person someone vouched for", async () => {
     const asked: unknown[][] = [];
     const contextFor = async (...args: unknown[]) => (asked.push(args), { event: { profile: "default", budget: 10, used: 0, layers: [] } });
