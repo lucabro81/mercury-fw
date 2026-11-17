@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { openSessionFiles, sessionFolder } from "./session-files.ts";
+import { openSessionFiles, removeStaleSessions, sessionFolder } from "./session-files.ts";
 
 let root: string;
 beforeEach(() => {
@@ -147,12 +147,37 @@ describe("openSessionFiles", () => {
     await Bun.write(join(sessionFolder(root, "s1"), "index.json"), "{ not json");
     expect((await openSessionFiles(root, "s1")).entries()).toEqual([]);
   });
+});
 
-  it("removes the session's folder, and is fine when there is none", async () => {
-    const files = await openSessionFiles(root, "s1");
-    await files.write("outputs", "x", "t");
-    await files.remove();
-    expect(existsSync(sessionFolder(root, "s1"))).toBe(false);
-    await (await openSessionFiles(root, "s2")).remove();
+describe("removeStaleSessions", () => {
+  const DAY = 24 * 60 * 60 * 1000;
+  /** Writes a file for `key` and dates its folder's last use `daysAgo` days back. */
+  async function usedDaysAgo(key: string, daysAgo: number) {
+    await (await openSessionFiles(root, key)).write("outputs", "x", "t");
+    const when = new Date(Date.now() - daysAgo * DAY);
+    utimesSync(join(sessionFolder(root, key), "index.json"), when, when);
+  }
+
+  it("removes the folders of sessions not used for longer than given, keeping the others and those still open", async () => {
+    await usedDaysAgo("old", 8);
+    await usedDaysAgo("open-old", 8);
+    await usedDaysAgo("recent", 6);
+    const removed = await removeStaleSessions(root, { olderThanMs: 7 * DAY, now: Date.now(), keep: new Set(["open-old"]) });
+    expect(removed).toBe(1);
+    expect(existsSync(sessionFolder(root, "old"))).toBe(false);
+    expect(existsSync(sessionFolder(root, "open-old"))).toBe(true);
+    expect(existsSync(sessionFolder(root, "recent"))).toBe(true);
+  });
+
+  it("counts opening a session as using it: a session reopened today stays", async () => {
+    await usedDaysAgo("back", 30);
+    const before = statSync(join(sessionFolder(root, "back"), "index.json")).mtimeMs;
+    await openSessionFiles(root, "back");
+    expect(statSync(join(sessionFolder(root, "back"), "index.json")).mtimeMs).toBeGreaterThan(before);
+    expect(await removeStaleSessions(root, { olderThanMs: 7 * DAY, now: Date.now(), keep: new Set() })).toBe(0);
+  });
+
+  it("removes nothing when no session ever wrote a file", async () => {
+    expect(await removeStaleSessions(root, { olderThanMs: DAY, now: Date.now(), keep: new Set() })).toBe(0);
   });
 });

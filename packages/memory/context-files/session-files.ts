@@ -8,12 +8,15 @@
  * always relative to it, and anything not of that shape is refused. Each
  * file is written atomically (a temporary file, then a rename), and so is the
  * folder's `index.json`, which lists the files with their labels: a session
- * finds its files again after a restart.
+ * finds its files again after a restart, or when its conversation is reopened
+ * after the session closed. The index's time is the folder's last use, renewed
+ * by every write and every opening; `removeStaleSessions` removes the folders
+ * unused for too long.
  *
  * Used by: `conversation.ts` (writing), `tools.ts` (reading and searching).
  */
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rename, rm, stat, utimes, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 /** What a session keeps in files. */
@@ -49,8 +52,6 @@ export type SessionFiles = {
   read: (ref: string, from?: number, to?: number) => Promise<ReadResult>;
   /** The lines holding `text` (case-insensitive), in every file or in `ref`, as `ref:line: text`, at most `MAX_MATCHES`. */
   search: (text: string, ref?: string) => Promise<SearchResult>;
-  /** Removes the session's folder. */
-  remove: () => Promise<void>;
 };
 
 /** The folder of the session `sessionKey` under `root`. */
@@ -90,6 +91,9 @@ export async function openSessionFiles(root: string, sessionKey: string): Promis
   const folder = sessionFolder(root, sessionKey);
   const indexPath = join(folder, "index.json");
   const stored = await readIndex(indexPath);
+  // Opening the session is using it: its folder isn't removed as unused.
+  const now = new Date();
+  await utimes(indexPath, now, now).catch(() => {});
   // What the index keeps besides the entries: the key each file was written for.
   const entries: Array<FileEntry & { key?: string }> = stored;
 
@@ -165,6 +169,31 @@ export async function openSessionFiles(root: string, sessionKey: string): Promis
       }
       return { ok: true, matches, truncated };
     },
-    remove: () => rm(folder, { recursive: true, force: true }),
   };
+}
+
+/**
+ * Removes the folders under `root` of the sessions whose last use is older
+ * than `olderThanMs` before `now`, but those of the sessions in `keep` (open
+ * ones); resolves to how many it removed.
+ */
+export async function removeStaleSessions(root: string, q: { olderThanMs: number; now: number; keep: Set<string> }): Promise<number> {
+  const sessions = join(root, "sessions");
+  const kept = new Set([...q.keep].map((key) => sessionFolder(root, key)));
+  let names: string[];
+  try {
+    names = await readdir(sessions);
+  } catch {
+    return 0;
+  }
+  let removed = 0;
+  for (const name of names) {
+    const folder = join(sessions, name);
+    if (kept.has(folder)) continue;
+    const used = await stat(join(folder, "index.json")).catch(() => stat(folder));
+    if (q.now - used.mtimeMs <= q.olderThanMs) continue;
+    await rm(folder, { recursive: true, force: true });
+    removed += 1;
+  }
+  return removed;
 }

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PLUGIN_API_VERSION, type ConversationStore, type PluginRuntimeContext, type StoredMessage, type ToolLog } from "@mercury-fw/plugin-types";
@@ -13,9 +13,10 @@ beforeEach(() => {
 afterEach(() => rmSync(dataDir, { recursive: true, force: true }));
 
 /** What the plugin's `build` gets: the data folder, and the store and tool log given. */
-function ctxWith(opts: { store?: ConversationStore; toolLog?: ToolLog; noDataDir?: true } = {}) {
+function ctxWith(opts: { store?: ConversationStore; toolLog?: ToolLog; noDataDir?: true; daily?: unknown[] } = {}) {
   const logs: string[] = [];
   const ctx = {
+    ...(opts.daily === undefined ? {} : { daily: (...args: unknown[]) => void opts.daily!.push(args) }),
     model: {} as never,
     log: (m: string) => logs.push(m),
     ...(opts.noDataDir ? {} : { dataDir }),
@@ -55,6 +56,8 @@ describe("contextFiles: the plugin", () => {
       [{ index: { maxEntries: 0 } }, "contextFiles: index.maxEntries must be a whole number above 0"],
       [{ reopen: { maxChars: -1 } }, "contextFiles: reopen.maxChars must be a whole number from 0 up"],
       [{ overflow: "drop" as never }, 'contextFiles: overflow must be "files", "summarize" or "truncate"'],
+      [{ cleanup: { afterDays: 0 } }, "contextFiles: cleanup.afterDays must be a whole number above 0"],
+      [{ cleanup: { afterDays: 1.5 } }, "contextFiles: cleanup.afterDays must be a whole number above 0"],
     ];
     for (const [options, error] of refused) expect(() => contextFiles(options)).toThrow(error);
   });
@@ -109,14 +112,45 @@ describe("contextFiles: a session's conversation", () => {
     expect(conversation.getCapturable!()).toEqual([]);
   });
 
-  it("removes the session's files when the session closes", async () => {
+  // A conversation reopened after its session closed (the next day, on the
+  // same id) finds its files again: they go only when unused for days.
+  it("keeps the session's files when the session closes: the conversation reopened finds them", async () => {
     const owner = (await built(contextFiles())).conversation!;
     const conversation = await owner.open({ sessionKey: "c1" });
     await conversation.toolOutput!({ toolName: "fetch", toolCallId: "t", input: {} }, big.repeat(20));
-    expect(existsSync(sessionFolder(join(dataDir), "c1"))).toBe(true);
     owner.close!("c1");
     await Bun.sleep(20);
-    expect(existsSync(sessionFolder(dataDir, "c1"))).toBe(false);
+    expect(existsSync(sessionFolder(dataDir, "c1"))).toBe(true);
+    const reopened = await owner.open({ sessionKey: "c1" });
+    expect(await reopened.turnIndex!()).toContain("- outputs/1 — fetch {}");
+  });
+
+  it("removes the files of sessions unused for cleanup.afterDays (7) at startup, and every day at 04:00", async () => {
+    const DAY = 24 * 60 * 60 * 1000;
+    const seed = (await built(contextFiles())).conversation!;
+    for (const key of ["old", "fresh"]) {
+      const c = await seed.open({ sessionKey: key });
+      await c.toolOutput!({ toolName: "fetch", toolCallId: "t", input: {} }, big.repeat(20));
+    }
+    const age = (key: string, days: number) => {
+      const when = new Date(Date.now() - days * DAY);
+      utimesSync(join(sessionFolder(dataDir, key), "index.json"), when, when);
+    };
+    age("old", 8);
+    age("fresh", 3);
+    const daily: unknown[] = [];
+    const { ctx, logs } = ctxWith({ daily });
+    await built(contextFiles(), ctx);
+    await Bun.sleep(20);
+    expect(existsSync(sessionFolder(dataDir, "old"))).toBe(false);
+    expect(existsSync(sessionFolder(dataDir, "fresh"))).toBe(true);
+    expect(logs).toEqual(["[context-files] removed the files of 1 session unused for 7 days"]);
+    expect(daily.map((d) => (d as unknown[]).slice(0, 2))).toEqual([["cleanup", { at: "04:00" }]]);
+
+    age("fresh", 3);
+    await built(contextFiles({ cleanup: { afterDays: 2 } }), ctxWith().ctx);
+    await Bun.sleep(20);
+    expect(existsSync(sessionFolder(dataDir, "fresh"))).toBe(false);
   });
 });
 

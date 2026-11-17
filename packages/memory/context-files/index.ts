@@ -9,7 +9,9 @@
  * `conversation`, in place of `conversationWindow()`: the window and the
  * reopening of a conversation are `conversation-window`'s, and so is
  * `recall_tool_calls`. The files live in the plugin's data folder, one folder
- * per session, removed when the session closes.
+ * per session, kept when the session closes (its conversation reopened finds
+ * them) and removed once unused for `cleanup.afterDays`, at startup and every
+ * day at 04:00.
  */
 import { createWindow, createRecallToolCalls, createSummarizer, DEFAULT_MAX_CHARS, readTail, RECALL_PROMPT_FRAGMENT, resumeBudget, resumeConversation } from "@mercury-fw/conversation-window";
 import type { EarlierSummaries } from "@mercury-fw/conversation-window";
@@ -17,7 +19,7 @@ import { parseSkill, PLUGIN_API_VERSION, type ConversationOpen, type Plugin, typ
 import { readFileSync } from "node:fs";
 import { createFilesConversation } from "./conversation.ts";
 import { createFilesWindow } from "./files-window.ts";
-import { openSessionFiles, type SessionFiles } from "./session-files.ts";
+import { openSessionFiles, removeStaleSessions, type SessionFiles } from "./session-files.ts";
 import { createContextFileTools } from "./tools.ts";
 
 /** What a window does past its size: move the older messages to a file, fold them into a summary, or drop them. */
@@ -40,6 +42,8 @@ export type ContextFilesOptions = {
   reopen?: { maxChars?: number } | false;
   /** As `conversationWindow`'s: what reads the summaries of a reopened conversation's older part. */
   earlier?: EarlierSummaries;
+  /** How many days a session's files are kept after its last use (`afterDays`, 7 when absent): a conversation reopened within them finds them again. */
+  cleanup?: { afterDays?: number };
 };
 
 /** The plugin's texts, in English. */
@@ -77,6 +81,8 @@ export function contextFiles(options: ContextFilesOptions = {}): Plugin {
   check(keepRecent, 1, "keepRecent");
   const outputs = options.outputs === false ? false : { overChars: options.outputs?.overChars ?? 4000 };
   if (outputs !== false) check(outputs.overChars, 1, "outputs.overChars");
+  const afterDays = options.cleanup?.afterDays ?? 7;
+  check(afterDays, 1, "cleanup.afterDays");
   const maxEntries = options.index?.maxEntries ?? 30;
   check(maxEntries, 1, "index.maxEntries");
   const reopen = options.reopen;
@@ -103,6 +109,18 @@ export function contextFiles(options: ContextFilesOptions = {}): Plugin {
       const earlier = options.earlier;
       /** The files of each session whose conversation is open. */
       const open = new Map<string, Promise<SessionFiles>>();
+
+      /** Removes the files of the sessions unused for `afterDays`, but the open ones'. */
+      async function cleanUp(): Promise<void> {
+        try {
+          const removed = await removeStaleSessions(root!, { olderThanMs: afterDays * 24 * 60 * 60 * 1000, now: Date.now(), keep: new Set(open.keys()) });
+          if (removed > 0) log(`[context-files] removed the files of ${removed} session${removed === 1 ? "" : "s"} unused for ${afterDays} days`);
+        } catch (err) {
+          log(`[context-files] couldn't remove the files of unused sessions: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+      void cleanUp();
+      ctx.daily?.("cleanup", { at: "04:00" }, cleanUp);
 
       /** What a reopening brings back for `req`, if anything. */
       async function resumedFor(req: ConversationOpen) {
@@ -138,13 +156,8 @@ export function contextFiles(options: ContextFilesOptions = {}): Plugin {
                 : createWindow({ summarize, maxChars, overflow, ...(resumed === undefined ? {} : { resumed }) });
             return createFilesConversation({ files, window, outputs, ...(options.layers === true ? { layers: true } : {}), index: { maxEntries } });
           },
-          close: (sessionKey) => {
-            const files = filesOf(sessionKey);
-            open.delete(sessionKey);
-            void files
-              .then((f) => f.remove())
-              .catch((err) => log(`[context-files] couldn't remove the files of ${sessionKey}: ${err instanceof Error ? err.message : String(err)}`));
-          },
+          // The files stay: the conversation reopened finds them, until the cleanup.
+          close: (sessionKey) => void open.delete(sessionKey),
         },
         sessionTools: (sctx) => {
           const files = {

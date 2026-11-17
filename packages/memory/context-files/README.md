@@ -38,8 +38,9 @@ A context profile names it as its `conversation`, the same object as in `plugins
 | `layers` | `true` moves the session layers (the wiki's index, what the memory recalls) to files, the system prompt keeping one line for each. Off when left out; with a profile listing no layer it does nothing. |
 | `index` | `{ maxEntries }`: how many files the list in front of each message names one by one, 30 when left out; the oldest are folded into one line pointing at the search. |
 | `reopen`, `earlier` | As in `conversationWindow()`. With `reopen: false` the plugin doesn't need the app's conversation store. |
+| `cleanup` | `{ afterDays }`: how many days a conversation's files are kept after it was last used, 7 when left out. |
 
-Sizes are whole numbers above 0 (`reopen.maxChars` from 0 up), and `overflow` one of the three values: anything else stops the app at startup.
+Sizes and days are whole numbers above 0 (`reopen.maxChars` from 0 up), and `overflow` one of the three values: anything else stops the app at startup.
 
 ## What the model gets
 
@@ -54,4 +55,4 @@ A short paragraph of the system prompt always says that part of the conversation
 
 ## Where the files live
 
-In the plugin's data folder (`<data folder>/plugins/context-files/sessions/`), one folder per conversation, named by a hash of its key: everyone in a shared space reads the files of the conversation they're in, and nobody reaches another conversation's, since a ref (`outputs/3`, `history/1`, `layers/2`) is always relative to the turn's own conversation and anything not of that shape is refused. Each file is written atomically. A conversation's folder survives a restart and is removed when the conversation closes for being quiet.
+In the plugin's data folder (`<data folder>/plugins/context-files/sessions/`), one folder per conversation, named by a hash of its key: everyone in a shared space reads the files of the conversation they're in, and nobody reaches another conversation's, since a ref (`outputs/3`, `history/1`, `layers/2`) is always relative to the turn's own conversation and anything not of that shape is refused. Each file is written atomically. A conversation's folder survives a restart and the closing of its session for being quiet, so a conversation reopened the next day (the HTTP surface reopens it on the same id) finds its files again, listed in front of the message. Every opening of the conversation and every file written count as using it, and a folder unused for `cleanup.afterDays` is removed, when the agent starts and every day at 04:00 in the app's time zone (only the running service runs the daily one). Until then the whole tool outputs stay on the data volume, the archive keeping only what each call ran: shorten `afterDays` if that's too long for what your tools return.
