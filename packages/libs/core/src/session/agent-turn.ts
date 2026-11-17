@@ -53,6 +53,7 @@ import type { ResumedAction } from "@mercury-fw/confirm-engine";
 import { generateText, streamText } from "ai-sdk-ollama";
 import type { Message, SessionHistory } from "./history.ts";
 import { callMessages, callRecords, errorText, type CallRecord } from "./call-record.ts";
+import { restoreStep, withToolOutputView, type ToolOutputView } from "./tool-output-view.ts";
 import type { StepInfo } from "./step-info.ts";
 import { detectPendingConfirmation } from "./pending-confirmation.ts";
 import { detectLoginRequests, TurnOutputError, type TurnOutput } from "@mercury-fw/channel-types";
@@ -497,12 +498,26 @@ export async function runTurn(
   },
 ): Promise<string> {
   await history.addUserMessage(userInput, deps.turnContext);
+  const turnDeps = history.toolOutput === undefined ? deps : withOwnView(deps, history.toolOutput);
   try {
-    return await generateAnswer(history, deps);
+    return await generateAnswer(history, turnDeps);
   } catch (err) {
     if (deps.abortSignal?.aborted) await history.addAssistantMessage(ABORTED_MARKER);
     throw err;
   }
+}
+
+/** What the turn's calls run with: `runTurn`'s deps, plus how a step gets back the outputs a conversation's view replaced for the model. */
+type TurnDeps = Parameters<typeof runTurn>[2] & { restoreStep?: (step: StepInfo) => StepInfo };
+
+/** `deps` with the tools going through the conversation's `view` of their outputs, and every step handed on with the outputs themselves. */
+function withOwnView(deps: Parameters<typeof runTurn>[2], view: ToolOutputView): TurnDeps {
+  const originals = new Map<string, unknown>();
+  return {
+    ...deps,
+    tools: withToolOutputView(deps.tools, view, originals, (msg) => console.error(msg)),
+    restoreStep: (step) => restoreStep(step, originals),
+  };
 }
 
 /** One model call over `messages`: its text, its steps, and whether its signal aborted it. */
@@ -515,7 +530,7 @@ type ModelCall = { text: string; steps: StepInfo[]; lastStep: StepInfo | undefin
  * turn's own (see `buildGenerateTextParams`).
  */
 async function callModel(
-  deps: Parameters<typeof runTurn>[2],
+  deps: TurnDeps,
   messages: ModelMessage[],
   stopWhen: StopCondition<any>[],
   streamText: ((chunk: string) => void) | undefined,
@@ -531,7 +546,8 @@ async function callModel(
     ...(stopWhen.length > 0 ? { stopWhen } : {}),
     // The tool loop of a turn with an output stops on tool calls: text synthesized after them is thrown away.
     ...(deps.output === undefined ? {} : { synthesis: false as const }),
-    onStepEnd: (step: StepInfo) => {
+    onStepEnd: (modelStep: StepInfo) => {
+      const step = deps.restoreStep?.(modelStep) ?? modelStep;
       lastStep = step;
       steps.push(step);
       deps.onStepFinish?.(step);
@@ -607,7 +623,7 @@ async function callModel(
  * model wrote nothing because the turn staged an action, with the login note
  * after it when a tool asked the person to log in.
  */
-async function finishText(history: SessionHistory, deps: Parameters<typeof runTurn>[2], call: ModelCall, steps: StepInfo[]): Promise<string> {
+async function finishText(history: SessionHistory, deps: TurnDeps, call: ModelCall, steps: StepInfo[]): Promise<string> {
   let text = call.text;
   if (text.trim().length === 0) {
     text = resolveEmptyText(call.lastStep, deps.pendingNote ?? DEFAULT_PENDING_NOTE);
@@ -619,7 +635,7 @@ async function finishText(history: SessionHistory, deps: Parameters<typeof runTu
 }
 
 /** `runTurn`'s model call, once the user's message is recorded: records the answer, or `ABORTED_MARKER` for an aborted call that returned. */
-async function generateAnswer(history: SessionHistory, deps: Parameters<typeof runTurn>[2]): Promise<string> {
+async function generateAnswer(history: SessionHistory, deps: TurnDeps): Promise<string> {
   const fromHistory = historyMessages(history);
   const messages: ModelMessage[] = deps.resumed ? [...fromHistory, ...resumedMessages(deps.resumed)] : fromHistory;
   if (deps.output) return generateOutput(history, deps, deps.output, messages);
@@ -683,7 +699,7 @@ function withoutRefused(steps: StepInfo[], refused: ReadonlySet<string>): StepIn
 }
 
 /** Records the turn's output, as indented JSON, tells the caller, and returns that JSON; a value JSON can't write is an invalid output. */
-async function finishOutput(history: SessionHistory, deps: Parameters<typeof runTurn>[2], output: TurnOutput, attempts: number, steps: StepInfo[]): Promise<string> {
+async function finishOutput(history: SessionHistory, deps: TurnDeps, output: TurnOutput, attempts: number, steps: StepInfo[]): Promise<string> {
   let text: string;
   try {
     text = JSON.stringify(output.value, null, 2) ?? "null";
@@ -704,7 +720,7 @@ async function finishOutput(history: SessionHistory, deps: Parameters<typeof run
  * failed attempts is kept in the history. A turn that staged an action or
  * asked for a login ends as a text turn does.
  */
-async function generateOutput(history: SessionHistory, deps: Parameters<typeof runTurn>[2], output: RunOutput, messages: ModelMessage[]): Promise<string> {
+async function generateOutput(history: SessionHistory, deps: TurnDeps, output: RunOutput, messages: ModelMessage[]): Promise<string> {
   if (output.mode === "tool") {
     const { probe, retries, tool } = output;
     if (!probe.offered) throw new TurnOutputError("output-tool-unavailable", { attempts: 0, lastError: `the tool "${tool}" isn't offered on this turn` });

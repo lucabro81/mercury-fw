@@ -97,6 +97,7 @@ export function createConversations(deps: ConversationsDeps): Conversations {
         getCapturable: () => conversation.getCapturable?.() ?? conversation.getMessages(),
         primer: () => (primer && primer.current ? primer : undefined),
         ...(conversation.pastCall === undefined ? {} : { pastCall: conversation.pastCall }),
+        ...(conversation.toolOutput === undefined ? {} : { toolOutput: conversation.toolOutput }),
       };
       open.set(req.sessionKey, owner === undefined ? { history } : { history, owner });
       return history;

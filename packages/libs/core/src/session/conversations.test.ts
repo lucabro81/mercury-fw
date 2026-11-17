@@ -137,14 +137,17 @@ describe("createConversations", () => {
     ]);
   });
 
-  it("hands the turn the conversation's own rendering of past calls, and none when it has none", async () => {
+  it("hands the turn the conversation's own rendering of past calls and view of tool outputs, and none when it has none", async () => {
     const pastCall = (call: { toolName: string }) => ({ shown: call.toolName });
-    const withRender: ConversationOwner = { open: async () => ({ ...memoryConversation(), pastCall }) };
-    const rendered = await createConversations({ ownerFor: () => withRender, primerFor: async () => undefined }).open(alice, { sessionKey: "s", tracked: false });
-    expect(rendered.pastCall).toBe(pastCall);
+    const toolOutput = () => ({ file: "f" });
+    const withBoth: ConversationOwner = { open: async () => ({ ...memoryConversation(), pastCall, toolOutput }) };
+    const own = await createConversations({ ownerFor: () => withBoth, primerFor: async () => undefined }).open(alice, { sessionKey: "s", tracked: false });
+    expect(own.pastCall).toBe(pastCall);
+    expect(own.toolOutput).toBe(toolOutput);
 
     const plain = await createConversations({ ownerFor: () => recordingOwner().owner, primerFor: async () => undefined }).open(alice, { sessionKey: "s", tracked: false });
     expect(plain.pastCall).toBeUndefined();
+    expect(plain.toolOutput).toBeUndefined();
   });
 
   it("closes a session: the plugin hears it, and the next turn opens a new conversation", async () => {

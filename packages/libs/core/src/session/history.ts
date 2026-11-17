@@ -14,7 +14,7 @@
 import type { ContextPrimer } from "./context-primer.ts";
 import type { CallRecord } from "./call-record.ts";
 import type { JSONValue } from "ai";
-import type { CompressionReport, ConversationMessage } from "@mercury-fw/plugin-types";
+import type { CompressionReport, Conversation, ConversationMessage } from "@mercury-fw/plugin-types";
 
 /**
  * A single turn's worth of conversation content, the contract's
@@ -52,6 +52,8 @@ export type SessionHistory = {
   getCapturable(): Message[];
   /** What the model reads as a past call's result, when the conversation renders it itself (the contract's `Conversation.pastCall`). */
   pastCall?: (call: CallRecord) => JSONValue;
+  /** What the model reads of a tool's output inside the turn, when the conversation has its own view of it (the contract's `Conversation.toolOutput`). */
+  toolOutput?: Conversation["toolOutput"];
 };
 
 /** How much of the conversation `m` takes: its text, its context and, as JSON, its calls. */

@@ -553,6 +553,19 @@ export type Conversation = {
    * recorded, archived and given to the plugins' hooks as it is.
    */
   pastCall?: (call: CallRecord) => JSONValue;
+  /**
+   * What the model reads of a tool's output inside the turn, in place of the
+   * output itself, after the display channel took its list out. `content` is
+   * the output without the fields the core reads (`ok`, `error`,
+   * `displayRef`, `shown`), which the core puts back on what this returns (a
+   * value that isn't an object goes under `content`); an output that isn't an
+   * object comes as it is. A staged confirmation or a login request never
+   * comes here: the turn stops on them. Called for every tool, this
+   * conversation's own included. When it fails, the model reads the output
+   * itself. It changes only what the model sees: the call is recorded,
+   * archived and given to the plugins' hooks with the output itself.
+   */
+  toolOutput?: (call: { toolName: string; toolCallId: string; input: unknown }, content: unknown) => unknown | Promise<unknown>;
 };
 
 /**
