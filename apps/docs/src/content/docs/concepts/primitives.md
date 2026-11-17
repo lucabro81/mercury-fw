@@ -92,8 +92,9 @@ When it does, the add resolves to a `CompressionReport`: how many messages it fo
 they became, how long it took, and whether it worked. Mercury records it in the [traces](../traces/) as
 `history.compressed`, so a plugin's compression shows there like Mercury's own did. A conversation that brings back
 archived messages stamps the person's ones with `formatTurnStamp`, the same line Mercury puts before every message,
-so the model reads them as it read them live. `@mercury-fw/conversation-window` is the one Mercury ships (see
-[Memory](../memory/#the-conversation)).
+so the model reads them as it read them live. `@mercury-fw/conversation-window` is the one an app made with `mfw create` declares (see
+[Memory](../memory/#the-conversation)), `@mercury-fw/context-files` the other one Mercury ships (see
+[Context strategies](../memory/#context-strategies)).
 
 A conversation can also decide what else the model reads, with four optional methods; one it leaves out works as
 Mercury always did:

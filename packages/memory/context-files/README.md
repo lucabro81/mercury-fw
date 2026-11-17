@@ -2,7 +2,7 @@
 
 A context strategy for a [Mercury](https://github.com/lucabro81/mercury-fw) agent that keeps part of each conversation in files instead of in front of the model, which reads them in pieces with its own tools: long tool outputs, the older messages once the conversation grows past its size, and the session layers if you ask for it. It takes the place of `conversationWindow()` in a context profile, so you can compare the two on the same agent by changing one line, and it moves with the framework, at the same version as `@mercury-fw/core`.
 
-On Mercury's documentation site: [Memory](https://lucabro81.github.io/mercury-fw/concepts/memory/#the-conversation).
+On Mercury's documentation site: [Memory](https://lucabro81.github.io/mercury-fw/concepts/memory/#context-strategies).
 
 ## Contents
 

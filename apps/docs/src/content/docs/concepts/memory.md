@@ -71,6 +71,44 @@ leaves the window out, and the log says so: the model then reads each message al
 It also gives the model `recall_tool_calls`: what it ran earlier in the conversation and what came back, from the
 log of the recent tool calls, so it quotes them instead of guessing.
 
+## Context strategies
+
+The plugin keeping the conversation decides what the model reads of it: how much of the conversation, what's left
+of a long tool output, what the model sees of a call made several messages ago. That choice is the **context
+strategy**, and a profile has exactly one, the plugin it names as its `conversation`. The window above is the
+default, and the one an app made with `mfw create` declares. Mercury ships a second one,
+`@mercury-fw/context-files`, which keeps part of the conversation in **files** instead of in front of the model, and
+gives the model two tools to read them in pieces when it needs them.
+
+What goes to a file:
+
+- a tool output longer than 4,000 characters (a whole web page, a long list of issues): the model gets its first
+  lines and a reference to the file, and reads the rest if the question needs it. In later messages the call still
+  points at its file, so the model can go back to the data instead of running the tool again;
+- the older messages, once the conversation grows past its size: they're moved to a file as they are, never
+  summarized, and the last few exchanges always stay in front of the model;
+- if you ask for it (`layers: true`), the session [layers](../context/#layers), such as the wiki's index: the system
+  prompt keeps one line for each.
+
+In front of every message the model reads the list of the conversation's files, one line each saying what it holds,
+and a short paragraph of its instructions tells it to open a file instead of guessing what's in it.
+
+Switching is one line: name `contextFiles()` where the profile named `conversationWindow()`, in `plugins` too.
+
+```ts title="mercury.config.ts"
+import { contextFiles } from "@mercury-fw/context-files";
+
+const conversation = contextFiles({ earlier: longTermMemory });
+```
+
+Which one suits an agent depends on what its tools return and how people use it. Files keep what the model reads
+small when tools return a lot and the next questions are about a piece of it ("and the third one?"): the model reads
+that piece and nothing else. They cost more when every answer needs the whole content, since the model then reads
+it from the file in several steps, and they ask the model to use its tools well, which a small model doesn't always
+do. A strategy is chosen per profile, up front, and a conversation keeps the one it started with until it closes:
+to see which works better for your agent, run the same conversations under both. The plugin's options, and where it keeps
+the files and for how long, are in [its README](https://github.com/lucabro81/mercury-fw/tree/main/packages/memory/context-files#readme).
+
 ## The archive and the titles
 
 Every message is also kept word for word in an **archive**, by another plugin, `@mercury-fw/archive` (`archive()`):
