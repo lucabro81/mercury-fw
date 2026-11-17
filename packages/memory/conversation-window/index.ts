@@ -19,7 +19,11 @@ import { resumeBudget, resumeConversation } from "./resume.ts";
 import { createSummarizer } from "./summarizer.ts";
 import { readTail } from "./tail.ts";
 
-export { DEFAULT_MAX_CHARS, type Overflow } from "./history.ts";
+export { createWindow, DEFAULT_MAX_CHARS, messageChars, type Overflow, type ResumedConversation, type Window, type WindowOptions } from "./history.ts";
+export { createRecallToolCalls, RECALL_PROMPT_FRAGMENT } from "./recall-tool.ts";
+export { resumeBudget, resumeConversation } from "./resume.ts";
+export { createSummarizer } from "./summarizer.ts";
+export { readTail } from "./tail.ts";
 
 /**
  * What reads the summaries of a conversation's older part, for one the window
