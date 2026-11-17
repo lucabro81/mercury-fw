@@ -36,6 +36,17 @@ describe("openSessionFiles", () => {
     ]);
   });
 
+  it("finds the newest file written for a key, also after a restart, and none for a key it never got", async () => {
+    const files = await openSessionFiles(root, "s1");
+    await files.write("outputs", "a", "t", "jira:{}");
+    await files.write("outputs", "b", "t");
+    await files.write("outputs", "c", "t", "jira:{}");
+    expect(files.refFor("jira:{}")).toBe("outputs/3");
+    expect((await openSessionFiles(root, "s1")).refFor("jira:{}")).toBe("outputs/3");
+    expect(files.refFor("web:{}")).toBeUndefined();
+    expect(files.entries()[0]).toEqual({ ref: "outputs/1", label: "t", lines: 1, chars: 1 });
+  });
+
   it("writes atomically: no temporary file is left next to what it wrote", async () => {
     const files = await openSessionFiles(root, "s1");
     await files.write("outputs", "x", "t");

@@ -39,10 +39,12 @@ export type SearchResult = { ok: true; matches: string[]; truncated: boolean } |
 
 /** One session's files; see the module comment. */
 export type SessionFiles = {
-  /** Writes `text` as a new file of `kind`, listed with `label`; resolves to its ref. */
-  write: (kind: FileKind, text: string, label: string) => Promise<string>;
+  /** Writes `text` as a new file of `kind`, listed with `label` and found again by `key` (see `refFor`); resolves to its ref. */
+  write: (kind: FileKind, text: string, label: string, key?: string) => Promise<string>;
   /** The session's files, in the order written. */
   entries: () => FileEntry[];
+  /** The newest file written with `key`, if any. */
+  refFor: (key: string) => string | undefined;
   /** Lines `from`–`to` of the file `ref` (1-based, inclusive), numbered, at most `MAX_READ_LINES`. */
   read: (ref: string, from?: number, to?: number) => Promise<ReadResult>;
   /** The lines holding `text` (case-insensitive), in every file or in `ref`, as `ref:line: text`, at most `MAX_MATCHES`. */
@@ -87,7 +89,9 @@ async function readIndex(path: string): Promise<FileEntry[]> {
 export async function openSessionFiles(root: string, sessionKey: string): Promise<SessionFiles> {
   const folder = sessionFolder(root, sessionKey);
   const indexPath = join(folder, "index.json");
-  const entries = await readIndex(indexPath);
+  const stored = await readIndex(indexPath);
+  // What the index keeps besides the entries: the key each file was written for.
+  const entries: Array<FileEntry & { key?: string }> = stored;
 
   /** The text of `ref`, or why there is none. */
   async function textOf(ref: string): Promise<{ ok: true; text: string } | { ok: false; error: string }> {
@@ -101,16 +105,17 @@ export async function openSessionFiles(root: string, sessionKey: string): Promis
   }
 
   return {
-    write: async (kind, text, label) => {
+    write: async (kind, text, label, key) => {
       const n = 1 + entries.filter((e) => e.ref.startsWith(`${kind}/`)).reduce((max, e) => Math.max(max, Number(e.ref.slice(kind.length + 1))), 0);
       const ref = `${kind}/${n}`;
       await mkdir(join(folder, kind), { recursive: true });
       await writeAtomic(join(folder, kind, `${n}.txt`), text);
-      entries.push({ ref, label, lines: lineCount(text), chars: text.length });
+      entries.push({ ref, label, lines: lineCount(text), chars: text.length, ...(key === undefined ? {} : { key }) });
       await writeAtomic(indexPath, JSON.stringify(entries));
       return ref;
     },
-    entries: () => entries.map((e) => ({ ...e })),
+    entries: () => entries.map(({ key: _key, ...e }) => e),
+    refFor: (key) => entries.findLast((e) => e.key === key)?.ref,
     read: async (ref, from = 1, to) => {
       const got = await textOf(ref);
       if (!got.ok) return got;
