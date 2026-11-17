@@ -102,8 +102,8 @@ Mercury always did:
   result included. Mercury keeps the fields it reads itself (`ok`, `error`, `displayRef`, `shown`) and puts them
   back on what the method returns (a value that isn't an object goes under `content`); a staged confirmation and a login request never reach it. If it throws or
   returns `undefined`, the model reads the result as it is, and the traces show a `tool.view` event.
-- `pastCall(call)`: what the model reads of an earlier call's result, in later turns. It is still a real tool
-  result for the model. If it throws or returns `undefined`, the model reads Mercury's reduced result, and the
+- `pastCall(call, shown)`: what the model reads of an earlier call's result, in later turns, given what Mercury
+  would show (`shown`, the reduced result with its note) to build on. It is still a real tool result for the model. If it throws or returns `undefined`, the model reads Mercury's reduced result, and the
   traces show a `tool.view` event, at every turn that reads that call.
 - `turnIndex()`: text that goes in front of the person's message at every turn, after the turn layers, and is kept
   with the message like them.

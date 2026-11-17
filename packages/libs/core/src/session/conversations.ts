@@ -96,7 +96,7 @@ export function createConversations(deps: ConversationsDeps): Conversations {
         getCharCount: () => conversation.getCharCount(),
         getCapturable: () => conversation.getCapturable?.() ?? conversation.getMessages(),
         primer: () => (primer && primer.current ? primer : undefined),
-        ...(conversation.pastCall === undefined ? {} : { pastCall: (call) => conversation.pastCall!(call) }),
+        ...(conversation.pastCall === undefined ? {} : { pastCall: (call, shown) => conversation.pastCall!(call, shown) }),
         ...(conversation.toolOutput === undefined ? {} : { toolOutput: (call, content) => conversation.toolOutput!(call, content) }),
         ...(conversation.turnIndex === undefined ? {} : { turnIndex: () => conversation.turnIndex!() }),
         ...(conversation.placeLayers === undefined ? {} : { placeLayers: (layers) => conversation.placeLayers!(layers) }),

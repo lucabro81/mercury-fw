@@ -4,6 +4,13 @@ Keeps each conversation of a [Mercury](https://github.com/lucabro81/mercury-fw) 
 
 On Mercury's documentation site: [Memory](https://lucabro81.github.io/mercury-fw/concepts/memory/#the-conversation).
 
+## Contents
+
+- [Using it](#using-it)
+- [Building another strategy on it](#building-another-strategy-on-it)
+
+## Using it
+
 ```ts
 import { conversationWindow } from "@mercury-fw/conversation-window";
 
@@ -30,3 +37,7 @@ A conversation comes back only on a channel that reopens it (the HTTP surface), 
 Each time the window shortens, it tells Mercury how (`CompressionReport`), and the traces record it as `history.compressed`. A summary that fails leaves the window as it was and the turn goes on; the next message tries again.
 
 It also gives the model `recall_tool_calls`: the calls it made earlier in this conversation and what they returned, newest first, from the core's log of the recent tool calls (`ctx.toolLog`, the person's and this conversation's only). The window keeps of each call only what it ran and how it went, so this is how the model quotes a result instead of guessing it. The tool's status line is under the `conversation-window.status.recall` key.
+
+## Building another strategy on it
+
+A plugin keeping conversations its own way can reuse the pieces this one is made of, exported for that: `createWindow` (the window, with `messageChars`, how much of it a message takes), `createSummarizer`, `readTail`, `resumeConversation` and `resumeBudget` (reopening a conversation from the archive) and `createRecallToolCalls` with `RECALL_PROMPT_FRAGMENT`. `@mercury-fw/context-files` is built on them.

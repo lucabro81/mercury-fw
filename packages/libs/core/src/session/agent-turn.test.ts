@@ -1236,6 +1236,20 @@ describe("runTurn — the turn's tool calls in the history", () => {
     ]);
   });
 
+  it("hands the conversation what the core would show of a past call, so it can build on it", async () => {
+    const asked: unknown[] = [];
+    const history = { ...keptHistory(), pastCall: (_call: unknown, shown: unknown) => (asked.push(shown), { ...(shown as object), file: "outputs/1" }) };
+    const deps = { model: "fake-model" as never, tools: {}, system: SYSTEM };
+    await runTurn(history, "docker pages?", { ...deps, generateTextFn: generating([searchStep], "One page.") });
+    const seen = { messages: [] as ModelMessage[] };
+    await runTurn(history, "thanks", { ...deps, generateTextFn: generating([], "You're welcome.", seen) });
+    expect(asked).toEqual([{ ...searchCall.result, note: HISTORY_CALL_NOTE }]);
+    expect((seen.messages[2] as { content: Array<{ output: unknown }> }).content[0]!.output).toEqual({
+      type: "json",
+      value: { ...searchCall.result, note: HISTORY_CALL_NOTE, file: "outputs/1" },
+    });
+  });
+
   // Regression (#414 review): a pastCall that threw on one stored call failed
   // every later turn of the session, the call staying in the history.
   it("hands later turns a past call's reduced result when the conversation fails to render it, and says which tool", async () => {
