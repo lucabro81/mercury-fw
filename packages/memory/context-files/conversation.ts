@@ -4,8 +4,9 @@
  * goes to the session's files (`session-files.ts`), the model getting a
  * reference instead.
  *
- * - `toolOutput`: an output longer than `outputs.overChars` is written to a
- *   file; the model reads the file's ref, size and first lines.
+ * - `toolOutput`: an output longer than `outputs.overChars` (as its file
+ *   holds it, see `readable.ts`) is written to a file; the model reads the
+ *   file's ref, size and first lines.
  * - `pastCall`: a past call whose output went to a file points at it. The
  *   core keeps no call id, so a call is told apart by its tool and input: a
  *   call run again with the same input points at its latest run's file, and
@@ -22,6 +23,7 @@ import { createHash } from "node:crypto";
 import type { Conversation, LayerBlocks } from "@mercury-fw/plugin-types";
 import type { JSONValue } from "ai";
 import type { Window } from "@mercury-fw/conversation-window";
+import { readableText } from "./readable.ts";
 import type { SessionFiles } from "./session-files.ts";
 
 /** The plugin's own tools: their outputs are never moved to a file, or reading a long file would write another. */
@@ -99,7 +101,7 @@ export function createFilesConversation(opts: FilesConversationOptions): Convers
 
   const toolOutput: Conversation["toolOutput"] = async (call, content) => {
     if (outputs === false || OWN_TOOLS.has(call.toolName)) return content;
-    const text = typeof content === "string" ? content : JSON.stringify(content, null, 2);
+    const text = content === undefined ? undefined : readableText(content);
     const key = callKey(call.toolName, call.input);
     if (text === undefined || text.length <= outputs.overChars) {
       latest.set(key, null);

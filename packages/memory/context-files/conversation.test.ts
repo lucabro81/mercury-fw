@@ -16,7 +16,8 @@ afterEach(() => rmSync(root, { recursive: true, force: true }));
 
 const window = () => createWindow({ summarize: async () => "summary", maxChars: 10_000 });
 const big = { issues: Array.from({ length: 60 }, (_, i) => ({ key: `X-${i + 1}`, summary: `Issue number ${i + 1}` })) };
-const bigText = JSON.stringify(big, null, 2);
+/** `big` as its file holds it: a line per value, with its path. */
+const bigText = big.issues.flatMap((issue, i) => [`issues[${i}].key: ${issue.key}`, `issues[${i}].summary: ${issue.summary}`]).join("\n");
 
 describe("createFilesConversation: the messages", () => {
   it("keeps the messages as the window does", async () => {
@@ -46,7 +47,7 @@ describe("createFilesConversation: tool outputs", () => {
       head: lines.slice(0, 20).join("\n"),
       note: OUTPUT_NOTE("outputs/1"),
     });
-    expect(await files.read("outputs/1", 1, 3)).toMatchObject({ text: `1: {\n2:   "issues": [\n3:     {` });
+    expect(await files.read("outputs/1", 1, 3)).toMatchObject({ text: "1: issues[0].key: X-1\n2: issues[0].summary: Issue number 1\n3: issues[1].key: X-2" });
     expect(files.entries()).toEqual([{ ref: "outputs/1", label: 'jira_search {"jql":"project = X"}', lines: lines.length, chars: bigText.length }]);
   });
 
