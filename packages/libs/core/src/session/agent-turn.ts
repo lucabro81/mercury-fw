@@ -501,7 +501,7 @@ export async function runTurn(
     onSilentCall?: (running: boolean) => void;
   },
 ): Promise<string> {
-  await history.addUserMessage(userInput, deps.turnContext);
+  await history.addUserMessage(userInput, await withIndex(deps.turnContext, history));
   const turnDeps = history.toolOutput === undefined ? deps : await withOwnView(deps, history.toolOutput);
   try {
     return await generateAnswer(history, turnDeps);
@@ -543,6 +543,22 @@ async function withOwnView(deps: Parameters<typeof runTurn>[2], view: ToolOutput
       ? {}
       : { resumedForModel: { toolCallId, output: await viewOf(view, { toolName: resumed.toolName, toolCallId, input: resumed.input }, resumed.output, onFailed) } }),
   };
+}
+
+/**
+ * What goes in front of the person's message: the turn layers, then the
+ * conversation's index, apart by a blank line; undefined when both are empty.
+ * An index that fails is logged and left out.
+ */
+async function withIndex(turnContext: string | undefined, history: SessionHistory): Promise<string | undefined> {
+  let index: string | undefined;
+  try {
+    index = await history.turnIndex?.();
+  } catch (err) {
+    console.error(`[conversation] its index failed, the turn goes without: ${err instanceof Error ? err.message : String(err)}`);
+  }
+  const parts = [turnContext, index].filter((p): p is string => p !== undefined && p !== "");
+  return parts.length === 0 ? undefined : parts.join("\n\n");
 }
 
 /** One model call over `messages`: its text, its steps, and whether its signal aborted it. */

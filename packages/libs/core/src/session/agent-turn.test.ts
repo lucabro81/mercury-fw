@@ -1565,6 +1565,35 @@ describe("runTurn: the turn's context", () => {
 
 // Regression (#406): ai-sdk-ollama's synthesis made one more model call after a turn's output, its text thrown away
 // (about 7 s live) and its own tool calls never run; a turn with an output turns it off, a text turn keeps it.
+describe("runTurn: the conversation's index in front of the message (#414)", () => {
+  const deps = { model: "fake-model" as never, tools: {}, system: SYSTEM };
+  const reading = (seen: { messages: ModelMessage[] }) => (async (p: { messages: ModelMessage[] }) => ((seen.messages = p.messages), { text: "ok" })) as never;
+
+  it("puts the conversation's index after the turn layers, in front of the message and kept with it", async () => {
+    const history = { ...keptHistory(), turnIndex: () => "files: outputs/t1-c1 — jira list" };
+    const seen = { messages: [] as ModelMessage[] };
+    await runTurn(history, "and the second one?", { ...deps, turnContext: "<context>\nhit\n</context>", generateTextFn: reading(seen) });
+    expect(history.getMessages()[0]).toEqual({ role: "user", content: "and the second one?", context: "<context>\nhit\n</context>\n\nfiles: outputs/t1-c1 — jira list" });
+    expect(seen.messages[0]).toEqual({ role: "user", content: "<context>\nhit\n</context>\n\nfiles: outputs/t1-c1 — jira list\n\nand the second one?" });
+  });
+
+  it("puts the index alone when there are no turn layers, and nothing when the index is empty", async () => {
+    const indexed = { ...keptHistory(), turnIndex: () => "files: f" };
+    await runTurn(indexed, "x", { ...deps, generateTextFn: reading({ messages: [] }) });
+    expect(indexed.getMessages()[0]).toEqual({ role: "user", content: "x", context: "files: f" });
+
+    const empty = { ...keptHistory(), turnIndex: () => "" };
+    await runTurn(empty, "x", { ...deps, generateTextFn: reading({ messages: [] }) });
+    expect(empty.getMessages()[0]).toEqual({ role: "user", content: "x" });
+  });
+
+  it("goes on without the index when the conversation fails to give it", async () => {
+    const history = { ...keptHistory(), turnIndex: async (): Promise<string> => Promise.reject(new Error("disk full")) };
+    await runTurn(history, "x", { ...deps, turnContext: "layers", generateTextFn: reading({ messages: [] }) });
+    expect(history.getMessages()[0]).toEqual({ role: "user", content: "x", context: "layers" });
+  });
+});
+
 describe("synthesis in the param builders (#406)", () => {
   const base = { model: "fake-model" as never, messages: [], tools: {}, instructions: SYSTEM };
 
