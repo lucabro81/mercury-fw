@@ -101,6 +101,18 @@ describe("createFilesWindow", () => {
     expect(w.getCapturable()).toEqual([{ role: "user", content: "new q" }]);
   });
 
+  it("never makes a reopened conversation's messages capturable, moved or not; this session's are, moved or not", async () => {
+    const w = createFilesWindow({
+      files,
+      maxChars: 30,
+      keepRecent: 1,
+      resumed: { messages: [{ role: "user", content: "old q....." }, { role: "assistant", content: "old a....." }] },
+    });
+    await exchanges(w, 2);
+    expect(w.getMessages().map((m) => m.content)).toEqual(["q2........", "a2........"]);
+    expect(w.getCapturable().map((m) => m.content)).toEqual(["q1........", "a1........", "q2........", "a2........"]);
+  });
+
   it("keeps a moved message capturable: what the plugins hear of the session isn't cut by the move; replaces the last answer", async () => {
     const w = createFilesWindow({ files, maxChars: 30, keepRecent: 1 });
     await exchanges(w, 2);
