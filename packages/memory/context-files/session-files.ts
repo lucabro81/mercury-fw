@@ -190,10 +190,14 @@ export async function removeStaleSessions(root: string, q: { olderThanMs: number
   for (const name of names) {
     const folder = join(sessions, name);
     if (kept.has(folder)) continue;
-    const used = await stat(join(folder, "index.json")).catch(() => stat(folder));
-    if (q.now - used.mtimeMs <= q.olderThanMs) continue;
-    await rm(folder, { recursive: true, force: true });
-    removed += 1;
+    try {
+      const used = await stat(join(folder, "index.json")).catch(() => stat(folder));
+      if (q.now - used.mtimeMs <= q.olderThanMs) continue;
+      await rm(folder, { recursive: true, force: true });
+      removed += 1;
+    } catch {
+      // Gone meanwhile, or unreadable: the next run looks again; the others go on.
+    }
   }
   return removed;
 }

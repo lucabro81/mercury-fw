@@ -10,8 +10,8 @@
  * reopening of a conversation are `conversation-window`'s, and so is
  * `recall_tool_calls`. The files live in the plugin's data folder, one folder
  * per session, kept when the session closes (its conversation reopened finds
- * them) and removed once unused for `cleanup.afterDays`, at startup and every
- * day at 04:00.
+ * them) and removed once unused for `cleanup.afterDays`, at startup (before
+ * the first turn) and every day at 04:00.
  */
 import { createWindow, createRecallToolCalls, createSummarizer, DEFAULT_MAX_CHARS, readTail, RECALL_PROMPT_FRAGMENT, resumeBudget, resumeConversation } from "@mercury-fw/conversation-window";
 import type { EarlierSummaries } from "@mercury-fw/conversation-window";
@@ -100,9 +100,9 @@ export function contextFiles(options: ContextFilesOptions = {}): Plugin {
     messages: CONTEXT_FILES_MESSAGES,
     systemPromptFragment: `${CONTEXT_FILES_PROMPT_FRAGMENT}\n\n${RECALL_PROMPT_FRAGMENT}`,
     skills: [contextFilesSkill],
-    build: (ctx) => {
-      const root = ctx.dataDir;
-      if (root === undefined) throw new Error("contextFiles: no data folder to keep the files in");
+    build: async (ctx) => {
+      if (ctx.dataDir === undefined) throw new Error("contextFiles: no data folder to keep the files in");
+      const root: string = ctx.dataDir;
       // The resumption is conversation-window's: its log lines say whose.
       const log = (m: string) => ctx.log(m.replace("[conversation-window]", "[context-files]"));
       const summarize = createSummarizer(ctx.model);
@@ -113,13 +113,14 @@ export function contextFiles(options: ContextFilesOptions = {}): Plugin {
       /** Removes the files of the sessions unused for `afterDays`, but the open ones'. */
       async function cleanUp(): Promise<void> {
         try {
-          const removed = await removeStaleSessions(root!, { olderThanMs: afterDays * 24 * 60 * 60 * 1000, now: Date.now(), keep: new Set(open.keys()) });
+          const removed = await removeStaleSessions(root, { olderThanMs: afterDays * 24 * 60 * 60 * 1000, now: Date.now(), keep: new Set(open.keys()) });
           if (removed > 0) log(`[context-files] removed the files of ${removed} session${removed === 1 ? "" : "s"} unused for ${afterDays} days`);
         } catch (err) {
           log(`[context-files] couldn't remove the files of unused sessions: ${err instanceof Error ? err.message : String(err)}`);
         }
       }
-      void cleanUp();
+      // Before the first turn: no conversation is open yet to race it.
+      await cleanUp();
       ctx.daily?.("cleanup", { at: "04:00" }, cleanUp);
 
       /** What a reopening brings back for `req`, if anything. */
@@ -140,7 +141,7 @@ export function contextFiles(options: ContextFilesOptions = {}): Plugin {
 
       /** The files of `sessionKey`: its open conversation's, else read from its folder. */
       function filesOf(sessionKey: string): Promise<SessionFiles> {
-        return open.get(sessionKey) ?? openSessionFiles(root!, sessionKey);
+        return open.get(sessionKey) ?? openSessionFiles(root, sessionKey);
       }
 
       return {

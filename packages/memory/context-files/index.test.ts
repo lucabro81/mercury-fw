@@ -119,13 +119,12 @@ describe("contextFiles: a session's conversation", () => {
     const conversation = await owner.open({ sessionKey: "c1" });
     await conversation.toolOutput!({ toolName: "fetch", toolCallId: "t", input: {} }, big.repeat(20));
     owner.close!("c1");
-    await Bun.sleep(20);
     expect(existsSync(sessionFolder(dataDir, "c1"))).toBe(true);
     const reopened = await owner.open({ sessionKey: "c1" });
     expect(await reopened.turnIndex!()).toContain("- outputs/1 — fetch {}");
   });
 
-  it("removes the files of sessions unused for cleanup.afterDays (7) at startup, and every day at 04:00", async () => {
+  it("removes the files of sessions unused for cleanup.afterDays (7) before it starts taking turns, and every day at 04:00", async () => {
     const DAY = 24 * 60 * 60 * 1000;
     const seed = (await built(contextFiles())).conversation!;
     for (const key of ["old", "fresh"]) {
@@ -141,7 +140,6 @@ describe("contextFiles: a session's conversation", () => {
     const daily: unknown[] = [];
     const { ctx, logs } = ctxWith({ daily });
     await built(contextFiles(), ctx);
-    await Bun.sleep(20);
     expect(existsSync(sessionFolder(dataDir, "old"))).toBe(false);
     expect(existsSync(sessionFolder(dataDir, "fresh"))).toBe(true);
     expect(logs).toEqual(["[context-files] removed the files of 1 session unused for 7 days"]);
@@ -149,7 +147,6 @@ describe("contextFiles: a session's conversation", () => {
 
     age("fresh", 3);
     await built(contextFiles({ cleanup: { afterDays: 2 } }), ctxWith().ctx);
-    await Bun.sleep(20);
     expect(existsSync(sessionFolder(dataDir, "fresh"))).toBe(false);
   });
 });
