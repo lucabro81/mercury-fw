@@ -152,8 +152,9 @@ function historyMessages(history: SessionHistory): ModelMessage[] {
  * confirm-required command — the model never gets a further step to
  * write anything about it (see `resolveHistoryText` above for why). `stopWhen` conditions are OR'd together (confirmed against the
  * AI SDK's own source: `isStopConditionMet` resolves every condition and
- * stops if *any* is true), so combining this with `stepCountIs(100)`
- * doesn't change when the step-budget cap itself kicks in.
+ * stops if *any* is true), so combining this with the step limit
+ * (`stepLimit`) doesn't change when the limit itself kicks in, and it
+ * still stops a turn that has no limit.
  */
 function pendingConfirmationStop(): StopCondition<any> {
   return ({ steps }) => {
@@ -174,6 +175,14 @@ function loginRequiredStop(): StopCondition<any> {
   };
 }
 
+/** How many model steps a turn takes at most when its profile doesn't say (see `buildGenerateTextParams` for why so many). */
+export const DEFAULT_MAX_STEPS = 100;
+
+/** The condition ending the tool loop after `maxSteps` steps: none for `false`, `DEFAULT_MAX_STEPS` when absent. */
+function stepLimit(maxSteps: number | false | undefined): StopCondition<any>[] {
+  return maxSteps === false ? [] : [isStepCount(maxSteps ?? DEFAULT_MAX_STEPS)];
+}
+
 /** The shape of the AI SDK call this module needs, injectable for tests. */
 type GenerateTextFn = (params: {
   model: LanguageModel;
@@ -185,6 +194,8 @@ type GenerateTextFn = (params: {
   abortSignal?: AbortSignal;
   /** Conditions that end the tool loop besides the turn's own (see `buildGenerateTextParams`). */
   stopWhen?: StopCondition<any>[];
+  /** How many steps the tool loop takes at most; `false`, no limit; `DEFAULT_MAX_STEPS` when absent. */
+  maxSteps?: number | false;
   /** `false` turns off ai-sdk-ollama's synthesis of text after tool calls: a turn with an output wants none. */
   synthesis?: false;
 }) => Promise<{ text: string; usage?: { inputTokens: number | undefined }; finishReason?: string }>;
@@ -259,6 +270,8 @@ type StreamTextFn = (params: {
   abortSignal?: AbortSignal;
   /** Conditions that end the tool loop besides the turn's own (see `buildGenerateTextParams`). */
   stopWhen?: StopCondition<any>[];
+  /** How many steps the tool loop takes at most; `false`, no limit; `DEFAULT_MAX_STEPS` when absent. */
+  maxSteps?: number | false;
   /** `false` turns off ai-sdk-ollama's synthesis of text after tool calls: a turn with an output wants none. */
   synthesis?: false;
 }) => Promise<{
@@ -272,7 +285,8 @@ type StreamTextFn = (params: {
  * `defaultGenerateTextFn` below is otherwise a thin, untestable wrapper
  * around a direct SDK call.
  *
- * `stopWhen: stepCountIs(100)` is the one non-obvious part: `generateText`
+ * The step limit (`maxSteps`, `DEFAULT_MAX_STEPS` when absent) is the one
+ * non-obvious part: `generateText`
  * defaults to stopping after a single step. If that step is a tool call
  * with no accompanying text (the normal case — the model calls a tool,
  * then needs the tool's result before it can answer), the call returns
@@ -291,7 +305,9 @@ type StreamTextFn = (params: {
  * exhausts it with nothing to show, that's communicated explicitly
  * rather than left silent — the real backstop against a runaway loop is
  * that fallback plus the step count itself still being finite, not the
- * specific number.
+ * specific number. A profile sets it (`maxSteps`), `false` meaning no limit
+ * at all: then only the confirmation and login stops, the caller's abort
+ * signal and the stall watchdog end the loop.
  *
  * `generateText` itself is imported from `ai-sdk-ollama`, not the plain
  * `ai` package — confirmed by a real run: with the standard SDK's
@@ -311,12 +327,13 @@ export function buildGenerateTextParams(params: {
   onStepEnd?: (step: StepInfo) => void;
   abortSignal?: AbortSignal;
   stopWhen?: StopCondition<any>[];
+  maxSteps?: number | false;
   synthesis?: false;
 }) {
-  const { stopWhen = [], synthesis, ...rest } = params;
+  const { stopWhen = [], synthesis, maxSteps, ...rest } = params;
   return {
     ...rest,
-    stopWhen: [isStepCount(100), pendingConfirmationStop(), loginRequiredStop(), ...stopWhen],
+    stopWhen: [...stepLimit(maxSteps), pendingConfirmationStop(), loginRequiredStop(), ...stopWhen],
     ...(synthesis === false ? { enhancedOptions: { enableSynthesis: false } } : {}),
   };
 }
@@ -343,12 +360,13 @@ export function buildStreamTextParams(params: {
   onStepEnd?: (step: StepInfo) => void;
   abortSignal?: AbortSignal;
   stopWhen?: StopCondition<any>[];
+  maxSteps?: number | false;
   synthesis?: false;
 }) {
-  const { stopWhen = [], synthesis, ...rest } = params;
+  const { stopWhen = [], synthesis, maxSteps, ...rest } = params;
   return {
     ...rest,
-    stopWhen: [isStepCount(100), pendingConfirmationStop(), loginRequiredStop(), ...stopWhen],
+    stopWhen: [...stepLimit(maxSteps), pendingConfirmationStop(), loginRequiredStop(), ...stopWhen],
     ...(synthesis === false ? { enhancedOptions: { enableStreamingSynthesis: false } } : {}),
   };
 }
@@ -491,6 +509,8 @@ export async function runTurn(
     loginNote?: (services: string[]) => string;
     /** What the turn returns when it isn't text (see `turn-output.ts`): the answer is then its value as indented JSON, and what the model writes on the way still reaches `onTextChunk`, for a caller that only watches it. */
     output?: RunOutput;
+    /** How many model steps the turn takes at most (the person's profile's `maxSteps`); `false`, no limit; `DEFAULT_MAX_STEPS` when absent. */
+    maxSteps?: number | false;
     /** Called when the conversation's view of a tool's output failed (the model then reads the output itself), with the tool and the error. */
     onViewFailed?: (toolName: string, error: string) => void;
     /** Called once with the turn's output and how many attempts it took, when there is one. */
@@ -585,6 +605,7 @@ async function callModel(
     instructions: deps.system,
     abortSignal: deps.abortSignal,
     ...(stopWhen.length > 0 ? { stopWhen } : {}),
+    ...(deps.maxSteps === undefined ? {} : { maxSteps: deps.maxSteps }),
     // The tool loop of a turn with an output stops on tool calls: text synthesized after them is thrown away.
     ...(deps.output === undefined ? {} : { synthesis: false as const }),
     onStepEnd: (modelStep: StepInfo) => {

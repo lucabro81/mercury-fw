@@ -3382,3 +3382,35 @@ describe("createTurnRunner: the turn's record (#393)", () => {
     expect(records).toEqual([]);
   });
 });
+
+describe("the turn's step limit, from the profile of whoever writes (#414)", () => {
+  /** A runner that records the `maxSteps` each turn's `runTurn` gets ("absent" when it gets none). */
+  function runner(overrides: Partial<TurnRunnerDeps>, seen: unknown[]) {
+    return createTurnRunner({
+      model: {} as any,
+      systemPrompts: { singleUser: "s", multiUser: "m" },
+      buildTools: () => ({}),
+      getOrCreateHistory: () => fakeHistory(),
+      trackSession: () => {},
+      logStep: () => {},
+      runTurnFn: async (_history, _input, deps) => (seen.push("maxSteps" in deps ? deps.maxSteps : "absent"), "reply"),
+      ...overrides,
+    });
+  }
+
+  test("hands runTurn the limit of the writer's profile, asked with who they are", async () => {
+    const seen: unknown[] = [];
+    const asked: string[] = [];
+    const maxStepsFor = (who: { person: { key: string } }) => (asked.push(who.person.key), who.person.key === "google-chat:u1" ? 12 : false);
+    await runner({ maxStepsFor }, seen)(baseTurn({ principal: verified("u1") }), baseSink());
+    await runner({ maxStepsFor }, seen)(baseTurn({ principal: verified("u2") }), baseSink());
+    expect(seen).toEqual([12, false]);
+    expect(asked).toEqual(["google-chat:u1", "google-chat:u2"]);
+  });
+
+  test("hands runTurn none without a context: its own default", async () => {
+    const seen: unknown[] = [];
+    await runner({}, seen)(baseTurn(), baseSink());
+    expect(seen).toEqual(["absent"]);
+  });
+});

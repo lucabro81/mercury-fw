@@ -43,6 +43,7 @@ import type { TurnWho } from "../identity/people.ts";
 import type { PluginAccess } from "../plugins/offering.ts";
 import type { OfferedEntry } from "../plugins/plugin-hooks.ts";
 import type { LoadedPlugin } from "../plugins/plugin-loader.ts";
+import { DEFAULT_MAX_STEPS } from "../session/agent-turn.ts";
 
 /**
  * A profile as the core uses it: its name, the loaded plugins whose layers it
@@ -57,6 +58,8 @@ export type ResolvedProfile = {
   knobs: Map<string, Record<string, KnobValue>>;
   /** The plugin keeping the profile's conversations, when it names one that loaded. */
   conversation?: LoadedPlugin;
+  /** How many model steps a turn takes at most: the profile's `maxSteps`, `DEFAULT_MAX_STEPS` when it says nothing, `false` for no limit. */
+  maxSteps: number | false;
 };
 
 /** The instance's context, checked: its profiles by name, and who gets which, in the order written. */
@@ -87,6 +90,10 @@ export function resolveContext(
     const { maxChars } = profile.budget;
     if (!Number.isInteger(maxChars) || maxChars < 0) {
       throw new Error(`context profile "${name}": budget.maxChars must be a whole number from 0 up`);
+    }
+    const maxSteps = profile.maxSteps ?? DEFAULT_MAX_STEPS;
+    if (maxSteps !== false && !(Number.isInteger(maxSteps) && maxSteps >= 1)) {
+      throw new Error(`context profile "${name}": maxSteps must be a whole number from 1 up, or false for no limit`);
     }
     const layers: LoadedPlugin[] = [];
     const listed = new Set<string>();
@@ -121,7 +128,7 @@ export function resolveContext(
         throw new Error(`context profile "${name}" keeps its conversation with the plugin "${plugin.name}", which keeps none`);
       }
     }
-    profiles.set(name, { name, layers, maxChars, knobs: new Map(), ...(conversation === undefined ? {} : { conversation }) });
+    profiles.set(name, { name, layers, maxChars, maxSteps, knobs: new Map(), ...(conversation === undefined ? {} : { conversation }) });
   }
   for (const [name, roles] of assign) {
     for (const plugin of profiles.get(name)?.layers ?? []) {

@@ -529,3 +529,27 @@ describe("resolveContext: the conversation a profile keeps (#393)", () => {
     expect(() => resolveContext(undefined, { declared: [w.declared], loaded: [w.loaded], log: () => {} })).toThrow(message);
   });
 });
+
+describe("resolveContext: how many steps a profile's turns take at most (#414)", () => {
+  const resolve = (maxSteps: unknown) =>
+    resolveContext({ profiles: { default: { layers: [], budget: { maxChars: 0 }, maxSteps: maxSteps as number | false } } }, { declared: [], loaded: [], log: () => {} });
+
+  it("is 100 when the profile says nothing", () => {
+    expect(resolveContext({ profiles: { default: { layers: [], budget: { maxChars: 0 } } } }, { declared: [], loaded: [], log: () => {} })?.profiles.get("default")?.maxSteps).toBe(100);
+  });
+
+  it("is the profile's whole number, from 1 up", () => {
+    expect(resolve(1)?.profiles.get("default")?.maxSteps).toBe(1);
+    expect(resolve(250)?.profiles.get("default")?.maxSteps).toBe(250);
+  });
+
+  it("is false, no limit, when the profile says so", () => {
+    expect(resolve(false)?.profiles.get("default")?.maxSteps).toBe(false);
+  });
+
+  it("stops the start on anything else, naming the profile", () => {
+    for (const bad of [0, -3, 2.5, Number.NaN, Number.POSITIVE_INFINITY, true, "10"]) {
+      expect(() => resolve(bad)).toThrow('context profile "default": maxSteps must be a whole number from 1 up, or false for no limit');
+    }
+  });
+});

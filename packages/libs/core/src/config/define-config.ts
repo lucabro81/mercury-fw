@@ -64,11 +64,15 @@ export type MercuryModel = ModelSettings;
  * characters of them it reads at most, and the plugin that keeps the
  * conversation (`conversation`: in `plugins`, contributing a `conversation`).
  * A shared space keeps the conversation of the profile of whoever wrote first.
+ * `maxSteps` is how many model steps a turn of whoever has the profile takes
+ * at most: a whole number from 1 up, or `false` for no limit (for a channel
+ * whose interface lets the person stop the generation); 100 when left out.
  */
 export type ContextProfile = {
   layers: Plugin[];
   budget: { maxChars: number };
   conversation?: Plugin;
+  maxSteps?: number | false;
 };
 
 /**

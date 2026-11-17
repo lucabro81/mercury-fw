@@ -1732,3 +1732,61 @@ describe("runTurn: the conversation's own view of tool outputs (#414)", () => {
     expect(given).toBe(tools);
   });
 });
+
+describe("the turn's step limit (#414)", () => {
+  const base = { model: "fake-model" as never, messages: [], tools: {}, instructions: SYSTEM };
+  const ordinaryStep: StepInfo = { toolCalls: [], toolResults: [], content: [] };
+  const LOGIN_STEP: StepInfo = {
+    toolCalls: [{ toolCallId: "c", toolName: "confluenceCommand", input: {} }],
+    toolResults: [{ toolCallId: "c", toolName: "confluenceCommand", output: { ok: false, loginRequired: true, service: "confluence", authorizeUrl: "https://login.example" } }],
+    content: [],
+  };
+
+  for (const [path, build] of [
+    ["generateText", buildGenerateTextParams],
+    ["streamText", buildStreamTextParams],
+  ] as const) {
+    it(`${path}: a number stops the tool loop at that step`, async () => {
+      const params = build({ ...base, maxSteps: 3 });
+      expect(await stopConditionsMet(params.stopWhen, new Array(2).fill(ordinaryStep))).toBe(false);
+      expect(await stopConditionsMet(params.stopWhen, new Array(3).fill(ordinaryStep))).toBe(true);
+    });
+
+    it(`${path}: false sets no limit, while a staged confirmation and a login still stop it`, async () => {
+      const params = build({ ...base, maxSteps: false });
+      expect(await stopConditionsMet(params.stopWhen, new Array(10_000).fill(ordinaryStep))).toBe(false);
+      expect(await stopConditionsMet(params.stopWhen, [PENDING_CONFIRMATION_STEP])).toBe(true);
+      expect(await stopConditionsMet(params.stopWhen, [LOGIN_STEP])).toBe(true);
+    });
+
+    it(`${path}: the builder hands the AI SDK no maxSteps of its own`, () => {
+      expect("maxSteps" in build({ ...base, maxSteps: 3 })).toBe(false);
+    });
+  }
+
+  it("runTurn hands the limit to the model call, streaming or not; left out, the call gets none", async () => {
+    const seen: unknown[] = [];
+    await runTurn(keptHistory(), "hi", {
+      model: "fake-model" as never,
+      tools: {},
+      system: SYSTEM,
+      maxSteps: 7,
+      generateTextFn: async (params) => (seen.push(params.maxSteps), { text: "ok" }),
+    });
+    await runTurn(keptHistory(), "hi", {
+      model: "fake-model" as never,
+      tools: {},
+      system: SYSTEM,
+      maxSteps: false,
+      onTextChunk: () => {},
+      streamTextFn: async (params) => (seen.push(params.maxSteps), { stream: textDeltaStream(["ok"]) }),
+    });
+    await runTurn(keptHistory(), "hi", {
+      model: "fake-model" as never,
+      tools: {},
+      system: SYSTEM,
+      generateTextFn: async (params) => (seen.push("maxSteps" in params ? params.maxSteps : "absent"), { text: "ok" }),
+    });
+    expect(seen).toEqual([7, false, "absent"]);
+  });
+});
