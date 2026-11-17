@@ -1,5 +1,11 @@
 # @mercury-fw/store-qdrant
 
+## 0.78.0
+
+### Patch Changes
+
+- @mercury-fw/channel-types@0.78.0
+
 ## 0.77.0
 
 ### Patch Changes
