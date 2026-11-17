@@ -1,5 +1,7 @@
 # @mercury-fw/plugin-types
 
+## 0.79.1
+
 ## 0.79.0
 
 ### Minor Changes

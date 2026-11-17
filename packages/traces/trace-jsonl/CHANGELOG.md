@@ -1,5 +1,11 @@
 # @mercury-fw/trace-jsonl
 
+## 0.79.1
+
+### Patch Changes
+
+- @mercury-fw/channel-types@0.79.1
+
 ## 0.79.0
 
 ### Patch Changes

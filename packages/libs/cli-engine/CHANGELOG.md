@@ -1,5 +1,12 @@
 # @mercury-fw/cli-engine
 
+## 0.79.1
+
+### Patch Changes
+
+- @mercury-fw/plugin-types@0.79.1
+- @mercury-fw/utils@0.79.1
+
 ## 0.79.0
 
 ### Patch Changes

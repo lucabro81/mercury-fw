@@ -1,5 +1,11 @@
 # @mercury-fw/conversation-window
 
+## 0.79.1
+
+### Patch Changes
+
+- @mercury-fw/plugin-types@0.79.1
+
 ## 0.79.0
 
 ### Minor Changes

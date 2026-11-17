@@ -1,5 +1,15 @@
 # @mercury-fw/context-files
 
+## 0.79.1
+
+### Patch Changes
+
+- 3ff4e18: - a moved tool output is written one value per line with its path, a long string as a block of its own lines
+- 63b8f83: - a conversation with its own view of tool outputs (`Conversation.toolOutput`, as `contextFiles()`) no longer breaks every turn that calls a tool (fixes `undefined is not an object (evaluating 'call of step.toolCalls')`)
+  - `contextFiles()`: a conversation nobody vouched for (the terminal's) starts without the files of the previous one
+  - @mercury-fw/plugin-types@0.79.1
+  - @mercury-fw/conversation-window@0.79.1
+
 ## 0.79.0
 
 ### Minor Changes

@@ -1,5 +1,17 @@
 # @mercury-fw/core
 
+## 0.79.1
+
+### Patch Changes
+
+- 63b8f83: - a conversation with its own view of tool outputs (`Conversation.toolOutput`, as `contextFiles()`) no longer breaks every turn that calls a tool (fixes `undefined is not an object (evaluating 'call of step.toolCalls')`)
+  - `contextFiles()`: a conversation nobody vouched for (the terminal's) starts without the files of the previous one
+  - @mercury-fw/plugin-types@0.79.1
+  - @mercury-fw/channel-types@0.79.1
+  - @mercury-fw/cli-engine@0.79.1
+  - @mercury-fw/confirm-engine@0.79.1
+  - @mercury-fw/utils@0.79.1
+
 ## 0.79.0
 
 ### Minor Changes
