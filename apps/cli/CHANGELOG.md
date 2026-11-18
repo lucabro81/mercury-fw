@@ -1,5 +1,18 @@
 # @mercury-fw/cli
 
+## 0.81.0
+
+### Minor Changes
+
+- 7bae05e: - `mfw create --starter <id>`: an agent set up for a task, `knowledge-base` (Confluence), `jira-assistant` (Jira) or `web-researcher` (web search): its plugins, its role, an e2e test in `e2e/<id>.e2e.ts`, a section of the README
+  - `mfw create` asks what the agent is for, a starter or nothing, and pre-fills from it
+
+### Patch Changes
+
+- @mercury-fw/core@0.81.0
+- @mercury-fw/kit@0.81.0
+- @mercury-fw/utils@0.81.0
+
 ## 0.80.0
 
 ### Minor Changes
