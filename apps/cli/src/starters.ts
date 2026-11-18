@@ -49,7 +49,7 @@ The app started as a knowledge assistant: it reads the team's Confluence (read-o
     e2e: jiraAssistantE2e,
     readme: `## Jira assistant
 
-The app started as a Jira assistant: it searches, reads and updates issues, and every change waits for the person's confirmation.
+The app started as a Jira assistant: it searches and reads issues, creates them, moves them, assigns them and comments on them; deleting one waits for the person's confirmation.
 
 - \`JIRA_SITE_URL\` in \`.env\`: the Jira site the links point to.
 - Jira is reached through the \`jira\` command-line tool, as each person: set up its login once with \`mfw credentials setup @mercury-fw/plugin-jira\` (the plugin's page on the documentation site says what it asks for).
