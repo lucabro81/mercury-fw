@@ -61,9 +61,12 @@ const WEB = input({ channels: ["http"], plugins: ["web-search"], auth: "static" 
 
 /** Every file the template always writes, whatever was chosen. */
 const ALWAYS = [
+  ".agents/skills/mercury-plugin/SKILL.md",
+  ".claude/skills/mercury-plugin/SKILL.md",
   ".dockerignore",
   ".env.example",
   ".gitignore",
+  "AGENTS.md",
   "Dockerfile",
   "README.md",
   "docker-compose.yml",

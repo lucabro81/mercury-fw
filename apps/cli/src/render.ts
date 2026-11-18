@@ -16,6 +16,7 @@ import tsconfigJson from "../template/tsconfig.json.tpl" with { type: "text" };
 import gitignore from "../template/gitignore.tpl" with { type: "text" };
 import dockerignore from "../template/dockerignore.tpl" with { type: "text" };
 import dockerfile from "../template/Dockerfile.tpl" with { type: "text" };
+import { agentFiles } from "./agent-files.ts";
 
 /** What the new app is made of. `versions` maps each package the app depends
  * on to the version its range is written against. */
@@ -215,6 +216,7 @@ export function renderApp(input: RenderInput): Map<string, string> {
   const services = tools.flatMap((t) => (t.service ? [t.service] : []));
   return new Map([
     ...extraFiles,
+    ...agentFiles(input.name),
     [".dockerignore", dockerignore],
     [".env.example", renderEnv(channels, auth, tools, directory)],
     [".gitignore", gitignore],
@@ -599,6 +601,7 @@ ${directory ? `- Directory: ${directory.id}\n` : ""}
 - \`src/index.ts\`: the service (channels, crons). \`src/repl.ts\`: an interactive terminal for trying things out.
 - \`plugins/\`: the app's own plugins, when it has any: each one a package in a folder of its own (\`plugins/<name>\`, a workspace), listed in \`dependencies\` as \`workspace:*\` and declared in \`mercury.config.ts\`. \`bun run test\` runs their tests.
 - \`.env.example\`: every variable the app reads. Copy it to \`.env\` and fill it in.
+- \`AGENTS.md\` and the \`mercury-plugin\` skill (\`.claude/skills/\`, \`.agents/skills/\`): what a coding assistant reads to work on the app and to write its plugins.
 
 ## Running it
 
