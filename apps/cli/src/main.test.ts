@@ -10,10 +10,13 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AppDeps } from "./app/commands.ts";
-import { CATALOG } from "./catalog.ts";
+import { CATALOG, type CatalogEntry } from "./catalog.ts";
 import { main } from "./main.ts";
 import { renderApp } from "./render.ts";
 import { cliVersion } from "./versions.ts";
+
+/** The catalog's ids of `kind`, as an error lists them: a plugin `bun run new-plugin --catalog` adds is one too. */
+const validIds = (kind: CatalogEntry["kind"]) => CATALOG.filter((e) => e.kind === kind).map((e) => e.id).join(", ");
 
 const CLI = new URL("./bin.ts", import.meta.url).pathname;
 
@@ -169,9 +172,7 @@ Optional, to have mfw everywhere:
     const dir = join(base, "demo");
     const result = await run("create", dir, "--plugins", "slack", "--yes");
     expect(result.code).toBe(1);
-    // The catalog's own list: a plugin `bun run new-plugin --catalog` adds is valid too.
-    const valid = CATALOG.filter((e) => e.kind === "tool").map((e) => e.id).join(", ");
-    expect(result.stderr).toContain(`Unknown plugin "slack" (valid: ${valid})`);
+    expect(result.stderr).toContain(`Unknown plugin "slack" (valid: ${validIds("tool")})`);
     expect(existsSync(dir)).toBe(false);
   });
 
@@ -288,13 +289,13 @@ describe("mfw create, checks before the wizard", () => {
   test("an unknown channel given as a flag, without --yes, exits 1 naming the valid ones", async () => {
     const result = await run("create", join(base, "demo"), "--channels", "slack");
     expect(result.code).toBe(1);
-    expect(result.stderr).toContain('Unknown channel "slack" (valid: google-chat, http)');
+    expect(result.stderr).toContain(`Unknown channel "slack" (valid: ${validIds("channel")})`);
   });
 
   test("an unknown auth provider given as a flag, without --yes, exits 1 naming the valid ones", async () => {
     const result = await run("create", join(base, "demo"), "--channels", "http", "--auth", "saml");
     expect(result.code).toBe(1);
-    expect(result.stderr).toContain('Unknown auth provider "saml" (valid: oidc, static)');
+    expect(result.stderr).toContain(`Unknown auth provider "saml" (valid: ${validIds("auth")})`);
   });
 
   // #37: with --yes nothing asks for the provider, so the pairing is settled up front.
@@ -302,7 +303,7 @@ describe("mfw create, checks before the wizard", () => {
     const dir = join(base, "demo");
     const result = await run("create", dir, "--channels", "http", "--yes");
     expect(result.code).toBe(1);
-    expect(result.stderr).toContain("The http channel needs an auth provider (valid: oidc, static)");
+    expect(result.stderr).toContain(`The http channel needs an auth provider (valid: ${validIds("auth")})`);
     expect(readdirSync(base)).toEqual([]);
   });
 
