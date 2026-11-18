@@ -28,8 +28,9 @@ describe("CATALOG", () => {
   test("every entry's package exports what the catalog says, named as its id", async () => {
     for (const entry of CATALOG.filter((e) => e.build === undefined)) {
       const mod = (await import(entry.package)) as Record<string, { name?: unknown } | undefined>;
-      const exported = mod[entry.exportName];
-      expect(exported, `${entry.package} has no export ${entry.exportName}`).toBeDefined();
+      const raw = mod[entry.exportName] as unknown;
+      expect(raw, `${entry.package} has no export ${entry.exportName}`).toBeDefined();
+      const exported = (entry.factory ? (raw as () => { name?: unknown })() : raw) as { name?: unknown } | undefined;
       // The id is what the CLI calls a plugin, so it must be the name the
       // plugin loads under (the logs and `dependsOn` use it). A directory's
       // name prefixes its people's keys instead, so its id is the choice's.

@@ -7,7 +7,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { DEFAULT_PERSONA_TONE } from "@mercury-fw/core";
-import { renderApp, type RenderInput } from "./render.ts";
+import { configValue, renderApp, type RenderInput } from "./render.ts";
 
 const golden = (name: string): string =>
   readFileSync(new URL(`./__fixtures__/render/${name}.golden`, import.meta.url), "utf-8");
@@ -324,6 +324,19 @@ describe("renderApp: mercury.config.ts", () => {
 
 // #337: the hoisted-linker workaround is gone — apps install with Bun's
 // isolated linker, the default when workspaces are present.
+describe("configValue", () => {
+  const entry = { id: "guest-wifi", kind: "tool" as const, package: "@mercury-fw/plugin-guest-wifi", exportName: "guestWifiPlugin", env: [] };
+
+  test("an export that is the plugin goes in as it is", () => {
+    expect(configValue(entry)).toBe("guestWifiPlugin");
+  });
+
+  // A plugin `bun run new-plugin` writes exports a factory: the config calls it.
+  test("an export that makes the plugin is called", () => {
+    expect(configValue({ ...entry, factory: true })).toBe("guestWifiPlugin()");
+  });
+});
+
 describe("renderApp: bunfig.toml", () => {
   test("is not generated, whatever was chosen", () => {
     for (const choice of [EMPTY, HTTP_JIRA, FULL]) {

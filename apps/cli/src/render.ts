@@ -392,7 +392,7 @@ function renderConfig(
           ...tools.map(renderPluginEntry),
           "  ],",
         ].join("\n");
-  const channelList = `  channels: [${channels.map((c) => c.exportName).join(", ")}],`;
+  const channelList = `  channels: [${channels.map(configValue).join(", ")}],`;
 
   return [
     CONFIG_HEADER,
@@ -409,8 +409,8 @@ function renderConfig(
     ...renderPersona(role),
     plugins,
     channelList,
-    ...(auth ? [`  auth: ${auth.exportName},`] : []),
-    ...(directory ? [`  directory: ${directory.exportName},`] : []),
+    ...(auth ? [`  auth: ${configValue(auth)},`] : []),
+    ...(directory ? [`  directory: ${configValue(directory)},`] : []),
     VECTOR_INDEX_SECTION,
     MODELS_SECTION,
     CONTEXT_SECTION,
@@ -423,15 +423,20 @@ function renderConfig(
   ].join("\n");
 }
 
+/** What the config writes for `entry`: its export, called when it makes the plugin. */
+export function configValue(entry: CatalogEntry): string {
+  return entry.factory ? `${entry.exportName}()` : entry.exportName;
+}
+
 /** One element of the config's `plugins` array. */
 function renderPluginEntry(t: CatalogEntry): string {
   if (t.build) return `${t.build.expression},`;
   if (!t.formatter) {
-    return `    ${t.exportName},`;
+    return `    ${configValue(t)},`;
   }
   return [
     "    formatterPlugin(",
-    `      ${t.exportName},`,
+    `      ${configValue(t)},`,
     `      formatter<${t.formatter.displaysType}>({`,
     ...t.formatter.rules.map((r) => `        ${r}`),
     "      }),",
