@@ -233,3 +233,84 @@ describe("renderPlugin", () => {
     expect(() => renderPlugin({ ...input("tool"), name: "Guest" })).toThrow('a plugin\'s name is lowercase words joined by hyphens (e.g. guest-wifi), not "Guest"');
   });
 });
+
+describe("renderPlugin for this repository", () => {
+  const TOOLING = { bunTypes: "^1.4.2", typescript: "^6.0.3" };
+
+  /** The input for `kind` named guest-wifi, in this repository, in the framework's group or not. */
+  function repo(kind: RenderPluginInput["kind"], framework: boolean): RenderPluginInput {
+    return { ...input(kind), target: { type: "repo", framework, tooling: TOOLING } };
+  }
+
+  const COMMON = {
+    type: "module",
+    license: "MIT",
+    publishConfig: { access: "public" },
+    exports: { ".": { "mercury-fw-source": "./index.ts", types: "./dist/index.d.ts", default: "./index.ts" } },
+  };
+
+  test("a tool on its own: @mercury-fw/, its folder in tools/, the contract as a peer from the framework's minor", () => {
+    expect(JSON.parse(renderPlugin(repo("tool", false)).get("package.json")!)).toEqual({
+      name: "@mercury-fw/plugin-guest-wifi",
+      version: "0.0.0",
+      ...COMMON,
+      repository: { type: "git", url: "git+https://github.com/lucabro81/mercury-fw.git", directory: "packages/tools/plugin-guest-wifi" },
+      files: ["*.ts", "dist", "CHANGELOG.md", "skills", "!**/*.test.ts"],
+      scripts: { test: "bun test", typecheck: "tsc --noEmit" },
+      peerDependencies: { "@mercury-fw/kit": ">=0.79.0 <1.0.0" },
+      dependencies: { ai: "^7.0.126", zod: "^4.6.5" },
+      devDependencies: { "@mercury-fw/kit": "workspace:*", "@mercury-fw/typescript-config": "*", "@types/bun": "^1.4.2", typescript: "^6.0.3" },
+    });
+  });
+
+  test("a CLI plugin on its own: the engine and utils as peers too, its allowlist and postinstall in the pack, its pin", () => {
+    const manifest = JSON.parse(renderPlugin(repo("cli", false)).get("package.json")!);
+    expect(manifest).toMatchObject({
+      files: ["*.ts", "dist", "CHANGELOG.md", "acme.json", "scripts", "!**/*.test.ts"],
+      scripts: { postinstall: "bun run scripts/install-acme-cli.ts", test: "bun test", typecheck: "tsc --noEmit" },
+      peerDependencies: { "@mercury-fw/cli-engine": ">=0.79.0 <1.0.0", "@mercury-fw/kit": ">=0.79.0 <1.0.0", "@mercury-fw/utils": ">=0.79.0 <1.0.0" },
+      mercury: { cliBinary: { repo: "acme/acme-cli", crate: "acme", version: "1.2.3" } },
+    });
+    expect(manifest.dependencies).toBeUndefined();
+  });
+
+  test("in the framework's group: the framework's version, its packages from the workspace", () => {
+    expect(JSON.parse(renderPlugin(repo("memory", true)).get("package.json")!)).toEqual({
+      name: "@mercury-fw/guest-wifi",
+      version: "0.79.2",
+      ...COMMON,
+      repository: { type: "git", url: "git+https://github.com/lucabro81/mercury-fw.git", directory: "packages/memory/guest-wifi" },
+      files: ["*.ts", "dist", "CHANGELOG.md", "!**/*.test.ts"],
+      scripts: { test: "bun test", typecheck: "tsc --noEmit" },
+      dependencies: { "@mercury-fw/kit": "workspace:*" },
+      devDependencies: { "@mercury-fw/typescript-config": "*", "@types/bun": "^1.4.2", typescript: "^6.0.3" },
+    });
+  });
+
+  test.each([
+    ["tool", "tools"],
+    ["cli", "tools"],
+    ["memory", "memory"],
+    ["context-strategy", "memory"],
+    ["channel", "channels"],
+    ["auth", "auth"],
+    ["directory", "directories"],
+    ["trace-sink", "traces"],
+    ["vector-index", "stores"],
+    ["conversation-store", "stores"],
+  ] as const)("a %s goes in packages/%s", (kind, bucket) => {
+    expect(pluginKind(kind).bucket).toBe(bucket);
+  });
+
+  test("a tsconfig extending the repo's, reading JSON for a CLI plugin", () => {
+    expect(JSON.parse(renderPlugin(repo("tool", false)).get("tsconfig.json")!)).toEqual({ extends: "@mercury-fw/typescript-config/base.json" });
+    expect(JSON.parse(renderPlugin(repo("cli", false)).get("tsconfig.json")!)).toEqual({
+      extends: "@mercury-fw/typescript-config/base.json",
+      compilerOptions: { resolveJsonModule: true },
+    });
+  });
+
+  test("the README's title is the package's", () => {
+    expect(renderPlugin(repo("channel", false)).get("README.md")).toStartWith("# @mercury-fw/channel-guest-wifi\n");
+  });
+});
