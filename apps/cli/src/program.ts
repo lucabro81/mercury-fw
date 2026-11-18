@@ -8,6 +8,8 @@
 import { Argument, Command, CommanderError, InvalidArgumentError, Option, type OutputConfiguration } from "commander";
 import { toCreateArgs, type CreateArgs, type CreateOptions } from "./args.ts";
 import { appCommands, RESET_TARGETS, type ResetTarget } from "./app/commands.ts";
+import { pluginKindsHelp } from "./app/plugin-create.ts";
+import { PLUGIN_KINDS } from "./plugin/kinds.ts";
 import { CATALOG } from "./catalog.ts";
 import { cliVersion } from "./versions.ts";
 import { DEFAULT_ASSISTANT_NAME, DEFAULT_ROLE } from "./wizard.ts";
@@ -388,6 +390,35 @@ Examples:
     .action(async (tests: string[], opts: { repeat?: string }) =>
       inApp((app) => app.e2e(tests, opts.repeat === undefined ? {} : { repeat: Number(opts.repeat) }))(),
     );
+
+  const plugin = program
+    .command("plugin")
+    .summary("the app's own plugins")
+    .description("The app's own plugins: packages of its own under plugins/, a workspace every app declares.")
+    .helpCommand(false)
+    .addHelpText("after", INSIDE_AN_APP);
+  plugin
+    .command("create")
+    .summary("writes a plugin of the app's own under plugins/")
+    .description(
+      "Writes a working plugin of <kind> under plugins/<name>, with its tests and a README to start from: written against the app's framework, declared in package.json and, when the place is clear, in mercury.config.ts (otherwise it prints the lines to add), then runs bun install. A cli plugin runs a pinned command-line program, named by --cli-binary, --cli-repo (the GitHub repository releasing it) and --cli-version.",
+    )
+    .addArgument(new Argument("<kind>", "what the plugin is (the kinds are below)").choices(PLUGIN_KINDS))
+    .argument("<name>", "its name, lowercase words joined by hyphens (guest-wifi)")
+    .option("--cli-binary <name>", "a cli plugin: the program's binary")
+    .option("--cli-repo <owner/repo>", "a cli plugin: the GitHub repository releasing it")
+    .option("--cli-version <version>", "a cli plugin: the release to pin")
+    .addHelpText(
+      "after",
+      `\nKinds:\n${pluginKindsHelp()}\n\nExamples:\n  mfw plugin create tool guest-wifi\n  mfw plugin create cli acme --cli-binary acme --cli-repo acme/acme-cli --cli-version 1.2.3${INSIDE_AN_APP}`,
+    )
+    .action(async (kind: string, name: string, opts: { cliBinary?: string; cliRepo?: string; cliVersion?: string }) => {
+      const pin = [opts.cliBinary, opts.cliRepo, opts.cliVersion];
+      if (kind === "cli" && pin.some((v) => v === undefined)) throw new Error("a cli plugin needs --cli-binary, --cli-repo and --cli-version");
+      if (kind !== "cli" && pin.some((v) => v !== undefined)) throw new Error("--cli-binary, --cli-repo and --cli-version are for a cli plugin");
+      const cli = kind === "cli" ? { cli: { binary: opts.cliBinary!, repo: opts.cliRepo!, version: opts.cliVersion! } } : {};
+      await inApp((app) => app.pluginCreate({ kind, name, ...cli }))();
+    });
 
   return program;
 }

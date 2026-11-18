@@ -100,6 +100,6 @@ describe("httpClient", () => {
 
   test("rejects on a failed status", async () => {
     const { fetchFn } = fakeFetch(500);
-    expect(httpClient("https://example.test", fetchFn).list()).rejects.toThrow("GET /items: HTTP 500");
+    await expect(httpClient("https://example.test", fetchFn).list()).rejects.toThrow("GET /items: HTTP 500");
   });
 });

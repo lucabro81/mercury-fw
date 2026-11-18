@@ -49,8 +49,8 @@ describe("createIndex", () => {
 
   test("refuses a vector of another length, and a space never made", async () => {
     const index = await indexWithNotes();
-    expect(index.upsert("notes", [{ id: "4", vector: [1, 2, 3], payload: {} }])).rejects.toThrow('"notes" takes vectors of 2, not 3');
-    expect(index.query("missing", { vector: [1, 0], limit: 1 })).rejects.toThrow('no space "missing": ensure it first');
+    await expect(index.upsert("notes", [{ id: "4", vector: [1, 2, 3], payload: {} }])).rejects.toThrow('"notes" takes vectors of 2, not 3');
+    await expect(index.query("missing", { vector: [1, 0], limit: 1 })).rejects.toThrow('no space "missing": ensure it first');
   });
 
   test("making a space again keeps its points", async () => {

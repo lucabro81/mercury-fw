@@ -45,6 +45,8 @@ export type Declaration =
 export type KindSpec = {
   /** What `mfw plugin create --help` says the kind is. */
   summary: string;
+  /** What the kind is called in a sentence: "a tool plugin", "an auth provider". */
+  label: string;
   declare: Declaration;
   apiVersion: number;
   /** What the package's name starts with, as in this repo (`plugin-jira`, `channel-http`). */
@@ -55,7 +57,8 @@ export type KindSpec = {
 
 const KINDS: Record<PluginKind, KindSpec> = {
   tool: {
-    summary: "tools the model calls, typed, each with its input schema",
+    summary: "typed tools the model calls, each with its input schema",
+    label: "a tool plugin",
     declare: { in: "array", key: "plugins" },
     apiVersion: PLUGIN_API_VERSION,
     packagePrefix: "plugin-",
@@ -63,6 +66,7 @@ const KINDS: Record<PluginKind, KindSpec> = {
   },
   cli: {
     summary: "a tool running a pinned command-line program, through an allowlist",
+    label: "a CLI plugin",
     declare: { in: "array", key: "plugins" },
     apiVersion: PLUGIN_API_VERSION,
     packagePrefix: "plugin-",
@@ -70,6 +74,7 @@ const KINDS: Record<PluginKind, KindSpec> = {
   },
   memory: {
     summary: "what the agent keeps from each turn and session, and what it reads back",
+    label: "a memory plugin",
     declare: { in: "array", key: "plugins" },
     apiVersion: PLUGIN_API_VERSION,
     packagePrefix: "",
@@ -77,6 +82,7 @@ const KINDS: Record<PluginKind, KindSpec> = {
   },
   "context-strategy": {
     summary: "a context profile's conversation: what the model reads of it",
+    label: "a context strategy",
     declare: { in: "profile" },
     apiVersion: PLUGIN_API_VERSION,
     packagePrefix: "",
@@ -84,6 +90,7 @@ const KINDS: Record<PluginKind, KindSpec> = {
   },
   channel: {
     summary: "a way people talk to the agent",
+    label: "a channel",
     declare: { in: "array", key: "channels" },
     apiVersion: CHANNEL_API_VERSION,
     packagePrefix: "channel-",
@@ -91,6 +98,7 @@ const KINDS: Record<PluginKind, KindSpec> = {
   },
   auth: {
     summary: "who is calling a channel that takes credentials",
+    label: "an auth provider",
     declare: { in: "key", key: "auth" },
     apiVersion: AUTH_API_VERSION,
     packagePrefix: "auth-",
@@ -98,6 +106,7 @@ const KINDS: Record<PluginKind, KindSpec> = {
   },
   directory: {
     summary: "who people are and their roles",
+    label: "a directory",
     declare: { in: "key", key: "directory" },
     apiVersion: DIRECTORY_API_VERSION,
     packagePrefix: "directory-",
@@ -105,6 +114,7 @@ const KINDS: Record<PluginKind, KindSpec> = {
   },
   "trace-sink": {
     summary: "where the traces of what the agent does go",
+    label: "a trace sink",
     declare: { in: "traces" },
     apiVersion: TRACE_SINK_API_VERSION,
     packagePrefix: "trace-",
@@ -112,6 +122,7 @@ const KINDS: Record<PluginKind, KindSpec> = {
   },
   "vector-index": {
     summary: "the vector index memory searches by meaning",
+    label: "a vector index",
     declare: { in: "key", key: "vectorIndex" },
     apiVersion: VECTOR_INDEX_API_VERSION,
     packagePrefix: "store-",
@@ -119,6 +130,7 @@ const KINDS: Record<PluginKind, KindSpec> = {
   },
   "conversation-store": {
     summary: "where conversations are kept word for word",
+    label: "a conversation store",
     declare: { in: "key", key: "conversationStore" },
     apiVersion: CONVERSATION_STORE_API_VERSION,
     packagePrefix: "store-",

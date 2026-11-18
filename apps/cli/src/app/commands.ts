@@ -11,6 +11,7 @@ import { join, relative, resolve } from "node:path";
 import { appCliCredentials, cliUserId, volumePath, type CliCredentials } from "@mercury-fw/utils";
 import { readServiceAccountKey, setEnvVar } from "./credentials.ts";
 import type { App } from "./find-app.ts";
+import { pluginCreate, type PluginCreateArgs } from "./plugin-create.ts";
 import { copyPacks, LOCAL_PACKS_DIR, readPacks, withLocalOverrides, withoutLocalOverrides } from "./local-packages.ts";
 import { findTests, loadTest } from "../e2e/load.ts";
 import { runE2e } from "../e2e/runner.ts";
@@ -254,6 +255,8 @@ export function appCommands(app: App, deps: AppDeps) {
         },
       });
     },
+    /** `mfw plugin create`: a plugin of the app's own (see `plugin-create.ts`). */
+    pluginCreate: (args: PluginCreateArgs) => pluginCreate(app, deps, args),
     /** Undoes `localPackages`: the app installs from the registry again. */
     localPackagesOff: async () => {
       writeManifest(withoutLocalOverrides(readManifest()));
