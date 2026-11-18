@@ -91,7 +91,8 @@ the REPL closes no session. On the HTTP channel, once a conversation has been qu
 {"kind":"digest","person":"people:ada","asked":["Hi! In one sentence, what's a good name for a team wiki?"],"tools":[]}
 ```
 
-and, when a tool of the turn failed:
+and, when a tool of the turn failed (here the example tool of `mfw plugin create tool payroll`, its service a stand-in
+that didn't answer JSON):
 
 ```json
 {"kind":"failed-tools","person":"people:ada","calls":[{"tool":"payroll_list","error":"JSON Parse error: Unexpected identifier \"ok\""}]}

@@ -11,8 +11,10 @@ has the whole chain, from who is talking to what they may do.
 
 ## The roles
 
-With the static directory, the roles are in `DIRECTORY_STATIC_PEOPLE` (a real instance takes them from its login
-service, ZITADEL for one):
+Here Ada and Bob call the HTTP channel with test tokens (the static auth provider, `AUTH_STATIC_TOKENS`, gives them
+the identities `static:ada` and `static:bob`), and the static directory gives them their roles, in
+`DIRECTORY_STATIC_PEOPLE` (a real instance takes people from its login service, as in
+[Your company's sign-in](../company-sign-in/)):
 
 ```json
 [
@@ -30,7 +32,8 @@ In `mercury.config.ts`, next to the plugins:
   access: { plugins: { payroll: { roles: ["hr"] } } },
 ```
 
-`payroll` is the plugin's `name`. A plugin that isn't offered to someone isn't there for them at all: its tools,
+`payroll` is the plugin's `name`: here the example `mfw plugin create tool payroll` writes, its service a stand-in
+listing items at `PAYROLL_URL`. A plugin that isn't offered to someone isn't there for them at all: its tools,
 its description, its fragment and its skills are left out of what the model reads in their turns, so the model can't
 call it and doesn't mention it. Hooks and context layers follow the same rule.
 

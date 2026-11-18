@@ -35,7 +35,8 @@ docker compose exec mercury sh -c 'cat /app/data/traces/*.jsonl' \
   | jq -c 'select(.kind=="model.step" or .kind=="turn.start") | if .kind=="turn.start" then "turn" else .inputTokens end'
 ```
 
-Three turns on a tool listing 200 items (about 20,000 characters), on qwen3.8:27b, input tokens of each model call:
+Three turns on a tool listing 200 items (the example tool of `mfw plugin create tool payroll`, its service a stand-in
+returning about 20,000 characters), on qwen3.8:27b, input tokens of each model call:
 
 | Turn | `conversationWindow` | `contextFiles` |
 |---|---|---|
@@ -43,7 +44,7 @@ Three turns on a tool listing 200 items (about 20,000 characters), on qwen3.8:27
 | "And how many of them are bonuses?" | 3,551 · 4,773 · 10,862 | 4,658 · 9,310 · 14,396 |
 | "Which is the first bonus, by id?" | 3,900 | 5,221 |
 
-The files strategy halved the first turn: the list went to a file, and the model answered without the whole list in its context. The
+The files strategy cut the first turn by about two fifths: the list went to a file, and the model answered without the whole list in its context. The
 second turn cost more under it: the model read the file in pieces to count the bonuses, while under the window it
 called the tool again and read the whole list in one step. Neither is cheaper in general: it depends on what the
 turns do with the outputs. Measure on your own turns, and run your e2e tests under each before choosing.

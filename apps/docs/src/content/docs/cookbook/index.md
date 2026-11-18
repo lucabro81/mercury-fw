@@ -10,7 +10,7 @@ once a day"), shows the code that does it, and links the concept pages for the w
 that ran: every recipe was tried on an app made with `mfw create`, with the HTTP channel and a real model.
 
 - [After every turn, and when a conversation closes](after-every-turn/): hooks that tell a webhook what happened.
-- [Every day at a set time](every-day/): the same digests, sent once a day.
+- [Every day at a set time](every-day/): the same digests, sent together once a day.
 - [Something the model reads in every conversation](context-layer/): a context layer, with a setting an admin
   changes while the agent runs.
 - [A turn that returns an object](controller/): an agent another application drives, getting data back instead of text.

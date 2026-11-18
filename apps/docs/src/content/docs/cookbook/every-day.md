@@ -5,7 +5,7 @@ sidebar:
   order: 2
 ---
 
-The task: one message a day with the conversations of the day before, instead of one per conversation. The plugin
+The task: one message a day with the conversations closed since the last one, instead of one per conversation. The plugin
 from [After every turn](../after-every-turn/) keeps each digest in its data folder when the conversation closes, and
 `ctx.daily` sends them all at the hour the team chooses.
 
@@ -15,7 +15,7 @@ from [After every turn](../after-every-turn/) keeps each digest in its data fold
 /**
  * Sends the team's webhook what happened: every tool call that failed, as
  * soon as the turn ends, and once a day the digests of the conversations
- * closed since the last one.
+ * closed since the last ones were sent.
  */
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -58,9 +58,20 @@ export function conversationDigestPlugin(): Plugin {
         await rename(`${file}.tmp`, file);
       };
 
+      // One change to the file at a time: sessions close at once, and a digest
+      // may close while the day's are being sent.
+      let queue: Promise<unknown> = Promise.resolve();
+      const locked = <T,>(fn: () => Promise<T>): Promise<T> => {
+        const run = queue.then(fn, fn);
+        queue = run.catch(() => {});
+        return run;
+      };
+
       ctx.daily("send-digests", { at: ctx.env.DIGEST_AT ?? "08:00" }, async () => {
-        const digests = await read();
-        if (digests.length > 0 && (await send({ kind: "daily-digest", conversations: digests }))) await write([]);
+        const digests = await locked(read);
+        if (digests.length === 0 || !(await send({ kind: "daily-digest", conversations: digests }))) return;
+        // Only those sent go: what closed while sending waits for tomorrow.
+        await locked(async () => write((await read()).slice(digests.length)));
       });
 
       return {
@@ -73,7 +84,7 @@ export function conversationDigestPlugin(): Plugin {
           const asked = session.messages.filter((m) => m.role === "user").map((m) => withoutStamp(m.content));
           if (asked.length === 0) return;
           const tools = [...new Set(session.messages.flatMap((m) => m.calls ?? []).map((call) => call.toolName))];
-          await write([...(await read()), { person: session.person.key, asked, tools }]);
+          await locked(async () => write([...(await read()), { person: session.person.key, asked, tools }]));
         },
       };
     },
@@ -86,17 +97,23 @@ What to notice:
 - **`ctx.daily(name, { at }, fn)`** runs `fn` every day at `at` (`"HH:MM"`), in the app's `i18n.timeZone` unless it
   names another. Only the running service runs it (`mfw start`), never the REPL; a day the agent wasn't running at
   that minute is skipped, never made up. An `at` that isn't a time stops the agent at startup.
-- **`ctx.dataDir`** is the plugin's own folder on the app's volume, so the digests survive a restart. Two
-  conversations may close at once: writing a temporary file and renaming it over the old one keeps the file whole.
-- **The digests are cleared only when the webhook took them**, so a day the webhook is down they go the next day.
+- **`ctx.dataDir`** is the plugin's own folder on the app's volume, so the digests survive a restart. Writing a
+  temporary file and renaming it over the old one keeps the file whole if the agent stops halfway.
+- **One change to the file at a time** (`locked`): several conversations close in the same sweep, and Mercury doesn't
+  wait for one hook before running the next, so without it two of them would read the same list and one digest would
+  be lost.
+- **Only the digests that were sent are cleared**: a day the webhook is down they go the next day, and one closed while
+  the day's were being sent waits for tomorrow.
 - **A daily job calling a model** wraps the call in `ctx.job`, which runs it when nobody is waiting on the model.
 
 `DIGEST_AT` in `.env` sets the hour (`08:00` unless set).
 
 ## What arrives
 
-With two people's conversations closed during the day, at `DIGEST_AT`:
+Three conversations of two people, closed in the same sweep, then at `DIGEST_AT`:
 
 ```json
-{"kind":"daily-digest","conversations":[{"person":"people:bob","asked":["What's 2+2? Just the number."],"tools":[]},{"person":"people:ada","asked":["Name one planet. Just the name."],"tools":[]}]}
+{"kind":"daily-digest","conversations":[{"person":"people:ada","asked":["Is there anything I should know this week? Answer briefly."],"tools":["list_files"]},{"person":"people:bob","asked":["What's 2+2? Just the number."],"tools":[]},{"person":"people:ada","asked":["Name one planet. Just the name."],"tools":[]}]}
 ```
+
+and the plugin's `pending.json` was empty again.
