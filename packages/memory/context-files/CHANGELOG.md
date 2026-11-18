@@ -1,5 +1,13 @@
 # @mercury-fw/context-files
 
+## 0.79.2
+
+### Patch Changes
+
+- 5a8e9a6: - README links to the documentation site's Context strategies section
+  - @mercury-fw/plugin-types@0.79.2
+  - @mercury-fw/conversation-window@0.79.2
+
 ## 0.79.1
 
 ### Patch Changes

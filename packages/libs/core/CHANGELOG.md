@@ -1,5 +1,15 @@
 # @mercury-fw/core
 
+## 0.79.2
+
+### Patch Changes
+
+- @mercury-fw/plugin-types@0.79.2
+- @mercury-fw/channel-types@0.79.2
+- @mercury-fw/cli-engine@0.79.2
+- @mercury-fw/confirm-engine@0.79.2
+- @mercury-fw/utils@0.79.2
+
 ## 0.79.1
 
 ### Patch Changes
