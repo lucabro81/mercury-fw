@@ -51,6 +51,8 @@ export type KindSpec = {
   apiVersion: number;
   /** What the package's name starts with, as in this repo (`plugin-jira`, `channel-http`). */
   packagePrefix: string;
+  /** The folder under this repo's `packages/` a first-party one goes in. */
+  bucket: string;
   /** What the export's name ends with (`guestWifiPlugin`). */
   exportSuffix: string;
 };
@@ -62,6 +64,7 @@ const KINDS: Record<PluginKind, KindSpec> = {
     declare: { in: "array", key: "plugins" },
     apiVersion: PLUGIN_API_VERSION,
     packagePrefix: "plugin-",
+    bucket: "tools",
     exportSuffix: "Plugin",
   },
   cli: {
@@ -70,6 +73,7 @@ const KINDS: Record<PluginKind, KindSpec> = {
     declare: { in: "array", key: "plugins" },
     apiVersion: PLUGIN_API_VERSION,
     packagePrefix: "plugin-",
+    bucket: "tools",
     exportSuffix: "Plugin",
   },
   memory: {
@@ -78,6 +82,7 @@ const KINDS: Record<PluginKind, KindSpec> = {
     declare: { in: "array", key: "plugins" },
     apiVersion: PLUGIN_API_VERSION,
     packagePrefix: "",
+    bucket: "memory",
     exportSuffix: "Plugin",
   },
   "context-strategy": {
@@ -86,6 +91,7 @@ const KINDS: Record<PluginKind, KindSpec> = {
     declare: { in: "profile" },
     apiVersion: PLUGIN_API_VERSION,
     packagePrefix: "",
+    bucket: "memory",
     exportSuffix: "Strategy",
   },
   channel: {
@@ -94,6 +100,7 @@ const KINDS: Record<PluginKind, KindSpec> = {
     declare: { in: "array", key: "channels" },
     apiVersion: CHANNEL_API_VERSION,
     packagePrefix: "channel-",
+    bucket: "channels",
     exportSuffix: "Channel",
   },
   auth: {
@@ -102,6 +109,7 @@ const KINDS: Record<PluginKind, KindSpec> = {
     declare: { in: "key", key: "auth" },
     apiVersion: AUTH_API_VERSION,
     packagePrefix: "auth-",
+    bucket: "auth",
     exportSuffix: "Auth",
   },
   directory: {
@@ -110,6 +118,7 @@ const KINDS: Record<PluginKind, KindSpec> = {
     declare: { in: "key", key: "directory" },
     apiVersion: DIRECTORY_API_VERSION,
     packagePrefix: "directory-",
+    bucket: "directories",
     exportSuffix: "Directory",
   },
   "trace-sink": {
@@ -118,6 +127,7 @@ const KINDS: Record<PluginKind, KindSpec> = {
     declare: { in: "traces" },
     apiVersion: TRACE_SINK_API_VERSION,
     packagePrefix: "trace-",
+    bucket: "traces",
     exportSuffix: "TraceSink",
   },
   "vector-index": {
@@ -126,6 +136,7 @@ const KINDS: Record<PluginKind, KindSpec> = {
     declare: { in: "key", key: "vectorIndex" },
     apiVersion: VECTOR_INDEX_API_VERSION,
     packagePrefix: "store-",
+    bucket: "stores",
     exportSuffix: "VectorIndex",
   },
   "conversation-store": {
@@ -134,6 +145,7 @@ const KINDS: Record<PluginKind, KindSpec> = {
     declare: { in: "key", key: "conversationStore" },
     apiVersion: CONVERSATION_STORE_API_VERSION,
     packagePrefix: "store-",
+    bucket: "stores",
     exportSuffix: "ConversationStore",
   },
 };

@@ -7,7 +7,11 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { DEFAULT_PERSONA_TONE } from "@mercury-fw/core";
-import { renderApp, type RenderInput } from "./render.ts";
+import { CATALOG, type CatalogEntry } from "./catalog.ts";
+import { configValue, renderApp, type RenderInput } from "./render.ts";
+
+/** The catalog's ids of `kind`, as an error lists them: a plugin `bun run new-plugin --catalog` adds is one too. */
+const validIds = (kind: CatalogEntry["kind"]) => CATALOG.filter((e) => e.kind === kind).map((e) => e.id).join(", ");
 
 const golden = (name: string): string =>
   readFileSync(new URL(`./__fixtures__/render/${name}.golden`, import.meta.url), "utf-8");
@@ -324,6 +328,19 @@ describe("renderApp: mercury.config.ts", () => {
 
 // #337: the hoisted-linker workaround is gone — apps install with Bun's
 // isolated linker, the default when workspaces are present.
+describe("configValue", () => {
+  const entry = { id: "guest-wifi", kind: "tool" as const, package: "@mercury-fw/plugin-guest-wifi", exportName: "guestWifiPlugin", env: [] };
+
+  test("an export that is the plugin goes in as it is", () => {
+    expect(configValue(entry)).toBe("guestWifiPlugin");
+  });
+
+  // A plugin `bun run new-plugin` writes exports a factory: the config calls it.
+  test("an export that makes the plugin is called", () => {
+    expect(configValue({ ...entry, factory: true })).toBe("guestWifiPlugin()");
+  });
+});
+
 describe("renderApp: bunfig.toml", () => {
   test("is not generated, whatever was chosen", () => {
     for (const choice of [EMPTY, HTTP_JIRA, FULL]) {
@@ -688,7 +705,7 @@ describe("renderApp: directory", () => {
   });
 
   test("rejects an unknown directory, naming the valid ids", () => {
-    expect(() => renderApp(input({ directory: "ldap" }))).toThrow('Unknown directory "ldap" (valid: static, zitadel)');
+    expect(() => renderApp(input({ directory: "ldap" }))).toThrow(`Unknown directory "ldap" (valid: ${validIds("directory")})`);
   });
 });
 
@@ -714,7 +731,7 @@ describe("renderApp: validation", () => {
   // or a provider nothing uses.
   test("rejects the HTTP channel without an auth provider, and an auth provider without it", () => {
     expect(() => renderApp(input({ channels: ["http"] }))).toThrow(
-      'The http channel needs an auth provider (valid: oidc, static)',
+      `The http channel needs an auth provider (valid: ${validIds("auth")})`,
     );
     expect(() => renderApp(input({ channels: ["google-chat"], auth: "static" }))).toThrow(
       'The auth provider "static" goes with the http channel, which isn\'t chosen',
@@ -722,7 +739,7 @@ describe("renderApp: validation", () => {
   });
 
   test("rejects an unknown auth provider, naming the valid ids", () => {
-    expect(() => renderApp(input({ channels: ["http"], auth: "saml" }))).toThrow('Unknown auth provider "saml" (valid: oidc, static)');
+    expect(() => renderApp(input({ channels: ["http"], auth: "saml" }))).toThrow(`Unknown auth provider "saml" (valid: ${validIds("auth")})`);
   });
 
   test("rejects a line break in the assistant name or role (each is one line of the persona)", () => {

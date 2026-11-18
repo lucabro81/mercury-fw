@@ -19,6 +19,8 @@ export type CatalogEntry = {
   kind: "channel" | "auth" | "tool" | "directory";
   package: string;
   exportName: string;
+  /** The export makes the plugin, with no arguments: the config calls it (`guestWifiPlugin()`). */
+  factory?: true;
   env: EnvVar[];
   formatter?: FormatterExample;
   /** Dependencies whose install scripts Bun must run for this entry (Bun runs
