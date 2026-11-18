@@ -5,13 +5,14 @@
  * and validated before any of this runs (`program.ts`); what runs a command is
  * injected (`AppDeps`), which is how the tests see the exact calls.
  */
-import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join, relative, resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { appCliCredentials, cliUserId, volumePath, type CliCredentials } from "@mercury-fw/utils";
 import { readServiceAccountKey, setEnvVar } from "./credentials.ts";
 import type { App } from "./find-app.ts";
 import { pluginCreate, type PluginCreateArgs } from "./plugin-create.ts";
+import { agentFiles } from "../agent-files.ts";
 import { copyPacks, LOCAL_PACKS_DIR, readPacks, withLocalOverrides, withoutLocalOverrides } from "./local-packages.ts";
 import { findTests, loadTest } from "../e2e/load.ts";
 import { runE2e } from "../e2e/runner.ts";
@@ -254,6 +255,20 @@ export function appCommands(app: App, deps: AppDeps) {
           deps.print(`Turns and checks in ${results}`);
         },
       });
+    },
+    /** `mfw agent-files`: AGENTS.md and the mercury-plugin skill, for an app made before them; a file already there is kept. */
+    agentFiles: async () => {
+      for (const [path, content] of agentFiles(app.name)) {
+        const file = join(app.dir, path);
+        if (existsSync(file)) {
+          deps.print(`Kept ${path}, already there`);
+          continue;
+        }
+        mkdirSync(dirname(file), { recursive: true });
+        writeFileSync(file, content);
+        deps.print(`Wrote ${path}`);
+      }
+      return 0;
     },
     /** `mfw plugin create`: a plugin of the app's own (see `plugin-create.ts`). */
     pluginCreate: (args: PluginCreateArgs) => pluginCreate(app, deps, args),

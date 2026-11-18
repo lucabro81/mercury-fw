@@ -1,6 +1,6 @@
 ---
 title: Your first plugin
-description: Write a plugin inside your app, give it a tool the model can call, and read its settings from .env.
+description: Create a plugin inside your app with mfw plugin create, turn it into a tool the model can call, and read its settings from .env.
 sidebar:
   order: 2
 ---
@@ -11,65 +11,99 @@ a description of what they do and of the input they take.
 
 This page writes one inside your app, the guest Wi-Fi plugin from [Your first agent](../first-agent/). A plugin
 living in your app is for your app only; to share one with every Mercury user, see
-[Proposing a plugin](../public-plugin/).
+[Proposing a plugin](../public-plugin/). What every kind of plugin looks like, and the rules they all follow, is in
+[Writing a plugin](../../concepts/writing-plugins/).
 
-:::caution[The plugin contract will change]
-The shape of a plugin is still settling, and a later version of Mercury will add helpers that make this shorter.
-What follows works with the current one.
-:::
+## Create it
 
-## The packages
+From the app's folder:
 
 ```bash
-bun add @mercury-fw/kit ai zod
+bunx mfw plugin create tool guest-wifi
 ```
 
-- `@mercury-fw/kit` is the plugin contract: the `Plugin` type, and the version of the contract your plugin is
-  written against.
-- `ai` is the [AI SDK](https://ai-sdk.dev), which Mercury uses to talk to the model; its `tool()` builds a tool.
-- `zod` describes the tool's input, so the model knows what to send.
+```text
+Wrote plugins/guest-wifi (@my-agent/plugin-guest-wifi), a tool plugin.
+Declared it in package.json and in mercury.config.ts.
+Next: its settings (plugins/guest-wifi/README.md), bun run test, then mfw restart.
+```
 
-## The plugin
+`tool` is the kind of plugin (one with tools the model calls; `bunx mfw plugin create --help` lists the others), and
+`guest-wifi` its name. The command wrote a package of the app's own in `plugins/guest-wifi`, a working example with
+its tests, and did three more things:
 
-Create `src/plugins/guest-wifi.ts`. It has to be under `src/`, the folder the app's Docker image copies:
+- it added the package to the app's `package.json`, as `"@my-agent/plugin-guest-wifi": "workspace:*"`: the app
+  installs it from its own folder, not from npm (`my-agent` is your app's name);
+- it declared it in `mercury.config.ts`, with an import and `guestWifiPlugin()` at the end of `plugins`;
+- it ran `bun install`, to link it.
 
-```ts title="src/plugins/guest-wifi.ts"
-import { PLUGIN_API_VERSION, type Plugin } from "@mercury-fw/kit";
+The example lists the items of a service and deletes one after the person confirms, with a skill telling the model
+how. The Wi-Fi needs much less, so the next step makes it smaller.
+
+## Make it the guest Wi-Fi
+
+Delete what the Wi-Fi doesn't need, the example's tools and its skill:
+
+```bash
+rm plugins/guest-wifi/tools.ts plugins/guest-wifi/tools.test.ts
+rm -r plugins/guest-wifi/skills
+```
+
+Then replace `index.ts`:
+
+```ts title="plugins/guest-wifi/index.ts"
+/**
+ * The guest Wi-Fi plugin: tells people the name and password of the office
+ * guest Wi-Fi, from the app's settings.
+ */
+import type { Plugin } from "@mercury-fw/kit";
 import { tool } from "ai";
 import { z } from "zod";
+import { GUEST_WIFI_MESSAGES } from "./messages.ts";
 
-export const guestWifiPlugin: Plugin = {
-  apiVersion: PLUGIN_API_VERSION,
-  name: "guest-wifi",
-  description: "Tells people the name and password of the office guest Wi-Fi.",
-  actsAs: "anyone",
-  systemPromptFragment:
-    "## Guest Wi-Fi\n{{assistant}} can look up the office guest Wi-Fi with `guest_wifi`. Use it when someone asks how to get online.",
-  build: (ctx) => {
-    const network = ctx.env.GUEST_WIFI_NAME;
-    const password = ctx.env.GUEST_WIFI_PASSWORD;
-    if (!network || !password) {
-      ctx.log("guest-wifi: GUEST_WIFI_NAME or GUEST_WIFI_PASSWORD is not set: no tools");
-      return {};
-    }
-    return {
-      sessionTools: () => ({
-        guest_wifi: tool({
-          description: "Returns the name and password of the office guest Wi-Fi.",
-          inputSchema: z.object({}),
-          execute: async () => ({ ok: true, network, password }),
+/** The plugin. */
+export function guestWifiPlugin(): Plugin {
+  return {
+    // The contract this plugin is written for, as a literal: importing
+    // PLUGIN_API_VERSION would report whichever contract is installed.
+    apiVersion: 7,
+    name: "guest-wifi",
+    description: "Tells people the name and password of the office guest Wi-Fi.",
+    actsAs: "anyone",
+    systemPromptFragment:
+      "## Guest Wi-Fi\n{{assistant}} can look up the office guest Wi-Fi with `guest_wifi`. Use it when someone asks how to get online.",
+    messages: GUEST_WIFI_MESSAGES,
+    build: (ctx) => {
+      const network = ctx.env.GUEST_WIFI_NAME;
+      const password = ctx.env.GUEST_WIFI_PASSWORD;
+      if (!network || !password) {
+        ctx.log("guest-wifi: GUEST_WIFI_NAME or GUEST_WIFI_PASSWORD is not set: no tools");
+        return {};
+      }
+      return {
+        sessionTools: () => ({
+          guest_wifi: tool({
+            description: "Returns the name and password of the office guest Wi-Fi.",
+            inputSchema: z.object({}),
+            execute: async () => ({ ok: true, network, password }),
+          }),
         }),
-      }),
-    };
-  },
-};
+        toolStatusDescribers: {
+          guest_wifi: (_input, t) => t("guest-wifi.status.lookup"),
+        },
+      };
+    },
+  };
+}
 ```
 
 Field by field:
 
 - **`apiVersion`** is the version of the contract the plugin was written for. Mercury checks it when it loads the
-  plugin and skips one it can't run, saying why in the log, instead of failing later in a stranger way.
-- **`name`** is what the logs call the plugin.
+  plugin and skips one it can't run, saying why in the log, instead of failing later in a stranger way. It's a
+  number written out, not the `PLUGIN_API_VERSION` constant: the constant says which contract is installed, not
+  which one this code was written for.
+- **`name`** is what the logs call the plugin, and how its texts' keys start.
 - **`description`** says, in one sentence, what the plugin lets the agent do. The model reads it before every
   conversation, next to the other plugins' ones, and answers from that list when someone asks what it can do. It's
   required: Mercury skips a plugin without one, saying why in the log.
@@ -77,119 +111,36 @@ Field by field:
   login, and everyone may use it. [People and roles](../../concepts/people/) explains the other two.
 - **`systemPromptFragment`** goes into the instructions the model reads before every conversation, so it knows the
   tool exists and when to use it. `{{assistant}}` becomes the assistant's name.
+- **`messages`** are the texts the plugin shows the person, in English, every key starting with its name.
 - **`build`** runs once at startup, with the environment in `ctx.env`. It reads the two settings and, when one is
   missing, logs it and contributes nothing: the agent starts anyway, without the tool. That's how every plugin
   behaves, so one plugin set up wrong never stops the rest.
 - **`sessionTools`** returns the tools by name. `description` is what the model reads to decide whether to call
-  it, `inputSchema` the input it must send (none here), and `execute` what runs.
+  it, `inputSchema` the input it must send (none here), and `execute` what runs. What `execute` returns goes back to
+  the model, which writes the answer from it.
+- **`toolStatusDescribers`** give the line the person sees while a tool runs, one of the plugin's `messages`.
 
 `build` may also be `async`, for a plugin with something to set up before the agent takes messages. What else it
 can reach besides `ctx.env` (the models, the vector index, work at a set time) is in
-[What a plugin can use](../../concepts/primitives/), with a plugin that learns from what was said.
+[What a plugin can use](../../concepts/primitives/).
 
-What `execute` returns goes back to the model, which writes the answer from it. A plugin that also shows the person
-words of its own, such as a status line while its tool runs, writes them in its `messages`: see
-[Texts the person reads](../../concepts/plugins/#texts-the-person-reads).
+The status line's text goes in `messages.ts`, replacing the example's:
 
-## Declare it
+```ts title="plugins/guest-wifi/messages.ts"
+/**
+ * The plugin's texts a person sees, in English: the status line while its
+ * tool runs. The app's language files translate them.
+ */
+import type { Messages } from "@mercury-fw/kit";
 
-A plugin does nothing until the app declares it. In `mercury.config.ts`, import it and put it in `plugins`:
-
-```ts title="mercury.config.ts" ins={11,26}
-import { defineMercuryConfig } from "@mercury-fw/core";
-import { conversationWindow } from "@mercury-fw/conversation-window";
-import { wiki } from "@mercury-fw/wiki";
-import { archive } from "@mercury-fw/archive";
-import { titles } from "@mercury-fw/titles";
-import { profile } from "@mercury-fw/profile";
-import { memory } from "@mercury-fw/memory";
-import { corrections } from "@mercury-fw/corrections";
-import en from "./locales/en.json";
-import pkg from "./package.json";
-import { guestWifiPlugin } from "./src/plugins/guest-wifi.ts";
-
-const name = "Mercury";
-const teamWiki = wiki({ review: { dreaming: {} } });
-const longTermMemory = memory({ wiki: teamWiki });
-const conversation = conversationWindow({ earlier: longTermMemory });
-
-export default defineMercuryConfig({
-  persona: {
-    name,
-    identity: `You are ${name}, an internal assistant.`,
-    tone: [
-      // …
-    ].join("\n"),
-  },
-  plugins: [conversation, teamWiki, longTermMemory, archive(), titles(), profile(), corrections({ wiki: teamWiki }), guestWifiPlugin],
-  channels: [],
-  i18n: { locales: { en } },
-  version: pkg.version,
-});
+export const GUEST_WIFI_MESSAGES: Messages = {
+  "guest-wifi.status.lookup": "Looking up the guest Wi-Fi",
+};
 ```
 
-The rest of the file is what `mfw create` wrote, shortened here: the model and the `models` section, the conversation (`conversation`, see [Memory](../../concepts/memory/#the-conversation)), the wiki (`teamWiki`, see [Memory](../../concepts/memory/#the-wiki)), the long-term memory (`longTermMemory`, see [Memory](../../concepts/memory/#the-long-term-memory)), the archive, the titles, the profiles and the corrections (`archive()`, `titles()`, `profile()`, `corrections()`, see [Memory](../../concepts/memory/#the-archive-and-the-titles)) and the `context` that keeps the one and reads the other's index, `i18n`, the `traces` that record what the agent does (see [Traces](../../concepts/traces/)) and `version`, the app's own (see [`version`](../../reference/config/#version)).
+## Its tests
 
-## Its settings
-
-The password is a secret, so it goes in `.env` and nowhere else:
-
-```bash title=".env"
-GUEST_WIFI_NAME=Office-Guest
-GUEST_WIFI_PASSWORD=correct-horse-battery
-```
-
-Then `bunx mfw restart`, and ask the agent about the Wi-Fi: [step 6 of Your first agent](../first-agent/#6-check-it-uses-the-tool)
-shows what comes back.
-
-## A package of its own
-
-One file is the smallest plugin. Once it grows (more tools, its own tests, a dependency the rest of the app
-doesn't need), it can become a package inside your app, under `plugins/`: every app is set up for it, with
-`plugins/*` declared as workspaces in its `package.json` and a Dockerfile that copies `plugins/` before installing.
-It's also the shape a plugin needs to be published one day.
-
-Move the file to `plugins/guest-wifi/index.ts`, unchanged, and give the folder a `package.json` of its own, with
-the packages the plugin is written with:
-
-```json title="plugins/guest-wifi/package.json"
-{
-  "name": "@my-agent/plugin-guest-wifi",
-  "version": "0.1.0",
-  "private": true,
-  "type": "module",
-  "exports": { ".": "./index.ts" },
-  "dependencies": {
-    "@mercury-fw/kit": "^0.59.1",
-    "ai": "^7.0.152",
-    "zod": "^4.6.7"
-  }
-}
-```
-
-The name is yours to choose; a scope with the app's name keeps it apart from packages on npm. `private` keeps it
-from being published by mistake.
-
-The app then depends on it like on any package, but from its workspace. In the app's `package.json`:
-
-```json title="package.json" ins={5}
-  "dependencies": {
-    "@mercury-fw/core": "^0.59.1",
-    "@mercury-fw/kit": "^0.59.1",
-    "ai": "^7.0.152",
-    "@my-agent/plugin-guest-wifi": "workspace:*",
-    "zod": "^4.6.7"
-  },
-```
-
-and `mercury.config.ts` imports it by that name:
-
-```ts title="mercury.config.ts"
-import { guestWifiPlugin } from "@my-agent/plugin-guest-wifi";
-```
-
-Run `bun install` to link it. Its tests go next to it, and the app's `bun run test` (which runs `bun test`, the
-first line it prints) runs them with the rest:
+The tests go next to the plugin, replacing the example's `index.test.ts`:
 
 ```ts title="plugins/guest-wifi/index.test.ts"
 import { describe, expect, test } from "bun:test";
@@ -201,34 +152,72 @@ function ctx(env: Record<string, string>, logs: string[] = []): PluginRuntimeCon
   return { model: {} as never, env, log: (line) => logs.push(line) };
 }
 
+const SETTINGS = { GUEST_WIFI_NAME: "Office-Guest", GUEST_WIFI_PASSWORD: "secret" };
+
 describe("guest-wifi", () => {
   test("without its settings it contributes no tool, and logs why", async () => {
     const logs: string[] = [];
-    expect(await guestWifiPlugin.build!(ctx({}, logs))).toEqual({});
+    expect(await guestWifiPlugin().build!(ctx({}, logs))).toEqual({});
     expect(logs).toEqual(["guest-wifi: GUEST_WIFI_NAME or GUEST_WIFI_PASSWORD is not set: no tools"]);
   });
 
   test("guest_wifi returns the network and the password from its settings", async () => {
-    const built = await guestWifiPlugin.build!(ctx({ GUEST_WIFI_NAME: "Office-Guest", GUEST_WIFI_PASSWORD: "secret" }));
+    const built = await guestWifiPlugin().build!(ctx(SETTINGS));
     const tools = built.sessionTools!({} as SessionToolContext);
     expect(await tools.guest_wifi!.execute!({}, {} as never)).toEqual({ ok: true, network: "Office-Guest", password: "secret" });
+  });
+
+  test("its status line is one of its texts", async () => {
+    const plugin = guestWifiPlugin();
+    const built = await plugin.build!(ctx(SETTINGS));
+    expect(built.toolStatusDescribers?.guest_wifi?.({}, (key) => plugin.messages?.[key] ?? key)).toBe("Looking up the guest Wi-Fi");
   });
 });
 ```
 
-```text
-$ bun test
-bun test v1.4.2 (744846f84)
+The app's `bun run test` runs them with every other plugin's, and `bun run typecheck` checks the types:
 
- 2 pass
- 0 fail
- 3 expect() calls
-Ran 2 tests across 1 file. [63.00ms]
+```bash
+bun test plugins/guest-wifi
 ```
 
-`bunx mfw restart` builds the image with the package in it, and the agent answers about the Wi-Fi as before.
+```text
+ 3 pass
+ 0 fail
+ 4 expect() calls
+Ran 3 tests across 1 file.
+```
+
+## Its settings
+
+The password is a secret, so it goes in `.env` and nowhere else:
+
+```bash title=".env"
+GUEST_WIFI_NAME=Office-Guest
+GUEST_WIFI_PASSWORD=correct-horse-battery
+```
+
+Add the two names to `.env.example` too, with no values, so whoever sets the app up next knows they exist. Then
+restart, so the image picks up the plugin and the container the settings:
+
+```bash
+bunx mfw restart
+```
+
+[Step 6 of Your first agent](../first-agent/#6-check-it-uses-the-tool) shows what comes back when you ask about the
+Wi-Fi.
+
+## The smallest plugin: one file
+
+A plugin doesn't have to be a package. The same object can live in a single file under `src/` (the folder the app's
+image copies), say `src/plugins/guest-wifi.ts`, imported by `mercury.config.ts` from there
+(`import { guestWifiPlugin } from "./src/plugins/guest-wifi.ts";`), with `@mercury-fw/kit`, `ai` and `zod` added to
+the app itself (`bun add @mercury-fw/kit ai zod`). It's quicker for a plugin of a few lines; a package keeps its
+tests, its texts and its own dependencies apart, and is the shape a plugin needs to be published one day.
 
 ## Where to go next
 
+- [Writing a plugin](../../concepts/writing-plugins/) covers every kind of plugin, the rules they follow, and how
+  to check one with the real model.
 - [Plugins and skills](../../concepts/plugins/) explains what else a plugin can contribute.
 - The [contract reference](../../reference/api/) lists every field, generated from the source.

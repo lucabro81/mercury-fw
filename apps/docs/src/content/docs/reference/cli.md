@@ -27,7 +27,8 @@ included, so the commands always match the app's framework. It says so in one li
 
 Writes a new app into `<folder>`, which must be missing or empty. Without flags it asks the app's name, the
 assistant's name and role, which channels, tool plugins, auth provider and directory to include, and a git remote.
-Then it runs `bun install` and makes a git repository with a first commit (nothing is pushed).
+Then it runs `bun install` and makes a git repository with a first commit (nothing is pushed). The app comes with
+an `AGENTS.md` and the `mercury-plugin` skill, for a coding assistant working on it.
 `bun create mercury-agent <folder>` runs the same command.
 
 | Flag | |
@@ -178,6 +179,12 @@ to start from, written against the app's framework. It adds the package to the a
 ```bash
 bunx mfw plugin create tool guest-wifi
 ```
+
+### `mfw agent-files`
+
+Writes `AGENTS.md` and the `mercury-plugin` skill (`.claude/skills/`, `.agents/skills/`) into an app made before
+`mfw create` wrote them, keeping any file already there. See
+[Writing a plugin](../../concepts/writing-plugins/#with-a-coding-assistant).
 
 ### `mfw local-packages <folder>` / `--off`
 

@@ -35,6 +35,7 @@ function harness({ code = 0, appError }: { code?: number; appError?: string } = 
     localPackagesOff: record("localPackagesOff"),
     e2e: record("e2e"),
     pluginCreate: record("pluginCreate"),
+    agentFiles: record("agentFiles"),
   };
   const out: string[] = [];
   const err: string[] = [];
@@ -204,6 +205,7 @@ describe("app commands reach the app with their arguments", () => {
     [["e2e"], ["e2e", [], {}]],
     [["e2e", "a.e2e.ts", "b.e2e.ts", "--repeat", "3"], ["e2e", ["a.e2e.ts", "b.e2e.ts"], { repeat: 3 }]],
     [["plugin", "create", "tool", "guest-wifi"], ["pluginCreate", { kind: "tool", name: "guest-wifi" }]],
+    [["agent-files"], ["agentFiles"]],
     [["plugin", "create", "context-strategy", "short-window"], ["pluginCreate", { kind: "context-strategy", name: "short-window" }]],
     [
       ["plugin", "create", "cli", "acme", "--cli-binary", "acme", "--cli-repo", "acme/acme-cli", "--cli-version", "1.2.3"],
@@ -267,6 +269,7 @@ describe("refused before anything runs", () => {
     [["plugin", "create", "cli", "acme", "--cli-binary", "acme"], "a cli plugin needs --cli-binary, --cli-repo and --cli-version"],
     [["plugin", "create", "tool", "x", "--cli-binary", "acme"], "--cli-binary, --cli-repo and --cli-version are for a cli plugin"],
     [["plugin", "make", "tool", "x"], "unknown command 'make'"],
+    [["agent-files", "x"], "too many arguments"],
   ])("mfw %p: %s", async (argv, message) => {
     const h = harness();
     expect(await h.run(...argv)).toBe(1);
@@ -288,7 +291,7 @@ describe("refused before anything runs", () => {
 });
 
 describe("help", () => {
-  const COMMANDS = ["create", "start", "stop", "restart", "logs", "repl", "shell", "vault", "memory", "reset", "credentials", "google-chat", "local-packages", "e2e", "plugin", "upgrade"];
+  const COMMANDS = ["create", "start", "stop", "restart", "logs", "repl", "shell", "vault", "memory", "reset", "credentials", "google-chat", "local-packages", "e2e", "plugin", "agent-files", "upgrade"];
 
   test("--help lists every command, exit 0", async () => {
     const h = harness();
