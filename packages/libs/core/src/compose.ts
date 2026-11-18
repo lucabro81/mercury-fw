@@ -330,7 +330,11 @@ export async function composeMercury(config: MercuryConfig): Promise<ComposedApp
   for (const line of i18nReport) console.error(line);
   const texts = createTexts(i18n, (key) => profiles.languageOf(key));
 
-  const loadedDirectory = loadDirectory(config.directory, { env: process.env, log: (msg) => console.error(msg) });
+  const providerNames = [
+    ...(config.auth === undefined ? [] : Array.isArray(config.auth) ? config.auth : [config.auth]).map((a) => a.name),
+    ...(config.channels ?? []).map((c) => c.name),
+  ];
+  const loadedDirectory = loadDirectory(config.directory, { env: process.env, log: (msg) => console.error(msg) }, providerNames);
   const people = createPeople({
     links: accountLinks,
     directory: loadedDirectory,
