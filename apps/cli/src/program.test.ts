@@ -34,6 +34,7 @@ function harness({ code = 0, appError }: { code?: number; appError?: string } = 
     localPackages: record("localPackages"),
     localPackagesOff: record("localPackagesOff"),
     e2e: record("e2e"),
+    pluginCreate: record("pluginCreate"),
   };
   const out: string[] = [];
   const err: string[] = [];
@@ -202,6 +203,12 @@ describe("app commands reach the app with their arguments", () => {
     [["local-packages", "--off"], ["localPackagesOff"]],
     [["e2e"], ["e2e", [], {}]],
     [["e2e", "a.e2e.ts", "b.e2e.ts", "--repeat", "3"], ["e2e", ["a.e2e.ts", "b.e2e.ts"], { repeat: 3 }]],
+    [["plugin", "create", "tool", "guest-wifi"], ["pluginCreate", { kind: "tool", name: "guest-wifi" }]],
+    [["plugin", "create", "context-strategy", "short-window"], ["pluginCreate", { kind: "context-strategy", name: "short-window" }]],
+    [
+      ["plugin", "create", "cli", "acme", "--cli-binary", "acme", "--cli-repo", "acme/acme-cli", "--cli-version", "1.2.3"],
+      ["pluginCreate", { kind: "cli", name: "acme", cli: { binary: "acme", repo: "acme/acme-cli", version: "1.2.3" } }],
+    ],
   ])("mfw %p", async (argv, call) => {
     const h = harness();
     expect(await h.run(...argv)).toBe(0);
@@ -255,6 +262,11 @@ describe("refused before anything runs", () => {
     [["local-packages", "a", "b"], "too many arguments"],
     [["e2e", "--repeat", "0"], "--repeat takes a positive whole number"],
     [["e2e", "--repeat", "ten"], "--repeat takes a positive whole number"],
+    [["plugin", "create", "widget", "x"], "Allowed choices are tool, cli, memory, context-strategy, channel, auth, directory, trace-sink, vector-index, conversation-store"],
+    [["plugin", "create", "tool"], "missing required argument 'name'"],
+    [["plugin", "create", "cli", "acme", "--cli-binary", "acme"], "a cli plugin needs --cli-binary, --cli-repo and --cli-version"],
+    [["plugin", "create", "tool", "x", "--cli-binary", "acme"], "--cli-binary, --cli-repo and --cli-version are for a cli plugin"],
+    [["plugin", "make", "tool", "x"], "unknown command 'make'"],
   ])("mfw %p: %s", async (argv, message) => {
     const h = harness();
     expect(await h.run(...argv)).toBe(1);
@@ -276,7 +288,7 @@ describe("refused before anything runs", () => {
 });
 
 describe("help", () => {
-  const COMMANDS = ["create", "start", "stop", "restart", "logs", "repl", "shell", "vault", "memory", "reset", "credentials", "google-chat", "local-packages", "e2e", "upgrade"];
+  const COMMANDS = ["create", "start", "stop", "restart", "logs", "repl", "shell", "vault", "memory", "reset", "credentials", "google-chat", "local-packages", "e2e", "plugin", "upgrade"];
 
   test("--help lists every command, exit 0", async () => {
     const h = harness();
@@ -284,7 +296,7 @@ describe("help", () => {
     for (const c of COMMANDS) expect(h.out()).toContain(`  ${c}`);
   });
 
-  test.each([...COMMANDS.map((c) => [c]), ["vault", "write-curated"], ["memory", "read"], ["credentials", "setup"], ["credentials", "check"], ["credentials", "reset"], ["google-chat", "set-key"]])(
+  test.each([...COMMANDS.map((c) => [c]), ["vault", "write-curated"], ["memory", "read"], ["credentials", "setup"], ["credentials", "check"], ["credentials", "reset"], ["google-chat", "set-key"], ["plugin", "create"]])(
     "mfw %s … --help describes it and runs nothing",
     async (...path) => {
       const h = harness();
@@ -293,6 +305,15 @@ describe("help", () => {
       expect(h.calls).toEqual([]);
     },
   );
+});
+
+describe("plugin create --help", () => {
+  test("lists every kind with what it is", async () => {
+    const h = harness();
+    await h.run("plugin", "create", "--help");
+    expect(h.out()).toContain("  tool                typed tools the model calls");
+    expect(h.out()).toContain("  conversation-store  where conversations are kept word for word");
+  });
 });
 
 describe("upgrade", () => {

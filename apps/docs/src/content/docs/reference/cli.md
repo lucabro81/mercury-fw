@@ -166,6 +166,19 @@ key. The [Google Chat page](../../plugins/channel-google-chat/) covers the whole
 
 ## Develop and test
 
+### `mfw plugin create <kind> <name>`
+
+Writes a plugin of the app's own under `plugins/<name>`: a working package of `<kind>` with its tests and a README
+to start from, written against the app's framework. It adds the package to the app's `package.json`, declares it in
+`mercury.config.ts` when the place is clear (otherwise it prints the two lines to add), then runs `bun install`.
+`mfw plugin create --help` lists the kinds: `tool`, `cli`, `memory`, `context-strategy`, `channel`, `auth`,
+`directory`, `trace-sink`, `vector-index`, `conversation-store`. A `cli` plugin also takes the program it runs:
+`--cli-binary`, `--cli-repo` (the GitHub repository releasing it) and `--cli-version`.
+
+```bash
+bunx mfw plugin create tool guest-wifi
+```
+
 ### `mfw local-packages <folder>` / `--off`
 
 Makes the app install `@mercury-fw/*` packages from local tarballs (the files `bun pm pack` writes) instead of the

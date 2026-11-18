@@ -111,12 +111,13 @@ export function loginLinkText(login: LoginRequest, t: Translate): string {
 export const NO_REPLY = "NO_REPLY";
 
 /**
- * Who vouched for a principal's identity: the chat platform itself, an auth
- * provider (`oidc`, a named OIDC provider `oidc-<name>`, `static`), or `none` =
+ * Who vouched for a principal's identity: a channel whose platform knows its
+ * people (`google-chat`), an auth provider (its `name`: `oidc`, a named OIDC
+ * provider `oidc-<name>`, `static`, or any other provider's), or `none` =
  * nobody did (the terminal): nothing identity-dependent treats it as a real
  * person. Each provider has its own, so two providers' people never share a key.
  */
-export type PrincipalProvider = "google-chat" | "oidc" | `oidc-${string}` | "static" | "none";
+export type PrincipalProvider = string;
 
 /** Who is talking, as the channel knows them. The channel builds it; the core
  * turns it into the person (see `Directory`) every per-person id derives from. */

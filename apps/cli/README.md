@@ -26,6 +26,7 @@ On Mercury's documentation site: [the `mfw` reference](https://lucabro81.github.
   - [`mfw google-chat set-key <key-file> [--subscription <name>]`](#mfw-google-chat-set-key-key-file---subscription-name)
   - [`mfw local-packages <folder>` / `mfw local-packages --off`](#mfw-local-packages-folder--mfw-local-packages---off)
   - [`mfw e2e [tests...] [--repeat N]`](#mfw-e2e-tests---repeat-n)
+  - [`mfw plugin create <kind> <name>`](#mfw-plugin-create-kind-name)
   - [`mfw upgrade`](#mfw-upgrade)
 - [Help](#help)
 
@@ -394,6 +395,29 @@ It can't test how Google Chat shows a turn (its cards), the background jobs (the
 ```bash
 mfw e2e
 mfw e2e e2e/jira.e2e.ts --repeat 3
+```
+
+### `mfw plugin create <kind> <name>`
+
+Writes a plugin of the app's own under `plugins/<name>`, the workspace every app declares: a working package with its tests and a README to start from, written against the app's framework, with `ai` and `zod` at the ranges its core is built with. It adds the package to the app's `dependencies` (`workspace:*`, and to `trustedDependencies` for a `cli` plugin, whose postinstall downloads its program), declares it in `mercury.config.ts` when the place is clear, then runs `bun install`. When the place isn't clear (the config was rewritten by hand, an `auth` is already set, a vector index or a conversation store or a trace sink is already there), it leaves the config as it is and prints the two lines to add. A context strategy is never written there: it takes the place of the profile's conversation, so the lines are always printed.
+
+`<kind>` is one of:
+
+- `tool`: typed tools the model calls, each with its input schema (a read and an irreversible action behind the person's confirmation, a skill, the status lines);
+- `cli`: a tool running a pinned command-line program through an allowlist; `--cli-binary`, `--cli-repo` (the GitHub repository releasing it) and `--cli-version` pin it;
+- `memory`: what the agent keeps from each turn and session, and a context layer reading it back;
+- `context-strategy`: a context profile's conversation, what the model reads of it;
+- `channel`: a way people talk to the agent;
+- `auth`: who is calling a channel that takes credentials;
+- `directory`: who people are and their roles;
+- `trace-sink`: where the traces of what the agent does go;
+- `vector-index` and `conversation-store`: the storage primitives, in memory, to put a database behind.
+
+`<name>` is lowercase words joined by hyphens: the plugin's `name`, the prefix of its texts' keys, its folder. Its package is `@<app>/<prefix><name>`, with this repository's prefixes (`plugin-`, `channel-`, `auth-`, `directory-`, `trace-`, `store-`; a `memory` plugin and a `context-strategy` take none). Nothing is written when the folder is already there, when the app isn't installed, or when an argument is wrong.
+
+```bash
+mfw plugin create tool guest-wifi
+mfw plugin create cli acme --cli-binary acme --cli-repo acme/acme-cli --cli-version 1.2.3
 ```
 
 ### `mfw upgrade`

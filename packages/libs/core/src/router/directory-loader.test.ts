@@ -61,4 +61,24 @@ describe("loadDirectory", () => {
       expect(logs[0]).toContain(`directory "${name}" not activated: its name is a channel identity's provider`);
     }
   });
+
+  // Guards against a custom auth provider or channel (any name, since
+  // `PrincipalProvider` is a string) sharing its name with the directory: its
+  // people's keys would be the directory's.
+  it("refuses a directory named like one of the instance's own auth providers or channels", () => {
+    for (const name of ["my-sso", "slack"]) {
+      const logs: string[] = [];
+      const build = mock(() => directoryValue);
+      expect(loadDirectory(plugin(build, { name }), { env: {}, log: (m) => logs.push(m) }, ["my-sso", "slack"])).toBe("failed");
+      expect(build).not.toHaveBeenCalled();
+      expect(logs).toEqual([
+        `directory "${name}" not activated: its name is a channel identity's provider, so its people's keys could clash; nobody but the terminal is let in`,
+      ]);
+    }
+  });
+
+  it("builds a directory whose name no provider of the instance takes", () => {
+    const build = mock(() => directoryValue);
+    expect(loadDirectory(plugin(build, { name: "people" }), { env: {}, log: () => {} }, ["my-sso", "slack"])).toEqual({ name: "people", directory: directoryValue });
+  });
 });

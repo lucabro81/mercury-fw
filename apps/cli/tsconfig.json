@@ -4,5 +4,7 @@
     // The catalog test imports the Jira plugin, which ships its allowlist as a
     // JSON asset its index.ts imports; typechecking that import needs this.
     "resolveJsonModule": true
-  }
+  },
+  // The packages src/plugin/generated.test.ts writes while it runs.
+  "exclude": ["node_modules", ".scaffold-check"]
 }
