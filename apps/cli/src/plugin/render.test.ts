@@ -215,6 +215,20 @@ describe("renderPlugin", () => {
     expect(() => renderPlugin(noCli)).toThrow("a cli plugin needs its binary's name, repository and version (--cli-binary, --cli-repo, --cli-version)");
   });
 
+  // Regression: the pin went into file paths, JSON and TS literals unchecked,
+  // so `--cli-binary ../x` wrote outside the plugin's folder and a quote broke the files.
+  test.each([
+    [{ ...CLI, binary: "../x" }, '--cli-binary is a program\'s name (letters, digits, - and _), not "../x"'],
+    [{ ...CLI, binary: 'ac"me' }, '--cli-binary is a program\'s name (letters, digits, - and _), not "ac\\"me"'],
+    [{ ...CLI, binary: "" }, '--cli-binary is a program\'s name (letters, digits, - and _), not ""'],
+    [{ ...CLI, repo: "acme" }, '--cli-repo is a GitHub repository, owner/name, not "acme"'],
+    [{ ...CLI, repo: "acme/x/y" }, '--cli-repo is a GitHub repository, owner/name, not "acme/x/y"'],
+    [{ ...CLI, version: "v1" }, '--cli-version is a release\'s version, as 1.2.3, not "v1"'],
+    [{ ...CLI, version: "" }, '--cli-version is a release\'s version, as 1.2.3, not ""'],
+  ])("refuses a CLI pin that isn't one: %o", (cli, error) => {
+    expect(() => renderPlugin({ ...input("cli"), cli })).toThrow(error);
+  });
+
   test("refuses a name that isn't one", () => {
     expect(() => renderPlugin({ ...input("tool"), name: "Guest" })).toThrow('a plugin\'s name is lowercase words joined by hyphens (e.g. guest-wifi), not "Guest"');
   });

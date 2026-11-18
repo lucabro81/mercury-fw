@@ -22,7 +22,7 @@ directory: staticDirectory,
 
 An identity is `<provider>:<id>`, as the channel or the auth provider vouches for it (`static:<id>` from `auth-static`, `oidc:<sub>` from `auth-oidc`, `google-chat:users/<id>` from Google Chat), and it belongs to one person only. Listing several identities for the same person makes them one person across channels: one private area, one memory, the same roles.
 
-The person's key is `people:<id>`, so `id` is a short lowercase slug (letters, digits, `.`, `_`, `-`). A missing or malformed list stops the directory from loading, and the instance then lets nobody in but the terminal: a broken config closes it, it never opens it.
+The directory's name can't be one an auth provider or a channel of the instance gives its people (nor `google-chat`, `oidc`, `oidc-<name>`, `static`, `none`): such a directory doesn't load. The person's key is `people:<id>`, so `id` is a short lowercase slug (letters, digits, `.`, `_`, `-`). A missing or malformed list stops the directory from loading, and the instance then lets nobody in but the terminal: a broken config closes it, it never opens it.
 
 The roles that mean something to Mercury itself are `mercury.act-as-self`, which lets a person make Mercury act with its own identity on every plugin, and `mercury.act-as-self.<plugin>`, the same for one plugin, and `mercury.context-admin`, which lets a person change the instance's context while it runs (`/context` on the HTTP channel). Any other role is for the app's own `access.plugins` restrictions.
 

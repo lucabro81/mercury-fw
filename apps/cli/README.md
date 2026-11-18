@@ -413,7 +413,7 @@ Writes a plugin of the app's own under `plugins/<name>`, the workspace every app
 - `trace-sink`: where the traces of what the agent does go;
 - `vector-index` and `conversation-store`: the storage primitives, in memory, to put a database behind.
 
-`<name>` is lowercase words joined by hyphens: the plugin's `name`, the prefix of its texts' keys, its folder. Its package is `@<app>/<prefix><name>`, with this repository's prefixes (`plugin-`, `channel-`, `auth-`, `directory-`, `trace-`, `store-`). Nothing is written when the folder is already there, when the app isn't installed, or when an argument is wrong.
+`<name>` is lowercase words joined by hyphens: the plugin's `name`, the prefix of its texts' keys, its folder. Its package is `@<app>/<prefix><name>`, with this repository's prefixes (`plugin-`, `channel-`, `auth-`, `directory-`, `trace-`, `store-`; a `memory` plugin and a `context-strategy` take none). Nothing is written when the folder is already there, when the app isn't installed, or when an argument is wrong.
 
 ```bash
 mfw plugin create tool guest-wifi

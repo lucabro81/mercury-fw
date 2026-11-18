@@ -21,6 +21,7 @@ Without it, or with a malformed one, the directory doesn't load and the agent le
 ## How it works
 
 - A channel says who is talking (a provider and an id); `resolve` answers with the person whose identities include it, or `null`.
+- Its name can't be one an auth provider or a channel of the instance gives its people (nor `google-chat`, `oidc`, `oidc-<name>`, `static`, `none`): the directory wouldn't load.
 - The core keys the person as `__NAME__:<id>`, and their roles decide what they may make the agent do (`access` in `mercury.config.ts`).
 - When it can't tell (a service down), `resolve` throws: the core refuses, it never guesses.
 

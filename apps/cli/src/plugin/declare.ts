@@ -58,6 +58,8 @@ function appendToList(config: string, key: string, value: string): string | unde
   const close = closingBracket(config, open);
   if (close === undefined) return undefined;
   const inside = config.slice(open + 1, close);
+  // A comment in the list could take the comma meant for the new element, or hide a bracket: left to the user.
+  if (/\/\/|\/\*/.test(inside)) return undefined;
   if (inside.trim() === "") return `${config.slice(0, open + 1)}${value}${config.slice(close)}`;
   if (inside.includes("\n")) {
     // One element per line: a line of its own, indented as the last element.
@@ -89,6 +91,8 @@ export function declareInConfig(config: string, input: DeclareInput): Declared {
   const importLine = `import { ${input.exportName} } from "${input.packageName}";`;
   const declaration = pluginKind(input.kind).declare;
   const unwritten = (line: string): Declared => ({ text: config, written: false, lines: [importLine, line] });
+  // A name the config already uses would be imported twice.
+  const named = new RegExp(`\\b${input.exportName}\\b`).test(config);
 
   let declared: string | undefined;
   let fallback: string;
@@ -121,6 +125,6 @@ export function declareInConfig(config: string, input: DeclareInput): Declared {
   }
 
   const importAt = declared === undefined ? undefined : afterLastImport(declared);
-  if (declared === undefined || importAt === undefined) return unwritten(fallback);
+  if (declared === undefined || importAt === undefined || named) return unwritten(fallback);
   return { text: `${declared.slice(0, importAt)}\n${importLine}${declared.slice(importAt)}`, written: true, lines: [] };
 }

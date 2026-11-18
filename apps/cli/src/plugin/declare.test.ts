@@ -114,6 +114,23 @@ describe("declareInConfig", () => {
     });
   });
 
+  // Regression: a comment after the last element took the comma meant to
+  // separate it from the new one, and the config no longer parsed.
+  test.each([
+    ['import { a } from "a";\nexport default defineMercuryConfig({\n  plugins: [a(), // c\n  ],\n});\n'],
+    ['import { a } from "a";\nexport default defineMercuryConfig({\n  plugins: [\n    a(), // the first\n    b() // the last\n  ],\n});\n'],
+    ['import { a } from "a";\nexport default defineMercuryConfig({\n  plugins: [a() /* why */],\n});\n'],
+    ['import { a } from "a";\nexport default defineMercuryConfig({\n  plugins: [\n    // a(  unbalanced\n    a(),\n  ],\n});\n'],
+  ])("leaves a plugins list with a comment in it alone: %j", (config) => {
+    expect(declareInConfig(config, plugin("tool"))).toEqual({ text: config, written: false, lines: [IMPORT, "plugins: [..., guestWifiPlugin()],"] });
+  });
+
+  // Two imports of one name don't typecheck.
+  test("leaves a config already naming the export alone", () => {
+    const config = NEW_APP.replace("  channels: [],", "  channels: [],\n  // guestWifiPlugin was here");
+    expect(declareInConfig(config, plugin("tool"))).toMatchObject({ text: config, written: false });
+  });
+
   test("leaves a config whose plugins list it can't find alone", () => {
     const config = 'import { a } from "a";\nconst plugins = [a];\nexport default defineMercuryConfig({ plugins, models });\n';
     expect(declareInConfig(config, plugin("tool"))).toEqual({

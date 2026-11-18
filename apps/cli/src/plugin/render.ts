@@ -36,6 +36,10 @@ export function renderPlugin(input: RenderPluginInput): Map<string, string> {
   if (input.kind === "cli" && input.cli === undefined) {
     throw new Error("a cli plugin needs its binary's name, repository and version (--cli-binary, --cli-repo, --cli-version)");
   }
+  if (input.kind === "cli" && input.cli !== undefined) {
+    const pinError = cliPinError(input.cli);
+    if (pinError !== undefined) throw new Error(pinError);
+  }
   const names = pluginNames(input.name, input.kind);
   const fill = (text: string) => fillPlaceholders(text, names, input);
   const files = new Map<string, string>();
@@ -44,6 +48,18 @@ export function renderPlugin(input: RenderPluginInput): Map<string, string> {
   }
   files.set("package.json", renderManifest(input));
   return new Map([...files].sort(([a], [b]) => a.localeCompare(b)));
+}
+
+/** What's wrong with `pin`, or `undefined`: the binary's name goes into file names, JSON and code, so it's a plain name. */
+function cliPinError(pin: CliPin): string | undefined {
+  if (!/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(pin.binary)) {
+    return `--cli-binary is a program's name (letters, digits, - and _), not ${JSON.stringify(pin.binary)}`;
+  }
+  if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(pin.repo)) return `--cli-repo is a GitHub repository, owner/name, not ${JSON.stringify(pin.repo)}`;
+  if (!/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(pin.version)) {
+    return `--cli-version is a release's version, as 1.2.3, not ${JSON.stringify(pin.version)}`;
+  }
+  return undefined;
 }
 
 /** The placeholders the templates use. */

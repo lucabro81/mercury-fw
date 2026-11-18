@@ -19,7 +19,9 @@ Every message arrives with an identity the channel vouches for, written `<provid
   [`auth-static`](../../plugins/auth-static/) it comes from a fixed list of test tokens.
 
 The identity the channel gives is called the **principal**. Two providers issuing the same id are still two people,
-because the provider is part of the name.
+because the provider is part of the name. An auth provider or a channel of your own names its people with its own
+`name`, so a directory can't take one of those names (nor `google-chat`, `oidc`, `oidc-<name>`, `static`, `none`):
+it wouldn't load, and the agent would let in nobody but the terminal.
 
 ## 2. The directory says who that is
 
