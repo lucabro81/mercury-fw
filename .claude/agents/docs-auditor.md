@@ -57,8 +57,11 @@ never previous findings). Gather everything yourself:
      `mfw create`, the plugin or channel contract, `@mercury-fw/kit`, or the
      core's turn behaviour also brings in every page under
      `getting-started/` and the `concepts/` page of that area (plugins,
-     channels, memory, people, confirmations, languages). Their code blocks
-     and the outputs they show must still be what the current code does;
+     channels, memory, people, confirmations, languages). A change to the
+     plugin or channel contract (hooks, context layers, `needs`, `output`,
+     auth providers, directories) or to the context strategies also brings
+     in every page under `cookbook/`. Their code blocks and the outputs they
+     show must still be what the current code does;
    - `apps/cli/src/catalog.ts`, which feeds `mfw create` and the site's plugin
      catalog;
    - every changeset the branch adds under `.changeset/`: its text becomes the
