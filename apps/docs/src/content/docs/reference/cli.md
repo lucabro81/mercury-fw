@@ -40,7 +40,7 @@ an `AGENTS.md` and the `mercury-plugin` skill, for a coding assistant working on
 | `--plugins <ids>` | Comma-separated: `jira`, `bitbucket`, `atlassian-admin`, `zitadel`, `web-search`, `confluence`. |
 | `--auth <id>` | The HTTP channel's auth provider, `oidc` or `static`. Required with `http`. |
 | `--directory <id>` | The user directory, `static` or `zitadel`. |
-| `--starter <id>` | An agent set up for a task: `knowledge-base`, `jira-assistant`, `web-researcher` (see [Starters](../../getting-started/starters/)). `--plugins` and `--role` win over it. |
+| `--starter <id>` | An agent set up for a task: `knowledge-base`, `jira-assistant`, `web-researcher` (see [Starters](../../getting-started/starters/)). `--plugins` and `--role` win over it; a `--plugins` list without the starter's plugins is refused. |
 | `--local-packages <folder>` | Installs packages packed in `<folder>` instead of the registry's, to try unreleased ones. |
 | `--git-remote <url>` | The repository's `origin`. |
 | `--no-install` | Skip `bun install`. |

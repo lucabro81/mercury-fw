@@ -6,7 +6,10 @@
  */
 import { describe, expect, test } from "bun:test";
 import { CATALOG } from "./catalog.ts";
-import { findStarter, STARTERS } from "./starters.ts";
+import { findStarter, keepStarter, STARTERS } from "./starters.ts";
+
+/** The plugins that ship a skill: only their starters' tests may check it's loaded. */
+const SKILLS = new Set(["jira", "confluence"]);
 
 /** The tools each plugin a starter can use contributes, as its e2e test may name them. */
 const TOOLS: Record<string, string[]> = {
@@ -36,8 +39,12 @@ describe("STARTERS", () => {
   test.each(STARTERS.map((s) => [s.id, s] as const))("%s's e2e test needs its plugins and checks only their tools", (_id, starter) => {
     expect(starter.e2e).toContain('import { e2e } from "@mercury-fw/cli/e2e";');
     expect(starter.e2e).toContain(`plugins: ${JSON.stringify(starter.plugins)},`);
-    const allowed = new Set(["read_skill", ...starter.plugins.flatMap((p) => TOOLS[p] ?? [])]);
-    const named = [...starter.e2e.matchAll(/expect\.(?:call|everyCall)\("([^"]+)"/g)].map((m) => m[1]!);
+    const skills = starter.plugins.some((p) => SKILLS.has(p)) ? ["read_skill"] : [];
+    const allowed = new Set([...skills, ...starter.plugins.flatMap((p) => TOOLS[p] ?? [])]);
+    const named = [
+      ...[...starter.e2e.matchAll(/expect\.(?:call|everyCall)\("([^"]+)"/g)].map((m) => m[1]!),
+      ...[...starter.e2e.matchAll(/\.tool === "([^"]+)"/g)].map((m) => m[1]!),
+    ];
     expect(named.length).toBeGreaterThan(0);
     for (const tool of named) expect(allowed).toContain(tool);
   });
@@ -45,6 +52,23 @@ describe("STARTERS", () => {
   test.each(STARTERS.map((s) => [s.id, s] as const))("%s's README section opens with its title", (_id, starter) => {
     expect(starter.readme).toStartWith(`## ${starter.title}\n`);
     expect(starter.readme).toEndWith("\n");
+  });
+});
+
+describe("keepStarter", () => {
+  const jira = findStarter("jira-assistant")!;
+
+  test("keeps the starter when its plugins are among those picked", () => {
+    expect(keepStarter(jira, ["jira", "bitbucket"])).toEqual({ starter: jira });
+  });
+
+  // Its e2e test calls its plugins: without them it's left out, saying why.
+  test("leaves it out, with a warning, when one of its plugins isn't picked", () => {
+    expect(keepStarter(jira, ["bitbucket"])).toEqual({ warning: "The jira-assistant starter is left out: it needs the jira plugin" });
+  });
+
+  test("no starter, nothing to keep or say", () => {
+    expect(keepStarter(undefined, ["jira"])).toEqual({});
   });
 });
 

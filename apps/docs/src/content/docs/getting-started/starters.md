@@ -27,16 +27,22 @@ stay among the plugins (its test calls them). `mfw create --help` lists the star
 
 | Starter | What the agent does | Plugins | Its settings |
 |---|---|---|---|
-| `knowledge-base` | answers from the team's Confluence and wiki, naming the pages it used | [Confluence](../../plugins/plugin-confluence/) | the Confluence login |
-| `jira-assistant` | finds, reads and updates the team's Jira issues | [Jira](../../plugins/plugin-jira/) | `JIRA_SITE_URL`, the Jira login |
+| `knowledge-base` | answers from the team's Confluence and wiki, naming the pages it used | [Confluence](../../plugins/plugin-confluence/) | the Confluence logins (below) |
+| `jira-assistant` | finds, reads and updates the team's Jira issues | [Jira](../../plugins/plugin-jira/) | `JIRA_SITE_URL`, the Jira logins (below) |
 | `web-researcher` | searches the web and answers citing its sources | [Web search](../../plugins/plugin-web-search/) | `SEARXNG_SECRET` |
 
 Every app also keeps the team's wiki and a long-term memory, whatever the starter: they come with every app
 `mfw create` makes.
 
-The Confluence and Jira logins are set up once, inside the app's container, with
-`bunx mfw credentials setup @mercury-fw/plugin-confluence` (or `-jira`): each plugin's page says what the login asks
-for. The web researcher needs none: its search runs in SearXNG, next to the app.
+Confluence and Jira act as the person who asks, so each needs two logins, set up once inside the app's container:
+
+- `bunx mfw credentials setup @mercury-fw/plugin-confluence` (or `plugin-jira`): the Service Account the terminal
+  runs as, which `mfw repl` and `mfw e2e` use;
+- the same command with `--user-app`: the app people log in through. Each person then logs in from the link the agent
+  sends them on the [HTTP channel](../../plugins/channel-http/), which needs `HTTP_SURFACE_PUBLIC_URL`.
+
+Each plugin's page says what the logins ask for. The web researcher needs none: its search runs in SearXNG, next to
+the app.
 
 ## Checking it does the task
 
@@ -47,10 +53,15 @@ are in `.env`:
 bunx mfw e2e e2e/web-researcher.e2e.ts
 ```
 
-The test sends the agent a question its task should answer and checks what it did, over three runs: the knowledge
-base loads the Confluence skill and searches the pages, the Jira assistant searches the issues the way the Jira
-skill says, the web researcher searches the web and links its source (or asks your go to open the page it would read it in: a site it hasn't read from before waits for it). The tests name nothing of your own (no project,
-no page), so they pass as they are; add cases with what your Confluence or Jira actually holds.
+The test sends the agent a question its task should answer and checks what it did, over three runs:
+
+- the knowledge base loads the Confluence skill and searches the pages;
+- the Jira assistant searches the issues the way the Jira skill says;
+- the web researcher searches the web and links its source. Reading a page on a site it hasn't read from before
+  waits for your go, so asking to open the page counts too.
+
+The tests name nothing of your own (no project, no page), so they pass as they are; add cases with what your
+Confluence or Jira actually holds.
 
 ## From here
 

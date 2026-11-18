@@ -8,7 +8,7 @@ import * as p from "@clack/prompts";
 import { CATALOG, type CatalogEntry } from "./catalog.ts";
 import { appNameError } from "./render.ts";
 import type { CreateArgs } from "./args.ts";
-import { findStarter, STARTERS } from "./starters.ts";
+import { findStarter, keepStarter, STARTERS } from "./starters.ts";
 
 /** The answers `renderApp` needs, apart from the package versions, and the
  * repository's origin (none when absent). */
@@ -108,11 +108,8 @@ export async function askAnswers(args: CreateArgs, dir: string): Promise<Answers
   }
   const plugins = await pick("tool", "Tool plugins (space to select)", args.plugins ?? starter?.plugins ?? []);
   if (plugins === undefined) return cancelled();
-  // Its e2e test calls its plugins: without them the app starts empty of it.
-  const keepsStarter = starter !== undefined && starter.plugins.every((pl) => plugins.includes(pl));
-  if (starter !== undefined && !keepsStarter) {
-    p.log.warn(`The ${starter.id} starter is left out: it needs the ${starter.plugins.join(", ")} plugin`);
-  }
+  const kept = keepStarter(starter, plugins);
+  if (kept.warning !== undefined) p.log.warn(kept.warning);
   const NO_DIRECTORY = "";
   const pickedDirectory = await p.select({
     message: "User directory (who the people are and their roles; none: whoever the channel says, with no roles)",
@@ -138,7 +135,7 @@ export async function askAnswers(args: CreateArgs, dir: string): Promise<Answers
   p.note(
     [
       `App: ${name}`,
-      ...(keepsStarter ? [`Starter: ${starter.title}`] : []),
+      ...(kept.starter ? [`Starter: ${kept.starter.title}`] : []),
       `Assistant: You are ${assistantName}, ${role}.`,
       `Channels: ${channels.length > 0 ? channels.join(", ") : "none"}`,
       ...(auth !== undefined ? [`Auth: ${auth}`] : []),
@@ -158,7 +155,7 @@ export async function askAnswers(args: CreateArgs, dir: string): Promise<Answers
     plugins,
     ...(auth !== undefined ? { auth } : {}),
     ...(directory !== undefined ? { directory } : {}),
-    ...(keepsStarter ? { starter: starter.id } : {}),
+    ...(kept.starter ? { starter: kept.starter.id } : {}),
     ...(gitRemote !== undefined ? { gitRemote } : {}),
   };
 }

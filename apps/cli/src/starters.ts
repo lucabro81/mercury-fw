@@ -36,7 +36,7 @@ export const STARTERS: Starter[] = [
 
 The app started as a knowledge assistant: it reads the team's Confluence (read-only) and keeps a wiki of what it learns, which it reviews every night.
 
-- Confluence is reached through the \`confluence\` command-line tool, as each person: set up its login once with \`mfw credentials setup @mercury-fw/plugin-confluence\` (the plugin's page on the documentation site says what it asks for).
+- Confluence is reached through the \`confluence\` command-line tool, acting as the person who asks. Two logins are set up once, inside the app's container: \`mfw credentials setup @mercury-fw/plugin-confluence\` for the Service Account the terminal runs as (\`mfw repl\`, \`mfw e2e\`), and \`mfw credentials setup @mercury-fw/plugin-confluence --user-app\` for the app people log in through. People then log in from the link the agent sends them on the HTTP channel, which needs \`HTTP_SURFACE_PUBLIC_URL\`. The plugin's page on the documentation site has the details.
 - \`mfw e2e e2e/knowledge-base.e2e.ts\` checks that the agent looks things up in Confluence before answering. Add cases with what your Confluence holds.
 `,
   },
@@ -52,7 +52,7 @@ The app started as a knowledge assistant: it reads the team's Confluence (read-o
 The app started as a Jira assistant: it searches and reads issues, creates them, moves them, assigns them and comments on them; deleting one waits for the person's confirmation.
 
 - \`JIRA_SITE_URL\` in \`.env\`: the Jira site the links point to.
-- Jira is reached through the \`jira\` command-line tool, as each person: set up its login once with \`mfw credentials setup @mercury-fw/plugin-jira\` (the plugin's page on the documentation site says what it asks for).
+- Jira is reached through the \`jira\` command-line tool, acting as the person who asks. Two logins are set up once, inside the app's container: \`mfw credentials setup @mercury-fw/plugin-jira\` for the Service Account the terminal runs as (\`mfw repl\`, \`mfw e2e\`), and \`mfw credentials setup @mercury-fw/plugin-jira --user-app\` for the app people log in through. People then log in from the link the agent sends them on the HTTP channel, which needs \`HTTP_SURFACE_PUBLIC_URL\`. The plugin's page on the documentation site has the details.
 - \`mfw e2e e2e/jira-assistant.e2e.ts\` checks that the agent searches Jira the way its skill says. Add cases with what your Jira holds.
 `,
   },
@@ -72,6 +72,14 @@ The app started as a research assistant: it searches the web through SearXNG, wh
 `,
   },
 ];
+
+/** Whether `starter` survives the plugins picked: its e2e test calls its
+ * plugins, so without one of them it's left out, with what to tell the user. */
+export function keepStarter(starter: Starter | undefined, plugins: string[]): { starter?: Starter; warning?: string } {
+  if (starter === undefined) return {};
+  const missing = starter.plugins.filter((p) => !plugins.includes(p));
+  return missing.length === 0 ? { starter } : { warning: `The ${starter.id} starter is left out: it needs the ${missing.join(", ")} plugin` };
+}
 
 /** The starter with `id`, or undefined when there's none. */
 export function findStarter(id: string): Starter | undefined {
