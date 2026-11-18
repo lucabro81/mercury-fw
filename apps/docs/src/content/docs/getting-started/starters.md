@@ -49,7 +49,7 @@ bunx mfw e2e e2e/web-researcher.e2e.ts
 
 The test sends the agent a question its task should answer and checks what it did, over three runs: the knowledge
 base loads the Confluence skill and searches the pages, the Jira assistant searches the issues the way the Jira
-skill says, the web researcher searches the web and links its source. The tests name nothing of your own (no project,
+skill says, the web researcher searches the web and links its source (or asks your go to open the page it would read it in: a site it hasn't read from before waits for it). The tests name nothing of your own (no project,
 no page), so they pass as they are; add cases with what your Confluence or Jira actually holds.
 
 ## From here

@@ -68,7 +68,7 @@ The app started as a Jira assistant: it searches and reads issues, creates them,
 The app started as a research assistant: it searches the web through SearXNG, which runs next to it, reads the pages it finds and links them in its answers. A page on a site it hasn't read from before waits for the person's go.
 
 - \`SEARXNG_SECRET\` in \`.env\`: any long random string (\`openssl rand -hex 32\`).
-- \`mfw e2e e2e/web-researcher.e2e.ts\` checks that the agent searches before answering and links its source.
+- \`mfw e2e e2e/web-researcher.e2e.ts\` checks that the agent searches before answering and links its source, or asks to open the page it would read it in.
 `,
   },
 ];
