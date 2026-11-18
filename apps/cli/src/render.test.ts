@@ -8,6 +8,7 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { DEFAULT_PERSONA_TONE } from "@mercury-fw/core";
 import { CATALOG, type CatalogEntry } from "./catalog.ts";
+import { findStarter } from "./starters.ts";
 import { configValue, renderApp, type RenderInput } from "./render.ts";
 
 /** The catalog's ids of `kind`, as an error lists them: a plugin `bun run new-plugin --catalog` adds is one too. */
@@ -329,8 +330,48 @@ describe("renderApp: mercury.config.ts", () => {
   });
 });
 
-// #337: the hoisted-linker workaround is gone — apps install with Bun's
-// isolated linker, the default when workspaces are present.
+describe("renderApp: a starter", () => {
+  const JIRA_STARTER = input({ plugins: ["jira"], role: "the team's project assistant", starter: "jira-assistant" });
+
+  test("adds its e2e test and its README section, and nothing else", () => {
+    const files = renderApp(JIRA_STARTER);
+    expect([...files.keys()].sort()).toEqual([...ALWAYS, "e2e/jira-assistant.e2e.ts"].sort());
+    expect(files.get("e2e/jira-assistant.e2e.ts")).toBe(findStarter("jira-assistant")!.e2e);
+    const readme = files.get("README.md")!;
+    expect(readme).toContain(`\n${findStarter("jira-assistant")!.readme}\n## Layout\n`);
+  });
+
+  test("the config is what its plugins and role render, as without it", () => {
+    const { starter: _, ...plain } = JIRA_STARTER;
+    expect(renderApp(JIRA_STARTER).get("mercury.config.ts")).toBe(renderApp(plain).get("mercury.config.ts"));
+  });
+
+  test.each([
+    ["knowledge-base", ["confluence"], "the team's knowledge assistant: you answer from the team's Confluence and wiki, and name the pages you used", "## Team knowledge base"],
+    ["jira-assistant", ["jira"], "the team's project assistant: you find, read and update Jira issues for the people you talk to", "## Jira assistant"],
+    ["web-researcher", ["web-search"], "a research assistant: you search the web and answer with links to the sources you read", "## Web researcher"],
+  ])("%s: its plugins, its role as the identity, its e2e test, its README section before Layout", (id, plugins, role, heading) => {
+    const files = renderApp(input({ plugins, role, starter: id }));
+    expect(files.get("mercury.config.ts")).toContain(`    identity: \`You are \${name}, ${role}.\`,\n`);
+    const e2e = files.get(`e2e/${id}.e2e.ts`)!;
+    expect(e2e).toContain('import { e2e } from "@mercury-fw/cli/e2e";\n');
+    expect(e2e).toContain(`  plugins: ${JSON.stringify(plugins)},\n`);
+    const readme = files.get("README.md")!;
+    expect(readme.indexOf(`\n${heading}\n`)).toBeGreaterThan(-1);
+    expect(readme.indexOf(`\n${heading}\n`)).toBeLessThan(readme.indexOf("\n## Layout\n"));
+    expect([...files.keys()].filter((k) => k.startsWith("e2e/"))).toEqual([`e2e/${id}.e2e.ts`]);
+  });
+
+  test("refuses a starter there's none of, naming the ones there are", () => {
+    expect(() => renderApp(input({ starter: "slack-bot" }))).toThrow('Unknown starter "slack-bot" (valid: knowledge-base, jira-assistant, web-researcher)');
+  });
+
+  // Its e2e test calls the starter's plugins: without them it can't pass.
+  test("refuses a starter without its plugins", () => {
+    expect(() => renderApp(input({ plugins: ["bitbucket"], starter: "jira-assistant" }))).toThrow("The jira-assistant starter needs the jira plugin");
+  });
+});
+
 describe("configValue", () => {
   const entry = { id: "guest-wifi", kind: "tool" as const, package: "@mercury-fw/plugin-guest-wifi", exportName: "guestWifiPlugin", env: [] };
 
@@ -344,6 +385,8 @@ describe("configValue", () => {
   });
 });
 
+// #337: the hoisted-linker workaround is gone — apps install with Bun's
+// isolated linker, the default when workspaces are present.
 describe("renderApp: bunfig.toml", () => {
   test("is not generated, whatever was chosen", () => {
     for (const choice of [EMPTY, HTTP_JIRA, FULL]) {

@@ -25,8 +25,8 @@ included, so the commands always match the app's framework. It says so in one li
 
 ### `mfw create <folder>`
 
-Writes a new app into `<folder>`, which must be missing or empty. Without flags it asks the app's name, the
-assistant's name and role, which channels, tool plugins, auth provider and directory to include, and a git remote.
+Writes a new app into `<folder>`, which must be missing or empty. Without flags it asks the app's name, what the agent is for (a
+[starter](../../getting-started/starters/), or nothing), the assistant's name and role, which channels, tool plugins, auth provider and directory to include, and a git remote.
 Then it runs `bun install` and makes a git repository with a first commit (nothing is pushed). The app comes with
 an `AGENTS.md` and the `mercury-plugin` skill, for a coding assistant working on it.
 `bun create mercury-agent <folder>` runs the same command.
@@ -40,6 +40,7 @@ an `AGENTS.md` and the `mercury-plugin` skill, for a coding assistant working on
 | `--plugins <ids>` | Comma-separated: `jira`, `bitbucket`, `atlassian-admin`, `zitadel`, `web-search`, `confluence`. |
 | `--auth <id>` | The HTTP channel's auth provider, `oidc` or `static`. Required with `http`. |
 | `--directory <id>` | The user directory, `static` or `zitadel`. |
+| `--starter <id>` | An agent set up for a task: `knowledge-base`, `jira-assistant`, `web-researcher` (see [Starters](../../getting-started/starters/)). `--plugins` and `--role` win over it; a `--plugins` list without the starter's plugins is refused. |
 | `--local-packages <folder>` | Installs packages packed in `<folder>` instead of the registry's, to try unreleased ones. |
 | `--git-remote <url>` | The repository's `origin`. |
 | `--no-install` | Skip `bun install`. |

@@ -51,6 +51,7 @@ Without a global install: `bun create mercury-agent my-agent` creates an app, an
 Writes a new Mercury app into `<folder>`, which has to be missing or empty; the folder's own name is turned into kebab case (`My Agent` becomes `my-agent`, the path above it stays as typed). Without flags it asks:
 
 - the app name (the `name` in `package.json`, defaulting to the folder's);
+- what the agent is for: a starter (`knowledge-base`, `jira-assistant`, `web-researcher`), which pre-selects its plugins and pre-fills the role, or nothing to start empty;
 - the assistant's name and role: the whole persona goes in the config, the name written once as a `const` and referred to by the identity (`` `You are ${name}, the platform team's release assistant.` ``) and by the tone, written out in full to edit;
 - which channels and which tool plugins to include (none is fine: the REPL always works);
 - the git remote for `origin`, which you can leave empty (most of the time it doesn't exist yet when you scaffold).
@@ -68,6 +69,7 @@ Then it runs `bun install` in the app and creates a git repository on `main` wit
 | `--plugins <ids>` | Comma-separated: `jira`, `bitbucket`, `atlassian-admin`, `zitadel`, `web-search` (with a SearXNG service next to the app: set `SEARXNG_SECRET` in the env file), `confluence`. |
 | `--auth <id>` | The HTTP channel's auth provider, `oidc` or `static`: required with `http`, refused without it, since the channel doesn't start without one. The wizard asks for it once `http` is chosen. |
 | `--directory <id>` | The user directory, `static` or `zitadel`: who the people are and their roles. Without one, the person is whoever the channel says, with no roles. |
+| `--starter <id>` | An agent set up for a task: `knowledge-base`, `jira-assistant` or `web-researcher`. Its plugins and role, unless `--plugins` or `--role` say otherwise (its plugins must stay among them), its e2e test in `e2e/<id>.e2e.ts` and a section of the README. |
 | `--local-packages <folder>` | Installs the packages packed in `<folder>` (`bun pm pack`) instead of the registry's, as [`mfw local-packages`](#mfw-local-packages-folder--mfw-local-packages---off) does on an existing app: their versions come from the tarballs, so a package that isn't published yet works too, and no newer `mfw` is looked up on the registry. For trying unreleased packages in a new app; the test bed makes its apps this way. |
 | `--git-remote <url>` | The repository's `origin`, taken as typed. |
 | `--no-install` | Don't run `bun install`. |

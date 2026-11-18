@@ -17,6 +17,7 @@ import gitignore from "../template/gitignore.tpl" with { type: "text" };
 import dockerignore from "../template/dockerignore.tpl" with { type: "text" };
 import dockerfile from "../template/Dockerfile.tpl" with { type: "text" };
 import { agentFiles } from "./agent-files.ts";
+import { findStarter, STARTERS, type Starter } from "./starters.ts";
 
 /** What the new app is made of. `versions` maps each package the app depends
  * on to the version its range is written against. */
@@ -30,6 +31,8 @@ export type RenderInput = {
   auth?: string;
   /** The user directory: who the people are and their roles. */
   directory?: string;
+  /** The starter the app begins from (see `starters.ts`): its e2e test and README section. */
+  starter?: string;
   versions: Record<string, string>;
 };
 
@@ -211,17 +214,19 @@ export function renderApp(input: RenderInput): Map<string, string> {
   const auth = selected("auth", input.auth === undefined ? [] : [input.auth])[0];
   const directory = selected("directory", input.directory === undefined ? [] : [input.directory])[0];
   const assistantName = input.assistantName.trim();
+  const starter = input.starter === undefined ? undefined : findStarter(input.starter);
 
   const extraFiles = [...channels, ...tools].flatMap((e) => Object.entries(e.files ?? {}));
   const services = tools.flatMap((t) => (t.service ? [t.service] : []));
   return new Map([
     ...extraFiles,
     ...agentFiles(input.name),
+    ...(starter ? [[`e2e/${starter.id}.e2e.ts`, starter.e2e] as [string, string]] : []),
     [".dockerignore", dockerignore],
     [".env.example", renderEnv(channels, auth, tools, directory)],
     [".gitignore", gitignore],
     ["Dockerfile", dockerfile],
-    ["README.md", renderReadme(input.name, channels, auth, tools, directory)],
+    ["README.md", renderReadme(input.name, channels, auth, tools, directory, starter)],
     ["docker-compose.yml", renderCompose(input.name, channels.some((c) => c.id === "http"), services)],
     ["locales/en.json", renderEnglish(tools)],
     ["mercury.config.ts", renderConfig(assistantName, input.role, channels, auth, tools, directory)],
@@ -262,6 +267,15 @@ function validate(input: RenderInput): void {
     selectionError(input.channels, input.plugins, input.auth, input.directory) ?? pairingError(input.channels, input.auth);
   if (selection !== undefined) {
     throw new Error(selection);
+  }
+  if (input.starter !== undefined) {
+    const starter = findStarter(input.starter);
+    if (starter === undefined) {
+      throw new Error(`Unknown starter "${input.starter}" (valid: ${STARTERS.map((s) => s.id).join(", ")})`);
+    }
+    // Its e2e test calls these plugins: without them it can't pass.
+    const missing = starter.plugins.filter((p) => !input.plugins.includes(p));
+    if (missing.length > 0) throw new Error(`The ${starter.id} starter needs the ${missing.join(", ")} plugin`);
   }
 }
 
@@ -578,6 +592,7 @@ function renderReadme(
   auth: CatalogEntry | undefined,
   tools: CatalogEntry[],
   directory: CatalogEntry | undefined,
+  starter?: Starter,
 ): string {
   const list = (entries: CatalogEntry[]) => (entries.length > 0 ? entries.map((e) => e.id).join(", ") : "none");
   // What the app can't start without, named where the reader is about to start it.
@@ -594,7 +609,7 @@ A Mercury app, scaffolded by \`mfw create\`.
 - Channels: ${list(channels)}
 ${auth ? `- Auth: ${auth.id}\n` : ""}- Tool plugins: ${list(tools)}
 ${directory ? `- Directory: ${directory.id}\n` : ""}
-## Layout
+${starter ? `${starter.readme}\n` : ""}## Layout
 
 - \`mercury.config.ts\`: what the app is made of (tool plugins, channels, how their lists read) and the assistant's persona: its name, who it is and how it answers. Edit them freely. Its \`model\` section is how the chat model generates (thinking, temperature, top_p, top_k), each value from \`.env\`: left empty, the model's own applies. Its \`version\` is the one in \`package.json\`, which the HTTP channel's \`GET /version\` shows to anyone, no token needed: Mercury never changes it, and a new one shows once the app is rebuilt. Remove the line to show none.
 - \`locales/\`: the texts people see, one file per language the assistant speaks. \`en.json\` overrides the English ones; add \`it.json\` (and \`it\` to \`i18n.locales\` in the config) for Italian, \`i18n.defaultLocale\` for the language people get when they haven't picked one, \`i18n.timeZone\` (an IANA name such as \`Europe/Rome\`) for the time zone of whoever saved none and whose app says none. The app's own texts (a formatter rule's) are \`app.\` keys, written in English in \`en.json\` and translated in every other file. Mercury logs at startup the keys a file is missing.
