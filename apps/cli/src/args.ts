@@ -19,6 +19,8 @@ export type CreateArgs = {
   auth?: string;
   /** The user directory. */
   directory?: string;
+  /** The starter the app begins from: its plugins and role unless the flags say otherwise. */
+  starter?: string;
   /** The repository's origin, taken as typed. */
   gitRemote?: string;
   /** A folder of packed tarballs the app installs instead of the registry's packages. */
@@ -39,6 +41,7 @@ export type CreateOptions = {
   plugins?: string;
   auth?: string;
   directory?: string;
+  starter?: string;
   gitRemote?: string;
   localPackages?: string;
   yes?: boolean;
@@ -63,6 +66,7 @@ export function toCreateArgs(folder: string, opts: CreateOptions): CreateArgs {
   if (opts.plugins !== undefined) args.plugins = list(opts.plugins);
   if (opts.auth !== undefined && opts.auth.trim() !== "") args.auth = opts.auth.trim();
   if (opts.directory !== undefined && opts.directory.trim() !== "") args.directory = opts.directory.trim();
+  if (opts.starter !== undefined && opts.starter.trim() !== "") args.starter = opts.starter.trim();
   if (opts.localPackages !== undefined) args.localPackages = opts.localPackages;
   // Blank is none, as in the wizard.
   if (opts.gitRemote !== undefined && opts.gitRemote.trim() !== "") args.gitRemote = opts.gitRemote.trim();

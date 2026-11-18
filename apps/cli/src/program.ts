@@ -11,6 +11,7 @@ import { appCommands, RESET_TARGETS, type ResetTarget } from "./app/commands.ts"
 import { pluginKindsHelp } from "./app/plugin-create.ts";
 import { PLUGIN_KINDS } from "./plugin/kinds.ts";
 import { CATALOG } from "./catalog.ts";
+import { STARTERS } from "./starters.ts";
 import { cliVersion } from "./versions.ts";
 import { DEFAULT_ASSISTANT_NAME, DEFAULT_ROLE } from "./wizard.ts";
 
@@ -34,6 +35,12 @@ function positiveInt(flag: string): (value: string) => string {
     }
     return value;
   };
+}
+
+/** The starters with what each is, for `mfw create --help`. */
+function starterList(): string {
+  const width = Math.max(...STARTERS.map((s) => s.id.length));
+  return STARTERS.map((s) => `  ${s.id.padEnd(width)}  ${s.summary}`).join("\n");
 }
 
 /** The help's closing paragraph for the commands that run inside an app. */
@@ -73,6 +80,7 @@ function buildProgram(handlers: ProgramHandlers, result: { code: number }): Comm
       "--directory <id>",
       `the user directory, who the people are and their roles: ${CATALOG.filter((e) => e.kind === "directory").map((e) => e.id).join(", ")} (default: none)`,
     )
+    .option("--starter <id>", `an agent set up for a task, its plugins and role (the flags win): ${STARTERS.map((s) => s.id).join(", ")}`)
     .option("--git-remote <url>", "the repository's origin, taken as typed (default: none)")
     .option(
       "--local-packages <folder>",
@@ -84,11 +92,15 @@ function buildProgram(handlers: ProgramHandlers, result: { code: number }): Comm
     .addHelpText(
       "after",
       `
+Starters:
+${starterList()}
+
 The framework packages get this CLI's version; each chosen plugin or channel
 its latest on the registry (https://registry.npmjs.org, or MFW_REGISTRY).
 
 Examples:
   mfw create my-agent
+  mfw create my-agent --starter web-researcher
   mfw create my-agent --assistant-name Hermes --channels http --auth oidc --plugins jira --yes`,
     )
     .action(async (folder: string, opts: CreateOptions) => {

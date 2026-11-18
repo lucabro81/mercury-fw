@@ -13,6 +13,7 @@ import type { AppDeps } from "./app/commands.ts";
 import { CATALOG, type CatalogEntry } from "./catalog.ts";
 import { main } from "./main.ts";
 import { renderApp } from "./render.ts";
+import { findStarter } from "./starters.ts";
 import { cliVersion } from "./versions.ts";
 
 /** The catalog's ids of `kind`, as an error lists them: a plugin `bun run new-plugin --catalog` adds is one too. */
@@ -155,6 +156,38 @@ Optional, to have mfw everywhere:
     const result = await runWith("http://127.0.0.1:9", "create", dir, "--plugins", "jira", "--yes");
     expect(result.code).toBe(1);
     expect(result.stderr).toContain("Can't reach http://127.0.0.1:9");
+    expect(existsSync(dir)).toBe(false);
+  });
+
+  test("--starter: its plugins, its role, its e2e test", async () => {
+    const dir = join(base, "demo");
+    expect((await run("create", dir, "--starter", "jira-assistant", "--yes")).code).toBe(0);
+    expect(JSON.parse(readFileSync(join(dir, "package.json"), "utf-8")).dependencies["@mercury-fw/plugin-jira"]).toBeDefined();
+    expect(readFileSync(join(dir, "mercury.config.ts"), "utf-8")).toContain(
+      "    identity: `You are ${name}, the team's project assistant: you find, read and update Jira issues for the people you talk to.`,\n",
+    );
+    expect(readFileSync(join(dir, "e2e/jira-assistant.e2e.ts"), "utf-8")).toBe(findStarter("jira-assistant")!.e2e);
+  });
+
+  test("--starter: the flags win over it", async () => {
+    const dir = join(base, "demo");
+    expect((await run("create", dir, "--starter", "jira-assistant", "--role", "a helper", "--yes")).code).toBe(0);
+    expect(readFileSync(join(dir, "mercury.config.ts"), "utf-8")).toContain("    identity: `You are ${name}, a helper.`,\n");
+  });
+
+  test("an unknown starter exits 1, lists the valid ones, writes nothing", async () => {
+    const dir = join(base, "demo");
+    const result = await run("create", dir, "--starter", "slack-bot", "--yes");
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain('Unknown starter "slack-bot" (valid: knowledge-base, jira-assistant, web-researcher)');
+    expect(existsSync(dir)).toBe(false);
+  });
+
+  test("a starter without its plugins exits 1 before anything is written", async () => {
+    const dir = join(base, "demo");
+    const result = await run("create", dir, "--starter", "jira-assistant", "--plugins", "bitbucket", "--yes");
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain("The jira-assistant starter needs the jira plugin");
     expect(existsSync(dir)).toBe(false);
   });
 

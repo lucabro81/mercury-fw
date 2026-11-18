@@ -136,6 +136,18 @@ describe("create", () => {
     expect(h.calls[0]?.[1]).not.toHaveProperty("gitRemote");
   });
 
+  test("--starter: the starter's id, as typed", async () => {
+    const h = harness();
+    await h.run("create", "my-app", "--starter", "jira-assistant");
+    expect(h.calls).toEqual([["create", { dir: "my-app", starter: "jira-assistant", yes: false, install: true, git: true }]]);
+  });
+
+  test("--help lists the starters", async () => {
+    const h = harness();
+    await h.run("create", "--help");
+    expect(h.out()).toContain("  jira-assistant  finds, reads and updates the team's Jira issues");
+  });
+
   test("-y is --yes", async () => {
     const h = harness();
     await h.run("create", "d", "-y");

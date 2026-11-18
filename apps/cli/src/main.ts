@@ -18,20 +18,32 @@ import { copyPacks, readPacks, withLocalOverrides } from "./app/local-packages.t
 import { findApp, type App } from "./app/find-app.ts";
 import { askAnswers, DEFAULT_ASSISTANT_NAME, DEFAULT_ROLE, type Answers } from "./wizard.ts";
 import { finishApp, finishMessage, spawnRun, type Run } from "./finish.ts";
+import { findStarter, STARTERS } from "./starters.ts";
 import { targetError, writeApp } from "./write.ts";
 
-/** The answers taken from the flags alone, defaults for the rest. */
+/** The answers taken from the flags alone, the starter's or the defaults for the rest. */
 function answersFromFlags(args: CreateArgs, defaultName: string): Answers {
+  const starter = args.starter === undefined ? undefined : findStarter(args.starter);
   return {
     name: args.name ?? defaultName,
     assistantName: args.assistantName ?? DEFAULT_ASSISTANT_NAME,
-    role: args.role ?? DEFAULT_ROLE,
+    role: args.role ?? starter?.role ?? DEFAULT_ROLE,
     channels: args.channels ?? [],
-    plugins: args.plugins ?? [],
+    plugins: args.plugins ?? starter?.plugins ?? [],
+    ...(starter !== undefined ? { starter: starter.id } : {}),
     ...(args.auth !== undefined ? { auth: args.auth } : {}),
     ...(args.directory !== undefined ? { directory: args.directory } : {}),
     ...(args.gitRemote !== undefined ? { gitRemote: args.gitRemote } : {}),
   };
+}
+
+/** What's wrong with `--starter`: one there's none of, or `--plugins` without its plugins. */
+function starterError(args: CreateArgs): string | undefined {
+  if (args.starter === undefined) return undefined;
+  const starter = findStarter(args.starter);
+  if (starter === undefined) return `Unknown starter "${args.starter}" (valid: ${STARTERS.map((s) => s.id).join(", ")})`;
+  const missing = args.plugins === undefined ? [] : starter.plugins.filter((p) => !args.plugins!.includes(p));
+  return missing.length > 0 ? `The ${starter.id} starter needs the ${missing.join(", ")} plugin` : undefined;
 }
 
 /** Runs `argv` with stdio inherited and `env` on top of this process's
@@ -130,7 +142,8 @@ async function create(args: CreateArgs, rawArgs: string[], relaunch: Relaunch, g
     targetError(dir) ??
     selectionError(args.channels ?? [], args.plugins ?? [], args.auth, args.directory) ??
     (pairedByFlags ? pairingError(args.channels ?? [], args.auth) : undefined) ??
-    remoteError(args);
+    remoteError(args) ??
+    starterError(args);
   if (early !== undefined) {
     throw new Error(early);
   }

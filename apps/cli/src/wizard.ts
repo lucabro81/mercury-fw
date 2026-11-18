@@ -8,6 +8,7 @@ import * as p from "@clack/prompts";
 import { CATALOG, type CatalogEntry } from "./catalog.ts";
 import { appNameError } from "./render.ts";
 import type { CreateArgs } from "./args.ts";
+import { findStarter, STARTERS } from "./starters.ts";
 
 /** The answers `renderApp` needs, apart from the package versions, and the
  * repository's origin (none when absent). */
@@ -21,6 +22,8 @@ export type Answers = {
   auth?: string;
   /** The user directory, when there's one. */
   directory?: string;
+  /** The starter the app begins from, when there's one. */
+  starter?: string;
   gitRemote?: string;
 };
 
@@ -57,6 +60,22 @@ export async function askAnswers(args: CreateArgs, dir: string): Promise<Answers
     validate: (v) => (v ? appNameError(v) : appNameError(nameDefault)),
   });
   if (p.isCancel(name)) return cancelled();
+  // What the agent is for: a starter pre-fills the role and the plugins below.
+  const NO_STARTER = "";
+  let starterId = args.starter;
+  if (starterId === undefined) {
+    const picked = await p.select({
+      message: "What is the agent for?",
+      options: [
+        ...STARTERS.map((s) => ({ value: s.id, label: s.title, hint: s.summary })),
+        { value: NO_STARTER, label: "Something else (start empty)" },
+      ],
+      initialValue: NO_STARTER,
+    });
+    if (p.isCancel(picked)) return cancelled();
+    starterId = picked === NO_STARTER ? undefined : picked;
+  }
+  const starter = starterId === undefined ? undefined : findStarter(starterId);
   const assistantName = await p.text({
     message: "Assistant name",
     ...suggest(args.assistantName ?? DEFAULT_ASSISTANT_NAME),
@@ -65,7 +84,7 @@ export async function askAnswers(args: CreateArgs, dir: string): Promise<Answers
   if (p.isCancel(assistantName)) return cancelled();
   const role = await p.text({
     message: `${assistantName} is… (completes "You are ${assistantName}, …")`,
-    ...suggest(args.role ?? DEFAULT_ROLE),
+    ...suggest(args.role ?? starter?.role ?? DEFAULT_ROLE),
     validate: (v) => (v === undefined || v === "" || v.trim() ? undefined : "The role can't be empty"),
   });
   if (p.isCancel(role)) return cancelled();
@@ -87,8 +106,13 @@ export async function askAnswers(args: CreateArgs, dir: string): Promise<Answers
   } else if (args.auth !== undefined) {
     p.log.warn(`--auth ${args.auth} ignored: it goes with the http channel, which isn't chosen`);
   }
-  const plugins = await pick("tool", "Tool plugins (space to select)", args.plugins ?? []);
+  const plugins = await pick("tool", "Tool plugins (space to select)", args.plugins ?? starter?.plugins ?? []);
   if (plugins === undefined) return cancelled();
+  // Its e2e test calls its plugins: without them the app starts empty of it.
+  const keepsStarter = starter !== undefined && starter.plugins.every((pl) => plugins.includes(pl));
+  if (starter !== undefined && !keepsStarter) {
+    p.log.warn(`The ${starter.id} starter is left out: it needs the ${starter.plugins.join(", ")} plugin`);
+  }
   const NO_DIRECTORY = "";
   const pickedDirectory = await p.select({
     message: "User directory (who the people are and their roles; none: whoever the channel says, with no roles)",
@@ -114,6 +138,7 @@ export async function askAnswers(args: CreateArgs, dir: string): Promise<Answers
   p.note(
     [
       `App: ${name}`,
+      ...(keepsStarter ? [`Starter: ${starter.title}`] : []),
       `Assistant: You are ${assistantName}, ${role}.`,
       `Channels: ${channels.length > 0 ? channels.join(", ") : "none"}`,
       ...(auth !== undefined ? [`Auth: ${auth}`] : []),
@@ -133,6 +158,7 @@ export async function askAnswers(args: CreateArgs, dir: string): Promise<Answers
     plugins,
     ...(auth !== undefined ? { auth } : {}),
     ...(directory !== undefined ? { directory } : {}),
+    ...(keepsStarter ? { starter: starter.id } : {}),
     ...(gitRemote !== undefined ? { gitRemote } : {}),
   };
 }
