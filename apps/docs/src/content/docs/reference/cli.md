@@ -1,13 +1,13 @@
 ---
-title: The mfw command
-description: Every command of mfw, Mercury's command-line tool, with what it runs underneath.
+title: The mfw CLI
+description: Every command of mfw, Mercury's CLI (its command-line tool), with what it runs underneath.
 sidebar:
   order: 2
 ---
 
-`mfw` creates an app, then runs it. Every command except `create` and `upgrade` works from inside an app (its
-folder or any folder under it) and wraps the `docker compose` calls that app needs, so you don't have to remember
-them; each section says which calls those are.
+`mfw`, Mercury's CLI, creates an app, then runs it. Every command except `create` and `upgrade` works from inside
+an app (its folder or any folder under it) and wraps the `docker compose` calls that app needs, so you don't have to
+remember them; each section says which calls those are.
 
 Every app has its own copy of `mfw`, at the app's framework version: run it with `bunx mfw`. You can also install it
 globally, once, and type `mfw` anywhere:
