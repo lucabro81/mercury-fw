@@ -8,6 +8,7 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { DEFAULT_PERSONA_TONE } from "@mercury-fw/core";
 import { CATALOG, type CatalogEntry } from "./catalog.ts";
+import { findStarter } from "./starters.ts";
 import { configValue, renderApp, type RenderInput } from "./render.ts";
 
 /** The catalog's ids of `kind`, as an error lists them: a plugin `bun run new-plugin --catalog` adds is one too. */
@@ -331,6 +332,32 @@ describe("renderApp: mercury.config.ts", () => {
 
 // #337: the hoisted-linker workaround is gone — apps install with Bun's
 // isolated linker, the default when workspaces are present.
+describe("renderApp: a starter", () => {
+  const JIRA_STARTER = input({ plugins: ["jira"], role: "the team's project assistant", starter: "jira-assistant" });
+
+  test("adds its e2e test and its README section, and nothing else", () => {
+    const files = renderApp(JIRA_STARTER);
+    expect([...files.keys()].sort()).toEqual([...ALWAYS, "e2e/jira-assistant.e2e.ts"].sort());
+    expect(files.get("e2e/jira-assistant.e2e.ts")).toBe(findStarter("jira-assistant")!.e2e);
+    const readme = files.get("README.md")!;
+    expect(readme).toContain(`\n${findStarter("jira-assistant")!.readme}\n## Layout\n`);
+  });
+
+  test("the config is what its plugins and role render, as without it", () => {
+    const { starter: _, ...plain } = JIRA_STARTER;
+    expect(renderApp(JIRA_STARTER).get("mercury.config.ts")).toBe(renderApp(plain).get("mercury.config.ts"));
+  });
+
+  test("refuses a starter there's none of, naming the ones there are", () => {
+    expect(() => renderApp(input({ starter: "slack-bot" }))).toThrow('Unknown starter "slack-bot" (valid: knowledge-base, jira-assistant, web-researcher)');
+  });
+
+  // Its e2e test calls the starter's plugins: without them it can't pass.
+  test("refuses a starter without its plugins", () => {
+    expect(() => renderApp(input({ plugins: ["bitbucket"], starter: "jira-assistant" }))).toThrow("The jira-assistant starter needs the jira plugin");
+  });
+});
+
 describe("configValue", () => {
   const entry = { id: "guest-wifi", kind: "tool" as const, package: "@mercury-fw/plugin-guest-wifi", exportName: "guestWifiPlugin", env: [] };
 
