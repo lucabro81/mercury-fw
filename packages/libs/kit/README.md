@@ -4,6 +4,43 @@ What a [Mercury](https://github.com/lucabro81/mercury-fw) plugin author imports:
 
 On Mercury's documentation site: [the contracts' reference](https://lucabro81.github.io/mercury-fw/reference/api/).
 
+## Contents
+
+- [A minimal plugin](#a-minimal-plugin)
+- [CLI credentials](#cli-credentials)
+- [Whose identity a tool uses](#whose-identity-a-tool-uses)
+- [What the model reads](#what-the-model-reads)
+- [Models](#models)
+- [Context layers](#context-layers)
+- [Hooks and what else a plugin can use](#hooks-and-what-else-a-plugin-can-use)
+- [Texts the person reads](#texts-the-person-reads)
+
+## A minimal plugin
+
+```ts
+import type { Plugin } from "@mercury-fw/kit";
+import { tool } from "ai";
+import { z } from "zod";
+
+export function helloPlugin(): Plugin {
+  return {
+    apiVersion: 7, // the contract it's written for, as a literal
+    name: "hello",
+    description: "Says hello to whoever asks.",
+    actsAs: "anyone",
+    build: () => ({
+      sessionTools: () => ({
+        hello: tool({ description: "Says hello.", inputSchema: z.object({}), execute: async () => ({ ok: true, text: "Hello!" }) }),
+      }),
+    }),
+  };
+}
+```
+
+Don't start from this by hand: in an app, `mfw plugin create <kind> <name>` writes a working plugin of any kind (a tool, a CLI tool, a memory, a context strategy, a channel, an auth provider, a directory, a trace sink, a store) with its tests, and in Mercury's repository `bun run new-plugin` does the same for a first-party package. [Writing a plugin](https://lucabro81.github.io/mercury-fw/concepts/writing-plugins/) on the documentation site has the kinds, the rules every plugin follows and how to check one.
+
+## CLI credentials
+
 A plugin whose CLI keeps its login in a folder under the home, reading it from there at runtime, declares that folder in its `package.json`, by default under `~/.config`:
 
 ```json
@@ -23,26 +60,38 @@ or anywhere else under the home, with `{ "path": ".my-cli" }` instead of `folder
 
 An app then runs `mfw credentials setup <plugin>`, which runs `setup` in a one-off container on the user's terminal, so the CLI asks for what it needs and writes its login straight onto a volume that keeps what the CLI writes back (a folder outside `~/.config` gets a link from its usual place to the volume). A CLI that authenticates any other way isn't covered by this, and neither is one that deletes its own folder and makes it again.
 
+## Whose identity a tool uses
+
 A plugin also says whose identity its tools act with (`actsAs`). `"person"`: the person the turn is for, who logs in to the service through Mercury; the plugin contributes a `login` (`start` and `complete`, which `createCliPersonLogin` from `@mercury-fw/cli-engine` builds for a CLI with a two-step remote login), and its tools get the person and `requireLogin` in their context (`createCliTool` takes both, adds `--user` to every command and asks for the login when the CLI exits with code 3). `"mercury"`, or nothing declared: Mercury's own identity, whoever asks, which only someone allowed to make Mercury act as itself may use: a person holding `mercury.act-as-self` (every plugin) or `mercury.act-as-self.<plugin>` (that one), and the terminal. Those people also get each tool of a plugin acting as the person a second time, as `<tool>AsSelf`, run with Mercury's identity. `"anyone"`: no identity at all, for a public service with no login (web search, for example). Everyone gets such a plugin, with no second version of its tools, and its tools still get the person the turn is for (on the terminal, the operator), to keep what belongs to each one; they can't ask for a login. Roles come from the directory the app declares (`DirectoryPlugin` in the channel contract: given who a channel says is talking, it returns the person and their roles, or `null` for someone it doesn't know).
+
+## What the model reads
 
 Every plugin says what it lets the agent do in its `description`: one sentence, in English, for the model. The system prompt lists the plugins offered to the person with their descriptions, and the model answers "what can you do?" from that list. It says what, never how: how to use the plugin belongs to its fragment and skills. The core doesn't load a plugin without one.
 
 The assistant has the name the app gives it (`persona.name`), so a plugin never writes one into what the model reads. Its fragment, its skills and its tools' descriptions say `{{assistant}}`, which the core replaces with that name. A text the plugin builds while running gets the name as `assistantName` in its `build()` context (a channel gets it in its runtime context too). Where the one acting is the system around the model (a list it appends, an account it picks), the text says "the system" and no name at all.
 
+## Models
+
 A plugin that calls a model of its own doesn't pick or build it: it takes a `MercuryModelHandle` in its own configuration, which the app declares with `ollamaModel(name, settings)` from `@mercury-fw/core` (`myPlugin({ model: ollamaModel("<its-model>") })`), and in `build()` turns it into the model with `ctx.modelFor(handle)`, the same model for the same handle, queued like the app's own (a call during a turn never waits, and counts against the background work on that model). `ctx.model` is the app's turn model, for a check on an answer, queued the same way. `modelFor` is absent with a core older than 0.73.
+
+## Context layers
 
 A plugin that has something for the model to read contributes a context layer from `build()`: `context: { scope, build(req) }`. `build` gets the session, the person (`operator` on the terminal), how the plugin is offered (`as`), what they wrote (`input`), whether the space is shared, and `knobs`, and returns blocks of text, the most important first; the core keeps whole blocks within the budget of the app's context profile. A `"session"` layer is built once per session and person, at their first turn in it (in a shared space each sender gets their own), and stays in the system prompt; a `"turn"` layer is built every turn and goes in front of the person's message, where the model reads it on later turns too (so each call starts with the previous one and the model's cache holds), while what the conversation keeps is the message without it. A layer runs only when the app lists the plugin in a profile's `layers`, and only for people the plugin is offered to; one that throws is logged and skipped: a `"turn"` layer for that message, a `"session"` layer until the session closes (so the system prompt doesn't change halfway). Ignored with a core older than 0.74.
 
 A layer can offer **knobs**, settings an admin changes per profile while the instance runs: `context: { scope, build, knobs: { topK: { type: "integer", default: 5, description: "How many documents", min: 1, max: 20 } } }`. A knob is a `boolean`, an `integer` or a `number` (with an optional `min` and `max`), a `string`, or an `enum` (with its `values`); `default` and a one-line `description` are required. `req.knobs` holds every knob the layer declares, with the profile's value or the default, so `build` never has to fill one in. A plugin whose knob contradicts itself (a `default` outside its limits, an `enum` with no values) isn't loaded. Knobs are ignored with a core older than 0.74.
 
+## Hooks and what else a plugin can use
+
 A plugin that learns from conversations contributes hooks from `build()`. `afterTurn(turn)` runs once a turn ended with an answer: who wrote it (`person`, `operator` on the terminal), how the plugin was offered (`as`), what they wrote (`input`, empty for a turn the agent opened or resumed after a confirmation), the answer after the guards, the tools called (`calls`: tool, input, whether it worked, its error), and whether the space is shared. `onTurnRecord(record)` runs once any turn is over, whatever its outcome (done, cancelled, failed), and once a confirmation is resolved: a `TurnRecord` with all an archive keeps of it, `archivedMessages(record)` giving those messages in the store's shape; two records of one session may be handled at once, so order them by their times. `onSessionClose(session)` runs once a quiet session is closed, with its messages. A plugin hears only the turns of people it's offered to, and the close of a session whose last turn it heard. Nothing waits for a hook, and one that throws is logged. Work that calls a model goes through `ctx.job(name, urgency, fn)`: it runs only in the slots the turns leave free, its model calls (on `ctx.model` or a `modelFor` model) one at a time, `"soon"` before `"idle"`, and the traces show it as `<plugin>:<name>`. The hooks and `job` are ignored or absent with a core older than 0.74.
 
 A plugin may be `async` in `build()`, for what it sets up once at startup (its spaces in the index, say): the agent waits for it before taking turns, and one that rejects leaves the plugin out, like one that throws. Besides the models and `job`, every plugin's `build()` context has `backgroundModel` (the app's `background` model, queued), `daily(name, { at, timeZone? }, fn)` (work every day at `"HH:MM"`, in the app's `i18n.timeZone` unless it names another; only the running service runs it, a missed day is never made up, and an `at` or a time zone that can't be stops the agent at startup), `profiles` (each person's name, language and time zone, read and written with the core's checks) and `toolLog` (the tool calls of the recent turns, per person, in memory). What the app declares in its config, a plugin asks for in `needs` and gets in the same context: `"vectorIndex"` gives `vectorIndex`, `"embedding"` gives `embed`, `"conversationStore"` gives `conversations`. An app declaring the plugin without what it needs doesn't start; one whose index or store couldn't start leaves the plugin out, and the log says why. Everything kept in the conversation store has one shape, `StoredMessage`, the same the channels read when someone reopens a conversation: a plugin writing there writes it, leaving out the optional parts it has nothing for. A plugin can also keep the conversation itself: it contributes `conversation` (a `ConversationOwner`, whose `open` returns the session's `Conversation`), and the app names it in a context profile; a plugin keeping conversations that no profile names stops the agent at startup. Adding a message may resolve to a `CompressionReport`, when the conversation shortened what came before it: the agent records it in its traces as `history.compressed`. `formatTurnStamp` is the line the agent puts before each of the person's messages, for a conversation bringing archived ones back. A `Conversation` can also decide what else the model reads, with optional methods: `toolOutput` (each tool result during the turn, the fields the core reads put back, a staged confirmation or login request never passed), `pastCall` (an earlier call's result), `turnIndex` (text in front of the person's message every turn) and `placeLayers` (the session layers' blocks, `LayerBlocks`, before the budget); the archive, the hooks and the traces keep the real results, and they're ignored with a core older than 0.78. A context layer's request says whether the conversation is one its client reopened (`reopened`). All of this is version 7 of the plugin contract, from the framework at 0.75. The documentation site's [What a plugin can use](https://lucabro81.github.io/mercury-fw/concepts/primitives/) has all of it, with an example.
+
+## Texts the person reads
 
 What a plugin shows the person in its own words (a status line while its tool runs, a choice's label, a heading it adds) is written once, in English, in the plugin's `messages`, every key under its name (`web-search.choice.once`); the core refuses a plugin with a key outside it, and `core` and `app` can't be plugin names (their keys are the core's and the app's). While a turn runs the plugin gets `t`, the texts of the person the turn is for, and asks for each text by its key: in `SessionToolContext.t`, as the second argument of a status describer, the third of a post-processor, and in a post-turn guard (`statusLabel(t)`, `run(text, steps, t)`). The app translates the keys in its language files. The core's own keys (`core.…`) are always there, `core.status.command` for a CLI command's default status line among them. This came with version 5 of the plugin contract; version 6 made the `description` required. A plugin written for an older version isn't loaded, and the log says why.
 
 A channel's texts work the same way (channel contract version 7): its English in `messages`, under its name; `ctx.i18n.forRequest(principal, hint)` gives the texts for a request, in the person's language, else the `hint` (an `Accept-Language` value the channel passes on, also as `InboundTurn.languageHint`), else the app's default. `ctx.confirm` and `ctx.resolveConfirmation` hand back what to tell the person (`{ text, resume? }`), so a channel never words a confirmation itself, and `finalize(text, { pendingNote })` says when the text begins with the core's stand-in for an answer the model didn't write, which a channel showing its own confirmation UI drops.
 
-A proper workflow for writing plugins, with an SDK on top of these contracts, is planned ([#27](https://github.com/lucabro81/mercury-fw/issues/27)).
+An SDK on top of these contracts is planned ([#27](https://github.com/lucabro81/mercury-fw/issues/27)).
 
 MIT

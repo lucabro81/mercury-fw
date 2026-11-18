@@ -3,14 +3,32 @@ title: Proposing a plugin
 description: How a plugin becomes one of Mercury's own packages, published on npm for everyone.
 sidebar:
   order: 3
-  badge:
-    text: Soon
 ---
 
 A plugin written inside your app serves that app. When a plugin is useful to others (it wraps a service many
 teams use, say), it can become one of Mercury's own packages: it lives in the Mercury repository, gets published
-on npm as `@mercury-fw/<name>`, and shows up among the choices of `mfw create`.
+on npm as `@mercury-fw/<name>`, and can show up among the choices of `mfw create`.
 
-This page will explain how to propose one, once the way plugins are written settles. Until then, open an issue on
-[the repository](https://github.com/lucabro81/mercury-fw/issues) describing the service and what the agent should
-do with it.
+## Start with an issue
+
+Before any code, open an issue on [the repository](https://github.com/lucabro81/mercury-fw/issues) describing the
+service, what the agent should do with it, and who will look after the plugin. A package in the repository is one
+the maintainers take on for good, so whether it belongs there is settled first.
+
+## Then the package
+
+Once it's agreed, the plugin starts in a clone of the repository, from the same templates `mfw plugin create` uses
+in an app:
+
+```bash
+bun run new-plugin tool acme --catalog
+```
+
+It writes the package under `packages/` with what publishing needs (its manifest, its tsconfig, its changeset)
+and, with `--catalog`, the entry that makes `mfw create` offer it and its page on this site. It prints the steps
+left: what to write in the repository's `AGENTS.md`, the checks to run, and the first publish, which a maintainer does by
+hand, since npm can trust the release workflow only with a package that already exists.
+
+From there it follows the repository's own way of working: the code with its tests, English texts with nothing
+specific to one company, a README, and a review before it's merged. [Writing a plugin](../../concepts/writing-plugins/)
+has the rules every plugin follows.

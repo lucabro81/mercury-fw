@@ -27,6 +27,7 @@ On Mercury's documentation site: [the `mfw` reference](https://lucabro81.github.
   - [`mfw local-packages <folder>` / `mfw local-packages --off`](#mfw-local-packages-folder--mfw-local-packages---off)
   - [`mfw e2e [tests...] [--repeat N]`](#mfw-e2e-tests---repeat-n)
   - [`mfw plugin create <kind> <name>`](#mfw-plugin-create-kind-name)
+  - [`mfw agent-files`](#mfw-agent-files)
   - [`mfw upgrade`](#mfw-upgrade)
 - [Help](#help)
 
@@ -54,7 +55,7 @@ Writes a new Mercury app into `<folder>`, which has to be missing or empty; the 
 - which channels and which tool plugins to include (none is fine: the REPL always works);
 - the git remote for `origin`, which you can leave empty (most of the time it doesn't exist yet when you scaffold).
 
-It writes the `mercury.config.ts` for that selection, the persona, the conversation each session keeps (`const conversation = conversationWindow({ earlier: longTermMemory })` from `@mercury-fw/conversation-window`, in `plugins` and named in the `default` context profile), the wiki (`const teamWiki = wiki({ review: { dreaming: {} } })` from `@mercury-fw/wiki`, with the dreaming pass on, in `plugins` and among the `default` profile's `layers`), the long-term memory (`const longTermMemory = memory({ wiki: teamWiki })` from `@mercury-fw/memory`, in `plugins` and among the `default` profile's `layers`), the archive, the titles, the profiles and the corrections (`archive()`, `titles()`, `profile()`, `corrections({ wiki: teamWiki })` from `@mercury-fw/archive`, `@mercury-fw/titles`, `@mercury-fw/profile`, `@mercury-fw/corrections`, in `plugins`), the traces (`@mercury-fw/trace-jsonl`, at level `meta`, in `traces/` in the data folder), a `locales/` folder with an `en.json` for the texts people see (empty, or the starting formatter rules' own texts: `app.jira.no-issues` with Jira), the service and REPL entrypoints, a Dockerfile, a compose file with Qdrant (the app's vector index and conversation store, `vectorIndex: qdrantIndex()` and `conversationStore: qdrantConversations()`) and a volume for the wiki and one for Mercury's own state, and an env example listing every variable the chosen pieces read. Its `package.json` declares `plugins/*` as workspaces, the place for the app's own plugins (each a package in `plugins/<name>`, which the image copies before installing), and a `test` script (`bun test`, the plugins' tests included); the workspaces make Bun install with its isolated linker, and the Dockerfile's PATH step follows the links it makes. A plugin that hands over lists comes wrapped in the formatter with a starting rule, yours to change.
+It writes the `mercury.config.ts` for that selection, the persona, the conversation each session keeps (`const conversation = conversationWindow({ earlier: longTermMemory })` from `@mercury-fw/conversation-window`, in `plugins` and named in the `default` context profile), the wiki (`const teamWiki = wiki({ review: { dreaming: {} } })` from `@mercury-fw/wiki`, with the dreaming pass on, in `plugins` and among the `default` profile's `layers`), the long-term memory (`const longTermMemory = memory({ wiki: teamWiki })` from `@mercury-fw/memory`, in `plugins` and among the `default` profile's `layers`), the archive, the titles, the profiles and the corrections (`archive()`, `titles()`, `profile()`, `corrections({ wiki: teamWiki })` from `@mercury-fw/archive`, `@mercury-fw/titles`, `@mercury-fw/profile`, `@mercury-fw/corrections`, in `plugins`), the traces (`@mercury-fw/trace-jsonl`, at level `meta`, in `traces/` in the data folder), a `locales/` folder with an `en.json` for the texts people see (empty, or the starting formatter rules' own texts: `app.jira.no-issues` with Jira), the service and REPL entrypoints, a Dockerfile, a compose file with Qdrant (the app's vector index and conversation store, `vectorIndex: qdrantIndex()` and `conversationStore: qdrantConversations()`) and a volume for the wiki and one for Mercury's own state, and an env example listing every variable the chosen pieces read. Its `package.json` declares `plugins/*` as workspaces, the place for the app's own plugins (each a package in `plugins/<name>`, which the image copies before installing), and a `test` script (`bun test`, the plugins' tests included); the workspaces make Bun install with its isolated linker, and the Dockerfile's PATH step follows the links it makes. A plugin that hands over lists comes wrapped in the formatter with a starting rule, yours to change. For a coding assistant working on the app it writes `AGENTS.md` (what the app is, where things are, the `mfw` command, what to do and not to do) and the `mercury-plugin` skill, for writing its plugins, in `.claude/skills/` and `.agents/skills/`.
 
 Then it runs `bun install` in the app and creates a git repository on `main` with a first commit (`bun.lock` included), adding `origin` when you gave one; nothing is pushed. Each step is best effort and never undoes the ones before it: an install that fails still leaves the app committed, without the lockfile, and the closing message says what to run. The repository is skipped when the folder is already inside one (an app created in a monorepo belongs to it). Whether git can commit is git's call: when it refuses (no identity, a hook) or isn't installed, the message reports why and lists the commands to finish by hand. `bun install` prints its own output as it runs.
 
@@ -418,6 +419,14 @@ Writes a plugin of the app's own under `plugins/<name>`, the workspace every app
 ```bash
 mfw plugin create tool guest-wifi
 mfw plugin create cli acme --cli-binary acme --cli-repo acme/acme-cli --cli-version 1.2.3
+```
+
+### `mfw agent-files`
+
+Writes into an app made before `mfw create` did what a coding assistant reads to work on it: `AGENTS.md` and the `mercury-plugin` skill, in `.claude/skills/mercury-plugin/` and `.agents/skills/mercury-plugin/`. A file already there is kept as it is, and the command says which it wrote and which it kept. Nothing else is touched.
+
+```bash
+mfw agent-files
 ```
 
 ### `mfw upgrade`

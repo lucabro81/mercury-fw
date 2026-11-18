@@ -131,22 +131,22 @@ An agent without tools can only talk. What it can do comes from *plugins*, and a
 or a file in your app. Here you'll write one: a tool that tells people the office guest Wi-Fi, whose password
 lives in `.env` like every secret should.
 
-[Your first plugin](../local-plugin/) walks through it line by line. In short, add the packages a plugin is
-written with:
+Mercury writes the start of it for you:
 
 ```bash
-bun add @mercury-fw/kit ai zod
+bunx mfw plugin create tool guest-wifi
 ```
 
-then create `src/plugins/guest-wifi.ts` with the plugin from that page, declare it in `mercury.config.ts`, and add
-its two settings to `.env`:
+It creates a working example plugin in `plugins/guest-wifi` and declares it in `mercury.config.ts`.
+[Your first plugin](../local-plugin/) turns it into the Wi-Fi line by line: follow it, then add the plugin's two
+settings to `.env`:
 
 ```bash title=".env"
 GUEST_WIFI_NAME=Office-Guest
 GUEST_WIFI_PASSWORD=correct-horse-battery
 ```
 
-Restart, so the image picks up the new file and the container the new settings:
+Restart, so the image picks up the plugin and the container the new settings:
 
 ```bash
 bunx mfw restart
@@ -162,19 +162,16 @@ bunx mfw repl
 [~?k tokens] > How do I get on the guest Wi-Fi?
 [turn] start
 Thinking…
-Using guest_wifi…
+Looking up the guest Wi-Fi
 [tool] guest_wifi({})
 [tool result] {"ok":true,"network":"Office-Guest","password":"correct-horse-battery"}
 Thinking…
-Guest Wi-Fi:
-- Network: Office-Guest
-- Password: correct-horse-battery
-
-Just connect to "Office-Guest" and enter the password and you should be online.
-[turn] done in 15.9s: 2 steps, 1 tool call, reasoning 147 chars, answer 151 chars, finish stop
+Network: Office-Guest
+Password: correct-horse-battery
+[turn] done in 15.3s: 2 steps, 1 tool call, reasoning 44 chars, answer 53 chars, finish stop
 ```
 
-`Using guest_wifi…` is the status line the person sees while the tool runs, and the `[tool]` lines show you the
+`Looking up the guest Wi-Fi` is the status line the person sees while the tool runs, from the plugin's `messages`, and the `[tool]` lines show you the
 model's call and what came back: the answer is built on it.
 The password never appeared in your code, only in `.env`.
 
