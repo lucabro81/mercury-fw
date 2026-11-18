@@ -9,7 +9,7 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { planNewPlugin, type NewPluginArgs } from "./new-plugin.ts";
+import { cliFlags, planNewPlugin, type NewPluginArgs } from "./new-plugin.ts";
 import { root, workspaces } from "./workspaces.ts";
 
 /** The repository as it is. */
@@ -125,5 +125,28 @@ describe("planNewPlugin", () => {
   test("refuses what renderPlugin refuses", () => {
     expect(() => plan({ kind: "tool", name: "Guest" })).toThrow("a plugin's name is lowercase words");
     expect(() => plan({ kind: "cli", name: "acme" })).toThrow("a cli plugin needs its binary's name");
+  });
+});
+
+describe("cliFlags", () => {
+  test("a cli plugin's pin, from the three flags", () => {
+    expect(cliFlags("cli", { "cli-binary": "acme", "cli-repo": "acme/acme-cli", "cli-version": "1.2.3" })).toEqual({ binary: "acme", repo: "acme/acme-cli", version: "1.2.3" });
+  });
+
+  test("nothing for another kind without them", () => {
+    expect(cliFlags("tool", {})).toBeUndefined();
+  });
+
+  // Regression: a partial pin, or one given to another kind, was silently dropped.
+  test("refuses some of them, or any for another kind", () => {
+    expect(() => cliFlags("cli", { "cli-binary": "acme" })).toThrow("a cli plugin needs --cli-binary, --cli-repo and --cli-version");
+    expect(() => cliFlags("tool", { "cli-binary": "acme" })).toThrow("--cli-binary, --cli-repo and --cli-version are for a cli plugin");
+  });
+});
+
+describe("planNewPlugin's notes for the framework's group", () => {
+  test("a package in the group asks for its name in AGENTS.md's list of the group", () => {
+    expect(plan({ kind: "memory", name: "topics" }).notes).toContain("  AGENTS.md: its name in the fixed group's list (Versioning & changelog)");
+    expect(plan({ kind: "tool", name: "guest-wifi" }).notes.some((n) => n.includes("fixed group's list"))).toBe(false);
   });
 });

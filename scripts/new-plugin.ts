@@ -70,6 +70,17 @@ function insertBefore(text: string, file: string, after: string, anchor: string,
   return text.slice(0, at) + insert + text.slice(at);
 }
 
+/** The pin of a `cli` plugin from its three flags; throws on some of them, or on any for another kind. */
+export function cliFlags(kind: string, flags: Record<string, string | undefined>): CliPin | undefined {
+  const pin = [flags["cli-binary"], flags["cli-repo"], flags["cli-version"]];
+  if (kind !== "cli") {
+    if (pin.some((v) => v !== undefined)) throw new Error("--cli-binary, --cli-repo and --cli-version are for a cli plugin");
+    return undefined;
+  }
+  if (pin.some((v) => v === undefined)) throw new Error("a cli plugin needs --cli-binary, --cli-repo and --cli-version");
+  return { binary: pin[0]!, repo: pin[1]!, version: pin[2]! };
+}
+
 /** Plans the new plugin (see the module comment); throws, writing nothing, on anything wrong. */
 export function planNewPlugin(args: NewPluginArgs, repo: RepoView): NewPluginPlan {
   const spec = pluginKind(args.kind);
@@ -152,6 +163,7 @@ export function planNewPlugin(args: NewPluginArgs, repo: RepoView): NewPluginPla
     "  bun install",
     "  bun run typecheck && bun run test && bun scripts/check-pack.ts",
     `  AGENTS.md: a line for it in the repo tree, under packages/${spec.bucket}/`,
+    ...(framework ? ["  AGENTS.md: its name in the fixed group's list (Versioning & changelog)"] : []),
     `  replace the example ${kind === "tool" ? "tools" : "code"}, and the README, with the plugin's own`,
     ...(args.catalog ? ["  fill in its page on the site"] : []),
     "After its first release (npm takes no trusted publisher before the package exists), from outside the repo:",
@@ -208,10 +220,10 @@ async function main(argv: string[]): Promise<number> {
     console.error("--framework or --independent, not both");
     return 1;
   }
-  const pin = [values["cli-binary"], values["cli-repo"], values["cli-version"]];
-  const cli = pin.every((v) => v !== undefined) ? { cli: { binary: pin[0]!, repo: pin[1]!, version: pin[2]! } } : {};
   const framework = values.framework ? { framework: true } : values.independent ? { framework: false } : {};
   try {
+    const pin = cliFlags(kind, { "cli-binary": values["cli-binary"], "cli-repo": values["cli-repo"], "cli-version": values["cli-version"] });
+    const cli = pin === undefined ? {} : { cli: pin };
     const { writes, notes } = planNewPlugin(
       { kind, name, ...framework, ...(values.catalog ? { catalog: true } : {}), ...cli },
       {
