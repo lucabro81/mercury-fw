@@ -1,5 +1,18 @@
 # @mercury-fw/core
 
+## 0.80.0
+
+### Patch Changes
+
+- adf660d: - `Principal.provider` (`PrincipalProvider`) takes any name: an auth provider or a channel of your own gives its people its own
+  - a `directory` named like one of the instance's auth providers or channels doesn't load, and the instance lets in nobody but the terminal
+- Updated dependencies [adf660d]
+  - @mercury-fw/channel-types@0.80.0
+  - @mercury-fw/confirm-engine@0.80.0
+  - @mercury-fw/plugin-types@0.80.0
+  - @mercury-fw/cli-engine@0.80.0
+  - @mercury-fw/utils@0.80.0
+
 ## 0.79.2
 
 ### Patch Changes

@@ -1,5 +1,24 @@
 # @mercury-fw/cli
 
+## 0.80.0
+
+### Minor Changes
+
+- 4ae08df: - `mfw create`: new apps get an `AGENTS.md` and the `mercury-plugin` skill (`.claude/skills/`, `.agents/skills/`), for a coding assistant working on the app and writing its plugins
+  - `mfw agent-files`: writes them into an existing app, keeping any file already there
+  - kit README: a minimal plugin, sections, and the way to start one (`mfw plugin create`)
+  - **Migration:** to give an existing app `AGENTS.md` and the `mercury-plugin` skill, run `mfw agent-files` in it
+- adf660d: - `mfw plugin create <kind> <name>`: writes a working plugin of the app's own under `plugins/<name>`, with its tests and a README, declares it in `package.json` and in `mercury.config.ts` (or prints the lines to add), runs `bun install`
+  - kinds: `tool`, `cli` (`--cli-binary`, `--cli-repo`, `--cli-version`), `memory`, `context-strategy`, `channel`, `auth`, `directory`, `trace-sink`, `vector-index`, `conversation-store`
+
+### Patch Changes
+
+- Updated dependencies [4ae08df]
+- Updated dependencies [adf660d]
+  - @mercury-fw/kit@0.80.0
+  - @mercury-fw/core@0.80.0
+  - @mercury-fw/utils@0.80.0
+
 ## 0.79.2
 
 ### Patch Changes

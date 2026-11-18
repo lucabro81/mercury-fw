@@ -1,5 +1,16 @@
 # @mercury-fw/channel-types
 
+## 0.80.0
+
+### Minor Changes
+
+- adf660d: - `Principal.provider` (`PrincipalProvider`) takes any name: an auth provider or a channel of your own gives its people its own
+  - a `directory` named like one of the instance's auth providers or channels doesn't load, and the instance lets in nobody but the terminal
+
+### Patch Changes
+
+- @mercury-fw/plugin-types@0.80.0
+
 ## 0.79.2
 
 ### Patch Changes
