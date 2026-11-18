@@ -150,3 +150,26 @@ describe("planNewPlugin's notes for the framework's group", () => {
     expect(plan({ kind: "tool", name: "guest-wifi" }).notes.some((n) => n.includes("fixed group's list"))).toBe(false);
   });
 });
+
+describe("where each kind goes", () => {
+  test.each([
+    ["tool", "packages/tools/plugin-demo"],
+    ["cli", "packages/tools/plugin-demo"],
+    ["memory", "packages/memory/demo"],
+    ["context-strategy", "packages/memory/demo"],
+    ["channel", "packages/channels/channel-demo"],
+    ["auth", "packages/auth/auth-demo"],
+    ["directory", "packages/directories/directory-demo"],
+    ["trace-sink", "packages/traces/trace-demo"],
+    ["vector-index", "packages/stores/store-demo"],
+    ["conversation-store", "packages/stores/store-demo"],
+  ] as const)("a %s in %s, with its manifest and tsconfig", (kind, dir) => {
+    const args: NewPluginArgs = { kind, name: "demo", ...(kind === "cli" ? { cli: { binary: "demo", repo: "acme/demo", version: "1.0.0" } } : {}) };
+    const { writes } = plan(args);
+    const packageFiles = [...writes.keys()].filter((p) => p.startsWith("packages/"));
+    expect(packageFiles.every((p) => p.startsWith(`${dir}/`))).toBe(true);
+    expect(packageFiles).toContain(`${dir}/package.json`);
+    expect(packageFiles).toContain(`${dir}/tsconfig.json`);
+    expect(JSON.parse(writes.get(`${dir}/package.json`)!).repository.directory).toBe(dir);
+  });
+});
