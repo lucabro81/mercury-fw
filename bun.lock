@@ -19,6 +19,7 @@
       "dependencies": {
         "@clack/prompts": "^1.8.1",
         "@mercury-fw/core": "workspace:*",
+        "@mercury-fw/kit": "workspace:*",
         "@mercury-fw/utils": "workspace:*",
         "commander": "^15.0.0",
       },
@@ -28,6 +29,7 @@
         "@mercury-fw/auth-static": "workspace:*",
         "@mercury-fw/channel-google-chat": "workspace:*",
         "@mercury-fw/channel-http": "workspace:*",
+        "@mercury-fw/cli-engine": "workspace:*",
         "@mercury-fw/corrections": "workspace:*",
         "@mercury-fw/directory-static": "workspace:*",
         "@mercury-fw/formatter": "workspace:*",
@@ -45,7 +47,9 @@
         "@mercury-fw/web-search-searxng": "workspace:*",
         "@mercury-fw/wiki": "workspace:*",
         "@types/bun": "^1.4.2",
+        "ai": "^7.0.126",
         "typescript": "^6.0.3",
+        "zod": "^4.6.5",
       },
     },
     "apps/create-mercury-agent": {

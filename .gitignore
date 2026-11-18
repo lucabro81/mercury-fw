@@ -56,3 +56,4 @@ coverage
 
 # Luca's personal memory plugin — entirely local
 .vibe/plugins/mercury-memory/
+.scaffold-check/
