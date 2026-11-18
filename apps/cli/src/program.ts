@@ -391,6 +391,15 @@ Examples:
       inApp((app) => app.e2e(tests, opts.repeat === undefined ? {} : { repeat: Number(opts.repeat) }))(),
     );
 
+  program
+    .command("agent-files")
+    .summary("writes AGENTS.md and the plugin skill for coding assistants")
+    .description(
+      "Writes what a coding assistant reads to work on the app, as mfw create does for a new one: AGENTS.md (what the app is, where things are, the mfw command, what to do and not to do) and the mercury-plugin skill, for writing its plugins, in .claude/skills/ and .agents/skills/. A file already there is kept as it is.",
+    )
+    .addHelpText("after", `\nExamples:\n  mfw agent-files${INSIDE_AN_APP}`)
+    .action(inApp((app) => app.agentFiles()));
+
   const plugin = program
     .command("plugin")
     .summary("the app's own plugins")
