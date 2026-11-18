@@ -14,7 +14,8 @@ export const AGENT_FILE_PATHS = ["AGENTS.md", ".claude/skills/mercury-plugin/SKI
 /** The files for the app called `appName`, by path. */
 export function agentFiles(appName: string): Map<string, string> {
   return new Map([
-    ["AGENTS.md", agentsMd.replaceAll("__APP__", appName)],
+    // A function, so a `$` in the name is written as it is, not read as a replacement pattern.
+    ["AGENTS.md", agentsMd.replaceAll("__APP__", () => appName)],
     [".claude/skills/mercury-plugin/SKILL.md", pluginSkill],
     [".agents/skills/mercury-plugin/SKILL.md", pluginSkill],
   ]);

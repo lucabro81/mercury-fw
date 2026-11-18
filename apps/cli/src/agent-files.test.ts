@@ -7,6 +7,14 @@
 import { describe, expect, test } from "bun:test";
 import { parseSkill } from "@mercury-fw/kit";
 import { agentFiles, AGENT_FILE_PATHS } from "./agent-files.ts";
+import { TEMPLATES } from "./plugin/templates.ts";
+
+/** The text of `## name` in `markdown`, up to the next section. */
+function section(markdown: string, name: string): string {
+  const start = markdown.indexOf(`## ${name}\n`);
+  const end = markdown.indexOf("\n## ", start + 1);
+  return markdown.slice(start, end === -1 ? undefined : end);
+}
 
 describe("agentFiles", () => {
   const files = agentFiles("my-agent");
@@ -38,6 +46,31 @@ describe("agentFiles", () => {
 
   test("points the agent at the skill when it writes a plugin", () => {
     expect(files.get("AGENTS.md")).toContain("mercury-plugin");
+  });
+
+  test("says what to do and what not to", () => {
+    const agents = files.get("AGENTS.md")!;
+    const dos = section(agents, "Do");
+    for (const rule of ["bunx mfw plugin create", "bun run test", "from the environment", "stageConfirmation", "in English", "changelog"]) {
+      expect(dos).toContain(rule);
+    }
+    const donts = section(agents, "Don't");
+    for (const rule of ["with `bun` on the host", "commit `.env`", "a model's address", "`node_modules`", "agent framework"]) {
+      expect(donts).toContain(rule);
+    }
+  });
+
+  // The skill describes the contract the templates are written in: when a template changes, the skill must too.
+  test("the skill's confirmation and apiVersion are the tool template's", () => {
+    const skill = files.get(".claude/skills/mercury-plugin/SKILL.md")!;
+    expect(skill).toContain("`{ ok: false, pendingConfirmation: true, token, summary, error }`");
+    for (const key of ["ok: false,", "pendingConfirmation: true,", "token,", "summary:", "error:"]) expect(TEMPLATES.tool["tools.ts"]).toContain(key);
+    expect(skill).toContain("`apiVersion` is a number literal");
+    expect(TEMPLATES.tool["index.ts"]).toContain("apiVersion: __API_VERSION__,");
+  });
+
+  test("an app name is written as it is", () => {
+    expect(agentFiles("a$&b").get("AGENTS.md")).toStartWith("# a$&b\n");
   });
 
   test("leaves no placeholder", () => {
