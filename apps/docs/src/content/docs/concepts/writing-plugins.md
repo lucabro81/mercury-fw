@@ -2,7 +2,7 @@
 title: Writing a plugin
 description: How to start a plugin of every kind, what its package holds, the rules every plugin follows, and how to check it works.
 sidebar:
-  order: 3.7
+  order: 3.6
 ---
 
 A plugin is how an agent gets to do something, and also how an app gets the pieces it's made of: a channel people

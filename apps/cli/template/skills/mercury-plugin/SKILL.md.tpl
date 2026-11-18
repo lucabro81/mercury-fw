@@ -29,7 +29,7 @@ It writes a working package with its tests and a README, adds it to `package.jso
 
 - `apiVersion` is a number literal, the contract version the plugin is written for. Never import the `*_API_VERSION` constant into it: that reports the installed contract, not the one the code was written for.
 - `name` is the plugin's name: its texts' keys start with it, and it can't be `core` or `app`.
-- `description` (tool, CLI, memory plugins) is one sentence the model reads to know what the agent can do. Required.
+- `description` (tool, CLI and memory plugins, context strategies) is one sentence the model reads to know what the agent can do. Required.
 - `actsAs` says whose identity a tool uses at its service: `"anyone"` (nobody's, no login), `"person"` (each person logs in to it), `"mercury"` (the instance's own account, offered only to people allowed to make the agent act as itself).
 - `build(ctx)` runs once at startup. It reads its settings from `ctx.env`; when one is missing it logs why (`ctx.log`) and returns `{}`: the agent starts anyway, without it. A channel, auth provider, directory, trace sink or store throws instead, and the core leaves it out, closed.
 - `sessionTools(sctx)` returns the tools, by name. A tool never throws: it returns `{ ok: true, ... }` or `{ ok: false, error }`, and the model reads the error.
